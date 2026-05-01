@@ -78,6 +78,18 @@ To run the CI boot test:
 make test
 ```
 
+To run seL4-target smoke tests, build the dedicated test image and parse its
+TAP sentinel:
+
+```bash
+make sel4-test-image
+make run-tests
+```
+
+`make run-tests` launches the current board in QEMU and waits for
+`TAP_DONE:<code>` on the serial log. `TAP_DONE:0` is success; any non-zero code
+or a timeout is a failure.
+
 ## Target Architectures
 
 | `config.yaml` `target_arch` | `BOARD` | QEMU binary |
@@ -179,6 +191,12 @@ The CI test (`make test` / `scripts/ci-test.sh`) checks for these strings and
 exits 0 on success or 1 on failure.  The x86-64 smoke test currently checks
 for the root-task marker `[rt] boot complete`.
 
+On x86-64 the maintained scope is intentionally narrower than AArch64: the
+root task boots a reduced topology with no service PDs. This avoids running the
+AArch64 service endpoint/MMIO layout on QEMU q35 while x86 service mappings are
+rebuilt. The x86 gate is therefore root-task boot plus no `[rt] FAULT` endpoint
+reports after the marker.
+
 ## Protection Domain Layout
 
 The default RISC-V build (`agentos.system`) boots the following protection
@@ -225,6 +243,14 @@ domains:
   protection domains are only built for `BOARD=qemu_virt_aarch64`. The
   x86-64 board includes a stub `linux_vmm.elf` for compatibility with the
   system description file.
+
+- **FreeBSD image selection**: the VMM build and QEMU runtime use
+  `AGENTOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` when set, otherwise they prefer the
+  fetched image at `~/.local/agentos-images/freebsd-14.4-aarch64.img` and fall
+  back to `guest-images/freebsd.img` or
+  `guest-images/freebsd-14.4-aarch64.img`. Keeping the kernel extraction and
+  attached disk on the same prepared image is required for the CC-PD
+  login-prompt E2E.
 
 - **WASM agent execution**: `swap_slot` PDs load and execute WASM binaries
   via the embedded wasm3 interpreter. Binaries must be signed with

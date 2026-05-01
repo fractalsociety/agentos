@@ -34,6 +34,7 @@
 #include "contracts/vibeos_contract.h"
 #include "contracts/guest_contract.h"
 #include "contracts/framebuffer_contract.h"
+#include "contracts/fault_inject_contract.h"
 #include "contracts/log_drain_contract.h"
 #include "contracts/agent_pool_contract.h"
 #include "sel4_ipc.h"
@@ -526,6 +527,14 @@ static bool valid_session(uint32_t sid)
            g_sessions[sid].state != (uint32_t)CC_SESSION_STATE_EXPIRED;
 }
 
+static void cc_wire_wr32(uint8_t *dst, uint32_t off, uint32_t value)
+{
+    dst[off + 0u] = (uint8_t)(value & 0xffu);
+    dst[off + 1u] = (uint8_t)((value >> 8u) & 0xffu);
+    dst[off + 2u] = (uint8_t)((value >> 16u) & 0xffu);
+    dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
+}
+
 /* ─── Session management handlers ───────────────────────────────────────── */
 
 static void handle_connect(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -821,6 +830,33 @@ static void handle_create_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     rep->mr[1] = 0u;
 }
 
+static void handle_fault_inject(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+#if defined(AGENTOS_FAULT_INJECT)
+    sel4_msg_t msg = {0};
+    sel4_msg_t reply = {0};
+    msg.opcode = OP_FAULT_INJECT;
+    msg.length = 12u;
+    cc_wire_wr32(msg.data, 0u, req->mr[0]); /* slot_id */
+    cc_wire_wr32(msg.data, 4u, req->mr[1]); /* fault_kind */
+    cc_wire_wr32(msg.data, 8u, req->mr[2]); /* flags */
+
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_FAULT_INJECT_EP, &msg, &reply);
+    if (reply.opcode != SEL4_ERR_OK) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        return;
+    }
+
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = msg_u32(&reply, 0u);  /* fault result */
+    rep->mr[2] = msg_u32(&reply, 4u);  /* ticks_to_recovery */
+    rep->mr[3] = msg_u32(&reply, 8u);  /* trace_event_id */
+#else
+    (void)req;
+    rep->mr[0] = CC_ERR_RELAY_FAULT;
+#endif
+}
+
 /* ─── Dispatch ───────────────────────────────────────────────────────────── */
 
 static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -846,6 +882,7 @@ static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     case MSG_CC_RESTORE:            handle_restore(req, rep);            break;
     case MSG_CC_LOG_STREAM:         handle_log_stream(req, rep);         break;
     case MSG_CC_CREATE_GUEST:       handle_create_guest(req, rep);       break;
+    case MSG_CC_FAULT_INJECT:       handle_fault_inject(req, rep);       break;
 
     default:
         sel4_dbg_puts("[cc_pd] unknown opcode\n");

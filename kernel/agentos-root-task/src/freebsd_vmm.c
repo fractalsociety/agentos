@@ -173,6 +173,7 @@ static void uart_ack(size_t vcpu_id, int irq, void *cookie)
 #define PL011_CR_TXE     (1u << 8)
 #define PL011_CR_RXE     (1u << 9)
 #define PL011_RXIS       (1u << 4)
+#define PL011_TXIS       (1u << 5)
 #define PL011_RTIS       (1u << 6)
 #define FREEBSD_UART_IRQ 33u
 #define GUEST_CONSOLE_TX_RING_SIZE 8192u
@@ -247,9 +248,23 @@ static bool console_rx_pop(uint8_t *byte)
     return true;
 }
 
-static uint32_t pl011_pending_rx_irqs(void)
+static uint32_t pl011_pending_irqs(void)
 {
-    return console_rx_count > 0u ? (PL011_RXIS | PL011_RTIS) : 0u;
+    uint32_t pending = 0u;
+    if (console_rx_count > 0u) {
+        pending |= PL011_RXIS | PL011_RTIS;
+    }
+    if ((pl011_cr & PL011_CR_TXE) != 0u) {
+        pending |= PL011_TXIS;
+    }
+    return pending;
+}
+
+static void pl011_maybe_inject_irq(void)
+{
+    if (guest_started && ((pl011_pending_irqs() & pl011_imsc) != 0u)) {
+        (void)virq_inject(FREEBSD_UART_IRQ);
+    }
 }
 
 static void guest_console_write(uint8_t byte)
@@ -299,13 +314,6 @@ static bool input_event_to_byte(uint32_t event_type, uint32_t keycode,
     }
 }
 
-static void console_rx_inject_irq(void)
-{
-    if (guest_started) {
-        (void)virq_inject(FREEBSD_UART_IRQ);
-    }
-}
-
 static void pl011_store32(uint32_t *reg, size_t offset, uint64_t fsr,
                           uint32_t value)
 {
@@ -321,6 +329,7 @@ static uint32_t pl011_read(size_t offset)
     {
         uint8_t byte = 0u;
         (void)console_rx_pop(&byte);
+        pl011_maybe_inject_irq();
         return byte;
     }
     case PL011_RSR_ECR:
@@ -343,9 +352,9 @@ static uint32_t pl011_read(size_t offset)
     case PL011_IMSC:
         return pl011_imsc;
     case PL011_RIS:
-        return pl011_pending_rx_irqs();
+        return pl011_pending_irqs();
     case PL011_MIS:
-        return pl011_pending_rx_irqs() & pl011_imsc;
+        return pl011_pending_irqs() & pl011_imsc;
     case PL011_DMACR:
         return pl011_dmacr;
     case 0xfe0u:
@@ -376,6 +385,7 @@ static void pl011_write(size_t offset, uint64_t fsr, seL4_UserContext *regs)
     switch (offset) {
     case PL011_DR:
         guest_console_write((uint8_t)(value & 0xffu));
+        pl011_maybe_inject_irq();
         break;
     case PL011_RSR_ECR:
         pl011_rsr_ecr = 0;
@@ -394,14 +404,17 @@ static void pl011_write(size_t offset, uint64_t fsr, seL4_UserContext *regs)
         break;
     case PL011_CR:
         pl011_store32(&pl011_cr, offset, fsr, value);
+        pl011_maybe_inject_irq();
         break;
     case PL011_IFLS:
         pl011_store32(&pl011_ifls, offset, fsr, value);
         break;
     case PL011_IMSC:
         pl011_store32(&pl011_imsc, offset, fsr, value);
+        pl011_maybe_inject_irq();
         break;
     case PL011_ICR:
+        pl011_maybe_inject_irq();
         break;
     case PL011_DMACR:
         pl011_store32(&pl011_dmacr, offset, fsr, value);
@@ -448,7 +461,7 @@ static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
                 rep.opcode = GUEST_ERR_DEVICE_UNAVAILABLE;
                 break;
             }
-            console_rx_inject_irq();
+            pl011_maybe_inject_irq();
         }
         rep.opcode = GUEST_OK;
         break;

@@ -1,79 +1,63 @@
 use crate::FaultInjectArgs;
-use anyhow::Context;
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub fn run(args: &FaultInjectArgs) -> anyhow::Result<()> {
+const MSG_CC_FAULT_INJECT: u32 = 0x2612;
+const CC_OK: u32 = 0;
+const FAULT_NULL_DEREF: u32 = 0x01;
+const FAULT_FLAG_VERIFY_RECOVERY: u32 = 0x01;
+const FAULT_RESULT_OK: u32 = 0x00;
+
+pub fn run(args: &FaultInjectArgs) -> Result<()> {
     let repo_root = repo_root()?;
 
     println!(
-        "[xtask:fault-inject] Building with FAULT_INJECT=1, BOARD={}...",
+        "[xtask:fault-inject] Building current-board fault-injection image, BOARD={}...",
         args.board
     );
     crate::cmd_test::run_make(
-        &["build", "FAULT_INJECT=1", &format!("BOARD={}", args.board)],
+        &[
+            "build",
+            "FAULT_INJECT=1",
+            "GUEST_OS=none",
+            &format!("BOARD={}", args.board),
+        ],
         &repo_root,
     )
     .context("fault-inject build failed")?;
 
     let log_file = tempfile::NamedTempFile::new().context("failed to create temp log file")?;
     let log_path = log_file.path().to_path_buf();
+    let cc_sock = log_path.with_extension("cc_pd.sock");
 
     println!(
         "[xtask:fault-inject] Launching QEMU for board={}...",
         args.board
     );
-    let mut qemu = spawn_qemu_fault_inject(&args.board, &repo_root, &log_path)?;
-
-    let result = crate::cmd_test::wait_for_markers(
+    let mut qemu = crate::cmd_test::spawn_qemu_with_guest(
+        &args.board,
+        &repo_root,
         &log_path,
-        &[
-            "fault injection test passed",
-            "ALL FAULT INJECT TESTS PASSED",
-        ],
-        Duration::from_secs(args.timeout_secs),
-    );
+        &cc_sock,
+        "none",
+        0,
+    )?;
+
+    let result = run_fault_inject_via_cc(&cc_sock, args.timeout_secs, &mut qemu);
 
     let _ = qemu.kill();
     let _ = qemu.wait();
 
-    // Read serial output for display and secondary marker scan
-    let output_str = std::fs::read_to_string(&log_path).unwrap_or_default();
-
+    let output = std::fs::read_to_string(&log_path).unwrap_or_default();
     println!("\n=== Serial output ===");
-    print!("{}", output_str);
+    print!("{}", output);
     println!("=====================\n");
 
-    // Scan for fault injection evidence markers even when the primary wait timed out.
-    // These indicate the kernel fault path was exercised even if the success string
-    // was not emitted before the deadline.
-    let secondary_markers = [
-        "fault_inject: triggered",
-        "fault_handler: PD",
-        "watchdog: escalated",
-    ];
-    let found_secondary = secondary_markers.iter().find(|&&m| output_str.contains(m));
-
-    match result {
-        Ok(marker) => {
-            println!("PASS [board={}]: found marker \"{}\"", args.board, marker);
-            Ok(())
-        }
-        Err(e) => {
-            if let Some(secondary) = found_secondary {
-                println!(
-                    "[fault-inject] PASS (secondary): fault injection marker \"{}\" found in output",
-                    secondary
-                );
-                Ok(())
-            } else {
-                println!("FAIL [board={}]: {}", args.board, e);
-                anyhow::bail!("fault-inject test failed for board {}: {}", args.board, e);
-            }
-        }
-    }
+    result
 }
 
-fn repo_root() -> anyhow::Result<std::path::PathBuf> {
+fn repo_root() -> Result<PathBuf> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
@@ -83,67 +67,42 @@ fn repo_root() -> anyhow::Result<std::path::PathBuf> {
         .context("git output is not utf-8")?
         .trim()
         .to_string();
-    Ok(std::path::PathBuf::from(root))
+    Ok(PathBuf::from(root))
 }
 
-fn spawn_qemu_fault_inject(
-    board: &str,
-    repo_root: &std::path::Path,
-    log_path: &std::path::Path,
-) -> anyhow::Result<std::process::Child> {
-    let log_file = std::fs::File::create(log_path).context("failed to create QEMU log file")?;
+fn run_fault_inject_via_cc(
+    cc_sock: &Path,
+    timeout_secs: u64,
+    qemu: &mut std::process::Child,
+) -> Result<()> {
+    crate::cmd_test::wait_for_cc_socket(
+        cc_sock,
+        Duration::from_secs(timeout_secs).min(Duration::from_secs(30)),
+        qemu,
+    )
+    .context("fault-inject CC-PD socket did not become ready")?;
 
-    let build_image = repo_root.join("build").join(board).join("agentos.img");
+    let reply = crate::cmd_test::cc_call(
+        cc_sock,
+        MSG_CC_FAULT_INJECT,
+        0,
+        FAULT_NULL_DEREF,
+        FAULT_FLAG_VERIFY_RECOVERY,
+        &[],
+    )
+    .context("MSG_CC_FAULT_INJECT failed")?;
 
-    let mut cmd = match board {
-        "qemu_virt_aarch64" => {
-            let mut c = std::process::Command::new("qemu-system-aarch64");
-            c.args([
-                "-machine",
-                "virt,virtualization=on",
-                "-cpu",
-                "cortex-a57",
-                "-m",
-                "2G",
-                "-nographic",
-                "-kernel",
-                build_image
-                    .to_str()
-                    .unwrap_or("build/qemu_virt_aarch64/agentos.img"),
-            ]);
-            c
-        }
-        "qemu_virt_riscv64" => {
-            let mut c = std::process::Command::new("qemu-system-riscv64");
-            c.args([
-                "-machine",
-                "virt",
-                "-cpu",
-                "rv64",
-                "-m",
-                "2G",
-                "-nographic",
-                "-bios",
-                "/usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin",
-                "-kernel",
-                build_image
-                    .to_str()
-                    .unwrap_or("build/qemu_virt_riscv64/agentos.img"),
-            ]);
-            c
-        }
-        other => {
-            anyhow::bail!(
-                "unknown board: {} — add QEMU invocation to cmd_fault_inject.rs",
-                other
-            );
-        }
-    };
+    anyhow::ensure!(
+        reply.mr[0] == CC_OK,
+        "MSG_CC_FAULT_INJECT returned CC error {}",
+        reply.mr[0]
+    );
+    anyhow::ensure!(
+        reply.mr[1] == FAULT_RESULT_OK,
+        "fault_inject returned result {}",
+        reply.mr[1]
+    );
 
-    let child = cmd
-        .stdout(log_file.try_clone()?)
-        .stderr(log_file)
-        .spawn()
-        .context("failed to spawn QEMU")?;
-    Ok(child)
+    println!("PASS [fault-inject]: OP_FAULT_INJECT reached fault_inject PD through CC-PD IPC");
+    Ok(())
 }

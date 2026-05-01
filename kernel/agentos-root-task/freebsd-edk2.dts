@@ -101,22 +101,14 @@
 	 * EDK2 enables fw_cfg DMA when the node exposes the 0x10..0x17 DMA
 	 * address register.  That is unsafe in agentOS: the FreeBSD guest IPA is
 	 * mapped through seL4 page tables, so a guest DMA address is not
-	 * necessarily the same as the outer QEMU machine physical address.  Keep
-	 * fw_cfg in register I/O mode; the virtio-mmio nodes below give EDK2 the
-	 * block and network devices it needs without ACPI-table DMA.
+	 * necessarily the same as the outer QEMU machine physical address. Keep
+	 * fw_cfg in register I/O mode; the virtio-mmio node below gives FreeBSD
+	 * the block device it needs to reach an interactive serial login.
 	 */
 	fw-cfg@9020000 {
 		dma-coherent;
 		reg = <0x00 0x9020000 0x00 0x10>;
 		compatible = "qemu,fw-cfg-mmio";
-	};
-
-	/* virtio-net-device on QEMU virt bus 0: PA 0xa000000, SPI 16 = INTID 48. */
-	virtio_mmio@a000000 {
-		dma-coherent;
-		interrupts = <0x00 0x10 0x01>;
-		reg = <0x00 0xa000000 0x00 0x200>;
-		compatible = "virtio,mmio";
 	};
 
 	/*

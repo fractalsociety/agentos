@@ -36,6 +36,7 @@
  *   MSG_CC_RESTORE           → vibe_engine (MSG_VIBEOS_RESTORE)
  *   MSG_CC_LOG_STREAM        → log_drain (OP_LOG_WRITE)
  *   MSG_CC_CREATE_GUEST      → vibe_engine (MSG_VIBEOS_CREATE)
+ *   MSG_CC_FAULT_INJECT      → fault_inject (OP_FAULT_INJECT)
  *
  * Invariants:
  *   - cc_pd relays MR arguments verbatim; it does not interpret payload.
@@ -349,4 +350,19 @@ struct cc_req_create_guest {
 struct cc_reply_create_guest {
     uint32_t ok;
     uint32_t guest_handle;
+};
+
+/* ─── MSG_CC_FAULT_INJECT ───────────────────────────────────────────────── */
+
+struct cc_req_fault_inject {
+    uint32_t slot_id;
+    uint32_t fault_kind;
+    uint32_t flags;
+};
+
+struct cc_reply_fault_inject {
+    uint32_t ok;
+    uint32_t result;
+    uint32_t ticks_to_recovery;
+    uint32_t trace_event_id;
 };

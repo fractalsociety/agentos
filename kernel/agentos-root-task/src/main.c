@@ -62,13 +62,13 @@ uintptr_t g_audit_mr_vaddr = 0u;
 
 /*
  * Choose the correct system descriptor at compile time.
- * The x86_64 QEMU target currently shares the QEMU service topology used by
- * the AArch64 target; the hardware-specific VMM setup paths remain guarded
- * separately by architecture checks.
  */
-#if defined(BOARD_qemu_virt_aarch64) || defined(__x86_64__)
+#if defined(BOARD_qemu_virt_aarch64)
 extern const system_desc_t system_desc_aarch64;
 #define SYSTEM_DESC (&system_desc_aarch64)
+#elif defined(__x86_64__)
+extern const system_desc_t system_desc_x86_64;
+#define SYSTEM_DESC (&system_desc_x86_64)
 #else
 extern const system_desc_t system_desc_riscv64;
 #define SYSTEM_DESC (&system_desc_riscv64)
@@ -1791,6 +1791,13 @@ void root_task_main(const seL4_BootInfo *bi)
     (void)handle_cap_audit_guest;
 
     cap_tree_verify_all_pds();
+
+#ifdef AGENTOS_SEL4_TEST_IMAGE
+    dbg_puts("TAP version 14\n");
+    dbg_puts("ok 1 - root task booted current board topology\n");
+    dbg_puts("1..1\n");
+    dbg_puts("TAP_DONE:0\n");
+#endif
 
     dbg_puts("[rt] boot complete — yielding to PDs\n");
 

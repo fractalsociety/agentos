@@ -948,6 +948,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_CC_RESTORE                  0x260F  /* MR1=guest_handle MR2=snap_lo MR3=snap_hi → MR0=ok */
 #define MSG_CC_LOG_STREAM               0x2610  /* MR1=slot MR2=pd_id → MR0=ok MR1=bytes_drained */
 #define MSG_CC_CREATE_GUEST             0x2611  /* vibeos_create_req in shmem → MR0=ok MR1=guest_handle */
+#define MSG_CC_FAULT_INJECT             0x2612  /* MR1=slot MR2=fault_kind MR3=flags → MR0=ok MR1=result */
 
 /* ─── Guest OS lifecycle opcodes (0x2A00) ───────────────────────────────── */
 #define MSG_GUEST_CREATE                0x2A01  /* guest_create_req in shmem → MR0=ok MR1=guest_id */

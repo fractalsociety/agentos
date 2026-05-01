@@ -738,7 +738,9 @@ static void uart_ack(size_t vcpu_id, int irq, void *cookie)
 #define PL011_CR_TXE  (1u << 8)
 #define PL011_CR_RXE  (1u << 9)
 #define PL011_RXIS   (1u << 4)
+#define PL011_TXIS   (1u << 5)
 #define PL011_RTIS   (1u << 6)
+#define PL011_UART_IRQ 33u
 #define GUEST_CONSOLE_TX_RING_SIZE 8192u
 #define GUEST_CONSOLE_RX_RING_SIZE 1024u
 #define GUEST_INPUT_RAW_BYTE_BASE  0x100u
@@ -811,9 +813,23 @@ static bool console_rx_pop(uint8_t *byte)
     return true;
 }
 
-static uint32_t pl011_pending_rx_irqs(void)
+static uint32_t pl011_pending_irqs(void)
 {
-    return console_rx_count > 0u ? (PL011_RXIS | PL011_RTIS) : 0u;
+    uint32_t pending = 0u;
+    if (console_rx_count > 0u) {
+        pending |= PL011_RXIS | PL011_RTIS;
+    }
+    if ((pl011_cr & PL011_CR_TXE) != 0u) {
+        pending |= PL011_TXIS;
+    }
+    return pending;
+}
+
+static void pl011_maybe_inject_irq(void)
+{
+    if (guest_started && ((pl011_pending_irqs() & pl011_imsc) != 0u)) {
+        (void)virq_inject(PL011_UART_IRQ);
+    }
 }
 
 static void guest_console_write(uint8_t byte)
@@ -863,13 +879,6 @@ static bool input_event_to_byte(uint32_t event_type, uint32_t keycode,
     }
 }
 
-static void console_rx_inject_irq(void)
-{
-    if (guest_started) {
-        (void)virq_inject(33u);
-    }
-}
-
 static void pl011_store32(uint32_t *reg, size_t offset, uint64_t fsr,
                           uint32_t value)
 {
@@ -884,6 +893,7 @@ static uint32_t pl011_read(size_t offset)
     case PL011_DR: {
         uint8_t byte = 0u;
         (void)console_rx_pop(&byte);
+        pl011_maybe_inject_irq();
         return byte;
     }
     case PL011_RSR_ECR:
@@ -906,9 +916,9 @@ static uint32_t pl011_read(size_t offset)
     case PL011_IMSC:
         return pl011_imsc;
     case PL011_RIS:
-        return pl011_pending_rx_irqs();
+        return pl011_pending_irqs();
     case PL011_MIS:
-        return pl011_pending_rx_irqs() & pl011_imsc;
+        return pl011_pending_irqs() & pl011_imsc;
     case PL011_DMACR:
         return pl011_dmacr;
     case 0xfe0u:
@@ -943,6 +953,7 @@ static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
     } else {
         if (offset == PL011_DR) {
             guest_console_write((uint8_t)(fault_get_data(regs, (uint64_t)fsr) & 0xffu));
+            pl011_maybe_inject_irq();
         } else if (offset == PL011_RSR_ECR) {
             pl011_rsr_ecr = 0u;
         } else if (offset == PL011_ILPR) {
@@ -960,14 +971,16 @@ static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
         } else if (offset == PL011_CR) {
             pl011_store32(&pl011_cr, offset, (uint64_t)fsr,
                           (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+            pl011_maybe_inject_irq();
         } else if (offset == PL011_IFLS) {
             pl011_store32(&pl011_ifls, offset, (uint64_t)fsr,
                           (uint32_t)fault_get_data(regs, (uint64_t)fsr));
         } else if (offset == PL011_IMSC) {
             pl011_store32(&pl011_imsc, offset, (uint64_t)fsr,
                           (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+            pl011_maybe_inject_irq();
         } else if (offset == PL011_ICR) {
-            /* RX interrupt state is level-triggered by console_rx_count. */
+            pl011_maybe_inject_irq();
         } else if (offset == PL011_DMACR) {
             pl011_store32(&pl011_dmacr, offset, (uint64_t)fsr,
                           (uint32_t)fault_get_data(regs, (uint64_t)fsr));
@@ -998,7 +1011,7 @@ static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
                 rep.opcode = GUEST_ERR_DEVICE_UNAVAILABLE;
                 break;
             }
-            console_rx_inject_irq();
+            pl011_maybe_inject_irq();
         }
         rep.opcode = GUEST_OK;
         break;

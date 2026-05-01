@@ -39,10 +39,18 @@
 
 #include "system_desc.h"
 
+#if defined(AGENTOS_FAULT_INJECT)
+#define AOS_AARCH64_PD_COUNT 20u
+#define AOS_CC_INIT_EP_COUNT 4u
+#else
+#define AOS_AARCH64_PD_COUNT 19u
+#define AOS_CC_INIT_EP_COUNT 3u
+#endif
+
 /* ── AArch64 system description ───────────────────────────────────────────── */
 
 const system_desc_t system_desc_aarch64 = {
-    .pd_count = 19u,
+    .pd_count = AOS_AARCH64_PD_COUNT,
     .pds = {
 
         /* pd[0] — nameserver (MUST be first; prio 245)
@@ -404,7 +412,7 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 160u,
             .self_svc_id    = SVC_ID_CC_PD,
-            .init_ep_count  = 3u,
+            .init_ep_count  = AOS_CC_INIT_EP_COUNT,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
@@ -413,10 +421,30 @@ const system_desc_t system_desc_aarch64 = {
 #else
                 { SVC_ID_LINUX_VMM,   PD_CNODE_SLOT_GUEST_VMM_EP },
 #endif
+#if defined(AGENTOS_FAULT_INJECT)
+                { SVC_ID_FAULT_INJECT, PD_CNODE_SLOT_FAULT_INJECT_EP },
+#endif
             },
         },
 
-        /* pd[18] — fault_handler (prio 255; highest priority for fault recovery)
+        /* Optional fault-injection PD used by CI through the CC-PD relay. */
+#if defined(AGENTOS_FAULT_INJECT)
+        {
+            .name           = "fault_inject",
+            .elf_path       = "fault_inject.elf",
+            .stack_size     = 0x4000u,
+            .cnode_size_bits = 10u,
+            .priority       = 254u,
+            .self_svc_id    = SVC_ID_FAULT_INJECT,
+            .init_ep_count  = 2u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+            },
+        },
+#endif
+
+        /* pd[18/19] — fault_handler (prio 255; highest priority for fault recovery)
          * Must preempt every other PD to handle seL4 fault IPC promptly.
          * No self_svc_id: receives fault IPC via TCB fault endpoint, not a
          * registered service endpoint. */

@@ -199,7 +199,7 @@ $(BUILD_DIR)/linux_vmm.elf: FORCE \
 # ─── FreeBSD VMM: direct kernel Image + FDT packaging ─────────────────────
 FREEBSD_CACHED_RAW := $(HOME)/.local/agentos-images/freebsd-14.4-aarch64.img
 FREEBSD_REPO_RAW   := $(AGENTOS_ROOT)/guest-images/freebsd-14.4-aarch64.img
-FREEBSD_RAW_IMAGE ?= $(if $(wildcard $(FREEBSD_REPO_RAW)),$(FREEBSD_REPO_RAW),$(FREEBSD_CACHED_RAW))
+FREEBSD_RAW_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(FREEBSD_IMAGE),$(FREEBSD_IMAGE),$(if $(wildcard $(FREEBSD_CACHED_RAW)),$(FREEBSD_CACHED_RAW),$(FREEBSD_REPO_RAW))))
 FREEBSD_KERNEL_IMAGE := $(BUILD_DIR)/freebsd-kernel.bin
 FREEBSD_DTS := $(KERNEL_SRC_DIR)/freebsd-edk2.dts
 FREEBSD_EXTRACT := $(AGENTOS_ROOT)/tools/extract_freebsd_file.py

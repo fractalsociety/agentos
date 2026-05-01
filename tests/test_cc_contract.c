@@ -67,6 +67,7 @@ static int test_cc_relay_opcodes(void)
     CHECK(MSG_CC_RESTORE            == 0x260Fu);
     CHECK(MSG_CC_LOG_STREAM         == 0x2610u);
     CHECK(MSG_CC_CREATE_GUEST       == 0x2611u);
+    CHECK(MSG_CC_FAULT_INJECT       == 0x2612u);
 
     /* All in 0x2600 range */
     CHECK((MSG_CC_LIST_GUESTS        & 0xFF00u) == 0x2600u);
@@ -80,6 +81,7 @@ static int test_cc_relay_opcodes(void)
     CHECK((MSG_CC_RESTORE            & 0xFF00u) == 0x2600u);
     CHECK((MSG_CC_LOG_STREAM         & 0xFF00u) == 0x2600u);
     CHECK((MSG_CC_CREATE_GUEST       & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_FAULT_INJECT       & 0xFF00u) == 0x2600u);
 
     /* All opcodes must be unique */
     uint32_t ops[] = {
@@ -88,6 +90,7 @@ static int test_cc_relay_opcodes(void)
         MSG_CC_LIST_POLECATS, MSG_CC_GUEST_STATUS, MSG_CC_DEVICE_STATUS,
         MSG_CC_ATTACH_FRAMEBUFFER, MSG_CC_SEND_INPUT, MSG_CC_SNAPSHOT,
         MSG_CC_RESTORE, MSG_CC_LOG_STREAM, MSG_CC_CREATE_GUEST,
+        MSG_CC_FAULT_INJECT,
     };
     size_t n = sizeof(ops) / sizeof(ops[0]);
     for (size_t i = 0; i < n; i++)

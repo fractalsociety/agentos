@@ -10,7 +10,7 @@
 #   make test         — CI boot test (exit 0/1)
 #   make clean        — remove build artifacts for current target
 
-.PHONY: all install deps-tools submodules channels run test test-guest-login test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
+.PHONY: all install deps-tools submodules channels run test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -25,6 +25,7 @@ endif
 TARGET_ARCH ?= $(CONFIG_TARGET)
 GUEST_OS    ?= $(CONFIG_GUEST_OS)
 QEMU_TEST_TIMEOUT ?= 300
+QEMU_TEST_GUEST_OS = $(if $(filter x86_64,$(ARCH)),none,$(GUEST_OS))
 
 # ─── Paths (computed FIRST, before any -include changes MAKEFILE_LIST) ───────
 # ROOT_DIR must be set before board.mk is included; otherwise
@@ -328,6 +329,7 @@ endif
 		BUILD_DIR=$(BUILD_DIR) \
 		AGENTOS_BOARD=$(BOARD) \
 		AGENTOS_ARCH=$(ARCH) \
+		AGENTOS_FREEBSD_IMAGE=$(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(FREEBSD_IMAGE)) \
 		GUEST_OS=$(GUEST_OS) \
 		BOARD_NAME=$(BOARD_NAME) \
 		BOARD_NATIVE=$(BOARD_NATIVE) \
@@ -342,9 +344,12 @@ endif
 # QEMU flags for interactive run: serial → stdio, SSH port forwarding per guest.
 _RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
 AGENTOS_IMAGES := $(HOME)/.local/agentos-images
+FREEBSD_REPO_IMAGE := $(if $(wildcard $(ROOT_DIR)guest-images/freebsd.img),$(ROOT_DIR)guest-images/freebsd.img,$(ROOT_DIR)guest-images/freebsd-14.4-aarch64.img)
+FREEBSD_CACHE_IMAGE := $(AGENTOS_IMAGES)/freebsd-14.4-aarch64.img
+FREEBSD_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(wildcard $(FREEBSD_CACHE_IMAGE)),$(FREEBSD_CACHE_IMAGE),$(FREEBSD_REPO_IMAGE)))
 _UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-24.04-aarch64.img,format=raw,if=none,id=hd0,snapshot=on \
               -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.1
-_FREEBSD_BLK = -drive file=$(AGENTOS_IMAGES)/freebsd-14.4-aarch64.img,format=raw,if=none,id=hd0,snapshot=on \
+_FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=hd0,snapshot=on \
                -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.31
 _QEMU_BLK_FLAGS = $(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),))
 QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
@@ -389,7 +394,20 @@ run:
 # test: CI boot test (exits 0 on success, 1 on failure)
 # =============================================================================
 test: build
-	@cargo xtask qemu-test --board $(BOARD) --guest-os $(GUEST_OS) --timeout-secs $(QEMU_TEST_TIMEOUT)
+	@AGENTOS_FREEBSD_IMAGE="$(FREEBSD_IMAGE)" cargo xtask qemu-test --board $(BOARD) --guest-os $(QEMU_TEST_GUEST_OS) --timeout-secs $(QEMU_TEST_TIMEOUT)
+
+sel4-test-image:
+	@$(MAKE) build \
+		BOARD=$(BOARD) \
+		TARGET_ARCH=$(ARCH) \
+		BOARD_NAME=$(BOARD_NAME) \
+		BUILD_DIR=$(ROOT_DIR)build/$(BOARD)-test \
+		GUEST_OS=none \
+		SEL4_TEST_IMAGE=1
+	@echo "✓ seL4 target TAP image: $(ROOT_DIR)build/$(BOARD)-test/agentos.img"
+
+run-tests:
+	@cargo xtask run-tests --board $(BOARD) --timeout-secs $(QEMU_TEST_TIMEOUT)
 
 # Build and boot each supported full guest OS, then prove the CC-PD API can
 # drain the serial console to a login prompt and inject input that the guest

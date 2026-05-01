@@ -4,10 +4,12 @@
 pub mod cmd_ci_matrix;
 pub mod cmd_fault_inject;
 pub mod cmd_fetch_guest;
+pub mod cmd_gen_caps;
 pub mod cmd_gen_image;
 pub mod cmd_gen_pd_bundle;
 pub mod cmd_host_test;
 pub mod cmd_release;
+pub mod cmd_run_tests;
 pub mod cmd_setup;
 pub mod cmd_test;
 pub mod cmd_test_api;
@@ -39,6 +41,32 @@ pub struct FaultInjectArgs {
     pub board: String,
     #[arg(long, default_value_t = 60)]
     pub timeout_secs: u64,
+}
+
+#[derive(clap::Args)]
+pub struct GenCapsArgs {
+    /// Base system descriptor TOML, usually kernel/agentos-root-task/agentos.toml
+    #[arg(long, default_value = "kernel/agentos-root-task/agentos.toml")]
+    pub system: std::path::PathBuf,
+    /// Board override TOML. The first existing non-empty path replaces --system.
+    #[arg(long = "board-system")]
+    pub board_system: Vec<std::path::PathBuf>,
+    /// Output header path.
+    #[arg(long)]
+    pub out: std::path::PathBuf,
+}
+
+#[derive(clap::Args)]
+pub struct RunTestsArgs {
+    #[arg(long, default_value = "qemu_virt_aarch64")]
+    pub board: String,
+    #[arg(long, default_value_t = 120)]
+    pub timeout_secs: u64,
+    #[arg(long)]
+    pub no_build: bool,
+    /// Parse an existing serial log instead of launching QEMU.
+    #[arg(long)]
+    pub input_log: Option<std::path::PathBuf>,
 }
 
 #[derive(clap::Args)]

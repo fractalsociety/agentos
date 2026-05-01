@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use xtask::{
-    cmd_ci_matrix, cmd_fault_inject, cmd_fetch_guest, cmd_gen_image, cmd_gen_pd_bundle,
-    cmd_host_test, cmd_release, cmd_setup, cmd_test, cmd_test_api, CiMatrixArgs, FaultInjectArgs,
-    FetchGuestArgs, GenImageArgs, GenPdBundleArgs, HostTestArgs, ReleaseArgs, SetupArgs,
-    TestApiArgs, TestArgs,
+    cmd_ci_matrix, cmd_fault_inject, cmd_fetch_guest, cmd_gen_caps, cmd_gen_image,
+    cmd_gen_pd_bundle, cmd_host_test, cmd_release, cmd_run_tests, cmd_setup, cmd_test,
+    cmd_test_api, CiMatrixArgs, FaultInjectArgs, FetchGuestArgs, GenCapsArgs, GenImageArgs,
+    GenPdBundleArgs, HostTestArgs, ReleaseArgs, RunTestsArgs, SetupArgs, TestApiArgs, TestArgs,
 };
 
 #[derive(Parser)]
@@ -32,6 +32,12 @@ enum Cmd {
     CiMatrix(CiMatrixArgs),
     /// Compile and run the API test suite only (TAP output)
     TestApi(TestApiArgs),
+    /// Build and run the seL4-target TAP test image in QEMU
+    #[command(name = "run-tests")]
+    RunTests(RunTestsArgs),
+    /// Generate deterministic root-task capability slot layout constants
+    #[command(name = "gen-caps")]
+    GenCaps(GenCapsArgs),
     /// Pack ELFs + cap init data into a bootable agentos.img (replaces microkit binary)
     GenImage(GenImageArgs),
     /// Pack PD ELFs into a .pd_bundle blob for embedding into root_task.elf
@@ -50,6 +56,8 @@ fn main() -> anyhow::Result<()> {
         Cmd::Release(a) => cmd_release::run(&a),
         Cmd::CiMatrix(a) => cmd_ci_matrix::run(&a),
         Cmd::TestApi(a) => cmd_test_api::run(&a),
+        Cmd::RunTests(a) => cmd_run_tests::run(&a),
+        Cmd::GenCaps(a) => cmd_gen_caps::run(&a),
         Cmd::GenImage(a) => cmd_gen_image::run(&a),
         Cmd::GenPdBundle(a) => cmd_gen_pd_bundle::run(&a),
     }

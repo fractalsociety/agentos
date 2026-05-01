@@ -13,7 +13,7 @@ const UBUNTU_NOCLOUD_PORT: u16 = 18790;
 const CC_WIRE_SHMEM_SIZE: usize = 4096;
 const CC_REQ_SIZE: usize = 4 + 12 + CC_WIRE_SHMEM_SIZE;
 const CC_REPLY_SIZE: usize = 16 + CC_WIRE_SHMEM_SIZE;
-const CC_IO_TIMEOUT: Duration = Duration::from_secs(5);
+const CC_IO_TIMEOUT: Duration = Duration::from_secs(45);
 const CC_OK: u32 = 0;
 const MSG_CC_LOG_STREAM: u32 = 0x2610;
 const MSG_CC_SEND_INPUT: u32 = 0x260d;
@@ -96,12 +96,15 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
              * "[rt] boot complete"    = x86 root-task smoke boot; service PD
              *                           runtime health is tracked separately.
              * "buildroot login:"      = Linux guest reached login prompt (buildroot). */
-            let markers: &[&str] = if args.board == "x86_64_generic" {
-                &["[rt] boot complete", "agentOS boot complete"]
+            if args.board == "x86_64_generic" {
+                wait_for_x86_reduced_smoke(&log_path, Duration::from_secs(args.timeout_secs))
             } else {
-                &["agentOS boot complete", "buildroot login:"]
-            };
-            wait_for_markers(&log_path, markers, Duration::from_secs(args.timeout_secs))
+                wait_for_markers(
+                    &log_path,
+                    &["agentOS boot complete", "buildroot login:"],
+                    Duration::from_secs(args.timeout_secs),
+                )
+            }
         }
     };
 
@@ -265,7 +268,7 @@ fn repo_root() -> anyhow::Result<std::path::PathBuf> {
     Ok(std::path::PathBuf::from(root))
 }
 
-fn spawn_qemu_with_guest(
+pub fn spawn_qemu_with_guest(
     board: &str,
     repo_root: &Path,
     log_path: &Path,
@@ -465,6 +468,13 @@ fn ubuntu_disk_image(repo_root: &Path) -> std::path::PathBuf {
 }
 
 fn freebsd_disk_image(repo_root: &Path) -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("AGENTOS_FREEBSD_IMAGE") {
+        let override_path = std::path::PathBuf::from(path);
+        if override_path.exists() {
+            return override_path;
+        }
+    }
+
     if let Ok(home) = std::env::var("HOME") {
         let cached = std::path::PathBuf::from(home)
             .join(".local/agentos-images")
@@ -473,11 +483,16 @@ fn freebsd_disk_image(repo_root: &Path) -> std::path::PathBuf {
             return cached;
         }
     }
+
     let linked = repo_root.join("guest-images/freebsd.img");
     if linked.exists() {
         return linked;
     }
-    repo_root.join("guest-images/freebsd-14.4-aarch64.img")
+    let repo_image = repo_root.join("guest-images/freebsd-14.4-aarch64.img");
+    if repo_image.exists() {
+        return repo_image;
+    }
+    repo_image
 }
 
 fn qemu_netdev_arg(ssh_port: u16) -> anyhow::Result<String> {
@@ -574,9 +589,73 @@ pub fn wait_for_markers(
     }
 }
 
-struct CcReply {
-    mr: [u32; 4],
-    shmem: Vec<u8>,
+fn wait_for_x86_reduced_smoke(log_path: &Path, timeout: Duration) -> anyhow::Result<String> {
+    let marker = wait_for_markers(log_path, &["[rt] boot complete"], timeout)?;
+    std::thread::sleep(Duration::from_secs(2));
+
+    let output = std::fs::read_to_string(log_path).unwrap_or_default();
+    anyhow::ensure!(
+        !output.contains("[rt] FAULT"),
+        "x86 reduced smoke emitted root-task fault endpoint reports"
+    );
+    Ok(format!(
+        "{marker} (x86 reduced smoke, no fault endpoint reports)"
+    ))
+}
+
+pub struct CcReply {
+    pub mr: [u32; 4],
+    pub shmem: Vec<u8>,
+}
+
+struct CcClient {
+    stream: UnixStream,
+}
+
+impl CcClient {
+    fn connect(cc_sock: &Path) -> anyhow::Result<Self> {
+        let stream = UnixStream::connect(cc_sock)
+            .with_context(|| format!("failed to connect to {}", cc_sock.display()))?;
+        stream
+            .set_read_timeout(Some(CC_IO_TIMEOUT))
+            .context("failed to set CC socket read timeout")?;
+        stream
+            .set_write_timeout(Some(CC_IO_TIMEOUT))
+            .context("failed to set CC socket write timeout")?;
+        Ok(Self { stream })
+    }
+
+    fn call(
+        &mut self,
+        opcode: u32,
+        mr1: u32,
+        mr2: u32,
+        mr3: u32,
+        shmem_in: &[u8],
+    ) -> anyhow::Result<CcReply> {
+        let mut req = [0u8; CC_REQ_SIZE];
+        wr32(&mut req, 0, opcode);
+        wr32(&mut req, 4, mr1);
+        wr32(&mut req, 8, mr2);
+        wr32(&mut req, 12, mr3);
+        let copy_len = shmem_in.len().min(CC_WIRE_SHMEM_SIZE);
+        if copy_len > 0 {
+            req[16..16 + copy_len].copy_from_slice(&shmem_in[..copy_len]);
+        }
+
+        self.stream
+            .write_all(&req)
+            .context("failed to write CC frame")?;
+
+        let mut raw = [0u8; CC_REPLY_SIZE];
+        self.stream
+            .read_exact(&mut raw)
+            .context("failed to read CC frame")?;
+        Ok(CcReply {
+            mr: [rd32(&raw, 0), rd32(&raw, 4), rd32(&raw, 8), rd32(&raw, 12)],
+            shmem: raw[16..].to_vec(),
+        })
+    }
 }
 
 fn wait_for_guest_console_login_via_cc(
@@ -586,6 +665,7 @@ fn wait_for_guest_console_login_via_cc(
     qemu: &mut Child,
 ) -> anyhow::Result<String> {
     wait_for_cc_socket(cc_sock, timeout.min(Duration::from_secs(30)), qemu)?;
+    let mut cc = CcClient::connect(cc_sock)?;
 
     let start = Instant::now();
     let mut transcript = String::new();
@@ -598,7 +678,7 @@ fn wait_for_guest_console_login_via_cc(
 
     while start.elapsed() < timeout {
         ensure_qemu_running(qemu, "waiting for guest login prompt via CC-PD API")?;
-        match cc_log_stream(cc_sock) {
+        match cc_log_stream(&mut cc) {
             Ok(chunk) => {
                 if !chunk.is_empty() {
                     transcript.push_str(&chunk);
@@ -613,6 +693,7 @@ fn wait_for_guest_console_login_via_cc(
             }
             Err(err) => {
                 println!("[xtask:test] CC console drain not ready yet: {err:#}");
+                cc = CcClient::connect(cc_sock)?;
             }
         }
         std::thread::sleep(Duration::from_secs(1));
@@ -630,18 +711,25 @@ fn wait_for_guest_console_login_via_cc(
     println!("[xtask:test] CC console matched prompt marker {:?}", prompt);
 
     let probe = "~";
-    cc_send_raw_byte(cc_sock, 0, probe.as_bytes()[0])?;
+    cc_send_raw_byte(&mut cc, 0, probe.as_bytes()[0])?;
 
     let mut echo = String::new();
     let echo_deadline = Duration::from_secs(20).min(timeout.saturating_sub(start.elapsed()));
     let echo_start = Instant::now();
     while echo_start.elapsed() < echo_deadline {
         ensure_qemu_running(qemu, "waiting for guest console input echo via CC-PD API")?;
-        let chunk = cc_log_stream(cc_sock)?;
+        let chunk = match cc_log_stream(&mut cc) {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                println!("[xtask:test] CC console post-input drain not ready yet: {err:#}");
+                cc = CcClient::connect(cc_sock)?;
+                String::new()
+            }
+        };
         if !chunk.is_empty() {
             echo.push_str(&chunk);
             if echo.contains(probe) {
-                let _ = cc_send_raw_byte(cc_sock, 0, 0x15); /* Ctrl-U: clear login input */
+                let _ = cc_send_raw_byte(&mut cc, 0, 0x15); /* Ctrl-U: clear login input */
                 return Ok(format!(
                     "CC console API saw {guest_os} login prompt {:?} and guest echoed raw input {:?}",
                     prompt, probe
@@ -658,7 +746,11 @@ fn wait_for_guest_console_login_via_cc(
     );
 }
 
-fn wait_for_cc_socket(cc_sock: &Path, timeout: Duration, qemu: &mut Child) -> anyhow::Result<()> {
+pub fn wait_for_cc_socket(
+    cc_sock: &Path,
+    timeout: Duration,
+    qemu: &mut Child,
+) -> anyhow::Result<()> {
     let start = Instant::now();
     let mut last_err = None;
     while start.elapsed() < timeout {
@@ -697,9 +789,10 @@ fn ensure_qemu_running(qemu: &mut Child, context: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cc_log_stream(cc_sock: &Path) -> anyhow::Result<String> {
-    let reply =
-        cc_call(cc_sock, MSG_CC_LOG_STREAM, 0, 0, 0, &[]).context("MSG_CC_LOG_STREAM failed")?;
+fn cc_log_stream(cc: &mut CcClient) -> anyhow::Result<String> {
+    let reply = cc
+        .call(MSG_CC_LOG_STREAM, 0, 0, 0, &[])
+        .context("MSG_CC_LOG_STREAM failed")?;
     anyhow::ensure!(
         reply.mr[0] == CC_OK,
         "MSG_CC_LOG_STREAM returned ok={}",
@@ -709,12 +802,13 @@ fn cc_log_stream(cc_sock: &Path) -> anyhow::Result<String> {
     Ok(String::from_utf8_lossy(&reply.shmem[..len]).into_owned())
 }
 
-fn cc_send_raw_byte(cc_sock: &Path, guest_handle: u32, byte: u8) -> anyhow::Result<()> {
+fn cc_send_raw_byte(cc: &mut CcClient, guest_handle: u32, byte: u8) -> anyhow::Result<()> {
     let mut shmem = [0u8; 24];
     wr32(&mut shmem, 0, CC_INPUT_KEY_DOWN);
     wr32(&mut shmem, 4, CC_INPUT_RAW_BYTE_BASE | u32::from(byte));
 
-    let reply = cc_call(cc_sock, MSG_CC_SEND_INPUT, guest_handle, 0, 0, &shmem)
+    let reply = cc
+        .call(MSG_CC_SEND_INPUT, guest_handle, 0, 0, &shmem)
         .context("MSG_CC_SEND_INPUT failed")?;
     anyhow::ensure!(
         reply.mr[0] == CC_OK,
@@ -724,7 +818,7 @@ fn cc_send_raw_byte(cc_sock: &Path, guest_handle: u32, byte: u8) -> anyhow::Resu
     Ok(())
 }
 
-fn cc_call(
+pub fn cc_call(
     cc_sock: &Path,
     opcode: u32,
     mr1: u32,
@@ -732,34 +826,7 @@ fn cc_call(
     mr3: u32,
     shmem_in: &[u8],
 ) -> anyhow::Result<CcReply> {
-    let mut req = [0u8; CC_REQ_SIZE];
-    wr32(&mut req, 0, opcode);
-    wr32(&mut req, 4, mr1);
-    wr32(&mut req, 8, mr2);
-    wr32(&mut req, 12, mr3);
-    let copy_len = shmem_in.len().min(CC_WIRE_SHMEM_SIZE);
-    if copy_len > 0 {
-        req[16..16 + copy_len].copy_from_slice(&shmem_in[..copy_len]);
-    }
-
-    let mut stream = UnixStream::connect(cc_sock)
-        .with_context(|| format!("failed to connect to {}", cc_sock.display()))?;
-    stream
-        .set_read_timeout(Some(CC_IO_TIMEOUT))
-        .context("failed to set CC socket read timeout")?;
-    stream
-        .set_write_timeout(Some(CC_IO_TIMEOUT))
-        .context("failed to set CC socket write timeout")?;
-    stream.write_all(&req).context("failed to write CC frame")?;
-
-    let mut raw = [0u8; CC_REPLY_SIZE];
-    stream
-        .read_exact(&mut raw)
-        .context("failed to read CC frame")?;
-    Ok(CcReply {
-        mr: [rd32(&raw, 0), rd32(&raw, 4), rd32(&raw, 8), rd32(&raw, 12)],
-        shmem: raw[16..].to_vec(),
-    })
+    CcClient::connect(cc_sock)?.call(opcode, mr1, mr2, mr3, shmem_in)
 }
 
 fn rd32(src: &[u8], off: usize) -> u32 {

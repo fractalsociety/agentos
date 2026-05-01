@@ -107,7 +107,7 @@ ROOT_TASK_SRCS += src/system_desc_aarch64.c
 CFLAGS_ROOT_TASK := $(CFLAGS) -DBOARD_$(AGENTOS_BOARD)
 ROOT_TASK_ASM_OBJS := $(BUILD_DIR)/rt_start_aarch64.o
 else ifeq ($(ARCH),x86_64)
-ROOT_TASK_SRCS += src/system_desc_aarch64.c
+ROOT_TASK_SRCS += src/system_desc_x86_64.c
 CFLAGS_ROOT_TASK := $(CFLAGS)
 ROOT_TASK_ASM_OBJS := $(BUILD_DIR)/rt_start_x86_64.o
 else
@@ -236,6 +236,7 @@ PD_GPU_SCHED_SRCS        := src/gpu_sched.c src/gpu_shmem.c src/m3_bare_metal.c 
 PD_IRQ_PD_SRCS           := src/irq_pd.c src/m3_bare_metal.c src/log.c
 PD_TIMER_PD_SRCS         := src/timer_pd.c src/m3_bare_metal.c src/log.c
 PD_FAULT_HANDLER_SRCS    := src/fault_handler.c src/m3_bare_metal.c src/log.c
+PD_FAULT_INJECT_SRCS     := src/fault_inject.c src/m3_bare_metal.c src/log.c
 
 # ─── Inject seL4 CRT into every service PD ────────────────────────────────────
 # sel4_crt.c provides __sel4_ipc_buffer (libmicrokit replacement) needed by
@@ -251,7 +252,7 @@ _PD_SRC_VARS := \
     PD_PROC_SERVER_SRCS PD_VM_SNAPSHOT_SRCS PD_PFLOCAL_SERVER_SRCS PD_PFLOCAL_SRCS \
     PD_EXEC_SERVER_SRCS PD_TERM_SERVER_SRCS PD_BLOCK_PD_SRCS PD_FB_PD_SRCS \
     PD_USB_PD_SRCS PD_CC_PD_SRCS PD_GPU_SCHED_SRCS PD_IRQ_PD_SRCS PD_TIMER_PD_SRCS \
-    PD_FAULT_HANDLER_SRCS
+    PD_FAULT_HANDLER_SRCS PD_FAULT_INJECT_SRCS
 $(foreach v,$(_PD_SRC_VARS),$(eval $(v) += src/sel4_crt.c))
 # pd_entry.c provides _start (ELF entry) + IPC buffer fix for all service PDs.
 # It is NOT added to ROOT_TASK_SRCS — the root task has its own _start in
@@ -312,6 +313,7 @@ GPU_SCHED_OBJS        := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_GPU_SCHED_SR
 IRQ_PD_OBJS           := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_IRQ_PD_SRCS))
 TIMER_PD_OBJS         := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_TIMER_PD_SRCS))
 FAULT_HANDLER_OBJS    := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_FAULT_HANDLER_SRCS))
+FAULT_INJECT_OBJS     := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_FAULT_INJECT_SRCS))
 
 IMAGES := controller.elf event_bus.elf init_agent.elf worker.elf agentfs.elf vibe_engine.elf vibeos.elf log_drain.elf serial_pd.elf swap_slot.elf mem_profiler.elf net_isolator.elf perf_counters.elf time_partition.elf trace_recorder.elf nameserver.elf virtio_blk.elf vfs_server.elf spawn_server.elf app_slot.elf net_server.elf net_pd.elf wg_net.elf app_manager.elf http_svc.elf vm_manager.elf auth_server.elf ext2fs.elf proc_server.elf vm_snapshot.elf pflocal_server.elf exec_server.elf term_server.elf block_pd.elf framebuffer_pd.elf usb_pd.elf cc_pd.elf gpu_sched.elf timer_svc.elf entropy_svc.elf block_svc.elf usb_svc.elf model_svc.elf tool_svc.elf irq_pd.elf timer_pd.elf fault_handler.elf
 
@@ -319,6 +321,16 @@ IMAGES := controller.elf event_bus.elf init_agent.elf worker.elf agentfs.elf vib
 ifdef AGENTOS_SNAPSHOT_SCHED
   CFLAGS += -DAGENTOS_SNAPSHOT_SCHED=1
   IMAGES += snapshot_sched.elf
+endif
+
+ifdef FAULT_INJECT
+  CFLAGS += -DAGENTOS_FAULT_INJECT=1
+  CFLAGS_ROOT_TASK += -DAGENTOS_FAULT_INJECT=1
+  IMAGES += fault_inject.elf
+endif
+
+ifdef SEL4_TEST_IMAGE
+  CFLAGS_ROOT_TASK += -DAGENTOS_SEL4_TEST_IMAGE=1
 endif
 
 # Guest OS selection: none (default) | linux | freebsd
@@ -349,11 +361,15 @@ endif
 $(GUEST_CONFIG_STAMP): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@tmp="$@.tmp"; \
-	printf 'ARCH=%s\nBOARD=%s\nGUEST_OS=%s\n' '$(ARCH)' '$(AGENTOS_BOARD)' '$(GUEST_OS)' > "$$tmp"; \
+	printf 'ARCH=%s\nBOARD=%s\nGUEST_OS=%s\nFAULT_INJECT=%s\nSEL4_TEST_IMAGE=%s\n' \
+		'$(ARCH)' '$(AGENTOS_BOARD)' '$(GUEST_OS)' '$(FAULT_INJECT)' '$(SEL4_TEST_IMAGE)' > "$$tmp"; \
 	if test -f "$@" && cmp -s "$$tmp" "$@"; then rm -f "$$tmp"; else mv "$$tmp" "$@"; fi
 
+$(BUILD_DIR)/rt_main.o: $(GUEST_CONFIG_STAMP)
 ifeq ($(ARCH),aarch64)
 $(BUILD_DIR)/rt_system_desc_aarch64.o: $(GUEST_CONFIG_STAMP)
+else ifeq ($(ARCH),x86_64)
+$(BUILD_DIR)/rt_system_desc_x86_64.o: $(GUEST_CONFIG_STAMP)
 endif
 $(BUILD_DIR)/cc_pd.o: $(GUEST_CONFIG_STAMP)
 
@@ -628,6 +644,9 @@ $(BUILD_DIR)/timer_pd.elf: $(TIMER_PD_OBJS)
 $(BUILD_DIR)/fault_handler.elf: $(FAULT_HANDLER_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
+$(BUILD_DIR)/fault_inject.elf: $(FAULT_INJECT_OBJS)
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
 # ─── RISC-V 64 VMMs (process-in-PD, no hypervisor extension) ─────────────
 ifeq ($(ARCH),riscv64)
 $(BUILD_DIR)/fdt_builder.o: src/fdt_builder.c
@@ -739,11 +758,18 @@ endif
 # memory-region / channel details (handled by the root task at runtime).
 # A minimal fallback TOML is provided; board-specific overrides live in boards/.
 SYSTEM_TOML_DEFAULT := $(abspath $(CURDIR)/agentos.toml)
+ifdef FAULT_INJECT
+SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-fault-inject.toml)
+$(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
+	@mkdir -p $(BUILD_DIR)
+	{ cat $<; printf '\n[[pd]]\nname = "fault_inject"\npriority = 254\n'; } > $@
+else
 ifeq ($(GUEST_OS),freebsd)
 SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-freebsd.toml)
 $(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
 	@mkdir -p $(BUILD_DIR)
 	sed 's/name = "linux_vmm"/name = "freebsd_vmm"/' $< > $@
+endif
 endif
 _BOARD_TOML := ../../boards/$(BOARD_NAME)/agentos.toml
 _BOARD_TOML_NONEMPTY := $(shell [ -s "$(_BOARD_TOML)" ] && printf '%s' "$(_BOARD_TOML)")

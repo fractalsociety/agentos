@@ -18,6 +18,7 @@
  *   MSG_CC_SNAPSHOT                — snapshot a guest
  *   MSG_CC_RESTORE                 — restore a guest from snapshot
  *   MSG_CC_LOG_STREAM              — drain log from a PD
+ *   MSG_CC_FAULT_INJECT            — relay a fault-injection command
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -25,6 +26,7 @@
 
 #include "../harness/test_framework.h"
 #include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/agentos-root-task/include/contracts/cc_contract.h"
 
 void run_cc_tests(microkit_channel ch)
 {
@@ -98,4 +100,18 @@ void run_cc_tests(microkit_channel ch)
     /* LOG_STREAM — drain logs */
     ASSERT_IPC_OK_OR_ERR(ch, MSG_CC_LOG_STREAM, AOS_ERR_UNIMPL,
                          "cc: LOG_STREAM returns ok or unimpl");
+
+    /* FAULT_INJECT — ok in FAULT_INJECT=1 images, relay fault otherwise. */
+    microkit_mr_set(0, (uint64_t)MSG_CC_FAULT_INJECT);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_CC_FAULT_INJECT, 1));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == AOS_OK || rc == AOS_ERR_UNIMPL ||
+            rc == (uint64_t)CC_ERR_RELAY_FAULT) {
+            _tf_ok("cc: FAULT_INJECT returns ok or unavailable");
+        } else {
+            _tf_fail_point("cc: FAULT_INJECT returns ok or unavailable",
+                           "unexpected error code");
+        }
+    }
 }

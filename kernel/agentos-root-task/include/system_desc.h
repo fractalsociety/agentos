@@ -218,6 +218,7 @@ typedef struct {
 #define SVC_ID_VM_MANAGER     20u   /* multi-VM lifecycle manager PD          */
 #define SVC_ID_CC_PD          21u   /* command-and-control relay PD           */
 #define SVC_ID_USB_PD         22u   /* USB device service PD                  */
+#define SVC_ID_FAULT_INJECT   23u   /* fault-injection test PD                */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -227,6 +228,7 @@ typedef struct {
 #define PD_CNODE_SLOT_CAP_BROKER_EP   3u
 #define PD_CNODE_SLOT_LOG_DRAIN_EP    4u
 #define PD_CNODE_SLOT_GUEST_VMM_EP    5u
+#define PD_CNODE_SLOT_FAULT_INJECT_EP 6u
 /*
  * PD_CNODE_SLOT_SELF_EP — CNode slot in each PD's own CNode where the root
  * task places an unbadged copy of that PD's own server endpoint.  This is
