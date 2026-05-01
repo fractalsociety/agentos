@@ -21,6 +21,7 @@
 #include <assert.h>
 
 #include "contracts/cc_contract.h"
+#include "contracts/guest_contract.h"
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Test infrastructure
@@ -65,6 +66,7 @@ static int test_cc_relay_opcodes(void)
     CHECK(MSG_CC_SNAPSHOT           == 0x260Eu);
     CHECK(MSG_CC_RESTORE            == 0x260Fu);
     CHECK(MSG_CC_LOG_STREAM         == 0x2610u);
+    CHECK(MSG_CC_CREATE_GUEST       == 0x2611u);
 
     /* All in 0x2600 range */
     CHECK((MSG_CC_LIST_GUESTS        & 0xFF00u) == 0x2600u);
@@ -77,6 +79,7 @@ static int test_cc_relay_opcodes(void)
     CHECK((MSG_CC_SNAPSHOT           & 0xFF00u) == 0x2600u);
     CHECK((MSG_CC_RESTORE            & 0xFF00u) == 0x2600u);
     CHECK((MSG_CC_LOG_STREAM         & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_CREATE_GUEST       & 0xFF00u) == 0x2600u);
 
     /* All opcodes must be unique */
     uint32_t ops[] = {
@@ -84,7 +87,7 @@ static int test_cc_relay_opcodes(void)
         MSG_CC_STATUS, MSG_CC_LIST, MSG_CC_LIST_GUESTS, MSG_CC_LIST_DEVICES,
         MSG_CC_LIST_POLECATS, MSG_CC_GUEST_STATUS, MSG_CC_DEVICE_STATUS,
         MSG_CC_ATTACH_FRAMEBUFFER, MSG_CC_SEND_INPUT, MSG_CC_SNAPSHOT,
-        MSG_CC_RESTORE, MSG_CC_LOG_STREAM,
+        MSG_CC_RESTORE, MSG_CC_LOG_STREAM, MSG_CC_CREATE_GUEST,
     };
     size_t n = sizeof(ops) / sizeof(ops[0]);
     for (size_t i = 0; i < n; i++)
@@ -326,6 +329,8 @@ static int test_cc_req_reply_sizes(void)
     CHECK(sizeof(struct cc_reply_restore)         == 1 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_req_log_stream)        == 2 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_reply_log_stream)      == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_create_guest)      == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_create_guest)    == 2 * sizeof(uint32_t));
 
     PASS("cc_req_reply_sizes");
 }
@@ -337,7 +342,9 @@ static int test_cc_req_reply_sizes(void)
 static int test_msg_guest_send_input(void)
 {
     CHECK(MSG_GUEST_SEND_INPUT == 0x2A08u);
+    CHECK(MSG_GUEST_CONSOLE_DRAIN == 0x2A09u);
     CHECK((MSG_GUEST_SEND_INPUT & 0xFF00u) == 0x2A00u);
+    CHECK((MSG_GUEST_CONSOLE_DRAIN & 0xFF00u) == 0x2A00u);
     /* Must be distinct from all other MSG_GUEST_* */
     CHECK(MSG_GUEST_SEND_INPUT != MSG_GUEST_CREATE);
     CHECK(MSG_GUEST_SEND_INPUT != MSG_GUEST_BIND_DEVICE);
@@ -346,6 +353,12 @@ static int test_msg_guest_send_input(void)
     CHECK(MSG_GUEST_SEND_INPUT != MSG_GUEST_SUSPEND);
     CHECK(MSG_GUEST_SEND_INPUT != MSG_GUEST_RESUME);
     CHECK(MSG_GUEST_SEND_INPUT != MSG_GUEST_DESTROY);
+    CHECK(MSG_GUEST_CONSOLE_DRAIN != MSG_GUEST_CREATE);
+    CHECK(MSG_GUEST_CONSOLE_DRAIN != MSG_GUEST_SEND_INPUT);
+
+    CHECK(sizeof(struct guest_console_drain_req) == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct guest_console_drain_reply) == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct guest_send_input_reply) == 1 * sizeof(uint32_t));
 
     PASS("msg_guest_send_input");
 }

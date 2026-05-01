@@ -1,14 +1,24 @@
 use crate::TestArgs;
 use anyhow::Context;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
-use std::process::Stdio;
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const UBUNTU_DEFAULT_SSH_PORT: u16 = 12222;
 const FREEBSD_DEFAULT_SSH_PORT: u16 = 12223;
 const UBUNTU_NOCLOUD_PORT: u16 = 18790;
+const CC_WIRE_SHMEM_SIZE: usize = 4096;
+const CC_REQ_SIZE: usize = 4 + 12 + CC_WIRE_SHMEM_SIZE;
+const CC_REPLY_SIZE: usize = 16 + CC_WIRE_SHMEM_SIZE;
+const CC_IO_TIMEOUT: Duration = Duration::from_secs(5);
+const CC_OK: u32 = 0;
+const MSG_CC_LOG_STREAM: u32 = 0x2610;
+const MSG_CC_SEND_INPUT: u32 = 0x260d;
+const CC_INPUT_KEY_DOWN: u32 = 0x01;
+const CC_INPUT_RAW_BYTE_BASE: u32 = 0x100;
 
 pub fn run(args: &TestArgs) -> anyhow::Result<()> {
     let repo_root = repo_root()?;
@@ -32,52 +42,53 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
     let log_file = tempfile::NamedTempFile::new().context("failed to create temp log file")?;
     let log_path = log_file.path().to_path_buf();
 
-    let ssh_port = effective_ssh_port(args);
-    let _seed_server = if args.guest_os == "ubuntu" {
+    let needs_ssh_probe = !matches!(args.guest_os.as_str(), "ubuntu" | "freebsd");
+    let ssh_port = if needs_ssh_probe {
+        effective_ssh_port(args)
+    } else {
+        0
+    };
+    let _seed_server = if args.guest_os == "ubuntu" && needs_ssh_probe {
         Some(start_ubuntu_seed_server(&repo_root)?)
     } else {
         None
     };
 
     println!("[xtask:test] Launching QEMU for board={}...", args.board);
-    let mut qemu =
-        spawn_qemu_with_guest(&args.board, &repo_root, &log_path, &args.guest_os, ssh_port)?;
+    let cc_sock = log_path.with_extension("cc_pd.sock");
+    let mut qemu = spawn_qemu_with_guest(
+        &args.board,
+        &repo_root,
+        &log_path,
+        &cc_sock,
+        &args.guest_os,
+        ssh_port,
+    )?;
 
     let result = match args.guest_os.as_str() {
         "ubuntu" => {
             println!(
-                "[xtask:test] Waiting for Ubuntu guest SSH on 127.0.0.1:{}...",
-                ssh_port
+                "[xtask:test] Waiting for Ubuntu login prompt via CC-PD API ({})...",
+                cc_sock.display()
             );
-            wait_for_ssh(
-                &repo_root,
-                ssh_port,
+            wait_for_guest_console_login_via_cc(
+                &cc_sock,
+                "ubuntu",
                 Duration::from_secs(args.timeout_secs),
-                &["systemctl", "is-active", "--quiet", "multi-user.target"],
+                &mut qemu,
             )
-                .map(|user| {
-                    format!(
-                        "ssh {}@127.0.0.1:{} systemctl is-active --quiet multi-user.target",
-                        user, ssh_port
-                    )
-                })
         }
         "freebsd" => {
             println!(
-                "[xtask:test] Waiting for FreeBSD guest SSH on 127.0.0.1:{}...",
-                ssh_port
+                "[xtask:test] Waiting for FreeBSD login prompt via CC-PD API ({})...",
+                cc_sock.display()
             );
-            wait_for_ssh(
-                &repo_root,
-                ssh_port,
+            wait_for_guest_console_login_via_cc(
+                &cc_sock,
+                "freebsd",
                 Duration::from_secs(args.timeout_secs),
-                &[
-                    "sh",
-                    "-c",
-                    "uname -s | grep -qx FreeBSD && service sshd onestatus >/dev/null 2>&1",
-                ],
+                &mut qemu,
             )
-            .map(|user| format!("ssh {}@127.0.0.1:{} FreeBSD sshd onestatus", user, ssh_port))
         }
         _ => {
             /* Success markers: any match is a pass.
@@ -258,6 +269,7 @@ fn spawn_qemu_with_guest(
     board: &str,
     repo_root: &Path,
     log_path: &Path,
+    cc_sock: &Path,
     guest_os: &str,
     ssh_port: u16,
 ) -> anyhow::Result<std::process::Child> {
@@ -270,7 +282,6 @@ fn spawn_qemu_with_guest(
         "qemu_virt_aarch64" => {
             let build_dir = repo_root.join("build").join(board);
             let loader = build_dir.join("loader.elf");
-            let cc_sock = log_path.with_extension("cc_pd.sock");
             let _ = std::fs::remove_file(&cc_sock);
 
             let mut c = std::process::Command::new("qemu-system-aarch64");
@@ -296,7 +307,7 @@ fn spawn_qemu_with_guest(
                 .arg("-device")
                 .arg("virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0")
                 .arg("-device")
-                .arg("virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0")
+                .arg("virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0")
                 .arg("-device")
                 .arg("virtio-net-device,netdev=net0,bus=virtio-mmio-bus.0")
                 .arg("-netdev")
@@ -330,10 +341,7 @@ fn spawn_qemu_with_guest(
             } else if guest_os == "freebsd" {
                 let freebsd_img = freebsd_disk_image(repo_root);
                 if freebsd_img.exists() {
-                    println!(
-                        "[xtask:test] FreeBSD disk image: {}",
-                        freebsd_img.display()
-                    );
+                    println!("[xtask:test] FreeBSD disk image: {}", freebsd_img.display());
                     c.args([
                         "-device",
                         "virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.31",
@@ -400,8 +408,8 @@ fn spawn_qemu_with_guest(
             c
         }
         "x86_64_generic" => {
-            let kernel = repo_root
-                .join("microkit-sdk-2.1.0/board/x86_64_generic/release/elf/sel4_32.elf");
+            let kernel =
+                repo_root.join("microkit-sdk-2.1.0/board/x86_64_generic/release/elf/sel4_32.elf");
             let root_task = repo_root.join("build/x86_64_generic/root_task.elf");
             let mut c = std::process::Command::new("qemu-system-x86_64");
             c.arg("-machine")
@@ -566,62 +574,203 @@ pub fn wait_for_markers(
     }
 }
 
-fn wait_for_ssh(
-    repo_root: &Path,
-    ssh_port: u16,
-    timeout: Duration,
-    probe: &[&str],
-) -> anyhow::Result<String> {
-    if ssh_port == 0 {
-        anyhow::bail!("qemu-test requires SSH forwarding; pass --ssh-port <port>");
-    }
+struct CcReply {
+    mr: [u32; 4],
+    shmem: Vec<u8>,
+}
 
-    let ssh_key = repo_root.join("tests/e2e/id_ed25519");
-    if !ssh_key.exists() {
-        anyhow::bail!("SSH key not found: {}", ssh_key.display());
-    }
+fn wait_for_guest_console_login_via_cc(
+    cc_sock: &Path,
+    guest_os: &str,
+    timeout: Duration,
+    qemu: &mut Child,
+) -> anyhow::Result<String> {
+    wait_for_cc_socket(cc_sock, timeout.min(Duration::from_secs(30)), qemu)?;
 
     let start = Instant::now();
-    let mut last_err = String::new();
+    let mut transcript = String::new();
+    let mut matched_prompt = None;
+    let prompt_markers: &[&str] = match guest_os {
+        "ubuntu" => &["ubuntu login:", "login:"],
+        "freebsd" => &["login:"],
+        _ => &["login:"],
+    };
+
     while start.elapsed() < timeout {
-        for user in ["root", "ubuntu"] {
-            let port_arg = ssh_port.to_string();
-            let target = format!("{}@127.0.0.1", user);
-            let output = std::process::Command::new("ssh")
-                .args([
-                    "-i",
-                    ssh_key.to_str().unwrap(),
-                    "-o",
-                    "BatchMode=yes",
-                    "-o",
-                    "NumberOfPasswordPrompts=0",
-                    "-o",
-                    "StrictHostKeyChecking=no",
-                    "-o",
-                    "UserKnownHostsFile=/dev/null",
-                    "-o",
-                    "ConnectTimeout=1",
-                    "-p",
-                    &port_arg,
-                    &target,
-                ])
-                .args(probe)
-                .output()
-                .context("failed to run ssh")?;
-            if output.status.success() {
-                return Ok(user.to_string());
+        ensure_qemu_running(qemu, "waiting for guest login prompt via CC-PD API")?;
+        match cc_log_stream(cc_sock) {
+            Ok(chunk) => {
+                if !chunk.is_empty() {
+                    transcript.push_str(&chunk);
+                    if let Some(marker) = prompt_markers
+                        .iter()
+                        .find(|marker| transcript.contains(**marker))
+                    {
+                        matched_prompt = Some((*marker).to_string());
+                        break;
+                    }
+                }
             }
-            last_err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(err) => {
+                println!("[xtask:test] CC console drain not ready yet: {err:#}");
+            }
         }
         std::thread::sleep(Duration::from_secs(1));
     }
 
-    if last_err.is_empty() {
-        anyhow::bail!("timeout after {}s waiting for guest SSH", timeout.as_secs());
+    let prompt = matched_prompt.ok_or_else(|| {
+        anyhow::anyhow!(
+            "timed out after {}s waiting for {:?} via CC-PD console API; tail:\n{}",
+            timeout.as_secs(),
+            prompt_markers,
+            tail_chars(&transcript, 4000)
+        )
+    })?;
+
+    println!("[xtask:test] CC console matched prompt marker {:?}", prompt);
+
+    let probe = "~";
+    cc_send_raw_byte(cc_sock, 0, probe.as_bytes()[0])?;
+
+    let mut echo = String::new();
+    let echo_deadline = Duration::from_secs(20).min(timeout.saturating_sub(start.elapsed()));
+    let echo_start = Instant::now();
+    while echo_start.elapsed() < echo_deadline {
+        ensure_qemu_running(qemu, "waiting for guest console input echo via CC-PD API")?;
+        let chunk = cc_log_stream(cc_sock)?;
+        if !chunk.is_empty() {
+            echo.push_str(&chunk);
+            if echo.contains(probe) {
+                let _ = cc_send_raw_byte(cc_sock, 0, 0x15); /* Ctrl-U: clear login input */
+                return Ok(format!(
+                    "CC console API saw {guest_os} login prompt {:?} and guest echoed raw input {:?}",
+                    prompt, probe
+                ));
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    anyhow::bail!(
+        "guest reached login prompt via CC-PD API, but did not echo raw input {:?}; post-input tail:\n{}",
+        probe,
+        tail_chars(&echo, 2000)
+    );
+}
+
+fn wait_for_cc_socket(cc_sock: &Path, timeout: Duration, qemu: &mut Child) -> anyhow::Result<()> {
+    let start = Instant::now();
+    let mut last_err = None;
+    while start.elapsed() < timeout {
+        ensure_qemu_running(qemu, "waiting for CC-PD socket")?;
+        if cc_sock.exists() {
+            match UnixStream::connect(cc_sock) {
+                Ok(_) => return Ok(()),
+                Err(err) => last_err = Some(err.to_string()),
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    if let Some(err) = last_err {
+        anyhow::bail!(
+            "CC-PD socket {} exists but did not accept connections within {}s: {}",
+            cc_sock.display(),
+            timeout.as_secs(),
+            err
+        );
     }
     anyhow::bail!(
-        "timeout after {}s waiting for guest SSH: {}",
-        timeout.as_secs(),
-        last_err
+        "CC-PD socket {} did not appear within {}s",
+        cc_sock.display(),
+        timeout.as_secs()
     );
+}
+
+fn ensure_qemu_running(qemu: &mut Child, context: &str) -> anyhow::Result<()> {
+    if let Some(status) = qemu
+        .try_wait()
+        .with_context(|| format!("failed to poll QEMU status while {context}"))?
+    {
+        anyhow::bail!("QEMU exited with status {status} while {context}");
+    }
+    Ok(())
+}
+
+fn cc_log_stream(cc_sock: &Path) -> anyhow::Result<String> {
+    let reply =
+        cc_call(cc_sock, MSG_CC_LOG_STREAM, 0, 0, 0, &[]).context("MSG_CC_LOG_STREAM failed")?;
+    anyhow::ensure!(
+        reply.mr[0] == CC_OK,
+        "MSG_CC_LOG_STREAM returned ok={}",
+        reply.mr[0]
+    );
+    let len = (reply.mr[1] as usize).min(reply.shmem.len());
+    Ok(String::from_utf8_lossy(&reply.shmem[..len]).into_owned())
+}
+
+fn cc_send_raw_byte(cc_sock: &Path, guest_handle: u32, byte: u8) -> anyhow::Result<()> {
+    let mut shmem = [0u8; 24];
+    wr32(&mut shmem, 0, CC_INPUT_KEY_DOWN);
+    wr32(&mut shmem, 4, CC_INPUT_RAW_BYTE_BASE | u32::from(byte));
+
+    let reply = cc_call(cc_sock, MSG_CC_SEND_INPUT, guest_handle, 0, 0, &shmem)
+        .context("MSG_CC_SEND_INPUT failed")?;
+    anyhow::ensure!(
+        reply.mr[0] == CC_OK,
+        "MSG_CC_SEND_INPUT returned ok={}",
+        reply.mr[0]
+    );
+    Ok(())
+}
+
+fn cc_call(
+    cc_sock: &Path,
+    opcode: u32,
+    mr1: u32,
+    mr2: u32,
+    mr3: u32,
+    shmem_in: &[u8],
+) -> anyhow::Result<CcReply> {
+    let mut req = [0u8; CC_REQ_SIZE];
+    wr32(&mut req, 0, opcode);
+    wr32(&mut req, 4, mr1);
+    wr32(&mut req, 8, mr2);
+    wr32(&mut req, 12, mr3);
+    let copy_len = shmem_in.len().min(CC_WIRE_SHMEM_SIZE);
+    if copy_len > 0 {
+        req[16..16 + copy_len].copy_from_slice(&shmem_in[..copy_len]);
+    }
+
+    let mut stream = UnixStream::connect(cc_sock)
+        .with_context(|| format!("failed to connect to {}", cc_sock.display()))?;
+    stream
+        .set_read_timeout(Some(CC_IO_TIMEOUT))
+        .context("failed to set CC socket read timeout")?;
+    stream
+        .set_write_timeout(Some(CC_IO_TIMEOUT))
+        .context("failed to set CC socket write timeout")?;
+    stream.write_all(&req).context("failed to write CC frame")?;
+
+    let mut raw = [0u8; CC_REPLY_SIZE];
+    stream
+        .read_exact(&mut raw)
+        .context("failed to read CC frame")?;
+    Ok(CcReply {
+        mr: [rd32(&raw, 0), rd32(&raw, 4), rd32(&raw, 8), rd32(&raw, 12)],
+        shmem: raw[16..].to_vec(),
+    })
+}
+
+fn rd32(src: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes(src[off..off + 4].try_into().unwrap())
+}
+
+fn wr32(dst: &mut [u8], off: usize, value: u32) {
+    dst[off..off + 4].copy_from_slice(&value.to_le_bytes());
+}
+
+fn tail_chars(s: &str, max_chars: usize) -> String {
+    let len = s.chars().count();
+    s.chars().skip(len.saturating_sub(max_chars)).collect()
 }

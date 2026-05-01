@@ -6,8 +6,8 @@
 # The Makefile reads these values and passes them through the build pipeline.
 #
 # Supported target architectures:
-#   riscv64   — RISC-V 64-bit (QEMU virt platform, FPGA boards)
 #   aarch64   — ARM 64-bit (QEMU virt, Raspberry Pi 4, DGX Spark, etc.)
+#   riscv64   — RISC-V 64-bit (QEMU virt platform, FPGA boards)
 #   x86_64    — x86 64-bit (QEMU, generic PC, Intel/AMD servers)
 #
 # Supported host architectures (for cross-compilation):
@@ -25,18 +25,20 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Target architecture — the platform agentOS will execute on
-target_arch: riscv64
+target_arch: aarch64
 
 # Host architecture — the machine building agentOS (auto = detect via uname -m)
 host_arch: auto
 
 # Guest OS: selects the VMM guest bundled into the agentOS image.
 #
-#   none    — native agentOS protection domains only (default)
+#   ubuntu  — include the Ubuntu Linux guest (default)
+#
+#   none    — native agentOS protection domains only
 #             controller, event_bus, init_agent, workers, vibe_engine,
 #             agentfs, console_mux, net_isolator
 #
-#   linux   — include Linux VMM (aarch64 only)
+#   linux   — legacy alias for Ubuntu Linux VMM (aarch64 only)
 #             Boots a Linux guest via au-ts/libvmm at seL4 EL2.
 #             Requires aarch64 target. linux_vmm.elf built via vmm.mk.
 #
@@ -45,10 +47,10 @@ host_arch: auto
 #             Run `make fetch-freebsd-guest` first to download images.
 #             Requires aarch64 target. freebsd_vmm.elf built via kernel/freebsd-vmm/.
 #
-# Override from command line: make demo GUEST_OS=linux
+# Override from command line: make run GUEST_OS=ubuntu
 #                              make demo GUEST_OS=freebsd
 #                              make demo-freebsd
-guest_os: none
+guest_os: ubuntu
 
 # Linux VMM: legacy key — superseded by guest_os above.
 # Kept for backwards compatibility; guest_os takes precedence if set.

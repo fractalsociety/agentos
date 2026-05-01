@@ -573,7 +573,7 @@ static void boot_setup_irqs(const pd_desc_t *pd,
 
 /* VirtIO serial device for cc_pd ↔ host socket bridge.
  * QEMU flags: -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0
- *             -device virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0
+ *             -device virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0
  * virtio-mmio-bus.2 = PA 0x0A000400, inside the first virtio-mmio page (PA 0x0A000000). */
 #define CC_PD_VIRTIO_VA       0x10002000UL  /* VA in cc_pd's VSpace for this device page */
 #define CC_PD_STARTUP_VA      0x10003000UL  /* VA in cc_pd's VSpace for startup record   */
@@ -1536,7 +1536,7 @@ void root_task_main(const seL4_BootInfo *bi)
         /* ── 4g.4.7: Set up VirtIO serial transport for cc_pd ───────────────── */
         /*
          * cc_pd uses VirtIO serial (bus.2 = PA 0x0A000400) as its host socket
-         * bridge.  QEMU bridges it to build/cc_pd.sock via virtserialport.
+         * bridge.  QEMU bridges it to build/cc_pd.sock via virtconsole.
          *
          * We map three resources into cc_pd's VSpace:
          *   1. Device page at PA 0x0A000000 (covers virtio-mmio slots 0-7) at

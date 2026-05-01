@@ -228,6 +228,40 @@ struct guest_destroy_reply {
     uint32_t ok;
 };
 
+/* ─── MSG_GUEST_SEND_INPUT ───────────────────────────────────────────────── */
+
+/*
+ * Deliver one input event to the guest console.  The relaying caller provides
+ * guest_id in MR1 and the input event payload in the request data/shmem.
+ *
+ * Key events use the same wire layout as cc_input_event_t:
+ *   event_type, keycode, dx, dy, btn_mask, reserved.
+ *
+ * VMMs must accept HID key codes for compatibility with agentctl and may also
+ * accept 0x100|byte as a raw terminal byte encoding for GUI terminal input.
+ */
+
+struct guest_send_input_reply {
+    uint32_t ok;
+};
+
+/* ─── MSG_GUEST_CONSOLE_DRAIN ────────────────────────────────────────────── */
+
+/*
+ * Drain guest serial console bytes produced since the previous drain call.
+ * This is a stream contract: bytes are returned at most once.
+ */
+
+struct guest_console_drain_req {
+    uint32_t guest_id;
+    uint32_t max_bytes;
+};
+
+struct guest_console_drain_reply {
+    uint32_t ok;
+    uint32_t bytes_drained;
+};
+
 /* ─── Internal binding protocol types (Layer B) ─────────────────────────── */
 
 /*

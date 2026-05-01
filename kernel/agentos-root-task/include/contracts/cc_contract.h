@@ -35,6 +35,7 @@
  *   MSG_CC_SNAPSHOT          → vibe_engine (MSG_VIBEOS_SNAPSHOT)
  *   MSG_CC_RESTORE           → vibe_engine (MSG_VIBEOS_RESTORE)
  *   MSG_CC_LOG_STREAM        → log_drain (OP_LOG_WRITE)
+ *   MSG_CC_CREATE_GUEST      → vibe_engine (MSG_VIBEOS_CREATE)
  *
  * Invariants:
  *   - cc_pd relays MR arguments verbatim; it does not interpret payload.
@@ -331,4 +332,21 @@ struct cc_req_log_stream {
 struct cc_reply_log_stream {
     uint32_t ok;
     uint32_t bytes_drained;
+};
+
+/* ─── MSG_CC_CREATE_GUEST ───────────────────────────────────────────────── */
+
+/*
+ * Create a new guest OS instance.  The request shmem contains a
+ * vibeos_create_req.  cc_pd relays it to VibeOS unchanged and returns the
+ * created guest handle in MR1 when MR0 == CC_OK.
+ */
+
+struct cc_req_create_guest {
+    uint32_t max_reply_bytes;   /* reserved; set to 0 for binary callers */
+};
+
+struct cc_reply_create_guest {
+    uint32_t ok;
+    uint32_t guest_handle;
 };

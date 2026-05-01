@@ -356,7 +356,7 @@ start_qemu() {
         -serial "file:${serial_log}" \
         -chardev "socket,id=cc_pd_char,path=${cc_sock},server=on,wait=off" \
         -device "virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0" \
-        -device "virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0" \
+        -device "virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0" \
         -netdev "${netdev}" \
         -device "virtio-net-device,netdev=net0,bus=virtio-mmio-bus.0" \
         -device "loader,file=${LOADER_ELF},cpu-num=0" \

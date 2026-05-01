@@ -404,10 +404,15 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 160u,
             .self_svc_id    = SVC_ID_CC_PD,
-            .init_ep_count  = 2u,
+            .init_ep_count  = 3u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+#if defined(AGENTOS_GUEST_FREEBSD)
+                { SVC_ID_FREEBSD_VMM, PD_CNODE_SLOT_GUEST_VMM_EP },
+#else
+                { SVC_ID_LINUX_VMM,   PD_CNODE_SLOT_GUEST_VMM_EP },
+#endif
             },
         },
 

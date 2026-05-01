@@ -483,7 +483,7 @@ case "${BOARD}" in
             -serial "chardev:char0"
             -chardev "socket,id=cc_pd_char,path=${E2E_CC_SOCK},server=on,wait=off"
             -device "virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0"
-            -device "virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0"
+            -device "virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0"
             -netdev "user,id=net0,${HOSTFWD}"
             -device "virtio-net-device,netdev=net0,bus=virtio-mmio-bus.0"
             -device "loader,file=${E2E_LOADER_ELF},cpu-num=0"

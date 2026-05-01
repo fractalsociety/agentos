@@ -226,6 +226,7 @@ typedef struct {
 #define PD_CNODE_SLOT_EVENTBUS_EP     2u
 #define PD_CNODE_SLOT_CAP_BROKER_EP   3u
 #define PD_CNODE_SLOT_LOG_DRAIN_EP    4u
+#define PD_CNODE_SLOT_GUEST_VMM_EP    5u
 /*
  * PD_CNODE_SLOT_SELF_EP — CNode slot in each PD's own CNode where the root
  * task places an unbadged copy of that PD's own server endpoint.  This is

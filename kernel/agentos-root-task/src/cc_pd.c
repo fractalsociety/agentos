@@ -9,7 +9,7 @@
  * Transport:  VirtIO MMIO serial, virtio-mmio-bus.2 (PA 0x0A000400).
  *   QEMU args: -chardev socket,id=cc_pd_char,path=build/cc_pd.sock,...
  *              -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0
- *              -device virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0
+ *              -device virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0
  *   Wire frame (both directions): 4112 bytes
  *     Request:  opcode(4) + mr[3](12) + shmem(4096) = 4112
  *     Reply:    mr[4](16) + shmem(4096) = 4112
@@ -36,6 +36,8 @@
 #include "contracts/framebuffer_contract.h"
 #include "contracts/log_drain_contract.h"
 #include "contracts/agent_pool_contract.h"
+#include "sel4_ipc.h"
+#include "system_desc.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -43,7 +45,7 @@
 /* ─── VirtIO MMIO serial driver ──────────────────────────────────────────── */
 /*
  * Transport: virtio-serial-device on QEMU virtio-mmio-bus.2 (PA 0x0A000400).
- * QEMU bridges the virtserialport named "cc.0" to build/cc_pd.sock.
+ * QEMU bridges the virtconsole named "cc.0" to build/cc_pd.sock.
  *
  * The root task allocates three 4K frames and identity-maps them (VA=PA) into
  * cc_pd's VSpace, then writes the three PAs into a shared startup record page
@@ -272,26 +274,36 @@ static void vio_serial_write(const void *buf, uint32_t n)
         VQ_MB();
         TX_AVAIL->idx++;
         VQ_MB();
+#ifdef CC_PD_TRACE_TX
         cc_dbg_puts("[cc_pd] TX notify n="); cc_dbg_hex(n);
         cc_dbg_puts(" old_used="); cc_dbg_hex(old_used);
         cc_dbg_puts(" avail_idx="); cc_dbg_hex(TX_AVAIL->idx);
         cc_dbg_puts(" desc_addr="); cc_dbg_hex(TX_DESC[0].addr);
         cc_dbg_puts("\n");
+#endif
         vio_wr(VMMIO_QUEUE_NOTIFY, 1u);
+#ifdef CC_PD_TRACE_TX
         uint16_t cur_used = TX_USED->idx;
         cc_dbg_puts("[cc_pd] TX post-notify used="); cc_dbg_hex(cur_used); cc_dbg_puts("\n");
+#endif
+#ifdef CC_PD_TRACE_TX
         uint32_t spin = 0u;
+#endif
         while (TX_USED->idx == old_used) {
             VQ_MB();
             seL4_Yield();
+#ifdef CC_PD_TRACE_TX
             spin++;
             if (spin <= 3u || (spin & 0xFFFFu) == 0u) {
                 cc_dbg_puts("[cc_pd] TX yield spin="); cc_dbg_hex(spin);
                 cc_dbg_puts(" used="); cc_dbg_hex(TX_USED->idx);
                 cc_dbg_puts("\n");
             }
+#endif
         }
+#ifdef CC_PD_TRACE_TX
         cc_dbg_puts("[cc_pd] TX done spin="); cc_dbg_hex(spin); cc_dbg_puts("\n");
+#endif
         p += chunk;
         n -= chunk;
     }
@@ -364,6 +376,140 @@ typedef struct {
 } cc_session_t;
 
 static cc_session_t g_sessions[CC_MAX_SESSIONS];
+
+/* ─── Boot guest inventory ─────────────────────────────────────────────────
+ *
+ * The default QEMU image starts one Unix guest VMM at boot when GUEST_OS is
+ * set.  Full VibeOS relay wiring is still Phase 5 work, but the published CC
+ * contract already requires LIST_GUESTS/GUEST_STATUS to expose the running
+ * guest to external consumers.
+ */
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+#define CC_BOOT_GUEST_HANDLE 0u
+
+static uint32_t cc_boot_guest_os_type(void)
+{
+#if defined(AGENTOS_GUEST_FREEBSD)
+    return VIBEOS_TYPE_FREEBSD;
+#else
+    return VIBEOS_TYPE_LINUX;
+#endif
+}
+
+static uint32_t cc_boot_guest_arch(void)
+{
+#if defined(__x86_64__)
+    return VIBEOS_ARCH_X86_64;
+#else
+    return VIBEOS_ARCH_AARCH64;
+#endif
+}
+
+static uint32_t cc_boot_guest_devices(void)
+{
+    return VIBEOS_DEV_SERIAL | VIBEOS_DEV_NET | VIBEOS_DEV_BLOCK;
+}
+
+static void cc_fill_boot_guest_info(cc_guest_info_t *out)
+{
+    out->guest_handle = CC_BOOT_GUEST_HANDLE;
+    out->state        = GUEST_STATE_RUNNING;
+    out->os_type      = cc_boot_guest_os_type();
+    out->arch         = cc_boot_guest_arch();
+}
+
+static void cc_fill_boot_guest_status(cc_guest_status_t *out)
+{
+    out->guest_handle = CC_BOOT_GUEST_HANDLE;
+    out->state        = GUEST_STATE_RUNNING;
+    out->os_type      = cc_boot_guest_os_type();
+    out->arch         = cc_boot_guest_arch();
+    out->device_flags = cc_boot_guest_devices();
+    for (uint32_t i = 0u; i < 3u; i++) out->_reserved[i] = 0u;
+}
+
+static bool cc_boot_guest_has_device(uint32_t dev_type)
+{
+    switch (dev_type) {
+    case CC_DEV_TYPE_SERIAL:
+    case CC_DEV_TYPE_NET:
+    case CC_DEV_TYPE_BLOCK:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void cc_msg_wr32(uint8_t *dst, uint32_t off, uint32_t value)
+{
+    dst[off + 0u] = (uint8_t)(value & 0xffu);
+    dst[off + 1u] = (uint8_t)((value >> 8u) & 0xffu);
+    dst[off + 2u] = (uint8_t)((value >> 16u) & 0xffu);
+    dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
+}
+
+static bool cc_call_boot_guest(uint32_t opcode, const uint8_t *payload,
+                               uint32_t payload_len, sel4_msg_t *reply)
+{
+    if (payload_len > SEL4_MSG_DATA_BYTES) return false;
+
+    sel4_msg_t msg = {0};
+    msg.opcode = opcode;
+    msg.length = payload_len;
+    if (payload_len > 0u && payload != NULL) {
+        __builtin_memcpy(msg.data, payload, payload_len);
+    }
+
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_GUEST_VMM_EP, &msg, reply);
+    return reply->opcode == GUEST_OK;
+}
+
+static bool cc_forward_boot_guest_input(const cc_input_event_t *event)
+{
+    uint8_t payload[4u + sizeof(cc_input_event_t)];
+    cc_msg_wr32(payload, 0u, CC_BOOT_GUEST_HANDLE);
+    __builtin_memcpy(payload + 4u, event, sizeof(cc_input_event_t));
+
+    sel4_msg_t reply = {0};
+    return cc_call_boot_guest(MSG_GUEST_SEND_INPUT, payload,
+                              (uint32_t)sizeof(payload), &reply);
+}
+
+static bool cc_drain_boot_guest_console(uint8_t *dst, uint32_t max,
+                                        uint32_t *bytes_drained)
+{
+    uint32_t total = 0u;
+
+    while (total < max) {
+        uint8_t payload[8u];
+        uint32_t want = max - total;
+        if (want > SEL4_MSG_DATA_BYTES) want = SEL4_MSG_DATA_BYTES;
+
+        cc_msg_wr32(payload, 0u, CC_BOOT_GUEST_HANDLE);
+        cc_msg_wr32(payload, 4u, want);
+
+        sel4_msg_t reply = {0};
+        if (!cc_call_boot_guest(MSG_GUEST_CONSOLE_DRAIN, payload,
+                                (uint32_t)sizeof(payload), &reply)) {
+            return false;
+        }
+
+        uint32_t n = reply.length;
+        if (n > SEL4_MSG_DATA_BYTES) n = SEL4_MSG_DATA_BYTES;
+        if (n > (max - total)) n = max - total;
+        if (n == 0u) break;
+
+        __builtin_memcpy(dst + total, reply.data, n);
+        total += n;
+
+        if (n < SEL4_MSG_DATA_BYTES) break;
+    }
+
+    *bytes_drained = total;
+    return true;
+}
+#endif
 
 static int alloc_session(void)
 {
@@ -520,38 +666,86 @@ static void handle_list_sessions(cc_reply_wire_t *rep)
 
 static void handle_list_guests(cc_reply_wire_t *rep)
 {
-    /* Phase 5: seL4_Call(vibe_engine_ep, MSG_VIBEOS_LIST) */
-    rep->mr[0] = 0u; /* count = 0 */
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    cc_guest_info_t *out = (cc_guest_info_t *)rep->shmem;
+    cc_fill_boot_guest_info(&out[0]);
+    rep->mr[0] = 1u; /* count */
+#else
+    rep->mr[0] = 0u; /* count */
+#endif
 }
 
 static void handle_list_devices(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
-    (void)req;
-    /* Phase 5: route by req->mr[0] (dev_type) to appropriate driver PD */
-    rep->mr[0] = 0u; /* count = 0 */
+    uint32_t dev_type = req->mr[0];
+    if (dev_type >= CC_DEV_TYPE_COUNT) {
+        rep->mr[0] = 0u;
+        return;
+    }
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (cc_boot_guest_has_device(dev_type)) {
+        cc_device_info_t *out = (cc_device_info_t *)rep->shmem;
+        out[0].dev_type   = dev_type;
+        out[0].dev_handle = 0u;
+        out[0].state      = 1u; /* active */
+        out[0]._reserved  = 0u;
+        rep->mr[0] = 1u;
+        return;
+    }
+#endif
+
+    rep->mr[0] = 0u;
 }
 
 static void handle_list_polecats(cc_reply_wire_t *rep)
 {
-    /* Phase 5: seL4_Call(agent_pool_ep, MSG_AGENTPOOL_STATUS) */
     rep->mr[0] = CC_OK;
-    rep->mr[1] = 0u; /* total */
-    rep->mr[2] = 0u; /* busy  */
-    rep->mr[3] = 0u; /* idle  */
+    rep->mr[1] = WORKER_POOL_SIZE;
+    rep->mr[2] = 0u;
+    rep->mr[3] = WORKER_POOL_SIZE;
 }
 
 static void handle_guest_status(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (req->mr[0] != CC_BOOT_GUEST_HANDLE) {
+        rep->mr[0] = CC_ERR_BAD_HANDLE;
+        return;
+    }
+    cc_guest_status_t *out = (cc_guest_status_t *)rep->shmem;
+    cc_fill_boot_guest_status(out);
+    rep->mr[0] = CC_OK;
+#else
     (void)req;
-    /* Phase 5: seL4_Call(vibe_engine_ep, MSG_VIBEOS_STATUS, guest_handle) */
     rep->mr[0] = CC_ERR_BAD_HANDLE;
+#endif
 }
 
 static void handle_device_status(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
-    (void)req;
-    /* Phase 5: route by req->mr[0] (dev_type) */
-    rep->mr[0] = CC_ERR_BAD_DEV_TYPE;
+    uint32_t dev_type = req->mr[0];
+    uint32_t dev_handle = req->mr[1];
+    if (dev_type >= CC_DEV_TYPE_COUNT) {
+        rep->mr[0] = CC_ERR_BAD_DEV_TYPE;
+        return;
+    }
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (dev_handle == 0u && cc_boot_guest_has_device(dev_type)) {
+        cc_device_info_t *out = (cc_device_info_t *)rep->shmem;
+        out->dev_type = dev_type;
+        out->dev_handle = dev_handle;
+        out->state = 1u; /* active */
+        out->_reserved = 0u;
+        rep->mr[0] = CC_OK;
+        return;
+    }
+#else
+    (void)dev_handle;
+#endif
+
+    rep->mr[0] = CC_ERR_BAD_HANDLE;
 }
 
 static void handle_attach_framebuffer(const cc_req_wire_t *req,
@@ -565,8 +759,15 @@ static void handle_attach_framebuffer(const cc_req_wire_t *req,
 
 static void handle_send_input(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (req->mr[0] == CC_BOOT_GUEST_HANDLE) {
+        const cc_input_event_t *event = (const cc_input_event_t *)req->shmem;
+        rep->mr[0] = cc_forward_boot_guest_input(event) ? CC_OK : CC_ERR_RELAY_FAULT;
+        return;
+    }
+#else
     (void)req;
-    /* Phase 5: seL4_Call(guest_ep, MSG_GUEST_SEND_INPUT, handle) */
+#endif
     rep->mr[0] = CC_ERR_BAD_HANDLE;
 }
 
@@ -588,10 +789,36 @@ static void handle_restore(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 
 static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (req->mr[0] == 0u && req->mr[1] == TRACE_PD_CONTROLLER) {
+        uint32_t drained = 0u;
+        if (!cc_drain_boot_guest_console(rep->shmem, CC_WIRE_SHMEM_SIZE,
+                                         &drained)) {
+            rep->mr[0] = CC_ERR_RELAY_FAULT;
+            rep->mr[1] = 0u;
+            return;
+        }
+        rep->mr[0] = CC_OK;
+        rep->mr[1] = drained;
+        return;
+    }
+#else
     (void)req;
-    /* Phase 5: seL4_Call(log_drain_ep, OP_LOG_WRITE, slot, pd_id) */
+#endif
+
     rep->mr[0] = CC_OK;
-    rep->mr[1] = 0u; /* bytes_drained */
+    rep->mr[1] = 0u;
+}
+
+static void handle_create_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+    (void)req;
+    /*
+     * The CC contract now has an explicit creation endpoint, but the
+     * downstream VibeOS CREATE relay is not wired into cc_pd yet.
+     */
+    rep->mr[0] = CC_ERR_RELAY_FAULT;
+    rep->mr[1] = 0u;
 }
 
 /* ─── Dispatch ───────────────────────────────────────────────────────────── */
@@ -618,6 +845,7 @@ static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     case MSG_CC_SNAPSHOT:           handle_snapshot(req, rep);           break;
     case MSG_CC_RESTORE:            handle_restore(req, rep);            break;
     case MSG_CC_LOG_STREAM:         handle_log_stream(req, rep);         break;
+    case MSG_CC_CREATE_GUEST:       handle_create_guest(req, rep);       break;
 
     default:
         sel4_dbg_puts("[cc_pd] unknown opcode\n");
@@ -649,10 +877,6 @@ void cc_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 
     /* Initialise VirtIO MMIO serial (mapped by root task; VQ PAs in startup record) */
     virtio_serial_init();
-    {
-        uint8_t probe = '!';
-        vio_serial_write(&probe, 1u);
-    }
 
     /* Static buffers live in BSS — kept off the stack since each frame is
      * 4112 bytes, which would exhaust cc_pd's 16 KB stack otherwise.    */

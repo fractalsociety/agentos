@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include "sel4_boot.h"
 #include "contracts/linux_vmm_contract.h"
+#include "sel4_ipc.h"
 
 /* ─── x86_64 stub ──────────────────────────────────────────────────────────
  *
@@ -711,43 +712,316 @@ static void uart_ack(size_t vcpu_id, int irq, void *cookie)
 
 /* ─── PL011 UART MMIO Emulation ──────────────────────────────────────────
  *
- * The Ubuntu kernel uses the PL011 UART at 0x9000000 for earlycon and the
- * ttyAMA0 console driver.  serial_pd owns the physical PL011 IRQ; the guest
- * never reaches the hardware.  Guest accesses to 0x9000000..0x9000FFF fault
- * into linux_vmm and are dispatched here by fault_handle().
- *
- * Critical register: FR (offset 0x18).
- *   FR=0  → TXFE=0 (TX FIFO not empty) → kernel spins in drain_fifo().
- *   FR=0x90 → TXFE=1 (bit 7) + RXFE=1 (bit 4) → TX idle, RX empty.
- *
- * All other registers: reads return 0, writes are silently discarded.
- * Guest console output is dropped; SSH provides the interactive channel.
+ * Ubuntu uses the PL011 UART at 0x9000000 for earlycon and ttyAMA0.  The
+ * VMM emulates enough PL011 state to expose a real byte stream over the
+ * guest IPC contract: guest writes are buffered for MSG_GUEST_CONSOLE_DRAIN,
+ * and MSG_GUEST_SEND_INPUT bytes are presented through DR/RX interrupts.
  */
 #define PL011_BASE   0x9000000UL
 #define PL011_SIZE   0x1000UL
+#define PL011_DR     0x00u
+#define PL011_RSR_ECR 0x04u
 #define PL011_FR     0x18u      /* Flag Register offset */
+#define PL011_ILPR   0x20u
+#define PL011_IBRD   0x24u
+#define PL011_FBRD   0x28u
+#define PL011_LCRH   0x2cu
+#define PL011_CR     0x30u
+#define PL011_IFLS   0x34u
+#define PL011_IMSC   0x38u
+#define PL011_RIS    0x3cu
+#define PL011_MIS    0x40u
+#define PL011_ICR    0x44u
+#define PL011_DMACR  0x48u
 #define PL011_FR_TXFE (1u << 7) /* TX FIFO empty */
 #define PL011_FR_RXFE (1u << 4) /* RX FIFO empty */
+#define PL011_CR_TXE  (1u << 8)
+#define PL011_CR_RXE  (1u << 9)
+#define PL011_RXIS   (1u << 4)
+#define PL011_RTIS   (1u << 6)
+#define GUEST_CONSOLE_TX_RING_SIZE 8192u
+#define GUEST_CONSOLE_RX_RING_SIZE 1024u
+#define GUEST_INPUT_RAW_BYTE_BASE  0x100u
+
+static uint8_t console_tx_ring[GUEST_CONSOLE_TX_RING_SIZE];
+static uint32_t console_tx_head;
+static uint32_t console_tx_tail;
+static uint32_t console_tx_count;
+
+static uint8_t console_rx_ring[GUEST_CONSOLE_RX_RING_SIZE];
+static uint32_t console_rx_head;
+static uint32_t console_rx_tail;
+static uint32_t console_rx_count;
+
+static uint32_t pl011_rsr_ecr;
+static uint32_t pl011_ilpr;
+static uint32_t pl011_ibrd;
+static uint32_t pl011_fbrd;
+static uint32_t pl011_lcrh;
+static uint32_t pl011_cr = PL011_CR_TXE | PL011_CR_RXE;
+static uint32_t pl011_ifls = 0x12u;
+static uint32_t pl011_imsc;
+static uint32_t pl011_dmacr;
+
+static uint32_t vmm_msg_rd32(const uint8_t *src, uint32_t off)
+{
+    return ((uint32_t)src[off + 0u]) |
+           ((uint32_t)src[off + 1u] << 8u) |
+           ((uint32_t)src[off + 2u] << 16u) |
+           ((uint32_t)src[off + 3u] << 24u);
+}
+
+static void console_tx_push(uint8_t byte)
+{
+    if (console_tx_count == GUEST_CONSOLE_TX_RING_SIZE) {
+        console_tx_tail = (console_tx_tail + 1u) % GUEST_CONSOLE_TX_RING_SIZE;
+        console_tx_count--;
+    }
+    console_tx_ring[console_tx_head] = byte;
+    console_tx_head = (console_tx_head + 1u) % GUEST_CONSOLE_TX_RING_SIZE;
+    console_tx_count++;
+}
+
+static uint32_t console_tx_drain(uint8_t *dst, uint32_t max)
+{
+    uint32_t n = 0u;
+    while (n < max && console_tx_count > 0u) {
+        dst[n++] = console_tx_ring[console_tx_tail];
+        console_tx_tail = (console_tx_tail + 1u) % GUEST_CONSOLE_TX_RING_SIZE;
+        console_tx_count--;
+    }
+    return n;
+}
+
+static bool console_rx_push(uint8_t byte)
+{
+    if (console_rx_count == GUEST_CONSOLE_RX_RING_SIZE) return false;
+    console_rx_ring[console_rx_head] = byte;
+    console_rx_head = (console_rx_head + 1u) % GUEST_CONSOLE_RX_RING_SIZE;
+    console_rx_count++;
+    return true;
+}
+
+static bool console_rx_pop(uint8_t *byte)
+{
+    if (console_rx_count == 0u) return false;
+    *byte = console_rx_ring[console_rx_tail];
+    console_rx_tail = (console_rx_tail + 1u) % GUEST_CONSOLE_RX_RING_SIZE;
+    console_rx_count--;
+    return true;
+}
+
+static uint32_t pl011_pending_rx_irqs(void)
+{
+    return console_rx_count > 0u ? (PL011_RXIS | PL011_RTIS) : 0u;
+}
+
+static void guest_console_write(uint8_t byte)
+{
+    console_tx_push(byte);
+    _uart_putc((char)byte);
+}
+
+static bool input_event_to_byte(uint32_t event_type, uint32_t keycode,
+                                uint8_t *byte)
+{
+    if (event_type != 1u) return false; /* CC_INPUT_KEY_DOWN */
+
+    if ((keycode & 0xffffff00u) == GUEST_INPUT_RAW_BYTE_BASE) {
+        *byte = (uint8_t)(keycode & 0xffu);
+        return true;
+    }
+
+    if (keycode >= 0x04u && keycode <= 0x1du) {
+        *byte = (uint8_t)('a' + (keycode - 0x04u));
+        return true;
+    }
+    if (keycode >= 0x1eu && keycode <= 0x26u) {
+        *byte = (uint8_t)('1' + (keycode - 0x1eu));
+        return true;
+    }
+
+    switch (keycode) {
+    case 0x27u: *byte = '0'; return true;
+    case 0x28u: *byte = '\r'; return true;
+    case 0x29u: *byte = 0x1bu; return true;
+    case 0x2au: *byte = 0x7fu; return true;
+    case 0x2bu: *byte = '\t'; return true;
+    case 0x2cu: *byte = ' '; return true;
+    case 0x2du: *byte = '-'; return true;
+    case 0x2eu: *byte = '='; return true;
+    case 0x2fu: *byte = '['; return true;
+    case 0x30u: *byte = ']'; return true;
+    case 0x31u: *byte = '\\'; return true;
+    case 0x33u: *byte = ';'; return true;
+    case 0x34u: *byte = '\''; return true;
+    case 0x35u: *byte = '`'; return true;
+    case 0x36u: *byte = ','; return true;
+    case 0x37u: *byte = '.'; return true;
+    case 0x38u: *byte = '/'; return true;
+    default: return false;
+    }
+}
+
+static void console_rx_inject_irq(void)
+{
+    if (guest_started) {
+        (void)virq_inject(33u);
+    }
+}
+
+static void pl011_store32(uint32_t *reg, size_t offset, uint64_t fsr,
+                          uint32_t value)
+{
+    uint32_t mask = (uint32_t)fault_get_data_mask((uint64_t)offset, fsr);
+    uint32_t shift = (uint32_t)((offset & 0x3u) * 8u);
+    *reg = (*reg & ~mask) | ((value << shift) & mask);
+}
+
+static uint32_t pl011_read(size_t offset)
+{
+    switch (offset) {
+    case PL011_DR: {
+        uint8_t byte = 0u;
+        (void)console_rx_pop(&byte);
+        return byte;
+    }
+    case PL011_RSR_ECR:
+        return pl011_rsr_ecr;
+    case PL011_FR:
+        return PL011_FR_TXFE |
+               (console_rx_count == 0u ? PL011_FR_RXFE : 0u);
+    case PL011_ILPR:
+        return pl011_ilpr;
+    case PL011_IBRD:
+        return pl011_ibrd;
+    case PL011_FBRD:
+        return pl011_fbrd;
+    case PL011_LCRH:
+        return pl011_lcrh;
+    case PL011_CR:
+        return pl011_cr;
+    case PL011_IFLS:
+        return pl011_ifls;
+    case PL011_IMSC:
+        return pl011_imsc;
+    case PL011_RIS:
+        return pl011_pending_rx_irqs();
+    case PL011_MIS:
+        return pl011_pending_rx_irqs() & pl011_imsc;
+    case PL011_DMACR:
+        return pl011_dmacr;
+    case 0xfe0u:
+        return 0x11u; /* UARTPeriphID0 */
+    case 0xfe4u:
+        return 0x10u; /* UARTPeriphID1 */
+    case 0xfe8u:
+        return 0x34u; /* UARTPeriphID2: PL011 r1p4 */
+    case 0xfecu:
+        return 0x00u; /* UARTPeriphID3 */
+    case 0xff0u:
+        return 0x0du; /* UARTPCellID0 */
+    case 0xff4u:
+        return 0xf0u; /* UARTPCellID1 */
+    case 0xff8u:
+        return 0x05u; /* UARTPCellID2 */
+    case 0xffcu:
+        return 0xb1u; /* UARTPCellID3 */
+    default:
+        return 0u;
+    }
+}
 
 static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
                                  seL4_UserContext *regs, void *data)
 {
     (void)vcpu_id;
     (void)data;
-    uint64_t reg_val = 0;
     if (fault_is_read((uint64_t)fsr)) {
-        if (offset == PL011_FR)
-            reg_val = PL011_FR_TXFE | PL011_FR_RXFE;
         fault_emulate_write(regs, (size_t)(PL011_BASE + offset),
-                            (size_t)fsr, (size_t)reg_val);
+                            (size_t)fsr, (size_t)pl011_read(offset));
     } else {
-        /* Write: offset 0x0 is the Data Register (DR) — forward char to host */
-        if (offset == 0) {
-            char c = (char)(fault_get_data(regs, (uint64_t)fsr) & 0xff);
-            _uart_putc(c);
+        if (offset == PL011_DR) {
+            guest_console_write((uint8_t)(fault_get_data(regs, (uint64_t)fsr) & 0xffu));
+        } else if (offset == PL011_RSR_ECR) {
+            pl011_rsr_ecr = 0u;
+        } else if (offset == PL011_ILPR) {
+            pl011_store32(&pl011_ilpr, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_IBRD) {
+            pl011_store32(&pl011_ibrd, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_FBRD) {
+            pl011_store32(&pl011_fbrd, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_LCRH) {
+            pl011_store32(&pl011_lcrh, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_CR) {
+            pl011_store32(&pl011_cr, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_IFLS) {
+            pl011_store32(&pl011_ifls, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_IMSC) {
+            pl011_store32(&pl011_imsc, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
+        } else if (offset == PL011_ICR) {
+            /* RX interrupt state is level-triggered by console_rx_count. */
+        } else if (offset == PL011_DMACR) {
+            pl011_store32(&pl011_dmacr, offset, (uint64_t)fsr,
+                          (uint32_t)fault_get_data(regs, (uint64_t)fsr));
         }
     }
     return true;
+}
+
+static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
+{
+    (void)info;
+    sel4_msg_t req = {0};
+    sel4_msg_t rep = {0};
+    _sel4_mrs_to_msg(&req);
+
+    switch (req.opcode) {
+    case MSG_GUEST_SEND_INPUT: {
+        if (req.length < 28u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+
+        uint8_t byte = 0u;
+        uint32_t event_type = vmm_msg_rd32(req.data, 4u);
+        uint32_t keycode = vmm_msg_rd32(req.data, 8u);
+        if (input_event_to_byte(event_type, keycode, &byte)) {
+            if (!console_rx_push(byte)) {
+                rep.opcode = GUEST_ERR_DEVICE_UNAVAILABLE;
+                break;
+            }
+            console_rx_inject_irq();
+        }
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    case MSG_GUEST_CONSOLE_DRAIN: {
+        if (req.length < 8u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        uint32_t max = vmm_msg_rd32(req.data, 4u);
+        if (max > SEL4_MSG_DATA_BYTES) max = SEL4_MSG_DATA_BYTES;
+        rep.length = console_tx_drain(rep.data, max);
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    default:
+        rep.opcode = GUEST_ERR_PROTOCOL_VIOLATION;
+        break;
+    }
+
+    _sel4_msg_to_mrs(&rep);
+    return seL4_MessageInfo_new((seL4_Word)rep.opcode, 0, 0,
+                                (seL4_Word)_SEL4_MR_COUNT);
 }
 
 /* ─── VCPU Affinity ──────────────────────────────────────────────────── */
@@ -1195,7 +1469,17 @@ void linux_vmm_main(seL4_CPtr ep, seL4_CPtr reply_cap)
 #endif
     while (1) {
         seL4_Word label = seL4_MessageInfo_get_label(info);
-        if (label == seL4_Fault_NullFault || !(badge & VMM_FAULT_BADGE_FLAG)) {
+        if (label == MSG_GUEST_SEND_INPUT ||
+            label == MSG_GUEST_CONSOLE_DRAIN) {
+            seL4_MessageInfo_t reply = linux_vmm_rpc(info);
+#ifdef CONFIG_KERNEL_MCS
+            seL4_Send(reply_cap, reply);
+            info = seL4_Recv(ep, &badge, reply_cap);
+#else
+            seL4_Reply(reply);
+            info = seL4_Recv(ep, &badge);
+#endif
+        } else if (label == seL4_Fault_NullFault || !(badge & VMM_FAULT_BADGE_FLAG)) {
             linux_vmm_notified(badge);
 #ifdef CONFIG_KERNEL_MCS
             info = seL4_Recv(ep, &badge, reply_cap);

@@ -6,20 +6,25 @@
 # Targets:
 #   make install      — install all build dependencies
 #   make build        — build the kernel image for BOARD/TARGET_ARCH
-#   make run          — build (native arch) + QEMU (HW-accel)
+#   make run          — build + boot agentOS with a Unix guest in QEMU
 #   make test         — CI boot test (exit 0/1)
 #   make clean        — remove build artifacts for current target
 
-.PHONY: all install deps-tools submodules channels run test test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
+.PHONY: all install deps-tools submodules channels run test test-guest-login test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
 ifeq ($(CONFIG_TARGET),)
-  CONFIG_TARGET := riscv64
+  CONFIG_TARGET := $(shell uname -m | sed 's/arm64/aarch64/')
+endif
+CONFIG_GUEST_OS := $(shell grep '^guest_os:' config.yaml 2>/dev/null | sed 's/guest_os:[[:space:]]*//' | tr -d '[:space:]')
+ifeq ($(CONFIG_GUEST_OS),)
+  CONFIG_GUEST_OS := ubuntu
 endif
 
 TARGET_ARCH ?= $(CONFIG_TARGET)
-GUEST_OS    ?= none
+GUEST_OS    ?= $(CONFIG_GUEST_OS)
+QEMU_TEST_TIMEOUT ?= 300
 
 # ─── Paths (computed FIRST, before any -include changes MAKEFILE_LIST) ───────
 # ROOT_DIR must be set before board.mk is included; otherwise
@@ -152,7 +157,7 @@ ifeq ($(NATIVE_ARCH),aarch64)
                         -serial chardev:char0 \
                         -chardev socket,id=cc_pd_char,path=build/cc_pd.sock,server=on,wait=off \
                         -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0 \
-                        -device virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0 \
+                        -device virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0 \
                         $(QEMU_ACCEL_NATIVE) \
                         -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789 \
                         -device virtio-net-device,netdev=net0,bus=virtio-mmio-bus.0 \
@@ -349,14 +354,14 @@ QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
                  -serial stdio \
                  -chardev socket,id=cc_pd_char,path=build/cc_pd.sock,server=on,wait=off \
                  -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0 \
-                 -device virtserialport,bus=vser0.0,chardev=cc_pd_char,name=cc.0 \
+                 -device virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0 \
                  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789,hostfwd=tcp:127.0.0.1:2222-10.0.2.15:22,hostfwd=tcp:127.0.0.1:2223-10.0.2.15:2223,hostfwd=tcp:127.0.0.1:2224-10.0.2.15:2224 \
                  -device virtio-net-device,netdev=net0,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off \
                  $(_QEMU_BLK_FLAGS) \
                  -device loader,file=$(NATIVE_LOADER_ELF),cpu-num=0 \
                  -device loader,file=$(NATIVE_IMAGE),addr=0x48000000
 
-# run (default): build native → QEMU with serial on stdout
+# run (default): build native → QEMU with serial on stdout and a Unix guest
 # =============================================================================
 run:
 	@$(MAKE) build BOARD=$(NATIVE_BOARD) TARGET_ARCH=$(NATIVE_ARCH)
@@ -368,7 +373,10 @@ run:
 	@echo "Arch   : $(NATIVE_ARCH)"
 	@echo "Board  : $(NATIVE_BOARD)"
 	@echo "Accel  : $(if $(QEMU_ACCEL_NATIVE),$(QEMU_ACCEL_NATIVE),none (TCG))"
+	@echo "Guest  : $(GUEST_OS)"
 	@echo "Image  : $(NATIVE_IMAGE)"
+	@echo "CC-PD  : $(ROOT_DIR)build/cc_pd.sock"
+	@echo "GUI    : cd $(abspath $(ROOT_DIR)../agentos_gui) && make run"
 	@echo ""
 	@echo "Guest SSH: ssh -p 2222 ubuntu@localhost    (Ubuntu)"
 	@echo "           ssh -p 2223 root@localhost      (FreeBSD)"
@@ -381,7 +389,14 @@ run:
 # test: CI boot test (exits 0 on success, 1 on failure)
 # =============================================================================
 test: build
-	@cargo xtask qemu-test --board $(BOARD) --guest-os $(GUEST_OS)
+	@cargo xtask qemu-test --board $(BOARD) --guest-os $(GUEST_OS) --timeout-secs $(QEMU_TEST_TIMEOUT)
+
+# Build and boot each supported full guest OS, then prove the CC-PD API can
+# drain the serial console to a login prompt and inject input that the guest
+# echoes. This is the headless proof behind the GUI console.
+test-guest-login:
+	@cargo xtask qemu-test --board $(BOARD) --guest-os ubuntu --timeout-secs $(QEMU_TEST_TIMEOUT)
+	@cargo xtask qemu-test --board $(BOARD) --guest-os freebsd --timeout-secs $(QEMU_TEST_TIMEOUT)
 
 # =============================================================================
 # test-snapshot-sched: standalone unit test for the snapshot_sched PD
@@ -562,6 +577,7 @@ clean:
 	@rm -rf $(ROOT_DIR)util
 	@rm -f  $(ROOT_DIR).libvmm_cflags.*
 	@rm -f  $(KERNEL_DIR)/report.txt
+	@rm -f  $(ROOT_DIR)build/cc_pd.sock /tmp/agentos-serial.sock
 	@echo "✓ Clean."
 
 clean-all:
@@ -601,7 +617,7 @@ help:
 	@echo "Targets:"
 	@echo "  make install          Install build deps (brew / apt)"
 	@echo "  make build            Build kernel image for BOARD/TARGET_ARCH"
-	@echo "  make run              Build (native arch) + QEMU (HW-accel)"
+	@echo "  make run              Build + boot agentOS with Ubuntu in QEMU"
 	@echo "  make test             CI boot test (exit 0/1)"
 	@echo "  make clean            Remove build artifacts for current board"
 	@echo ""

@@ -947,6 +947,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_CC_SNAPSHOT                 0x260E  /* MR1=guest_handle → MR0=ok MR1=snap_lo MR2=snap_hi */
 #define MSG_CC_RESTORE                  0x260F  /* MR1=guest_handle MR2=snap_lo MR3=snap_hi → MR0=ok */
 #define MSG_CC_LOG_STREAM               0x2610  /* MR1=slot MR2=pd_id → MR0=ok MR1=bytes_drained */
+#define MSG_CC_CREATE_GUEST             0x2611  /* vibeos_create_req in shmem → MR0=ok MR1=guest_handle */
 
 /* ─── Guest OS lifecycle opcodes (0x2A00) ───────────────────────────────── */
 #define MSG_GUEST_CREATE                0x2A01  /* guest_create_req in shmem → MR0=ok MR1=guest_id */
@@ -957,6 +958,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_GUEST_RESUME                0x2A06  /* MR1=guest_id → MR0=ok */
 #define MSG_GUEST_DESTROY               0x2A07  /* MR1=guest_id → MR0=ok */
 #define MSG_GUEST_SEND_INPUT            0x2A08  /* MR1=guest_id; cc_input_event_t in shmem → MR0=ok */
+#define MSG_GUEST_CONSOLE_DRAIN         0x2A09  /* MR1=guest_id MR2=max → MR0=ok MR1=bytes */
 
 /* ─── VMM-to-root-task internal protocol (0x2B00) ───────────────────────── */
 #define MSG_VMM_REGISTER                0x2B01  /* vmm_register_req in shmem → MR0=ok MR1=vmm_token */
@@ -984,4 +986,3 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define CH_IPC_HARNESS        74u   /* controller -> ipc_harness (PPC, test builds only) */
 #define CH_GUEST_PD           75u   /* controller -> guest_pd (PPC) */
 #define CH_VMM_KERNEL         76u   /* vmm_pd -> root-task internal protocol (PPC) */
-

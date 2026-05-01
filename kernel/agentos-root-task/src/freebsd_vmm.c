@@ -33,6 +33,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "sel4_boot.h"
+#include "contracts/guest_contract.h"
+#include "sel4_ipc.h"
 
 #if defined(ARCH_AARCH64)
 
@@ -143,6 +145,11 @@ static void virtio_net_ack(size_t vcpu_id, int irq, void *cookie)
     seL4_IRQHandler_Ack(g_virtio_net_irq_cap);
 }
 
+static void uart_ack(size_t vcpu_id, int irq, void *cookie)
+{
+    (void)vcpu_id; (void)irq; (void)cookie;
+}
+
 /* ─── PL011 UART MMIO Emulation ─────────────────────────────────────────── */
 #define PL011_BASE       0x9000000UL
 #define PL011_SIZE       0x1000UL
@@ -165,6 +172,12 @@ static void virtio_net_ack(size_t vcpu_id, int irq, void *cookie)
 #define PL011_CR_UARTEN  (1u << 0)
 #define PL011_CR_TXE     (1u << 8)
 #define PL011_CR_RXE     (1u << 9)
+#define PL011_RXIS       (1u << 4)
+#define PL011_RTIS       (1u << 6)
+#define FREEBSD_UART_IRQ 33u
+#define GUEST_CONSOLE_TX_RING_SIZE 8192u
+#define GUEST_CONSOLE_RX_RING_SIZE 1024u
+#define GUEST_INPUT_RAW_BYTE_BASE  0x100u
 
 static uint32_t pl011_rsr_ecr;
 static uint32_t pl011_ilpr;
@@ -175,6 +188,123 @@ static uint32_t pl011_cr = PL011_CR_TXE | PL011_CR_RXE;
 static uint32_t pl011_ifls = 0x12u;
 static uint32_t pl011_imsc;
 static uint32_t pl011_dmacr;
+
+static uint8_t console_tx_ring[GUEST_CONSOLE_TX_RING_SIZE];
+static uint32_t console_tx_head;
+static uint32_t console_tx_tail;
+static uint32_t console_tx_count;
+
+static uint8_t console_rx_ring[GUEST_CONSOLE_RX_RING_SIZE];
+static uint32_t console_rx_head;
+static uint32_t console_rx_tail;
+static uint32_t console_rx_count;
+
+static uint32_t vmm_msg_rd32(const uint8_t *src, uint32_t off)
+{
+    return ((uint32_t)src[off + 0u]) |
+           ((uint32_t)src[off + 1u] << 8u) |
+           ((uint32_t)src[off + 2u] << 16u) |
+           ((uint32_t)src[off + 3u] << 24u);
+}
+
+static void console_tx_push(uint8_t byte)
+{
+    if (console_tx_count == GUEST_CONSOLE_TX_RING_SIZE) {
+        console_tx_tail = (console_tx_tail + 1u) % GUEST_CONSOLE_TX_RING_SIZE;
+        console_tx_count--;
+    }
+    console_tx_ring[console_tx_head] = byte;
+    console_tx_head = (console_tx_head + 1u) % GUEST_CONSOLE_TX_RING_SIZE;
+    console_tx_count++;
+}
+
+static uint32_t console_tx_drain(uint8_t *dst, uint32_t max)
+{
+    uint32_t n = 0u;
+    while (n < max && console_tx_count > 0u) {
+        dst[n++] = console_tx_ring[console_tx_tail];
+        console_tx_tail = (console_tx_tail + 1u) % GUEST_CONSOLE_TX_RING_SIZE;
+        console_tx_count--;
+    }
+    return n;
+}
+
+static bool console_rx_push(uint8_t byte)
+{
+    if (console_rx_count == GUEST_CONSOLE_RX_RING_SIZE) return false;
+    console_rx_ring[console_rx_head] = byte;
+    console_rx_head = (console_rx_head + 1u) % GUEST_CONSOLE_RX_RING_SIZE;
+    console_rx_count++;
+    return true;
+}
+
+static bool console_rx_pop(uint8_t *byte)
+{
+    if (console_rx_count == 0u) return false;
+    *byte = console_rx_ring[console_rx_tail];
+    console_rx_tail = (console_rx_tail + 1u) % GUEST_CONSOLE_RX_RING_SIZE;
+    console_rx_count--;
+    return true;
+}
+
+static uint32_t pl011_pending_rx_irqs(void)
+{
+    return console_rx_count > 0u ? (PL011_RXIS | PL011_RTIS) : 0u;
+}
+
+static void guest_console_write(uint8_t byte)
+{
+    console_tx_push(byte);
+    _uart_putc((char)byte);
+}
+
+static bool input_event_to_byte(uint32_t event_type, uint32_t keycode,
+                                uint8_t *byte)
+{
+    if (event_type != 1u) return false; /* CC_INPUT_KEY_DOWN */
+
+    if ((keycode & 0xffffff00u) == GUEST_INPUT_RAW_BYTE_BASE) {
+        *byte = (uint8_t)(keycode & 0xffu);
+        return true;
+    }
+
+    if (keycode >= 0x04u && keycode <= 0x1du) {
+        *byte = (uint8_t)('a' + (keycode - 0x04u));
+        return true;
+    }
+    if (keycode >= 0x1eu && keycode <= 0x26u) {
+        *byte = (uint8_t)('1' + (keycode - 0x1eu));
+        return true;
+    }
+
+    switch (keycode) {
+    case 0x27u: *byte = '0'; return true;
+    case 0x28u: *byte = '\r'; return true;
+    case 0x29u: *byte = 0x1bu; return true;
+    case 0x2au: *byte = 0x7fu; return true;
+    case 0x2bu: *byte = '\t'; return true;
+    case 0x2cu: *byte = ' '; return true;
+    case 0x2du: *byte = '-'; return true;
+    case 0x2eu: *byte = '='; return true;
+    case 0x2fu: *byte = '['; return true;
+    case 0x30u: *byte = ']'; return true;
+    case 0x31u: *byte = '\\'; return true;
+    case 0x33u: *byte = ';'; return true;
+    case 0x34u: *byte = '\''; return true;
+    case 0x35u: *byte = '`'; return true;
+    case 0x36u: *byte = ','; return true;
+    case 0x37u: *byte = '.'; return true;
+    case 0x38u: *byte = '/'; return true;
+    default: return false;
+    }
+}
+
+static void console_rx_inject_irq(void)
+{
+    if (guest_started) {
+        (void)virq_inject(FREEBSD_UART_IRQ);
+    }
+}
 
 static void pl011_store32(uint32_t *reg, size_t offset, uint64_t fsr,
                           uint32_t value)
@@ -188,11 +318,16 @@ static uint32_t pl011_read(size_t offset)
 {
     switch (offset) {
     case PL011_DR:
-        return 0;
+    {
+        uint8_t byte = 0u;
+        (void)console_rx_pop(&byte);
+        return byte;
+    }
     case PL011_RSR_ECR:
         return pl011_rsr_ecr;
     case PL011_FR:
-        return PL011_FR_TXFE | PL011_FR_RXFE;
+        return PL011_FR_TXFE |
+               (console_rx_count == 0u ? PL011_FR_RXFE : 0u);
     case PL011_ILPR:
         return pl011_ilpr;
     case PL011_IBRD:
@@ -208,8 +343,9 @@ static uint32_t pl011_read(size_t offset)
     case PL011_IMSC:
         return pl011_imsc;
     case PL011_RIS:
+        return pl011_pending_rx_irqs();
     case PL011_MIS:
-        return 0;
+        return pl011_pending_rx_irqs() & pl011_imsc;
     case PL011_DMACR:
         return pl011_dmacr;
     case 0xfe0u:
@@ -239,7 +375,7 @@ static void pl011_write(size_t offset, uint64_t fsr, seL4_UserContext *regs)
 
     switch (offset) {
     case PL011_DR:
-        _uart_putc((char)(value & 0xffu));
+        guest_console_write((uint8_t)(value & 0xffu));
         break;
     case PL011_RSR_ECR:
         pl011_rsr_ecr = 0;
@@ -288,6 +424,54 @@ static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
 
     pl011_write(offset, (uint64_t)fsr, regs);
     return true;
+}
+
+static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
+{
+    (void)info;
+    sel4_msg_t req = {0};
+    sel4_msg_t rep = {0};
+    _sel4_mrs_to_msg(&req);
+
+    switch (req.opcode) {
+    case MSG_GUEST_SEND_INPUT: {
+        if (req.length < 28u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+
+        uint8_t byte = 0u;
+        uint32_t event_type = vmm_msg_rd32(req.data, 4u);
+        uint32_t keycode = vmm_msg_rd32(req.data, 8u);
+        if (input_event_to_byte(event_type, keycode, &byte)) {
+            if (!console_rx_push(byte)) {
+                rep.opcode = GUEST_ERR_DEVICE_UNAVAILABLE;
+                break;
+            }
+            console_rx_inject_irq();
+        }
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    case MSG_GUEST_CONSOLE_DRAIN: {
+        if (req.length < 8u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        uint32_t max = vmm_msg_rd32(req.data, 4u);
+        if (max > SEL4_MSG_DATA_BYTES) max = SEL4_MSG_DATA_BYTES;
+        rep.length = console_tx_drain(rep.data, max);
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    default:
+        rep.opcode = GUEST_ERR_PROTOCOL_VIOLATION;
+        break;
+    }
+
+    _sel4_msg_to_mrs(&rep);
+    return seL4_MessageInfo_new((seL4_Word)rep.opcode, 0, 0,
+                                (seL4_Word)_SEL4_MR_COUNT);
 }
 
 /* ── Init ─────────────────────────────────────────────────────────────────── */
@@ -370,6 +554,12 @@ void init(void)
     }
     seL4_IRQHandler_Ack(g_virtio_blk_irq_cap);
     LOG_VMM("  VirtIO-blk IRQ %u registered\n", VIRTIO_BLK_IRQ);
+
+    if (!virq_register(GUEST_BOOT_VCPU_ID, FREEBSD_UART_IRQ, &uart_ack, NULL)) {
+        LOG_VMM_ERR("Failed to register UART IRQ %u\n", FREEBSD_UART_IRQ);
+    } else {
+        LOG_VMM("  PL011 UART IRQ %u registered\n", FREEBSD_UART_IRQ);
+    }
 
     LOG_VMM("  Starting FreeBSD kernel at guest phys 0x%lx (EL1h)...\n",
             (unsigned long)FREEBSD_KERNEL_VADDR);
@@ -521,7 +711,17 @@ void freebsd_vmm_main(seL4_CPtr ep, seL4_CPtr reply_cap)
 #endif
     while (1) {
         seL4_Word label = seL4_MessageInfo_get_label(info);
-        if (label == seL4_Fault_NullFault) {
+        if (label == MSG_GUEST_SEND_INPUT ||
+            label == MSG_GUEST_CONSOLE_DRAIN) {
+            seL4_MessageInfo_t reply = freebsd_vmm_rpc(info);
+#ifdef CONFIG_KERNEL_MCS
+            seL4_Send(reply_cap, reply);
+            info = seL4_Recv(ep, &badge, reply_cap);
+#else
+            seL4_Reply(reply);
+            info = seL4_Recv(ep, &badge);
+#endif
+        } else if (label == seL4_Fault_NullFault) {
             freebsd_vmm_notified(badge);
 #ifdef CONFIG_KERNEL_MCS
             info = seL4_Recv(ep, &badge, reply_cap);

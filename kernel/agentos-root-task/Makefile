@@ -323,13 +323,18 @@ endif
 
 # Guest OS selection: none (default) | linux | freebsd
 GUEST_OS ?= none
+GUEST_CONFIG_STAMP := $(BUILD_DIR)/guest_config.stamp
 
 # AArch64: include VMM based on GUEST_OS
 ifeq ($(ARCH),aarch64)
   ifeq ($(GUEST_OS),freebsd)
+    CFLAGS += -DAGENTOS_GUEST_FREEBSD=1
     CFLAGS_ROOT_TASK += -DAGENTOS_GUEST_FREEBSD=1
     IMAGES += freebsd_vmm.elf
   else
+    ifneq ($(GUEST_OS),none)
+      CFLAGS += -DAGENTOS_GUEST_LINUX=1
+    endif
     # Default aarch64: include Linux VMM (stub or full)
     IMAGES += linux_vmm.elf
   endif
@@ -340,6 +345,17 @@ else ifeq ($(ARCH),riscv64)
   # RISC-V 64: process-in-PD VMMs (no hypervisor extension)
   IMAGES += linux_vmm.elf freebsd_vmm.elf
 endif
+
+$(GUEST_CONFIG_STAMP): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@tmp="$@.tmp"; \
+	printf 'ARCH=%s\nBOARD=%s\nGUEST_OS=%s\n' '$(ARCH)' '$(AGENTOS_BOARD)' '$(GUEST_OS)' > "$$tmp"; \
+	if test -f "$@" && cmp -s "$$tmp" "$@"; then rm -f "$$tmp"; else mv "$$tmp" "$@"; fi
+
+ifeq ($(ARCH),aarch64)
+$(BUILD_DIR)/rt_system_desc_aarch64.o: $(GUEST_CONFIG_STAMP)
+endif
+$(BUILD_DIR)/cc_pd.o: $(GUEST_CONFIG_STAMP)
 
 IMAGE_FILE  := $(BUILD_DIR)/agentos.img
 
@@ -747,7 +763,7 @@ endif
 ifneq ($(filter $(ARCH),aarch64 x86_64),)
 # Step 2: Generate the PD bundle after all service PD ELFs and the final
 # system TOML have been selected.
-$(PD_BUNDLE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(SYSTEM_TOML)
+$(PD_BUNDLE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(SYSTEM_TOML) $(GUEST_CONFIG_STAMP)
 	cargo run -p xtask -- gen-pd-bundle \
 		--system $(SYSTEM_TOML) \
 		--pd-dir $(BUILD_DIR) \
@@ -785,7 +801,7 @@ $(PD_BUNDLE_OBJ): $(PD_BUNDLE)
 endif
 endif
 
-$(IMAGE_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(BUILD_DIR)/root_task.elf $(SYSTEM_TOML) $(KERNEL_ELF) $(_LOADER_DEP)
+$(IMAGE_FILE): $(addprefix $(BUILD_DIR)/, $(IMAGES)) $(BUILD_DIR)/root_task.elf $(SYSTEM_TOML) $(KERNEL_ELF) $(_LOADER_DEP) $(GUEST_CONFIG_STAMP)
 	cargo run -p xtask -- gen-image \
 		--arch $(ARCH) \
 		--system $(SYSTEM_TOML) \

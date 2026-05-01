@@ -132,8 +132,8 @@ aos_service_swap(proposal_id);
 ### Quick start
 
 ```bash
-make deps && make                             # build + QEMU (native arch) + serial output
-make build TARGET_ARCH=aarch64                # ARM64 (with Linux VMM)
+make deps && make run                         # build + QEMU + Ubuntu guest + serial output
+make build TARGET_ARCH=aarch64                # ARM64 (Ubuntu guest by default)
 make build TARGET_ARCH=x86_64                 # x86_64
 make build TARGET_ARCH=aarch64 GUEST_OS=freebsd  # AArch64 + FreeBSD VMM
 ```
