@@ -53,4 +53,4 @@
 # - github.org
 # - github.repo
 
-sync.remote: "git+ssh://git@github.com/jordanhubbard/agentos.git"
+# sync.remote: "git+ssh://git@github.com/jordanhubbard/agentos.git"
