@@ -65,36 +65,38 @@
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Primary API: vibeOS Lifecycle
+## Primary API Surfaces
 
-The `vibeOS` interface is the main external-facing API. Callers use seL4 IPC
-on `CH_VIBEENGINE` with `MSG_VIBEOS_*` opcodes. A C FFI wrapper is available
-via `libagent`.
+agentOS is API-first. Every Protection Domain exposes one IPC contract, and
+host-side tools reach the running QEMU instance through the CC-PD Unix socket
+at `build/cc_pd.sock`. `agentctl` and `../agentos_gui` are reference external
+consumers of that API; no UI code belongs in this repository.
+
+The main runtime surfaces are:
 
 ```
-Caller (agent / agentctl)
+Host tool / GUI
         │
-        │  seL4 PPC on CH_VIBEENGINE
+        │  Unix socket bridge: build/cc_pd.sock
         ▼
-  vibe_engine.c (Ring 2)
+  cc_pd.c
         │
-        ├─▶ MSG_VIBEOS_CREATE    → OP_VM_CREATE  ──▶ vm_manager.c
-        │                         OP_VM_START    ──▶ vm_manager.c
-        │                         MSG_SERIAL_OPEN ─▶ serial_pd.c
-        │                         MSG_NET_OPEN  ──▶ net_pd.c
-        │                         MSG_BLOCK_OPEN ─▶ block_pd.c
-        │                         EVENT_VIBEOS_READY ─▶ event_bus.c
+        ├─ MSG_CC_LIST_GUESTS / MSG_CC_GUEST_STATUS
+        ├─ MSG_CC_CREATE_GUEST
+        ├─ MSG_CC_CONSOLE_DRAIN / MSG_CC_SEND_INPUT
+        ├─ MSG_CC_SNAPSHOT / MSG_CC_RESTORE
+        └─ display/device relay calls
+
+agent / controller PD
         │
-        ├─▶ MSG_VIBEOS_DESTROY   → OP_VM_STOP / OP_VM_DESTROY ─▶ vm_manager.c
-        ├─▶ MSG_VIBEOS_STATUS    → OP_VM_INFO ──▶ vm_manager.c
-        ├─▶ MSG_VIBEOS_LIST      → local s_vos[] table
-        ├─▶ MSG_VIBEOS_BOOT      → OP_VM_START ──▶ vm_manager.c
-        ├─▶ MSG_VIBEOS_CONFIGURE → OP_VM_CONFIGURE ─▶ vm_manager.c
-        ├─▶ MSG_VIBEOS_SNAPSHOT  → OP_VM_SNAPSHOT ─▶ vm_manager.c
-        ├─▶ MSG_VIBEOS_RESTORE   → OP_VM_RESTORE ─▶ vm_manager.c
-        ├─▶ MSG_VIBEOS_MIGRATE   → snapshot + destroy + restore
-        ├─▶ MSG_VIBEOS_BIND_DEVICE / UNBIND_DEVICE
-        └─▶ MSG_VIBEOS_LOAD_MODULE → vibe_swap hot-swap pipeline
+        │  seL4 IPC
+        ▼
+  guest/vmm/vibeOS contracts
+        │
+        ├─ MSG_GUEST_*       guest lifecycle and console I/O
+        ├─ MSG_VM_*          generic VMM operations
+        ├─ MSG_VIBEOS_*      higher-level OS lifecycle
+        └─ serial/net/block/framebuffer contracts for device binding
 ```
 
 ## Hot-Swap Pipeline
@@ -123,20 +125,23 @@ Agent writes WASM to vibe_staging (4MB shmem)
 
 ## IPC Contract Locations
 
-Every service must have a contract before it may be called (CLAUDE.md §API-First):
+Every service must have a contract before it may be called (`AGENTS.md`
+API-first rule):
 
 | Service         | Contract                              | Status   |
 |-----------------|---------------------------------------|----------|
-| vibeOS          | `contracts/vibeos/interface.h`        | ✓        |
-| vibe-engine     | `contracts/vibe-engine/interface.h`   | ✓        |
-| event-bus       | `contracts/event-bus/interface.h`     | ✓        |
-| cap-broker      | `contracts/cap-broker/interface.h`    | ✓        |
-| agentfs         | `contracts/agentfs/`                  | ✓        |
-| serial-mux      | `contracts/serial-mux/`               | ✓        |
-| net-service     | `contracts/net-service/`              | ✓        |
-| block-service   | `contracts/block-service/`            | ✓        |
-| nameserver      | `contracts/nameserver/`               | ✗ todo   |
-| http-svc        | `contracts/http-svc/`                 | ✗ todo   |
+| CC-PD           | `kernel/agentos-root-task/include/contracts/cc_contract.h` | ✓ |
+| guest lifecycle | `kernel/agentos-root-task/include/contracts/guest_contract.h` | ✓ |
+| VMM             | `kernel/agentos-root-task/include/contracts/vmm_contract.h` | ✓ |
+| vibeOS          | `kernel/agentos-root-task/include/contracts/vibeos_contract.h` | ✓ |
+| vibe-engine     | `kernel/agentos-root-task/include/contracts/vibe_engine_contract.h` | ✓ |
+| event-bus       | `kernel/agentos-root-task/include/contracts/eventbus_contract.h` | ✓ |
+| cap-broker      | `kernel/agentos-root-task/include/contracts/cap_broker_contract.h` | ✓ |
+| agentfs         | `kernel/agentos-root-task/include/contracts/agentfs_contract.h` | ✓ |
+| serial          | `kernel/agentos-root-task/include/contracts/serial_contract.h` | ✓ |
+| net             | `kernel/agentos-root-task/include/contracts/net_contract.h` | ✓ |
+| block           | `kernel/agentos-root-task/include/contracts/block_contract.h` | ✓ |
+| nameserver      | `kernel/agentos-root-task/include/contracts/nameserver_contract.h` | ✓ |
 
 ## Key Invariants
 
@@ -144,8 +149,9 @@ Every service must have a contract before it may be called (CLAUDE.md §API-Firs
 - **Capabilities are monotonically decreasing** as they are delegated down the
   ring hierarchy. No PD may escalate its own privileges.
 - **Root task distributes, never enforces policy.** Policy is the cap-broker's job.
-- **No UI code, no JavaScript, no Python** anywhere in this repository.
-- **Every API must have a contract** in `contracts/<name>/interface.h` before
-  anything may call it.
+- **No UI code** in this repository. GUI clients live outside the repo and
+  consume CC-PD or IPC contracts.
+- **Every API must have a contract** under
+  `kernel/agentos-root-task/include/contracts/` before anything may call it.
 - **Generic device rule:** serial, net, block, USB, timer, entropy each have exactly
   one canonical PD in `services/`. Custom implementations require an approved defect.

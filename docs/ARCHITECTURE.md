@@ -171,10 +171,24 @@ These are interface definitions awaiting implementation, or use generic names:
 
 ## Build Targets
 
-| Arch | System File | Board Configs |
-|------|-------------|---------------|
-| riscv64 | agentos.system (default) | qemu_virt_riscv64 |
-| aarch64 | agentos-aarch64.system | rpi5 |
-| x86_64 | agentos-x86_64.system | — |
-| FreeBSD | manifests/agentos-freebsd.system | — |
-| Linux | manifests/agentos-linux-x86.system | — |
+Run `make help` for the maintained top-level build, run, test, E2E, guest
+image, and cleanup targets. Current defaults are derived from `config.yaml`
+or the host architecture.
+
+| Selection | Default board config | Board | Guest support |
+|-----------|----------------------|-------|---------------|
+| `TARGET_ARCH=aarch64` | `boards/qemu-aarch64/board.mk` | `qemu_virt_aarch64` | Ubuntu 26.04 and FreeBSD 15.0 |
+| `TARGET_ARCH=x86_64` | `boards/qemu-x86_64/board.mk` | `x86_64_generic` | root-task smoke path |
+| `TARGET_ARCH=riscv64` | `boards/qemu-riscv64/board.mk` | `qemu_virt_riscv64` | cross-build/test path |
+
+Important top-level targets:
+
+| Target | Purpose |
+|--------|---------|
+| `make install` | Install host build dependencies; `make deps` is an alias |
+| `make build` | Stage the selected guest image and build `build/<board>/agentos.img` |
+| `make run` | Boot native QEMU, foreground serial on stdio, CC-PD at `build/cc_pd.sock` |
+| `make test` | QEMU boot/API smoke test for the selected board and guest |
+| `make test-guest-login` | Boot Ubuntu and FreeBSD and verify serial login/input via CC-PD |
+| `make test-integration` | Host-side contract and integration tests |
+| `make e2e-dual-os` | End-to-end Ubuntu/FreeBSD guest coverage |

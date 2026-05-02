@@ -1,18 +1,18 @@
 # FreeBSD VM Guest on agentOS/seL4
 
-**Status:** Design / Implementation Plan  
-**Author:** Rocky 🐿️  
-**Date:** 2026-03-30  
+**Status:** Implementation in progress
+**Date:** 2026-05-02
 **Target platform:** QEMU virt AArch64 (Sparky GB10)
 
 ---
 
 ## Overview
 
-Boot FreeBSD as a VM guest inside agentOS, running on the seL4 microkernel as hypervisor.
-The approach: add a `freebsd_vm` Protection Domain (PD) to agentOS using the Microkit VMM framework
-(`libvmm` from au-ts), with UEFI firmware (EDK2) or U-Boot providing the boot environment
-FreeBSD AArch64 requires.
+Boot FreeBSD 15.0 as a VM guest inside agentOS, running on the seL4
+microkernel as hypervisor. The active path stages FreeBSD assets into
+`build/guest-images`, builds the AArch64 agentOS image, exposes the guest
+through the CC-PD Unix socket at `build/cc_pd.sock`, and validates console
+boot/input through `make test-guest-login`.
 
 ---
 
@@ -39,7 +39,7 @@ FreeBSD AArch64 requires.
 │  │  └─────────────────────────────────────┘    │        │
 │  │                  ↕ guest RAM (1–2GB)         │        │
 │  │  ┌─────────────────────────────────────┐    │        │
-│  │  │  FreeBSD 14.x AArch64 guest         │    │        │
+│  │  │  FreeBSD 15.0 AArch64 guest         │    │        │
 │  │  │  - jails → seL4 PD analogy          │    │        │
 │  │  │  - ZFS, pf, bhyve-as-agent          │    │        │
 │  │  └─────────────────────────────────────┘    │        │
@@ -65,60 +65,36 @@ We use the pre-built `edk2-aarch64-code.fd` UEFI firmware — same as QEMU uses 
 
 ---
 
-## Implementation Plan
+## Current Build and Test Flow
 
-### Phase 1: libvmm integration (AArch64, QEMU target)
+The maintained top-level flow is:
 
-1. **Add libvmm as a submodule**
-   ```
-   git submodule add https://github.com/au-ts/libvmm libs/libvmm
-   ```
+```bash
+make help
+make install
+make fetch-guest GUEST_OS=freebsd
+make build TARGET_ARCH=aarch64 GUEST_OS=freebsd
+make run GUEST_OS=freebsd
+make test-guest-login
+```
 
-2. **New PD: `kernel/freebsd-vmm/`**
-   - C VMM entry point using libvmm APIs
-   - Loads UEFI firmware image (EDK2) + FreeBSD `bootaa64.efi` from embedded .o
-   - Configures vCPU boot PC = EDK2 reset vector
-   - Provides VirtIO block device backed by a agentfs region (for FreeBSD UFS/ZFS rootfs)
+`make fetch-guest` stages FreeBSD 15.0 assets under `build/guest-images`.
+`make run` launches QEMU and creates `build/cc_pd.sock`, which is consumed by
+`agentctl`, E2E tests, and the external GUI in `../agentos_gui`.
 
-3. **System description: `agentos-freebsd.system`**
-   ```xml
-   <memory_region name="freebsd_ram" size="0x80000_000" />  <!-- 2GB guest RAM -->
-   <memory_region name="freebsd_flash" size="0x4_000_000" /> <!-- 64MB UEFI flash -->
-   <memory_region name="uart" size="0x1_000" phys_addr="0x9000000" />
-   <memory_region name="gic_vcpu" size="0x1_000" phys_addr="0x8040000" />
-   
-   <protection_domain name="freebsd_vmm" priority="200">
-     <program_image path="freebsd_vmm.elf" />
-     <map mr="freebsd_ram" vaddr="0x40000000" perms="rw" setvar_vaddr="guest_ram_vaddr" />
-     <map mr="freebsd_flash" vaddr="0x60000000" perms="rw" setvar_vaddr="guest_flash_vaddr" />
-     <map mr="uart" vaddr="0x9000000" perms="rw" />
-     <map mr="gic_vcpu" vaddr="0x8010000" perms="rw" />
-     <virtual_machine name="freebsd" id="0">
-       <map mr="freebsd_ram" vaddr="0x40000000" perms="rwx" />
-       <map mr="freebsd_flash" vaddr="0x00000000" perms="rw" />
-       <map mr="uart" vaddr="0x9000000" perms="rw" />
-       <map mr="gic_vcpu" vaddr="0x8010000" perms="rw" />
-     </virtual_machine>
-   </protection_domain>
-   ```
+## Contract Surface
 
-4. **Makefile target**
-   ```
-   make BOARD=qemu_virt_aarch64 SYSTEM=freebsd demo-freebsd
-   ```
+FreeBSD must use the same OS-neutral contracts as every other guest:
 
-### Phase 2: VirtIO block + FreeBSD rootfs
-
-- Embed a minimal FreeBSD 14 memstick/UFS image as a VirtIO block backend
-- libvmm has virtio_blk support → FreeBSD sees a disk, runs loader.efi, boots
-- FreeBSD rootfs can be small (<512MB) for demo
-
-### Phase 3: Capability-gated integration
-
-- Expose FreeBSD jails as agentOS PD analogues via event_bus
-- Each jail gets a capability token → controller can grant/revoke
-- Net: `pf` ruleset = capability policy layer
-- This is the "FreeBSD jails as seL4 PD analogy" story
+| Area | Contract |
+|------|----------|
+| FreeBSD-specific VMM | `kernel/agentos-root-task/include/contracts/freebsd_vmm_contract.h` |
+| Generic guest lifecycle | `kernel/agentos-root-task/include/contracts/guest_contract.h` |
+| Generic VMM operations | `kernel/agentos-root-task/include/contracts/vmm_contract.h` |
+| Serial console | `kernel/agentos-root-task/include/contracts/serial_contract.h` |
+| Block device | `kernel/agentos-root-task/include/contracts/block_contract.h` |
+| Network device | `kernel/agentos-root-task/include/contracts/net_contract.h` |
+| Host bridge | `kernel/agentos-root-task/include/contracts/cc_contract.h` |
 
 ---
 
@@ -142,13 +118,12 @@ seL4 boots → agentOS Microkit init
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| `libs/libvmm` submodule | TODO | `git submodule add https://github.com/au-ts/libvmm` |
-| `freebsd_vmm` PD (C) | TODO | libvmm init + UEFI load + vCPU setup |
-| `agentos-freebsd.system` | TODO | Microkit system description |
-| EDK2 AArch64 firmware binary | TODO | Use pre-built `edk2-aarch64-code.fd` |
-| FreeBSD 14 AArch64 rootfs | TODO | Pre-built memstick image from freebsd.org |
-| Makefile `freebsd` target | TODO | Build + launch |
-| VirtIO block emulation | TODO | libvmm has this, needs wiring |
+| FreeBSD 15.0 asset staging | Wired | `make fetch-guest GUEST_OS=freebsd` |
+| Top-level build/run targets | Wired | `make build TARGET_ARCH=aarch64 GUEST_OS=freebsd`; `make run GUEST_OS=freebsd` |
+| CC-PD host visibility | Wired | guest listing, console drain, and input path |
+| E2E login/input test | Wired | `make test-guest-login` includes FreeBSD |
+| Full multi-user FreeBSD boot | In progress | Current test accepts login or maintenance prompt |
+| Complete VM lifecycle operations | In progress | create/destroy/snapshot/restore are contract-backed |
 
 ---
 
@@ -162,11 +137,13 @@ seL4 boots → agentOS Microkit init
 
 ---
 
-## Timeline Estimate
+## Remaining Work
 
-- Phase 1 (libvmm + VMM PD + UEFI boot): 1–2 days
-- Phase 2 (VirtIO block + full FreeBSD boot): 1 day  
-- Phase 3 (jail-as-PD capability integration): 2–3 days
-- Total: ~5 days to demo-worthy FreeBSD under agentOS
+- Complete full FreeBSD 15.0 multi-user boot from the staged image.
+- Keep `make test-guest-login` as the acceptance gate for serial output and
+  input through CC-PD.
+- Expand lifecycle coverage for create, destroy, snapshot, and restore.
+- Keep all guest images, logs, sockets, and temporary artifacts under `build/`.
 
-Demo target: `make demo-freebsd` → FreeBSD shell prompt running inside agentOS on QEMU AArch64
+Demo target: `make run GUEST_OS=freebsd` should bring up FreeBSD inside
+agentOS on QEMU AArch64 and expose the serial console through CC-PD.

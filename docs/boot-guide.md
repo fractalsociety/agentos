@@ -32,47 +32,51 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 rustup target add wasm32-unknown-unknown
 ```
 
-### Microkit SDK
+### Microkit SDK and Artifacts
 
-The Microkit SDK (seL4 Microkit 2.1.0) is downloaded automatically by
-`make deps`. It is extracted to `microkit-sdk-2.1.0/` in the project root.
-No manual download is required.
-
-If you need to download it manually:
-
-```
-https://github.com/seL4/microkit/releases/download/2.1.0/microkit-sdk-2.1.0-<platform>.tar.gz
-```
-
-Where `<platform>` is one of:
-- `macos-aarch64` — Apple Silicon Mac
-- `macos-x86-64` — Intel Mac
-- `linux-aarch64` — Linux/AArch64
-- `linux-x86-64` — Linux/x86-64
+The build uses the seL4 Microkit 2.1.0 SDK under `microkit-sdk-2.1.0/`.
+Generated images, sockets, QEMU logs, guest images, and temporary files belong
+under `build/`; do not place binary artifacts in the repository root.
 
 ## Build Steps
 
 ```bash
-# 1. Install all dependencies (downloads Microkit SDK automatically)
-make deps
+# Show maintained top-level targets and current defaults.
+make help
 
-# 2. Build and launch (native arch, hardware-accelerated QEMU)
-make
+# Install host dependencies with brew, apt, or pkg.
+make install
+
+# Build and launch the native board in QEMU.
+make run
 ```
 
-`make`:
-1. Builds agentOS for the host's native CPU architecture
-2. Launches it headlessly in QEMU (HVF on Intel Mac, KVM on Linux, TCG fallback on Apple Silicon)
+`make run` builds the host-native board, stages the selected guest image under
+`build/guest-images`, starts QEMU, exposes the CC-PD Unix socket at
+`build/cc_pd.sock`, and prints the matching command for the external GUI:
+
+```bash
+cd ../agentos_gui && make run
+```
 
 To build a specific architecture without launching:
 
 ```bash
-make build BOARD=qemu_virt_riscv64    # RISC-V 64-bit
-make build BOARD=qemu_virt_aarch64    # AArch64
-make build BOARD=x86_64_generic       # x86-64
+make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu
+make build TARGET_ARCH=aarch64 GUEST_OS=freebsd
+make build TARGET_ARCH=x86_64 GUEST_OS=none
+make build TARGET_ARCH=riscv64 GUEST_OS=none
 ```
 
-To run the CI boot test:
+Guest image staging:
+
+```bash
+make fetch-guest GUEST_OS=ubuntu      # Ubuntu 26.04 AArch64
+make fetch-guest GUEST_OS=freebsd     # FreeBSD 15.0 AArch64
+make bootstrap-guest OS=ubuntu-arm64  # build image from ISO cache
+```
+
+To run the QEMU smoke test:
 
 ```bash
 make test
@@ -90,13 +94,23 @@ make run-tests
 `TAP_DONE:<code>` on the serial log. `TAP_DONE:0` is success; any non-zero code
 or a timeout is a failure.
 
+To prove the host API reaches complete guest console boot and supports input:
+
+```bash
+make test-guest-login
+```
+
+This runs Ubuntu and FreeBSD QEMU boots, drains each serial console via CC-PD,
+matches the login or maintenance prompt, injects raw input, and verifies that
+the guest echoes it.
+
 ## Target Architectures
 
-| `config.yaml` `target_arch` | `BOARD` | QEMU binary |
-|---|---|---|
-| `riscv64` (default) | `qemu_virt_riscv64` | `qemu-system-riscv64` |
-| `aarch64` | `qemu_virt_aarch64` | `qemu-system-aarch64` |
-| `x86_64` | `x86_64_generic` | `qemu-system-x86_64` |
+| `TARGET_ARCH` | Default `BOARD_NAME` | Default `BOARD` | QEMU binary | Scope |
+|---|---|---|---|---|
+| `aarch64` | `qemu-aarch64` | `qemu_virt_aarch64` | `qemu-system-aarch64` | Full guest path |
+| `x86_64` | `qemu-x86_64` | `x86_64_generic` | `qemu-system-x86_64` | root-task smoke path |
+| `riscv64` | `qemu-riscv64` | `qemu_virt_riscv64` | `qemu-system-riscv64` | cross-build/test path |
 
 Override via `config.yaml` or on the command line:
 ```bash
@@ -105,91 +119,54 @@ make build TARGET_ARCH=aarch64
 
 ## QEMU Invocation
 
-### AArch64 (native on Apple Silicon / Linux AArch64)
+Use `make run` as the maintained QEMU entry point. It computes the QEMU
+binary, board image, guest block device, CC-PD socket, and port forwards from
+the selected target. The important runtime interfaces are:
 
-Used by `make console` when the host is AArch64:
+| Interface | Default |
+|---|---|
+| agentOS foreground serial | QEMU stdio |
+| CC-PD Unix socket | `build/cc_pd.sock` |
+| host API forward | `127.0.0.1:8789` |
+| Ubuntu SSH forward | `localhost:2222` |
+| FreeBSD SSH forward | `localhost:2223` |
+| NixOS SSH forward | `localhost:2224` |
 
-```bash
-qemu-system-aarch64 \
-    -machine virt,virtualization=on,highmem=off,secure=off \
-    -cpu cortex-a53 \
-    -m 2G \
-    -display none -monitor none \
-    -chardev socket,id=char0,path=build/agentos-serial.sock,server=on,wait=off \
-    -serial chardev:char0 \
-    -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789 \
-    -device virtio-net-device,netdev=net0 \
-    -device loader,file=build/qemu_virt_aarch64/agentos.img,addr=0x70000000,cpu-num=0
-```
+Exit foreground QEMU with `Ctrl-A X`.
 
-Note: Apple Silicon uses TCG (software emulation) rather than HVF because
-seL4's AArch64 memory-access patterns trigger an assertion failure in QEMU's
-HVF backend (`hvf_vcpu_exec` isv assertion in `hvf.c`). This is a known
-upstream QEMU issue.
-
-### RISC-V 64 (CI test / cross-build from macOS or Linux)
-
-```bash
-qemu-system-riscv64 \
-    -machine virt \
-    -cpu rv64 \
-    -m 2G \
-    -nographic \
-    -bios /usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin \
-    -kernel build/qemu_virt_riscv64/agentos.img
-```
-
-On macOS the OpenSBI firmware is at:
-```
-$(brew --prefix)/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin
-```
-
-### x86-64 (Intel Mac, Linux x86)
-
-```bash
-qemu-system-x86_64 \
-    -machine q35 \
-    -cpu max \
-    -m 2G \
-    -display none -monitor none \
-    -serial stdio \
-    -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789 \
-    -device e1000,netdev=net0 \
-    -kernel microkit-sdk-2.1.0/board/x86_64_generic/release/elf/sel4_32.elf \
-    -initrd build/x86_64_generic/root_task.elf
-```
-
-The x86-64 build still emits `build/x86_64_generic/agentos.img`, but that file
-is the agentOS flat image container.  QEMU boots the seL4 kernel ELF directly
-and passes `root_task.elf` as the initial module.
+Apple Silicon uses TCG for AArch64 QEMU because the HVF backend still trips on
+seL4's AArch64 memory-access patterns. Linux uses KVM when `/dev/kvm` exists.
 
 ## Connecting External Tools
 
 agentOS does not ship an in-repository dashboard. External tools connect to
-the exported IPC/API contracts; the default QEMU run forwards the host API
-port at `127.0.0.1:8789`.
+the exported IPC/API contracts. The default QEMU run exposes `build/cc_pd.sock`
+for the host-side CC-PD protocol and forwards the host API port at
+`127.0.0.1:8789`.
+
+Reference consumers:
+
+```bash
+make -C tools/agentctl
+./tools/agentctl/agentctl --batch list-guests
+cd ../agentos_gui && make run
+```
 
 ## Expected First-Boot Output
 
-When agentOS boots successfully in QEMU you should see the following on the
-serial console (in order):
+When agentOS boots successfully in QEMU, exact logs vary by target and guest.
+The stable success markers are:
 
 ```
-agentOS v0.1.0-alpha
-[event_bus] Initializing...
-[event_bus] READY
-[controller] Waking EventBus via PPC...
-[controller] EventBus: READY
-[init_agent] Subscribing to EventBus...
-[init_agent] EventBus subscription: OK
 [controller] *** agentOS controller boot complete ***
 [controller] Ready for agents.
-[init_agent] Entering event loop. agentOS is ALIVE.
+[cc_pd] VirtIO serial ready
 ```
 
-The CI test (`make test` / `scripts/ci-test.sh`) checks for these strings and
-exits 0 on success or 1 on failure.  The x86-64 smoke test currently checks
-for the root-task marker `[rt] boot complete`.
+For guest tests, `make test-guest-login` waits through the CC-PD console API
+until Ubuntu 26.04 or FreeBSD 15.0 reaches a login or maintenance prompt, then
+injects input and verifies that the guest echoes it. The x86_64 smoke path
+checks the root-task marker `[rt] boot complete`.
 
 On x86-64 the maintained scope is intentionally narrower than AArch64: the
 root task boots a reduced topology with no service PDs. This avoids running the
@@ -199,32 +176,21 @@ reports after the marker.
 
 ## Protection Domain Layout
 
-The default RISC-V build (`agentos.system`) boots the following protection
-domains:
+The AArch64 guest-capable build boots the root task plus Microkit Protection
+Domains for orchestration, storage, device abstraction, VMM management,
+observability, and CC-PD host access. The architecture map in
+`docs/ARCHITECTURE.md` is the detailed inventory.
 
-| PD | Priority | Role |
-|---|---|---|
-| `controller` | 50 | System coordinator + capability broker |
-| `event_bus` | 200 | Passive pub/sub server (ring buffer) |
-| `init_agent` | 100 | Agent ecosystem bootstrapper |
-| `worker_0..7` | 80 | Agent pool workers (8 total) |
-| `vibe_engine` | 140 | WASM hot-swap lifecycle engine |
-| `agentfs` | 150 | Content-addressed object store |
-| `swap_slot_0..3` | 75 | WASM hot-swap execution slots |
-| `log_drain` | 160 | Structured log drain |
-| `mem_profiler` | 108 | Heap allocation tracker |
-| `net_isolator` | 160 | Per-agent network firewall |
-| `nameserver` | 130 | PD name → channel ID lookup |
-| `virtio_blk` | 120 | VirtIO block device driver |
-| `vfs_server` | 115 | Virtual filesystem server |
-| `spawn_server` | 110 | Dynamic PD spawn manager |
-| `app_slot` | 85 | Application execution slot |
-| `net_server` | 155 | TCP/IP stack |
-| `app_manager` | 90 | Installed-app lifecycle |
-| `http_svc` | 145 | HTTP service endpoint |
-| `trace_recorder` | 128 | Inter-PD dispatch event logger |
-| `perf_counters` | 105 | Hardware performance counter reader |
-| `time_partition` | 170 | MCS time-partition scheduler |
+Important runtime contracts for external users:
+
+| API surface | Contract/Header |
+|---|---|
+| CC-PD host bridge | `kernel/agentos-root-task/include/contracts/cc_contract.h` |
+| Guest lifecycle | `kernel/agentos-root-task/include/contracts/guest_contract.h` |
+| Generic VMM operations | `kernel/agentos-root-task/include/contracts/vmm_contract.h` |
+| Serial device API | `kernel/agentos-root-task/include/contracts/serial_contract.h` |
+| Framebuffer API | `kernel/agentos-root-task/include/contracts/framebuffer_contract.h` |
+| EventBus | `kernel/agentos-root-task/include/contracts/eventbus_contract.h` |
 
 ## Known Limitations / Work in Progress
 
@@ -234,12 +200,12 @@ domains:
   native.
 
 - **riscv64 QEMU on macOS**: MacPorts ships `qemu-system-riscv64` but
-  Homebrew's QEMU formula (if installed via `make deps`) also includes it.
+  Homebrew's QEMU formula (if installed via `make install`) also includes it.
   The Makefile auto-detects via `$(BREW_PREFIX)/bin/qemu-system-riscv64`.
-  If riscv64 QEMU is not found after `make deps`, check that Homebrew qemu
+  If riscv64 QEMU is not found after `make install`, check that Homebrew qemu
   is fully linked: `brew link qemu`.
 
-- **Linux VMM (AArch64 only)**: The `linux_vmm.elf` and `freebsd_vmm.elf`
+- **Guest VMMs (AArch64 only)**: The `linux_vmm.elf` and `freebsd_vmm.elf`
   protection domains are only built for `BOARD=qemu_virt_aarch64`. The
   x86-64 board includes a stub `linux_vmm.elf` for compatibility with the
   system description file.
@@ -261,10 +227,9 @@ domains:
   network functionality requires a VirtIO NIC (provided by the QEMU `-netdev`
   + `-device virtio-net-device` flags above).
 
-- **Guest OS VMM**: `make GUEST_OS=linux` (AArch64 only) builds the Linux VMM
-  via `libvmm`. `make GUEST_OS=freebsd` builds the FreeBSD VMM. Run
-  `make fetch-guest GUEST_OS=linux` or `make fetch-guest GUEST_OS=freebsd`
-  first to download the guest images.
+- **Guest OS VMM selection**: Use `GUEST_OS=ubuntu` for the Linux path or
+  `GUEST_OS=freebsd` for the FreeBSD path. `make build` and `make run` stage
+  the selected image automatically through `make fetch-guest`.
 
 ## Agent Signing
 

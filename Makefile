@@ -1,16 +1,19 @@
 # agentOS Top-Level Makefile
 #
 # Quick start:
+#   make help
 #   make install && make run
 #
 # Targets:
+#   make help         — show important top-level targets and defaults
 #   make install      — install all build dependencies
 #   make build        — build the kernel image for BOARD/TARGET_ARCH
 #   make run          — build + boot agentOS with a Unix guest in QEMU
 #   make test         — CI boot test (exit 0/1)
-#   make clean        — remove build artifacts for current target
+#   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
+#   make clean        — remove build artifacts for current board
 
-.PHONY: all install deps-tools submodules channels run test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
+.PHONY: all install deps deps-tools submodules channels run test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -191,6 +194,8 @@ all: run
 install: deps-tools
 	@echo ""
 	@echo "✅ All dependencies installed! Run 'make run' to start."
+
+deps: install
 
 deps-tools:
 	@echo ""
@@ -637,20 +642,53 @@ release-major:
 # =============================================================================
 help:
 	@echo ""
-	@echo "agentOS — the OS for agents, by agents"
+	@echo "agentOS - top-level make targets"
 	@echo ""
-	@echo "Targets:"
-	@echo "  make install          Install build deps (brew / apt)"
-	@echo "  make build            Build kernel image for BOARD/TARGET_ARCH"
-	@echo "  make run              Build + boot agentOS with Ubuntu in QEMU"
-	@echo "  make test             CI boot test (exit 0/1)"
-	@echo "  make clean            Remove build artifacts for current board"
+	@echo "Usage:"
+	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=ubuntu|freebsd|none]"
+	@echo ""
+	@echo "Current defaults:"
+	@echo "  TARGET_ARCH     $(TARGET_ARCH)"
+	@echo "  BOARD_NAME      $(BOARD_NAME)"
+	@echo "  BOARD           $(BOARD)"
+	@echo "  GUEST_OS        $(GUEST_OS)"
+	@echo "  BUILD_DIR       $(BUILD_DIR)"
+	@echo "  AGENTOS_IMAGES  $(AGENTOS_IMAGES)"
+	@echo ""
+	@echo "Primary targets:"
+	@echo "  make help             Show this help text"
+	@echo "  make install          Install host build dependencies (alias: make deps)"
+	@echo "  make build            Fetch the selected guest image and build agentOS"
+	@echo "  make run              Build native agentOS and boot QEMU with CC-PD socket"
+	@echo "  make test             Build and run the QEMU boot/API smoke test"
+	@echo "  make test-guest-login Boot Ubuntu and FreeBSD to an interactive serial prompt"
+	@echo ""
+	@echo "Guest images:"
+	@echo "  make fetch-guest GUEST_OS=ubuntu     Stage Ubuntu 26.04 assets in build/guest-images"
+	@echo "  make fetch-guest GUEST_OS=freebsd    Stage FreeBSD 15.0 assets in build/guest-images"
+	@echo "  make bootstrap-guest OS=<name>       Build guest disks from ISO files in /Volumes/ISOs"
+	@echo "                                      names: ubuntu-amd64 ubuntu-arm64 nixos freebsd15"
+	@echo ""
+	@echo "Test targets:"
+	@echo "  make sel4-test-image  Build the seL4-target TAP test image"
+	@echo "  make run-tests        Run the seL4-target TAP test image in QEMU"
+	@echo "  make test-integration Run host-side contract/integration tests"
+	@echo "  make e2e              Run the default QEMU/guest/CC end-to-end suite"
+	@echo "  make e2e-dual-os      Run Ubuntu and FreeBSD guest E2E coverage"
+	@echo "  make e2e-all          Run E2E suites for every staged guest image"
+	@echo ""
+	@echo "Cleanup/tooling:"
+	@echo "  make clean            Remove build artifacts for the selected board"
+	@echo "  make clean-all        Remove all build artifacts under build/"
+	@echo "  make clean-images     Remove staged guest images"
+	@echo "  make build-tools      Build Rust host tools in release mode"
 	@echo ""
 	@echo "Quick start:"
 	@echo "  make install && make run"
 	@echo ""
-	@echo "Language breakdown:"
-	@echo "  Kernel/firmware    → C"
-	@echo "  Arch-specific      → Assembly"
-	@echo "  Userspace/tooling  → Rust"
+	@echo "Common examples:"
+	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu"
+	@echo "  make run GUEST_OS=freebsd"
+	@echo "  make test-guest-login QEMU_TEST_TIMEOUT=420"
+	@echo "  cd ../agentos_gui && make run"
 	@echo ""

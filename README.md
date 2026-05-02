@@ -91,7 +91,9 @@ The system is designed to evolve. The reference implementations are starting poi
 | `BlobSvc` | Object storage — large binary objects, S3-compatible API |
 | `LogSvc` | Audit logging — structured, queryable, every cap op recorded |
 
-All services are CAmkES components. All are replaceable via the vibe layer.
+The bootable system is implemented as seL4 Microkit Protection Domains with
+explicit IPC contracts. External tools consume the contracts; UI code lives in
+separate repositories such as `../agentos_gui`.
 
 ## agentOS SDK (libagent)
 
@@ -127,41 +129,45 @@ aos_service_swap(proposal_id);
 - macOS with Homebrew, or Ubuntu 22.04+
 - 8GB RAM, 20GB disk
 - QEMU for simulation (no hardware needed to start)
+- Optional ISO cache at `/Volumes/ISOs`; staged guest images live under `build/guest-images`
 - **FreeBSD hosts**: cross-compile from Linux/macOS (FreeBSD LLVM cross-compilation support is limited)
 
 ### Quick start
 
 ```bash
-make deps && make run                         # build + QEMU + Ubuntu guest + serial output
-make build TARGET_ARCH=aarch64                # ARM64 (Ubuntu guest by default)
-make build TARGET_ARCH=x86_64                 # x86_64
-make build TARGET_ARCH=aarch64 GUEST_OS=freebsd  # AArch64 + FreeBSD VMM
+make help                                     # show supported top-level targets
+make install                                  # install host build dependencies
+make run                                      # build + QEMU + Ubuntu 26.04 guest
+make run GUEST_OS=freebsd                     # build + QEMU + FreeBSD 15.0 guest
+make test-guest-login                         # prove Ubuntu and FreeBSD serial login via CC-PD
 ```
 
-### FreeBSD VMM
+`make run` creates the CC-PD Unix socket at `build/cc_pd.sock`, prints the
+matching GUI command, and leaves QEMU on the foreground serial console. The
+external GUI can be launched from the sibling project:
 
 ```bash
-# Download FreeBSD 14 AArch64 disk image + EDK2 UEFI firmware
-make fetch-freebsd-guest
-
-# Build the FreeBSD VMM PD, compile DTB, pack Microkit image
-make build TARGET_ARCH=aarch64 GUEST_OS=freebsd
+cd ../agentos_gui && make run
 ```
 
-### x86_64
+### Build Examples
 
 ```bash
-make build TARGET_ARCH=x86_64
+make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu    # AArch64 + Ubuntu 26.04
+make build TARGET_ARCH=aarch64 GUEST_OS=freebsd   # AArch64 + FreeBSD 15.0
+make build TARGET_ARCH=x86_64 GUEST_OS=none       # x86_64 root-task smoke image
+make fetch-guest GUEST_OS=ubuntu                  # stage Ubuntu assets only
+make fetch-guest GUEST_OS=freebsd                 # stage FreeBSD assets only
 ```
 
-The Linux VMM is a stub on x86_64 (libvmm x86 support in progress).
-Native agentOS protection domains run fully on all architectures.
+Guest images and temporary build artifacts stay under `build/`. Use
+`AGENTOS_IMAGES=/path/to/cache` only when intentionally overriding the default.
 
 ### FreeBSD host
 
 ```bash
 # Install build tools (LLVM, dtc, etc.)
-make deps-tools
+make install
 
 # Build with xtask gen-image — no external SDK download needed.
 make build
@@ -191,50 +197,33 @@ Run `./tools/agentctl/agentctl --help` for the full command reference.
 
 ```
 agentos/
-├── kernel/              # seL4 kernel (submodule, Phase 1)
-├── libs/
-│   └── libagent/        # agentOS SDK
-├── services/            # System service CAmkES components
-│   ├── capstore/        # Capability database
-│   ├── msgbus/          # Inter-agent messaging
-│   ├── memfs/           # Virtual filesystem
-│   ├── toolsvc/         # Tool registry
-│   ├── modelsvc/        # Model inference proxy
-│   ├── netstack/        # TCP/IP stack
-│   ├── blobsvc/         # Object storage
-│   └── logsvc/          # Audit logging
-├── agents/
-│   ├── init/            # Root/init task
-│   ├── hello/           # Hello world agent
-│   └── self-modify/     # Vibe-coding demo agent
-├── manifests/           # Agent manifests (capabilities, resources)
-├── scripts/             # Build and dev tools
-├── docs/                # Documentation
-├── CMakeLists.txt
-└── DESIGN.md            # Full architectural design
+├── kernel/agentos-root-task/  # seL4 root task, PD code, IPC contracts
+├── kernel/freebsd-vmm/        # FreeBSD VMM support code
+├── services/                  # host-side service models and prototypes
+├── libs/                      # shared C/Rust support libraries
+├── userspace/                 # Rust SDK and userspace service crates
+├── tools/                     # host tools such as agentctl and image helpers
+├── xtask/                     # Rust automation for build/test/fetch flows
+├── tests/                     # host, contract, integration, and E2E tests
+├── docs/                      # documentation
+├── build/                     # generated images, sockets, logs, temp artifacts
+├── Makefile                   # top-level build/run/test entry point
+└── AGENTS.md                  # repository rules for agents and developers
 ```
 
 ## Development Status
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| DESIGN.md | ✅ Complete | Full architecture documented |
-| libagent API | ✅ Designed | Header complete, impl in progress |
-| CapStore | 🔧 Scaffolded | Core logic done, IPC wiring pending |
-| MsgBus | 🔧 Scaffolded | Core logic done, IPC wiring pending |
-| MemFS | 🔧 Scaffolded | Core logic done |
-| ToolSvc | 🔧 Scaffolded | Core logic done |
-| ModelSvc | 🔧 Scaffolded | Core logic done, HTTP pending |
-| LogSvc | 🔧 Scaffolded | Core logic done |
-| Init Task | 🔧 Scaffolded | Phase structure done |
-| Hello Agent | 🔧 Scaffolded | Core structure done |
-| Vibe Agent | 🔧 Scaffolded | Three-phase flow done |
-| seL4 CMake | 🔧 Scaffolded | Build system wired |
-| QEMU boot | ⏳ Pending | Requires deps setup |
-| NetStack | ⏳ Pending | lwIP integration |
-| BlobSvc | ⏳ Pending | Object storage impl |
-| FreeBSD VM guest | 🔧 Phase 1 | VMM PD + UEFI + multiplexer scaffolded |
-| VM multiplexer | 🔧 Phase 1 | create/destroy/switch 4 VM slots |
+| Top-level Makefile | Implemented | `make help`, `install`, `build`, `run`, `test`, E2E, cleanup |
+| Raw seL4/Microkit boot | Implemented | QEMU boards for AArch64 and x86_64; RISC-V build path remains available |
+| CC-PD host API | Implemented | Unix socket bridge at `build/cc_pd.sock` for agentctl and GUI consumers |
+| Ubuntu guest | Implemented | Ubuntu 26.04 AArch64 boots through CC-PD console/login tests |
+| FreeBSD guest | In progress | FreeBSD 15.0 assets and VMM path are wired into build/test flows |
+| Guest API tests | Implemented | `make test-guest-login` drains console and injects input through CC-PD |
+| Host integration tests | Implemented | `make test-integration` covers contracts and host-side PD logic |
+| External GUI | Separate project | Run with `cd ../agentos_gui && make run` after agentOS is running |
+| Build artifact hygiene | Implemented | Images, sockets, logs, and temporary files are under `build/` |
 
 ## Philosophy
 
@@ -289,7 +278,9 @@ controller  (CH=51)    ──ppcall──► gpu_scheduler (CH_CTRL=1)
 
 ## FreeBSD VM Guest
 
-agentOS can run **FreeBSD 14 AArch64 as a virtual machine guest** under the seL4 hypervisor, using the [au-ts/libvmm](https://github.com/au-ts/libvmm) Microkit VMM library.
+agentOS stages and boots **FreeBSD 15.0 AArch64** as a virtual machine guest
+under the seL4 hypervisor path. The same CC-PD API surface used by Ubuntu is
+used to enumerate the guest, drain serial output, and inject console input.
 
 seL4 runs at **EL2** (ARM hypervisor mode) — it IS the hypervisor. No separate hypervisor layer needed.
 
@@ -305,56 +296,50 @@ seL4 (EL2)
 
 ### VM Multiplexer
 
-The `freebsd_vmm` Protection Domain is a **VM multiplexer** — it manages up to 4 independent FreeBSD instances simultaneously. The controller can create, destroy, and switch between them via IPC:
+The generic VMM contract models up to 4 guest slots. The FreeBSD path uses the
+same slot lifecycle vocabulary as the Ubuntu path, with implementation coverage
+tracked by `make test-guest-login` and the E2E targets:
 
 | Opcode | Operation | Args | Returns |
 |--------|-----------|------|---------|
-| `0x10` | `OP_VM_CREATE` | — | `slot_id` (0–3) or `0xFF` |
+| `0x10` | `OP_VM_CREATE` | — | `slot_id` (0-3) or `0xFF` |
 | `0x11` | `OP_VM_DESTROY` | `mr[0]=slot_id` | `0` ok / `1` error |
 | `0x12` | `OP_VM_SWITCH` | `mr[0]=slot_id` | `0` ok / `1` error |
 | `0x13` | `OP_VM_STATUS` | — | `mr[0..3]` = state per slot |
 | `0x14` | `OP_VM_LIST` | — | count + `(slot_id<<8\|state)` per slot |
 
-**Slot states:** `FREE(0)` → `BOOTING(1)` → `RUNNING(2)` ↔ `SUSPENDED(3)` → `HALTED(4)` / `ERROR(5)`
+**Slot states:** `FREE(0)` -> `BOOTING(1)` -> `RUNNING(2)` <->
+`SUSPENDED(3)` -> `HALTED(4)` / `ERROR(5)`
 
-Console focus follows the active slot. When you switch, the inactive slot is suspended at the seL4 vCPU level (zero scheduling overhead).
+Console focus follows the selected guest handle through CC-PD.
 
 ### Quick start
 
 ```bash
 # Install build deps
-make deps
+make install
 
-# Download FreeBSD 14 AArch64 disk image + EDK2 UEFI firmware
-make fetch-freebsd-guest
+# Stage FreeBSD 15.0 assets under build/guest-images
+make fetch-guest GUEST_OS=freebsd
 
-# Build the VMM PD, compile DTB, pack Microkit image
-make build TARGET_ARCH=aarch64 GUEST_OS=freebsd
+# Build and boot the FreeBSD guest path
+make run GUEST_OS=freebsd
 ```
 
-### Creating additional VM instances
+### Inspecting the Guest
 
-Once the first FreeBSD is running, create a second from the agentOS controller:
+Once agentOS is running, inspect the FreeBSD guest through the CC-PD reference
+consumer:
 
-```c
-// From controller PD: create a new FreeBSD VM
-microkit_mr_set(0, 0);
-microkit_msginfo reply = microkit_ppcall(CH_FREEBSD_VMM,
-    microkit_msginfo_new(OP_VM_CREATE, 1));
-uint8_t slot = (uint8_t)microkit_mr_get(0);   // e.g. slot = 1
-
-// Switch console to the new VM
-microkit_mr_set(0, slot);
-microkit_ppcall(CH_FREEBSD_VMM, microkit_msginfo_new(OP_VM_SWITCH, 1));
-
-// Destroy VM slot 0
-microkit_mr_set(0, 0);
-microkit_ppcall(CH_FREEBSD_VMM, microkit_msginfo_new(OP_VM_DESTROY, 1));
+```bash
+make -C tools/agentctl
+./tools/agentctl/agentctl --batch list-guests
+./tools/agentctl/agentctl --batch guest-status 0
 ```
 
 ### Memory layout
 
-Each VM slot gets 512MB of isolated guest RAM:
+Each VM slot is modeled with isolated guest RAM:
 
 ```
 Guest physical address space (all slots):
@@ -386,10 +371,10 @@ See [`docs/freebsd-vm-guest.md`](docs/freebsd-vm-guest.md) for the full design d
 
 agentOS is in early development. The design is stable; the implementation is growing. Contributions welcome in:
 
-- seL4 integration (IPC wiring, CAmkES components)
+- seL4/Microkit integration and IPC contract coverage
 - libagent SDK implementation
-- Service implementations (NetStack especially)
-- Alternative service implementations (show us what a better MemFS looks like)
+- Generic device PD and VMM integration
+- CC-PD API and E2E tests that prove guest OS behavior
 - Documentation and tutorials
 
 ## License
