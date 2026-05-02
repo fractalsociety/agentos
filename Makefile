@@ -581,7 +581,9 @@ e2e-all:
 	done; \
 	[ "$$failed" -eq 0 ] || (echo ""; echo "$$failed guest OS(es) failed E2E"; exit 1)
 
-# bootstrap-guest: create a guest disk image from ISO files in /Volumes/ISOs
+# bootstrap-guest: create a guest disk image from installer ISOs.
+# ISOs are cached in $$AGENTOS_ISO_DIR (default ~/.cache/agentos/isos)
+# and auto-downloaded from the vendor's official site on cache miss.
 # Usage: make bootstrap-guest OS=nixos
 #        make bootstrap-guest OS=ubuntu-amd64
 bootstrap-guest:

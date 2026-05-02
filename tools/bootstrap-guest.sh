@@ -15,18 +15,24 @@
 #   freebsd15       FreeBSD 15.0 AMD64               (qemu_virt x86_64 guests)
 #
 # Environment:
-#   ISO_DIR         directory containing ISO files (default: /Volumes/ISOs)
+#   ISO_DIR         directory containing/caching ISO files
+#                   (default: ${XDG_CACHE_HOME:-$HOME/.cache}/agentos/isos)
 #   GUEST_IMG_DIR   output directory (default: build/guest-images/)
 #   TMP_ROOT        host scratch directory (default: build/tmp/)
 #   E2E_SSH_PUBKEY  path to test SSH public key (default: tests/e2e/id_ed25519.pub)
 #   DISK_SIZE_GB    guest disk image size in GB (default: 20)
 #   QEMU_MEM_MB     RAM to give installer VM in MB (default: 2048)
 #
-# ISO filenames expected in ISO_DIR:
+# ISO filenames cached/looked up in ISO_DIR (auto-downloaded from the
+# vendor's site if missing):
 #   ubuntu-amd64:  ubuntu-26.04-desktop-amd64.iso
+#                  (https://cdimage.ubuntu.com/releases/26.04/release/)
 #   ubuntu-arm64:  ubuntu-26.04-desktop-arm64.iso
+#                  (https://cdimage.ubuntu.com/releases/26.04/release/)
 #   nixos:         nixos-minimal-25.11-x86_64-linux.iso
-#   freebsd15:     FreeBSD-15.0-RELEASE-amd64-bootonly.iso  (or disc1)
+#                  (https://channels.nixos.org/nixos-25.11/latest-nixos-minimal-x86_64-linux.iso)
+#   freebsd15:     FreeBSD-15.0-RELEASE-amd64-disc1.iso (or -bootonly)
+#                  (https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/15.0/)
 #
 # Prerequisites:
 #   All:           qemu-system-{x86_64,aarch64}
@@ -54,7 +60,7 @@ die()   { printf "${RED}[error]${RESET} %s\n" "$*" >&2; exit 1; }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-ISO_DIR="${ISO_DIR:-/Volumes/ISOs}"
+ISO_DIR="${ISO_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/agentos/isos}"
 GUEST_IMG_DIR="${GUEST_IMG_DIR:-${REPO_ROOT}/build/guest-images}"
 TMP_ROOT="${TMP_ROOT:-${REPO_ROOT}/build/tmp}"
 E2E_SSH_PUBKEY="${E2E_SSH_PUBKEY:-${REPO_ROOT}/tests/e2e/id_ed25519.pub}"
@@ -110,6 +116,33 @@ make_cidata_iso() {
     fi
 }
 
+# ── Vendor ISO download / cache ───────────────────────────────────────────────
+#
+# Ensures the named ISO is present in ISO_DIR, downloading it from the
+# vendor's official site on cache miss. Echoes the cached path on success.
+
+ensure_iso() {
+    local iso_name="$1"
+    local url="$2"
+    local cached="${ISO_DIR}/${iso_name}"
+
+    mkdir -p "${ISO_DIR}"
+    if [ -s "${cached}" ]; then
+        printf '%s\n' "${cached}"
+        return 0
+    fi
+
+    info "Downloading ${url}"
+    info "  -> ${cached}"
+    local tmp="${cached}.part"
+    rm -f "${tmp}"
+    curl --fail --location --progress-bar -o "${tmp}" "${url}" \
+        || die "Download failed: ${url}"
+    [ -s "${tmp}" ] || die "Downloaded ISO is empty: ${url}"
+    mv "${tmp}" "${cached}"
+    printf '%s\n' "${cached}"
+}
+
 # ── Download fallback (cloud images) ──────────────────────────────────────────
 
 download_nixos_cloud_image() {
@@ -160,12 +193,14 @@ find_expect() {
 # alongside the Ubuntu installer ISO.  The installer runs completely unattended.
 
 bootstrap_ubuntu_amd64() {
-    local iso="${ISO_DIR}/ubuntu-26.04-desktop-amd64.iso"
     local out="${OUTPUT_IMG:-${GUEST_IMG_DIR}/ubuntu-amd64.img}"
     local qemu="qemu-system-x86_64"
 
     command -v "${qemu}" >/dev/null 2>&1 || die "qemu-system-x86_64 not found"
-    [ -f "${iso}" ] || die "Ubuntu ISO not found: ${iso}"
+    local iso
+    iso="$(ensure_iso \
+        "ubuntu-26.04-desktop-amd64.iso" \
+        "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-desktop-amd64.iso")"
 
     ensure_ssh_key
 
@@ -250,14 +285,16 @@ AUTOINSTALL
 # ── Ubuntu ARM64 bootstrap ─────────────────────────────────────────────────────
 
 bootstrap_ubuntu_arm64() {
-    local iso="${ISO_DIR}/ubuntu-26.04-desktop-arm64.iso"
     local out="${OUTPUT_IMG:-${GUEST_IMG_DIR}/ubuntu-arm64.img}"
     local qemu="qemu-system-aarch64"
     local firmware="${GUEST_IMG_DIR}/edk2-aarch64-code.fd"
 
     command -v "${qemu}" >/dev/null 2>&1 || die "qemu-system-aarch64 not found"
-    [ -f "${iso}" ] || die "Ubuntu ARM64 ISO not found: ${iso}"
     [ -f "${firmware}" ] || die "UEFI firmware not found: ${firmware} (run: make fetch-guest)"
+    local iso
+    iso="$(ensure_iso \
+        "ubuntu-26.04-desktop-arm64.iso" \
+        "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-desktop-arm64.iso")"
 
     ensure_ssh_key
 
@@ -333,7 +370,6 @@ AUTOINSTALL
 # with expect: partition, format, mount, write configuration.nix, install.
 
 bootstrap_nixos() {
-    local iso="${ISO_DIR}/nixos-minimal-25.11-x86_64-linux.iso"
     local out="${OUTPUT_IMG:-${GUEST_IMG_DIR}/nixos.img}"
     local qemu="qemu-system-x86_64"
 
@@ -343,8 +379,11 @@ bootstrap_nixos() {
     fi
 
     command -v "${qemu}" >/dev/null 2>&1 || die "qemu-system-x86_64 not found"
-    [ -f "${iso}" ] || die "NixOS ISO not found: ${iso}"
     find_expect || die "expect not found — install it (brew install expect) or set E2E_SKIP_ISO_INSTALL=1"
+    local iso
+    iso="$(ensure_iso \
+        "nixos-minimal-25.11-x86_64-linux.iso" \
+        "https://channels.nixos.org/nixos-25.11/latest-nixos-minimal-x86_64-linux.iso")"
 
     ensure_ssh_key
 
@@ -458,22 +497,18 @@ EXPECT_SCRIPT
 
 bootstrap_freebsd15() {
     local out="${OUTPUT_IMG:-${GUEST_IMG_DIR}/freebsd15-amd64.img}"
-    local disc1_iso="${ISO_DIR}/FreeBSD-15.0-RELEASE-amd64-disc1.iso"
-    local bootonly_iso="${ISO_DIR}/FreeBSD-15.0-RELEASE-amd64-bootonly.iso"
     local qemu="qemu-system-x86_64"
 
-    # Prefer disc1 for offline install; fall back to download if only bootonly available
-    local iso=""
-    if [ "${E2E_SKIP_ISO_INSTALL}" = "0" ] && [ -f "${disc1_iso}" ]; then
-        iso="${disc1_iso}"
-    elif [ "${E2E_SKIP_ISO_INSTALL}" = "0" ] && [ -f "${bootonly_iso}" ]; then
-        warn "Only bootonly ISO found — FreeBSD install requires internet access during install"
-        iso="${bootonly_iso}"
-    else
-        info "Downloading FreeBSD 15.0 VM image (disc1 ISO not found at ${disc1_iso})"
+    if [ "${E2E_SKIP_ISO_INSTALL}" != "0" ]; then
+        info "E2E_SKIP_ISO_INSTALL=${E2E_SKIP_ISO_INSTALL} — using FreeBSD VM image instead of installer ISO"
         download_freebsd15_vm_image "${out}"
         return 0
     fi
+
+    local iso
+    iso="$(ensure_iso \
+        "FreeBSD-15.0-RELEASE-amd64-disc1.iso" \
+        "https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/15.0/FreeBSD-15.0-RELEASE-amd64-disc1.iso")"
 
     command -v "${qemu}" >/dev/null 2>&1 || die "qemu-system-x86_64 not found"
     find_expect || die "expect not found — install it or set E2E_SKIP_ISO_INSTALL=1 to download instead"

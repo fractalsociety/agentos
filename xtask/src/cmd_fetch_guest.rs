@@ -10,12 +10,16 @@ const COPY_ISOS_ENV: &str = "AGENTOS_COPY_ISOS";
 
 const UBUNTU_VERSION: &str = "26.04";
 const UBUNTU_ISO_NAME: &str = "ubuntu-26.04-desktop-arm64.iso";
+const UBUNTU_ISO_URL: &str =
+    "https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-desktop-arm64.iso";
 const UBUNTU_IMAGE_NAME: &str = "ubuntu-26.04-aarch64.iso";
 const UBUNTU_KERNEL_NAME: &str = "ubuntu-26.04-aarch64-Image";
 const UBUNTU_INITRD_NAME: &str = "ubuntu-26.04-aarch64-initrd";
 
 const FREEBSD_VERSION: &str = "15.0";
 const FREEBSD_ISO_NAME: &str = "FreeBSD-15.0-RELEASE-arm64-aarch64-dvd1.iso";
+const FREEBSD_ISO_URL: &str =
+    "https://download.freebsd.org/releases/arm64/aarch64/ISO-IMAGES/15.0/FreeBSD-15.0-RELEASE-arm64-aarch64-dvd1.iso";
 const FREEBSD_IMAGE_NAME: &str = "freebsd-15.0-aarch64.iso";
 const FREEBSD_KERNEL_NAME: &str = "freebsd-15.0-aarch64-kernel";
 
@@ -43,9 +47,56 @@ fn build_tmp_dir() -> anyhow::Result<PathBuf> {
 }
 
 fn iso_dir() -> PathBuf {
-    std::env::var_os(ISO_DIR_ENV)
+    if let Some(d) = std::env::var_os(ISO_DIR_ENV) {
+        return PathBuf::from(d);
+    }
+    let cache_root = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/Volumes/ISOs"))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    cache_root.join("agentos").join("isos")
+}
+
+fn ensure_cached_iso(iso_name: &str, url: &str) -> anyhow::Result<PathBuf> {
+    let cache = iso_dir();
+    fs::create_dir_all(&cache)
+        .with_context(|| format!("failed to create ISO cache dir: {}", cache.display()))?;
+    let cached = cache.join(iso_name);
+    if cached.exists() && fs::metadata(&cached).map(|m| m.len()).unwrap_or(0) > 0 {
+        return Ok(cached);
+    }
+
+    let curl = find_tool(&["curl", "/opt/homebrew/bin/curl", "/usr/bin/curl"])?;
+    let tmp = cached.with_extension("part");
+    let _ = fs::remove_file(&tmp);
+    println!(
+        "[fetch-guest] Downloading {} -> {}",
+        url,
+        cached.display()
+    );
+    let status = std::process::Command::new(&curl)
+        .arg("--fail")
+        .arg("--location")
+        .arg("--progress-bar")
+        .arg("--output")
+        .arg(&tmp)
+        .arg(url)
+        .status()
+        .with_context(|| format!("failed to run {}", curl.display()))?;
+    anyhow::ensure!(status.success(), "ISO download failed: {}", url);
+    anyhow::ensure!(
+        fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0) > 0,
+        "downloaded ISO is empty: {}",
+        url
+    );
+    fs::rename(&tmp, &cached).with_context(|| {
+        format!(
+            "failed to move {} to {}",
+            tmp.display(),
+            cached.display()
+        )
+    })?;
+    Ok(cached)
 }
 
 pub fn run(args: &FetchGuestArgs) -> anyhow::Result<()> {
@@ -63,7 +114,7 @@ pub fn run(args: &FetchGuestArgs) -> anyhow::Result<()> {
 }
 
 fn fetch_ubuntu(output_dir: &Path) -> anyhow::Result<()> {
-    let iso = stage_local_iso(output_dir, UBUNTU_ISO_NAME, UBUNTU_IMAGE_NAME)?;
+    let iso = stage_local_iso(output_dir, UBUNTU_ISO_NAME, UBUNTU_IMAGE_NAME, UBUNTU_ISO_URL)?;
     extract_ubuntu_initrd(&iso, &output_dir.join(UBUNTU_INITRD_NAME))?;
     extract_ubuntu_kernel(&iso, &output_dir.join(UBUNTU_KERNEL_NAME))?;
     println!(
@@ -131,7 +182,7 @@ fn extract_ubuntu_initrd(iso: &Path, initrd_dest: &Path) -> anyhow::Result<()> {
 }
 
 fn fetch_freebsd(output_dir: &Path) -> anyhow::Result<()> {
-    let iso = stage_local_iso(output_dir, FREEBSD_ISO_NAME, FREEBSD_IMAGE_NAME)?;
+    let iso = stage_local_iso(output_dir, FREEBSD_ISO_NAME, FREEBSD_IMAGE_NAME, FREEBSD_ISO_URL)?;
     extract_freebsd_kernel(&iso, &output_dir.join(FREEBSD_KERNEL_NAME))?;
     println!(
         "[fetch-guest] FreeBSD {} assets ready under {}",
@@ -259,14 +310,9 @@ fn stage_local_iso(
     output_dir: &Path,
     source_name: &str,
     dest_name: &str,
+    source_url: &str,
 ) -> anyhow::Result<PathBuf> {
-    let src = iso_dir().join(source_name);
-    anyhow::ensure!(
-        src.exists(),
-        "required ISO not found: {} (set {} to override)",
-        src.display(),
-        ISO_DIR_ENV
-    );
+    let src = ensure_cached_iso(source_name, source_url)?;
 
     let dest = output_dir.join(dest_name);
     if dest.exists() {

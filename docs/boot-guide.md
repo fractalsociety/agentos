@@ -245,10 +245,13 @@ domains:
   system description file.
 
 - **Guest image selection**: `make fetch-guest` stages Ubuntu 26.04 and
-  FreeBSD 15.0 assets from `AGENTOS_ISO_DIR` (default `/Volumes/ISOs`) into
-  `build/guest-images`. The VMM build and QEMU runtime use those build-local
-  images by default; set `AGENTOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` only when
-  testing a non-default FreeBSD image.
+  FreeBSD 15.0 assets into `build/guest-images`. ISOs are cached in
+  `AGENTOS_ISO_DIR` (default `${XDG_CACHE_HOME:-~/.cache}/agentos/isos`); on
+  cache miss they are downloaded from the vendor's official site
+  (`cdimage.ubuntu.com`, `download.freebsd.org`) and persisted there for
+  future runs. The VMM build and QEMU runtime use those build-local images
+  by default; set `AGENTOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` only when testing
+  a non-default FreeBSD image.
 
 - **WASM agent execution**: `swap_slot` PDs load and execute WASM binaries
   via the embedded wasm3 interpreter. Binaries must be signed with
