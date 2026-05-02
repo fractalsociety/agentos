@@ -42,7 +42,7 @@ typedef struct __attribute__((packed)) {
 
 /*
  * TRACE_PD_* identifiers for VMM protection domains.
- * Follow the sequence in agentos.h (last defined: TRACE_PD_TERM_SERVER = 40).
+ * Follow the sequence in agentos.h (CC PD is TRACE_PD_CC_PD = 43).
  */
 #define TRACE_PD_LINUX_VMM    41u
 #define TRACE_PD_FREEBSD_VMM  42u

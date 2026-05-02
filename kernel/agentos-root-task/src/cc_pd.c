@@ -363,6 +363,8 @@ typedef struct {
 
 _Static_assert(sizeof(cc_req_wire_t)   == 4112u, "cc_req_wire_t size");
 _Static_assert(sizeof(cc_reply_wire_t) == 4112u, "cc_reply_wire_t size");
+_Static_assert(sizeof(cc_trace_entry_t) == CC_TRACE_ENTRY_SIZE,
+               "cc_trace_entry_t size");
 
 /* ─── Session table ──────────────────────────────────────────────────────── */
 
@@ -378,6 +380,106 @@ typedef struct {
 
 static cc_session_t g_sessions[CC_MAX_SESSIONS];
 
+/* ─── CC trace bridge ────────────────────────────────────────────────────── */
+
+#define CC_TRACE_RING_ENTRIES  CC_TRACE_MAX_ENTRIES
+
+static cc_trace_entry_t g_cc_trace_ring[CC_TRACE_RING_ENTRIES];
+static uint32_t g_cc_trace_head;
+static uint32_t g_cc_trace_count;
+static uint32_t g_cc_trace_seq;
+static uint32_t g_cc_trace_overflow;
+static bool     g_cc_trace_recording;
+
+static uint8_t cc_trace_target_pd(uint32_t opcode)
+{
+    switch (opcode) {
+    case MSG_CC_LIST_GUESTS:
+    case MSG_CC_GUEST_STATUS:
+    case MSG_CC_CREATE_GUEST:
+    case MSG_CC_SNAPSHOT:
+    case MSG_CC_RESTORE:
+        return (uint8_t)TRACE_PD_VIBE_ENGINE;
+    case MSG_CC_SEND_INPUT:
+    case MSG_CC_SUSPEND_GUEST:
+    case MSG_CC_RESUME_GUEST:
+    case MSG_CC_DESTROY_GUEST:
+#if defined(AGENTOS_GUEST_FREEBSD)
+        return (uint8_t)TRACE_PD_FREEBSD_VMM;
+#elif defined(AGENTOS_GUEST_LINUX)
+        return (uint8_t)TRACE_PD_LINUX_VMM;
+#else
+        return (uint8_t)TRACE_PD_CC_PD;
+#endif
+    case MSG_CC_TRACE_START:
+    case MSG_CC_TRACE_STOP:
+    case MSG_CC_TRACE_QUERY:
+    case MSG_CC_TRACE_DUMP:
+        return (uint8_t)TRACE_PD_TRACE_REC;
+    case MSG_CC_FAULT_INJECT:
+        return (uint8_t)TRACE_PD_FAULT_HDL;
+    default:
+        return (uint8_t)TRACE_PD_CC_PD;
+    }
+}
+
+static uint8_t cc_trace_channel(uint32_t opcode)
+{
+    switch (opcode) {
+    case MSG_CC_LIST_GUESTS:
+    case MSG_CC_GUEST_STATUS:
+    case MSG_CC_CREATE_GUEST:
+    case MSG_CC_SNAPSHOT:
+    case MSG_CC_RESTORE:
+        return (uint8_t)(CH_VIBEOS_ENGINE & 0xffu);
+    case MSG_CC_SEND_INPUT:
+    case MSG_CC_SUSPEND_GUEST:
+    case MSG_CC_RESUME_GUEST:
+    case MSG_CC_DESTROY_GUEST:
+        return (uint8_t)(CH_GUEST_PD & 0xffu);
+    case MSG_CC_TRACE_START:
+    case MSG_CC_TRACE_STOP:
+    case MSG_CC_TRACE_QUERY:
+    case MSG_CC_TRACE_DUMP:
+        return (uint8_t)(CH_TRACE_CTRL & 0xffu);
+    case MSG_CC_LOG_STREAM:
+        return (uint8_t)(CH_LOG_DRAIN & 0xffu);
+    default:
+        return (uint8_t)(CH_CC_PD & 0xffu);
+    }
+}
+
+static void cc_trace_reset(bool recording)
+{
+    g_cc_trace_head = 0u;
+    g_cc_trace_count = 0u;
+    g_cc_trace_seq = 0u;
+    g_cc_trace_overflow = 0u;
+    g_cc_trace_recording = recording;
+}
+
+static void cc_trace_record(uint32_t opcode)
+{
+    if (!g_cc_trace_recording) return;
+
+    cc_trace_entry_t *e = &g_cc_trace_ring[g_cc_trace_head];
+    e->timestamp_ns = ((uint64_t)g_cc_trace_seq + 1u) * 1000u;
+    e->from_pd = (uint8_t)TRACE_PD_CC_PD;
+    e->to_pd = cc_trace_target_pd(opcode);
+    e->channel = cc_trace_channel(opcode);
+    e->_pad = 0u;
+    e->opcode = (uint16_t)(opcode & 0xffffu);
+    e->seq_lo = (uint16_t)(g_cc_trace_seq & 0xffffu);
+
+    g_cc_trace_seq++;
+    g_cc_trace_head = (g_cc_trace_head + 1u) % CC_TRACE_RING_ENTRIES;
+    if (g_cc_trace_count < CC_TRACE_RING_ENTRIES) {
+        g_cc_trace_count++;
+    } else {
+        g_cc_trace_overflow++;
+    }
+}
+
 /* ─── Boot guest inventory ─────────────────────────────────────────────────
  *
  * The default QEMU image starts one Unix guest VMM at boot when GUEST_OS is
@@ -388,6 +490,9 @@ static cc_session_t g_sessions[CC_MAX_SESSIONS];
 
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
 #define CC_BOOT_GUEST_HANDLE 0u
+
+static bool     g_boot_guest_present = true;
+static uint32_t g_boot_guest_state = GUEST_STATE_RUNNING;
 
 static uint32_t cc_boot_guest_os_type(void)
 {
@@ -415,7 +520,7 @@ static uint32_t cc_boot_guest_devices(void)
 static void cc_fill_boot_guest_info(cc_guest_info_t *out)
 {
     out->guest_handle = CC_BOOT_GUEST_HANDLE;
-    out->state        = GUEST_STATE_RUNNING;
+    out->state        = g_boot_guest_state;
     out->os_type      = cc_boot_guest_os_type();
     out->arch         = cc_boot_guest_arch();
 }
@@ -423,7 +528,7 @@ static void cc_fill_boot_guest_info(cc_guest_info_t *out)
 static void cc_fill_boot_guest_status(cc_guest_status_t *out)
 {
     out->guest_handle = CC_BOOT_GUEST_HANDLE;
-    out->state        = GUEST_STATE_RUNNING;
+    out->state        = g_boot_guest_state;
     out->os_type      = cc_boot_guest_os_type();
     out->arch         = cc_boot_guest_arch();
     out->device_flags = cc_boot_guest_devices();
@@ -432,6 +537,7 @@ static void cc_fill_boot_guest_status(cc_guest_status_t *out)
 
 static bool cc_boot_guest_has_device(uint32_t dev_type)
 {
+    if (!g_boot_guest_present) return false;
     switch (dev_type) {
     case CC_DEV_TYPE_SERIAL:
     case CC_DEV_TYPE_NET:
@@ -468,6 +574,8 @@ static bool cc_call_boot_guest(uint32_t opcode, const uint8_t *payload,
 
 static bool cc_forward_boot_guest_input(const cc_input_event_t *event)
 {
+    if (!g_boot_guest_present) return false;
+
     uint8_t payload[4u + sizeof(cc_input_event_t)];
     cc_msg_wr32(payload, 0u, CC_BOOT_GUEST_HANDLE);
     __builtin_memcpy(payload + 4u, event, sizeof(cc_input_event_t));
@@ -480,6 +588,8 @@ static bool cc_forward_boot_guest_input(const cc_input_event_t *event)
 static bool cc_drain_boot_guest_console(uint8_t *dst, uint32_t max,
                                         uint32_t *bytes_drained)
 {
+    if (!g_boot_guest_present) return false;
+
     uint32_t total = 0u;
 
     while (total < max) {
@@ -508,6 +618,43 @@ static bool cc_drain_boot_guest_console(uint8_t *dst, uint32_t max,
     }
 
     *bytes_drained = total;
+    return true;
+}
+
+static bool cc_lifecycle_boot_guest(uint32_t opcode, uint32_t reason,
+                                    uint32_t *new_state)
+{
+    if (!g_boot_guest_present) return false;
+
+    uint8_t payload[8u];
+    uint32_t payload_len = 4u;
+    cc_msg_wr32(payload, 0u, CC_BOOT_GUEST_HANDLE);
+    if (opcode == MSG_GUEST_DESTROY) {
+        cc_msg_wr32(payload, 4u, reason);
+        payload_len = 8u;
+    }
+
+    sel4_msg_t reply = {0};
+    if (!cc_call_boot_guest(opcode, payload, payload_len, &reply)) {
+        return false;
+    }
+
+    switch (opcode) {
+    case MSG_GUEST_SUSPEND:
+        g_boot_guest_state = GUEST_STATE_SUSPENDED;
+        break;
+    case MSG_GUEST_RESUME:
+        g_boot_guest_state = GUEST_STATE_RUNNING;
+        break;
+    case MSG_GUEST_DESTROY:
+        g_boot_guest_state = GUEST_STATE_DEAD;
+        g_boot_guest_present = false;
+        break;
+    default:
+        return false;
+    }
+
+    if (new_state != NULL) *new_state = g_boot_guest_state;
     return true;
 }
 #endif
@@ -857,6 +1004,115 @@ static void handle_fault_inject(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 #endif
 }
 
+static void handle_suspend_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (req->mr[0] != CC_BOOT_GUEST_HANDLE || !g_boot_guest_present) {
+        rep->mr[0] = CC_ERR_BAD_HANDLE;
+        rep->mr[1] = 0u;
+        return;
+    }
+    uint32_t state = 0u;
+    if (!cc_lifecycle_boot_guest(MSG_GUEST_SUSPEND, 0u, &state)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = 0u;
+        return;
+    }
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = state;
+#else
+    (void)req;
+    rep->mr[0] = CC_ERR_BAD_HANDLE;
+    rep->mr[1] = 0u;
+#endif
+}
+
+static void handle_resume_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (req->mr[0] != CC_BOOT_GUEST_HANDLE || !g_boot_guest_present) {
+        rep->mr[0] = CC_ERR_BAD_HANDLE;
+        rep->mr[1] = 0u;
+        return;
+    }
+    uint32_t state = 0u;
+    if (!cc_lifecycle_boot_guest(MSG_GUEST_RESUME, 0u, &state)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = 0u;
+        return;
+    }
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = state;
+#else
+    (void)req;
+    rep->mr[0] = CC_ERR_BAD_HANDLE;
+    rep->mr[1] = 0u;
+#endif
+}
+
+static void handle_destroy_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (req->mr[0] != CC_BOOT_GUEST_HANDLE || !g_boot_guest_present) {
+        rep->mr[0] = CC_ERR_BAD_HANDLE;
+        return;
+    }
+    uint32_t state = 0u;
+    if (!cc_lifecycle_boot_guest(MSG_GUEST_DESTROY, req->mr[1], &state)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        return;
+    }
+    (void)state;
+    rep->mr[0] = CC_OK;
+#else
+    (void)req;
+    rep->mr[0] = CC_ERR_BAD_HANDLE;
+#endif
+}
+
+static void handle_trace_start(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+    (void)req;
+    cc_trace_reset(true);
+    rep->mr[0] = CC_OK;
+}
+
+static void handle_trace_stop(cc_reply_wire_t *rep)
+{
+    g_cc_trace_recording = false;
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = g_cc_trace_seq;
+}
+
+static void handle_trace_query(cc_reply_wire_t *rep)
+{
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = g_cc_trace_count;
+    rep->mr[2] = g_cc_trace_count * (uint32_t)sizeof(cc_trace_entry_t);
+    rep->mr[3] = g_cc_trace_overflow;
+}
+
+static void handle_trace_dump(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+    uint32_t max = req->mr[0];
+    if (max == 0u || max > g_cc_trace_count) max = g_cc_trace_count;
+
+    uint32_t capacity = CC_WIRE_SHMEM_SIZE / (uint32_t)sizeof(cc_trace_entry_t);
+    if (max > capacity) max = capacity;
+
+    cc_trace_entry_t *out = (cc_trace_entry_t *)rep->shmem;
+    uint32_t start = (g_cc_trace_head + CC_TRACE_RING_ENTRIES -
+                      g_cc_trace_count) % CC_TRACE_RING_ENTRIES;
+    for (uint32_t i = 0u; i < max; i++) {
+        out[i] = g_cc_trace_ring[(start + i) % CC_TRACE_RING_ENTRIES];
+    }
+
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = max;
+    rep->mr[2] = max * (uint32_t)sizeof(cc_trace_entry_t);
+    rep->mr[3] = g_cc_trace_overflow;
+}
+
 /* ─── Dispatch ───────────────────────────────────────────────────────────── */
 
 static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -883,12 +1139,21 @@ static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     case MSG_CC_LOG_STREAM:         handle_log_stream(req, rep);         break;
     case MSG_CC_CREATE_GUEST:       handle_create_guest(req, rep);       break;
     case MSG_CC_FAULT_INJECT:       handle_fault_inject(req, rep);       break;
+    case MSG_CC_SUSPEND_GUEST:      handle_suspend_guest(req, rep);      break;
+    case MSG_CC_RESUME_GUEST:       handle_resume_guest(req, rep);       break;
+    case MSG_CC_DESTROY_GUEST:      handle_destroy_guest(req, rep);      break;
+    case MSG_CC_TRACE_START:        handle_trace_start(req, rep);        break;
+    case MSG_CC_TRACE_STOP:         handle_trace_stop(rep);              break;
+    case MSG_CC_TRACE_QUERY:        handle_trace_query(rep);             break;
+    case MSG_CC_TRACE_DUMP:         handle_trace_dump(req, rep);         break;
 
     default:
         sel4_dbg_puts("[cc_pd] unknown opcode\n");
         rep->mr[0] = CC_ERR_BAD_SESSION;
         break;
     }
+
+    cc_trace_record(req->opcode);
 }
 
 /* ─── Entry point ────────────────────────────────────────────────────────── */

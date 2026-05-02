@@ -68,6 +68,13 @@ static int test_cc_relay_opcodes(void)
     CHECK(MSG_CC_LOG_STREAM         == 0x2610u);
     CHECK(MSG_CC_CREATE_GUEST       == 0x2611u);
     CHECK(MSG_CC_FAULT_INJECT       == 0x2612u);
+    CHECK(MSG_CC_SUSPEND_GUEST      == 0x2613u);
+    CHECK(MSG_CC_RESUME_GUEST       == 0x2614u);
+    CHECK(MSG_CC_DESTROY_GUEST      == 0x2615u);
+    CHECK(MSG_CC_TRACE_START        == 0x2616u);
+    CHECK(MSG_CC_TRACE_STOP         == 0x2617u);
+    CHECK(MSG_CC_TRACE_QUERY        == 0x2618u);
+    CHECK(MSG_CC_TRACE_DUMP         == 0x2619u);
 
     /* All in 0x2600 range */
     CHECK((MSG_CC_LIST_GUESTS        & 0xFF00u) == 0x2600u);
@@ -82,6 +89,13 @@ static int test_cc_relay_opcodes(void)
     CHECK((MSG_CC_LOG_STREAM         & 0xFF00u) == 0x2600u);
     CHECK((MSG_CC_CREATE_GUEST       & 0xFF00u) == 0x2600u);
     CHECK((MSG_CC_FAULT_INJECT       & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_SUSPEND_GUEST      & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_RESUME_GUEST       & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_DESTROY_GUEST      & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_TRACE_START        & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_TRACE_STOP         & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_TRACE_QUERY        & 0xFF00u) == 0x2600u);
+    CHECK((MSG_CC_TRACE_DUMP         & 0xFF00u) == 0x2600u);
 
     /* All opcodes must be unique */
     uint32_t ops[] = {
@@ -90,7 +104,9 @@ static int test_cc_relay_opcodes(void)
         MSG_CC_LIST_POLECATS, MSG_CC_GUEST_STATUS, MSG_CC_DEVICE_STATUS,
         MSG_CC_ATTACH_FRAMEBUFFER, MSG_CC_SEND_INPUT, MSG_CC_SNAPSHOT,
         MSG_CC_RESTORE, MSG_CC_LOG_STREAM, MSG_CC_CREATE_GUEST,
-        MSG_CC_FAULT_INJECT,
+        MSG_CC_FAULT_INJECT, MSG_CC_SUSPEND_GUEST, MSG_CC_RESUME_GUEST,
+        MSG_CC_DESTROY_GUEST, MSG_CC_TRACE_START, MSG_CC_TRACE_STOP,
+        MSG_CC_TRACE_QUERY, MSG_CC_TRACE_DUMP,
     };
     size_t n = sizeof(ops) / sizeof(ops[0]);
     for (size_t i = 0; i < n; i++)
@@ -262,6 +278,30 @@ static int test_cc_session_info_layout(void)
     PASS("cc_session_info_layout");
 }
 
+static int test_cc_trace_entry_layout(void)
+{
+    cc_trace_entry_t e;
+    CHECK(sizeof(e) == CC_TRACE_ENTRY_SIZE);
+    CHECK(CC_TRACE_ENTRY_SIZE == 16u);
+    CHECK(CC_TRACE_MAX_ENTRIES == (CC_MAX_RESP_BYTES / CC_TRACE_ENTRY_SIZE));
+
+    memset(&e, 0, sizeof(e));
+    e.timestamp_ns = 1000u;
+    e.from_pd = (uint8_t)TRACE_PD_CC_PD;
+    e.to_pd = (uint8_t)TRACE_PD_TRACE_REC;
+    e.channel = (uint8_t)CH_TRACE_CTRL;
+    e.opcode = (uint16_t)MSG_CC_TRACE_QUERY;
+    e.seq_lo = 7u;
+    CHECK(e.timestamp_ns == 1000u);
+    CHECK(e.from_pd == (uint8_t)TRACE_PD_CC_PD);
+    CHECK(e.to_pd == (uint8_t)TRACE_PD_TRACE_REC);
+    CHECK(e.channel == (uint8_t)CH_TRACE_CTRL);
+    CHECK(e.opcode == (uint16_t)MSG_CC_TRACE_QUERY);
+    CHECK(e.seq_lo == 7u);
+
+    PASS("cc_trace_entry_layout");
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
  * Configuration constant tests
  * ══════════════════════════════════════════════════════════════════════════ */
@@ -334,6 +374,20 @@ static int test_cc_req_reply_sizes(void)
     CHECK(sizeof(struct cc_reply_log_stream)      == 2 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_req_create_guest)      == 1 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_reply_create_guest)    == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_fault_inject)      == 3 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_fault_inject)    == 4 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_suspend_guest)     == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_suspend_guest)   == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_resume_guest)      == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_resume_guest)    == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_destroy_guest)     == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_destroy_guest)   == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_trace_start)       == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_trace_start)     == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_trace_stop)      == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_trace_query)     == 4 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_req_trace_dump)        == 1 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_trace_dump)      == 4 * sizeof(uint32_t));
 
     PASS("cc_req_reply_sizes");
 }
@@ -383,6 +437,7 @@ static const test_fn tests[] = {
     test_cc_device_info_layout,
     test_cc_input_event_layout,
     test_cc_session_info_layout,
+    test_cc_trace_entry_layout,
     test_cc_config_constants,
     test_cc_session_states,
     test_cc_req_reply_sizes,

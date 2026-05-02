@@ -263,6 +263,9 @@ typedef enum {
 #define TRACE_PD_APP_MANAGER  31u
 #define TRACE_PD_HTTP_SVC     32u
 #define TRACE_PD_APP_SLOT     33u
+#define TRACE_PD_LINUX_VMM    41u
+#define TRACE_PD_FREEBSD_VMM  42u
+#define TRACE_PD_CC_PD        43u
 
 /* vm_manager IPC opcodes (MR0 in PPCs to vm_manager PD, channel CH_VM_MANAGER)
  * NOTE: 0x15/0x16 are shared with OP_CAP_BROKER_RELOAD/OP_CAP_STATUS but those
@@ -949,6 +952,13 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_CC_LOG_STREAM               0x2610  /* MR1=slot MR2=pd_id → MR0=ok MR1=bytes_drained */
 #define MSG_CC_CREATE_GUEST             0x2611  /* vibeos_create_req in shmem → MR0=ok MR1=guest_handle */
 #define MSG_CC_FAULT_INJECT             0x2612  /* MR1=slot MR2=fault_kind MR3=flags → MR0=ok MR1=result */
+#define MSG_CC_SUSPEND_GUEST            0x2613  /* MR1=guest_handle → MR0=ok MR1=state */
+#define MSG_CC_RESUME_GUEST             0x2614  /* MR1=guest_handle → MR0=ok MR1=state */
+#define MSG_CC_DESTROY_GUEST            0x2615  /* MR1=guest_handle MR2=reason → MR0=ok */
+#define MSG_CC_TRACE_START              0x2616  /* MR1=flags → MR0=ok */
+#define MSG_CC_TRACE_STOP               0x2617  /* → MR0=ok MR1=events_seen */
+#define MSG_CC_TRACE_QUERY              0x2618  /* → MR0=ok MR1=count MR2=bytes MR3=overflow */
+#define MSG_CC_TRACE_DUMP               0x2619  /* MR1=max_events → MR0=ok MR1=count MR2=bytes MR3=overflow */
 
 /* ─── Guest OS lifecycle opcodes (0x2A00) ───────────────────────────────── */
 #define MSG_GUEST_CREATE                0x2A01  /* guest_create_req in shmem → MR0=ok MR1=guest_id */

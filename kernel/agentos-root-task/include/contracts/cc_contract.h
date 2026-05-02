@@ -37,6 +37,13 @@
  *   MSG_CC_LOG_STREAM        → log_drain (OP_LOG_WRITE)
  *   MSG_CC_CREATE_GUEST      → vibe_engine (MSG_VIBEOS_CREATE)
  *   MSG_CC_FAULT_INJECT      → fault_inject (OP_FAULT_INJECT)
+ *   MSG_CC_SUSPEND_GUEST     → guest_pd (MSG_GUEST_SUSPEND)
+ *   MSG_CC_RESUME_GUEST      → guest_pd (MSG_GUEST_RESUME)
+ *   MSG_CC_DESTROY_GUEST     → guest_pd (MSG_GUEST_DESTROY)
+ *   MSG_CC_TRACE_START       → trace_recorder (OP_TRACE_START)
+ *   MSG_CC_TRACE_STOP        → trace_recorder (OP_TRACE_STOP)
+ *   MSG_CC_TRACE_QUERY       → trace_recorder (OP_TRACE_QUERY)
+ *   MSG_CC_TRACE_DUMP        → trace_recorder (OP_TRACE_DUMP)
  *
  * Invariants:
  *   - cc_pd relays MR arguments verbatim; it does not interpret payload.
@@ -365,4 +372,90 @@ struct cc_reply_fault_inject {
     uint32_t result;
     uint32_t ticks_to_recovery;
     uint32_t trace_event_id;
+};
+
+/* ─── MSG_CC_SUSPEND_GUEST / MSG_CC_RESUME_GUEST ───────────────────────── */
+
+struct cc_req_suspend_guest {
+    uint32_t guest_handle;
+};
+
+struct cc_reply_suspend_guest {
+    uint32_t ok;
+    uint32_t state;            /* GUEST_STATE_SUSPENDED on success */
+};
+
+struct cc_req_resume_guest {
+    uint32_t guest_handle;
+};
+
+struct cc_reply_resume_guest {
+    uint32_t ok;
+    uint32_t state;            /* GUEST_STATE_RUNNING on success */
+};
+
+/* ─── MSG_CC_DESTROY_GUEST ──────────────────────────────────────────────── */
+
+struct cc_req_destroy_guest {
+    uint32_t guest_handle;
+    uint32_t reason;           /* GUEST_DESTROY_* reason code */
+};
+
+struct cc_reply_destroy_guest {
+    uint32_t ok;
+};
+
+/* ─── MSG_CC_TRACE_* ────────────────────────────────────────────────────── */
+
+/*
+ * Trace relay bridge for external consumers.  The stable CC wire surface
+ * returns fixed-size trace entries in cc_shmem so host tools do not need
+ * direct access to TraceRecorder's internal output mapping.
+ */
+
+#define CC_TRACE_FLAG_WRAP   (1u << 0)
+#define CC_TRACE_FLAG_JSONL  (1u << 1)  /* accepted for compatibility */
+
+typedef struct __attribute__((packed)) {
+    uint64_t timestamp_ns;
+    uint8_t  from_pd;          /* TRACE_PD_* source */
+    uint8_t  to_pd;            /* TRACE_PD_* destination */
+    uint8_t  channel;          /* low 8 bits of channel / transport */
+    uint8_t  _pad;
+    uint16_t opcode;           /* low 16 bits of message opcode */
+    uint16_t seq_lo;           /* low 16 bits of recorder sequence */
+} cc_trace_entry_t;
+
+#define CC_TRACE_ENTRY_SIZE   16u
+#define CC_TRACE_MAX_ENTRIES  (CC_MAX_RESP_BYTES / CC_TRACE_ENTRY_SIZE)
+
+struct cc_req_trace_start {
+    uint32_t flags;            /* CC_TRACE_FLAG_* */
+};
+
+struct cc_reply_trace_start {
+    uint32_t ok;
+};
+
+struct cc_reply_trace_stop {
+    uint32_t ok;
+    uint32_t event_count;      /* total events observed since START */
+};
+
+struct cc_reply_trace_query {
+    uint32_t ok;
+    uint32_t event_count;      /* entries currently available */
+    uint32_t bytes_used;       /* event_count * sizeof(cc_trace_entry_t) */
+    uint32_t overflow_count;   /* events dropped due to ring overflow */
+};
+
+struct cc_req_trace_dump {
+    uint32_t max_events;       /* 0 means as many as fit */
+};
+
+struct cc_reply_trace_dump {
+    uint32_t ok;
+    uint32_t events_written;   /* cc_trace_entry_t entries in cc_shmem */
+    uint32_t bytes_written;
+    uint32_t overflow_count;
 };

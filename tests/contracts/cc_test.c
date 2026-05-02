@@ -18,7 +18,15 @@
  *   MSG_CC_SNAPSHOT                — snapshot a guest
  *   MSG_CC_RESTORE                 — restore a guest from snapshot
  *   MSG_CC_LOG_STREAM              — drain log from a PD
+ *   MSG_CC_CREATE_GUEST            — create a guest through lifecycle relay
  *   MSG_CC_FAULT_INJECT            — relay a fault-injection command
+ *   MSG_CC_SUSPEND_GUEST           — suspend guest through lifecycle relay
+ *   MSG_CC_RESUME_GUEST            — resume guest through lifecycle relay
+ *   MSG_CC_DESTROY_GUEST           — destroy guest through lifecycle relay
+ *   MSG_CC_TRACE_START             — start CC trace bridge
+ *   MSG_CC_TRACE_STOP              — stop CC trace bridge
+ *   MSG_CC_TRACE_QUERY             — query CC trace bridge
+ *   MSG_CC_TRACE_DUMP              — dump CC trace bridge
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -27,6 +35,7 @@
 #include "../harness/test_framework.h"
 #include "../../kernel/agentos-root-task/include/agentos.h"
 #include "../../kernel/agentos-root-task/include/contracts/cc_contract.h"
+#include "../../kernel/agentos-root-task/include/contracts/guest_contract.h"
 
 void run_cc_tests(microkit_channel ch)
 {
@@ -114,4 +123,57 @@ void run_cc_tests(microkit_channel ch)
                            "unexpected error code");
         }
     }
+
+    /* Lifecycle relays — bogus handles must return a structured error. */
+    microkit_mr_set(0, (uint64_t)MSG_CC_SUSPEND_GUEST);
+    microkit_mr_set(1, 0xFFFFu);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_CC_SUSPEND_GUEST, 2));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND ||
+            rc == (uint64_t)CC_ERR_BAD_HANDLE ||
+            rc == (uint64_t)CC_ERR_RELAY_FAULT) {
+            _tf_ok("cc: SUSPEND_GUEST returns structured status");
+        } else {
+            _tf_fail_point("cc: SUSPEND_GUEST returns structured status",
+                           "unexpected error code");
+        }
+    }
+
+    microkit_mr_set(0, (uint64_t)MSG_CC_RESUME_GUEST);
+    microkit_mr_set(1, 0xFFFFu);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_CC_RESUME_GUEST, 2));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND ||
+            rc == (uint64_t)CC_ERR_BAD_HANDLE ||
+            rc == (uint64_t)CC_ERR_RELAY_FAULT) {
+            _tf_ok("cc: RESUME_GUEST returns structured status");
+        } else {
+            _tf_fail_point("cc: RESUME_GUEST returns structured status",
+                           "unexpected error code");
+        }
+    }
+
+    microkit_mr_set(0, (uint64_t)MSG_CC_DESTROY_GUEST);
+    microkit_mr_set(1, 0xFFFFu);
+    microkit_mr_set(2, GUEST_DESTROY_NORMAL);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_CC_DESTROY_GUEST, 3));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND ||
+            rc == (uint64_t)CC_ERR_BAD_HANDLE ||
+            rc == (uint64_t)CC_ERR_RELAY_FAULT) {
+            _tf_ok("cc: DESTROY_GUEST returns structured status");
+        } else {
+            _tf_fail_point("cc: DESTROY_GUEST returns structured status",
+                           "unexpected error code");
+        }
+    }
+
+    /* Trace relay bridge — all trace operations must be callable. */
+    ASSERT_IPC_OK(ch, MSG_CC_TRACE_START, "cc: TRACE_START returns ok");
+    ASSERT_IPC_OK(ch, MSG_CC_TRACE_QUERY, "cc: TRACE_QUERY returns ok");
+    ASSERT_IPC_OK(ch, MSG_CC_TRACE_DUMP, "cc: TRACE_DUMP returns ok");
+    ASSERT_IPC_OK(ch, MSG_CC_TRACE_STOP, "cc: TRACE_STOP returns ok");
 }

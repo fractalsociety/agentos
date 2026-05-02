@@ -85,6 +85,7 @@ void microkit_dbg_put32(uint32_t v)
 seL4_IPCBuffer *__sel4_ipc_buffer = NULL;
 
 vmm_vcpu_t g_vmm_vcpus[VMM_MAX_VCPUS];
+static uint32_t g_guest_state = GUEST_STATE_RUNNING;
 
 /* ── IRQ capabilities ────────────────────────────────────────────────────── */
 static const seL4_CPtr g_virtio_blk_irq_cap =
@@ -447,9 +448,61 @@ static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
     _sel4_mrs_to_msg(&req);
 
     switch (req.opcode) {
+    case MSG_GUEST_SUSPEND: {
+        if (req.length < 4u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        if (g_guest_state == GUEST_STATE_DEAD) {
+            rep.opcode = GUEST_ERR_DEAD;
+            break;
+        }
+        if (g_guest_state != GUEST_STATE_SUSPENDED) {
+            seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+            g_guest_state = GUEST_STATE_SUSPENDED;
+        }
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    case MSG_GUEST_RESUME: {
+        if (req.length < 4u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        if (g_guest_state == GUEST_STATE_DEAD) {
+            rep.opcode = GUEST_ERR_DEAD;
+            break;
+        }
+        if (g_guest_state == GUEST_STATE_SUSPENDED) {
+            seL4_TCB_Resume((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+        }
+        g_guest_state = GUEST_STATE_RUNNING;
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    case MSG_GUEST_DESTROY: {
+        if (req.length < 4u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        if (g_guest_state != GUEST_STATE_DEAD) {
+            seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+            g_guest_state = GUEST_STATE_DEAD;
+        }
+        rep.opcode = GUEST_OK;
+        break;
+    }
     case MSG_GUEST_SEND_INPUT: {
         if (req.length < 28u || vmm_msg_rd32(req.data, 0u) != 0u) {
             rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        if (g_guest_state == GUEST_STATE_DEAD) {
+            rep.opcode = GUEST_ERR_DEAD;
+            break;
+        }
+        if (g_guest_state != GUEST_STATE_RUNNING) {
+            rep.opcode = GUEST_ERR_BAD_STATE;
             break;
         }
 
@@ -469,6 +522,10 @@ static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
     case MSG_GUEST_CONSOLE_DRAIN: {
         if (req.length < 8u || vmm_msg_rd32(req.data, 0u) != 0u) {
             rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        if (g_guest_state == GUEST_STATE_DEAD) {
+            rep.opcode = GUEST_ERR_DEAD;
             break;
         }
         uint32_t max = vmm_msg_rd32(req.data, 4u);
@@ -725,7 +782,10 @@ void freebsd_vmm_main(seL4_CPtr ep, seL4_CPtr reply_cap)
     while (1) {
         seL4_Word label = seL4_MessageInfo_get_label(info);
         if (label == MSG_GUEST_SEND_INPUT ||
-            label == MSG_GUEST_CONSOLE_DRAIN) {
+            label == MSG_GUEST_CONSOLE_DRAIN ||
+            label == MSG_GUEST_SUSPEND ||
+            label == MSG_GUEST_RESUME ||
+            label == MSG_GUEST_DESTROY) {
             seL4_MessageInfo_t reply = freebsd_vmm_rpc(info);
 #ifdef CONFIG_KERNEL_MCS
             seL4_Send(reply_cap, reply);

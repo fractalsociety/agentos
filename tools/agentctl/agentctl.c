@@ -17,6 +17,7 @@
 #include <unistd.h>
 
 #include "contracts/cc_contract.h"
+#include "contracts/guest_contract.h"
 
 #define AGENTCTL_VERSION "0.2.0"
 #define DEFAULT_CC_SOCK "build/cc_pd.sock"
@@ -50,8 +51,15 @@ static void usage(FILE *out)
             "  log-stream SLOT PD_ID\n"
             "  fb-attach GUEST_HANDLE FB_HANDLE\n"
             "  send-input GUEST_HANDLE KEYCODE\n"
+            "  suspend GUEST_HANDLE\n"
+            "  resume GUEST_HANDLE\n"
+            "  destroy GUEST_HANDLE [REASON]\n"
             "  snapshot GUEST_HANDLE\n"
             "  restore GUEST_HANDLE SNAP_LO SNAP_HI\n"
+            "  trace-start [FLAGS]\n"
+            "  trace-stop\n"
+            "  trace-query\n"
+            "  trace-dump [MAX_EVENTS]\n"
             "  connect\n"
             "  status SESSION_ID\n"
             "  raw OPCODE [MR1 [MR2 [MR3]]]\n\n"
@@ -265,6 +273,32 @@ static int cmd_send_input(int argc, char **argv)
     return r.mr[0] == CC_OK ? 0 : 1;
 }
 
+static int cmd_trace_dump(int argc, char **argv)
+{
+    uint32_t max_events = argc > 0 ? parse_u32(argv[0], "max_events") : 0u;
+    cc_reply_wire_t r;
+    if (!cc_call(MSG_CC_TRACE_DUMP, max_events, 0, 0, NULL, 0, &r)) return 1;
+    uint32_t count = r.mr[1];
+    size_t max = sizeof(r.shmem) / sizeof(cc_trace_entry_t);
+    if (count > max) count = (uint32_t)max;
+    cc_trace_entry_t *e = (cc_trace_entry_t *)r.shmem;
+    printf("{\"ok\":%" PRIu32 ",\"events_written\":%" PRIu32
+           ",\"bytes_written\":%" PRIu32 ",\"overflow_count\":%" PRIu32
+           ",\"events\":[",
+           r.mr[0], count, r.mr[2], r.mr[3]);
+    for (uint32_t i = 0; i < count; i++) {
+        if (i) printf(",");
+        printf("{\"timestamp_ns\":%" PRIu64 ",\"from_pd\":%u"
+               ",\"to_pd\":%u,\"channel\":%u"
+               ",\"opcode\":%u,\"seq_lo\":%u}",
+               e[i].timestamp_ns, (unsigned)e[i].from_pd,
+               (unsigned)e[i].to_pd, (unsigned)e[i].channel,
+               (unsigned)e[i].opcode, (unsigned)e[i].seq_lo);
+    }
+    printf("]}\n");
+    return r.mr[0] == CC_OK ? 0 : 1;
+}
+
 int main(int argc, char **argv)
 {
     const char *env_sock = getenv("CC_PD_SOCK");
@@ -321,6 +355,20 @@ int main(int argc, char **argv)
                           parse_u32(args[1], "fb_handle"), 0);
     }
     if (strcmp(cmd, "send-input") == 0) return cmd_send_input(n, args);
+    if (strcmp(cmd, "suspend") == 0 && n >= 1) {
+        return cmd_simple(MSG_CC_SUSPEND_GUEST,
+                          parse_u32(args[0], "guest_handle"), 0, 0);
+    }
+    if (strcmp(cmd, "resume") == 0 && n >= 1) {
+        return cmd_simple(MSG_CC_RESUME_GUEST,
+                          parse_u32(args[0], "guest_handle"), 0, 0);
+    }
+    if (strcmp(cmd, "destroy") == 0 && n >= 1) {
+        return cmd_simple(MSG_CC_DESTROY_GUEST,
+                          parse_u32(args[0], "guest_handle"),
+                          n > 1 ? parse_u32(args[1], "reason") : GUEST_DESTROY_NORMAL,
+                          0);
+    }
     if (strcmp(cmd, "snapshot") == 0 && n >= 1) {
         return cmd_simple(MSG_CC_SNAPSHOT, parse_u32(args[0], "guest_handle"),
                           0, 0);
@@ -331,6 +379,18 @@ int main(int argc, char **argv)
                           parse_u32(args[1], "snap_lo"),
                           parse_u32(args[2], "snap_hi"));
     }
+    if (strcmp(cmd, "trace-start") == 0) {
+        return cmd_simple(MSG_CC_TRACE_START,
+                          n > 0 ? parse_u32(args[0], "flags") : CC_TRACE_FLAG_WRAP,
+                          0, 0);
+    }
+    if (strcmp(cmd, "trace-stop") == 0) {
+        return cmd_simple(MSG_CC_TRACE_STOP, 0, 0, 0);
+    }
+    if (strcmp(cmd, "trace-query") == 0) {
+        return cmd_simple(MSG_CC_TRACE_QUERY, 0, 0, 0);
+    }
+    if (strcmp(cmd, "trace-dump") == 0) return cmd_trace_dump(n, args);
     if (strcmp(cmd, "raw") == 0 && n >= 1) {
         return cmd_simple(parse_u32(args[0], "opcode"),
                           n > 1 ? parse_u32(args[1], "mr1") : 0,
