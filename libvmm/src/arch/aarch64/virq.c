@@ -14,8 +14,7 @@
 /* Maps seL4_CPtr cap values (used as cookies) with registered vIRQ */
 int virq_passthrough_map[MAX_PASSTHROUGH_IRQ] = {-1};
 
-#define SGI_RESCHEDULE_IRQ  0
-#define SGI_FUNC_CALL       1
+#define NUM_GIC_SGIS        16
 #define PPI_VTIMER_IRQ      27
 
 __attribute__((weak)) bool agentos_vppi_defer_ack(size_t vcpu_id, int irq)
@@ -70,15 +69,12 @@ bool virq_controller_init()
             LOG_VMM_ERR("Failed to register vCPU virtual timer IRQ: 0x%lx\n", PPI_VTIMER_IRQ);
             return false;
         }
-        success = vgic_register_irq(vcpu, SGI_RESCHEDULE_IRQ, &sgi_ack, NULL);
-        if (!success) {
-            LOG_VMM_ERR("Failed to register vCPU SGI 0 IRQ");
-            return false;
-        }
-        success = vgic_register_irq(vcpu, SGI_FUNC_CALL, &sgi_ack, NULL);
-        if (!success) {
-            LOG_VMM_ERR("Failed to register vCPU SGI 1 IRQ");
-            return false;
+        for (int sgi = 0; sgi < NUM_GIC_SGIS; sgi++) {
+            success = vgic_register_irq(vcpu, sgi, &sgi_ack, NULL);
+            if (!success) {
+                LOG_VMM_ERR("Failed to register vCPU SGI %d IRQ", sgi);
+                return false;
+            }
         }
     }
 

@@ -489,13 +489,14 @@ static uint32_t vmm_affinity[VMM_MAX_SLOTS];
 
 /* ─── Guest Configuration ─────────────────────────────────────────────── */
 
-/* 512MB guest RAM — Ubuntu's generic arm64 kernel needs more headroom than
- * the old 256MB Buildroot-oriented configuration. */
+/* 512MB guest RAM is the largest mapping currently proven by the root-task
+ * allocator for qemu_virt_aarch64. The Ubuntu 26.04 initrd still fits when
+ * placed below the DTB. */
 #define GUEST_RAM_SIZE          0x20000000
 
 /* Guest DTB and initrd placement addresses (must match DTS) */
-#define GUEST_DTB_VADDR         0x4f000000
-#define GUEST_INIT_RAM_DISK_VADDR 0x4d000000
+#define GUEST_DTB_VADDR         0x5f000000
+#define GUEST_INIT_RAM_DISK_VADDR 0x50000000
 
 /* ─── Channel IDs ────────────────────────────────────────────────────── */
 

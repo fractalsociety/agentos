@@ -20,7 +20,7 @@
 #   E2E_IMAGE           override agentos image (default: build/<board>/agentos.img)
 #   E2E_GUEST_OS        guest OS to test: freebsd|ubuntu-amd64|ubuntu-arm64|nixos
 #                       (default: freebsd; set to "all" to loop all available images)
-#   E2E_FREEBSD_IMG     FreeBSD disk image for slot 0 (default: guest-images/freebsd.img)
+#   E2E_FREEBSD_IMG     FreeBSD disk/ISO for slot 0 (default: build/guest-images/freebsd-15.0-aarch64.iso)
 #   E2E_SSH_KEY         path to ED25519 private key (default: tests/e2e/id_ed25519)
 #   E2E_SSH_USER        SSH user (default: ubuntu for Ubuntu guests, root otherwise)
 #   E2E_DEBUG           if set, echo all serial output to stdout
@@ -55,6 +55,9 @@ E2E_SEED_PORT="${E2E_SEED_PORT:-18790}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+GUEST_IMG_DIR="${GUEST_IMG_DIR:-${REPO_ROOT}/build/guest-images}"
+BUILD_TMP_DIR="${BUILD_TMP_DIR:-${REPO_ROOT}/build/tmp}"
+mkdir -p "${GUEST_IMG_DIR}" "${BUILD_TMP_DIR}"
 
 NATIVE_ARCH="$(uname -m | sed 's/arm64/aarch64/')"
 UNAME_S="$(uname -s)"
@@ -84,7 +87,7 @@ fi
 # Images
 E2E_IMAGE="${E2E_IMAGE:-${REPO_ROOT}/build/${BOARD}/agentos.img}"
 E2E_LOADER_ELF="${E2E_LOADER_ELF:-${REPO_ROOT}/build/${BOARD}/loader.elf}"
-E2E_FREEBSD_IMG="${E2E_FREEBSD_IMG:-${REPO_ROOT}/guest-images/freebsd.img}"
+E2E_FREEBSD_IMG="${E2E_FREEBSD_IMG:-${GUEST_IMG_DIR}/freebsd-15.0-aarch64.iso}"
 E2E_SSH_KEY="${E2E_SSH_KEY:-${SCRIPT_DIR}/id_ed25519}"
 E2E_CC_SOCK="${E2E_CC_SOCK:-${REPO_ROOT}/build/cc_pd.sock}"
 
@@ -104,27 +107,23 @@ resolve_guest_os() {
             E2E_GUEST_BOOT_MARKER="login:"
             ;;
         ubuntu-amd64)
-            E2E_GUEST_IMG="${E2E_GUEST_IMG:-${REPO_ROOT}/guest-images/ubuntu-amd64.img}"
+            E2E_GUEST_IMG="${E2E_GUEST_IMG:-${GUEST_IMG_DIR}/ubuntu-amd64.img}"
             E2E_GUEST_VMM_TYPE="linux"
             E2E_GUEST_BOOT_MARKER="login:"
             ;;
         ubuntu-arm64)
-            local ubuntu_default="${REPO_ROOT}/guest-images/ubuntu-arm64.img"
-            local ubuntu_cached="${HOME}/.local/agentos-images/ubuntu-24.04-aarch64.img"
-            if [ -f "${ubuntu_cached}" ]; then
-                ubuntu_default="${ubuntu_cached}"
-            fi
+            local ubuntu_default="${GUEST_IMG_DIR}/ubuntu-26.04-aarch64.iso"
             E2E_GUEST_IMG="${E2E_GUEST_IMG:-${ubuntu_default}}"
             E2E_GUEST_VMM_TYPE="linux"
             E2E_GUEST_BOOT_MARKER="login:"
             ;;
         nixos)
-            E2E_GUEST_IMG="${E2E_GUEST_IMG:-${REPO_ROOT}/guest-images/nixos.img}"
+            E2E_GUEST_IMG="${E2E_GUEST_IMG:-${GUEST_IMG_DIR}/nixos.img}"
             E2E_GUEST_VMM_TYPE="linux"
             E2E_GUEST_BOOT_MARKER="<<< NixOS Stage 2"
             ;;
         freebsd15)
-            E2E_GUEST_IMG="${E2E_GUEST_IMG:-${REPO_ROOT}/guest-images/freebsd15-amd64.img}"
+            E2E_GUEST_IMG="${E2E_GUEST_IMG:-${GUEST_IMG_DIR}/freebsd15-amd64.img}"
             E2E_GUEST_VMM_TYPE="freebsd"
             E2E_GUEST_BOOT_MARKER="login:"
             ;;
@@ -139,8 +138,8 @@ resolve_guest_os() {
 resolve_guest_os "${E2E_GUEST_OS}"
 
 # Temporary files
-SERIAL_SOCK="/tmp/agentos-e2e-$$.sock"
-SERIAL_LOG="/tmp/agentos-e2e-serial-$$.log"
+SERIAL_SOCK="${BUILD_TMP_DIR}/agentos-e2e-$$.sock"
+SERIAL_LOG="${BUILD_TMP_DIR}/agentos-e2e-serial-$$.log"
 
 # Counters
 TESTS_PASSED=0
@@ -295,7 +294,7 @@ start_ubuntu_seed_server() {
         return 1
     fi
 
-    SEED_DIR="$(mktemp -d "/tmp/agentos-nocloud-${E2E_GUEST_OS}.XXXXXX")"
+    SEED_DIR="$(mktemp -d "${BUILD_TMP_DIR}/agentos-nocloud-${E2E_GUEST_OS}.XXXXXX")"
     pubkey="$(cat "${E2E_SSH_KEY}.pub")"
     {
         printf "instance-id: agentos-%s-%s-%s\n" "${E2E_GUEST_OS}" "$$" "$(date +%s)"
@@ -335,7 +334,7 @@ start_ubuntu_seed_server() {
     } > "${SEED_DIR}/user-data"
 
     python3 -m http.server "${E2E_SEED_PORT}" --bind 127.0.0.1 \
-        --directory "${SEED_DIR}" >/tmp/agentos-e2e-seed-${E2E_SEED_PORT}.log 2>&1 &
+        --directory "${SEED_DIR}" >"${BUILD_TMP_DIR}/agentos-e2e-seed-${E2E_SEED_PORT}.log" 2>&1 &
     SEED_HTTP_PID=$!
     sleep 1
     if ! kill -0 "${SEED_HTTP_PID}" 2>/dev/null; then
@@ -448,7 +447,10 @@ HOSTFWD="${HOSTFWD},hostfwd=tcp:127.0.0.1:${E2E_SSH_PORT}-:22"
 GUEST_BLOCK_FLAGS=()
 if [ "${HAVE_GUEST_IMG}" -eq 1 ]; then
     GUEST_DRIVE_SNAPSHOT=""
-    if is_ubuntu_guest; then
+    case "${E2E_GUEST_IMG}" in
+        *.iso) GUEST_DRIVE_SNAPSHOT=",readonly=on,file.locking=off" ;;
+    esac
+    if [ -z "${GUEST_DRIVE_SNAPSHOT}" ] && is_ubuntu_guest; then
         GUEST_DRIVE_SNAPSHOT=",snapshot=on"
     fi
     case "${BOARD}" in
@@ -464,7 +466,7 @@ if [ "${HAVE_GUEST_IMG}" -eq 1 ]; then
             ;;
         *)
             GUEST_BLOCK_FLAGS+=(
-                -drive "file=${E2E_GUEST_IMG},if=virtio,format=raw,readonly=off${GUEST_DRIVE_SNAPSHOT}"
+                -drive "file=${E2E_GUEST_IMG},if=virtio,format=raw${GUEST_DRIVE_SNAPSHOT}"
             )
             ;;
     esac

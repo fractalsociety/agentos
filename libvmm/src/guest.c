@@ -26,7 +26,7 @@ bool guest_start(uintptr_t kernel_pc, uintptr_t dtb, uintptr_t initrd)
         vmm_tcb_cap(GUEST_BOOT_VCPU_ID),
         false, // We'll explcitly start the guest below rather than in this call
         0, // No flags
-        4, // Writing to x0, pc, and spsr. Due to the ordering of seL4_UserContext the count must be 4.
+        7, // Write pc, sp, spsr, and x0-x3. Linux requires x1-x3 to be zero at entry.
         &regs);
     assert(err == seL4_NoError);
     if (err != seL4_NoError) {

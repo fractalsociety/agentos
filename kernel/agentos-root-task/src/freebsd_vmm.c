@@ -12,8 +12,8 @@
  *      QEMU virtio-mmio devices exposed in the FDT.
  *
  * Memory layout (host phys -> guest phys):
- *   guest_ram (384MB) host:0x40000000 -> guest:0x40000000  (main RAM)
- *     [kernel.bin at 0x40000000, FDT at 0x57f00000]
+ *   guest_ram (512MB) host:0x40000000 -> guest:0x40000000  (main RAM)
+ *     [kernel.bin at 0x40000000, FDT at 0x5f000000]
  *
  * IRQ passthrough (freebsd_vmm_test.system assigns):
  *   id=3 -> badge 0x08 -> INTID 79 (SPI 47, virtio-blk bus 31 = slot 31)
@@ -114,9 +114,9 @@ uintptr_t guest_ram_vaddr;   /* VMM virtual address of guest_ram MR */
 #define FREEBSD_UEFI_CODE_VADDR 0x00000000UL
 #define FREEBSD_UEFI_DATA_VADDR 0x04000000UL
 #define FREEBSD_GUEST_RAM_VADDR 0x40000000UL
-#define FREEBSD_GUEST_RAM_SIZE  0x18000000UL
+#define FREEBSD_GUEST_RAM_SIZE  0x20000000UL
 #define FREEBSD_KERNEL_VADDR    0x40000000UL
-#define FREEBSD_FDT_VADDR       0x57f00000UL
+#define FREEBSD_FDT_VADDR       0x5f000000UL
 #define FREEBSD_UEFI_DATA_SIZE  0x04000000UL
 #define FREEBSD_VTIMER_IRQ      27u
 

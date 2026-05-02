@@ -218,7 +218,7 @@ Compile with:
 ```sh
 cc -DAGENTOS_TEST_HOST -I tests/api \
    -I kernel/agentos-root-task/include \
-   -o /tmp/test_<pd> tests/api/test_<pd>.c && /tmp/test_<pd>
+   -o build/tmp/test_<pd> tests/api/test_<pd>.c && build/tmp/test_<pd>
 ```
 
 Test structure (mirrors `nameserver.c`):

@@ -9,20 +9,21 @@
 #   tools/bootstrap-guest.sh <os> <output-image>
 #
 # Supported OS targets:
-#   ubuntu-amd64    Ubuntu 24.04 LTS x86_64 server  (qemu_virt x86_64 guests)
+#   ubuntu-amd64    Ubuntu 26.04 LTS x86_64 desktop (qemu_virt x86_64 guests)
 #   ubuntu-arm64    Ubuntu 26.04 ARM64 desktop       (qemu_virt_aarch64 guests)
 #   nixos           NixOS 25.11 x86_64 minimal       (qemu_virt x86_64 guests)
 #   freebsd15       FreeBSD 15.0 AMD64               (qemu_virt x86_64 guests)
 #
 # Environment:
 #   ISO_DIR         directory containing ISO files (default: /Volumes/ISOs)
-#   GUEST_IMG_DIR   output directory (default: guest-images/)
+#   GUEST_IMG_DIR   output directory (default: build/guest-images/)
+#   TMP_ROOT        host scratch directory (default: build/tmp/)
 #   E2E_SSH_PUBKEY  path to test SSH public key (default: tests/e2e/id_ed25519.pub)
 #   DISK_SIZE_GB    guest disk image size in GB (default: 20)
 #   QEMU_MEM_MB     RAM to give installer VM in MB (default: 2048)
 #
 # ISO filenames expected in ISO_DIR:
-#   ubuntu-amd64:  ubuntu-24.04-live-server-amd64.iso
+#   ubuntu-amd64:  ubuntu-26.04-desktop-amd64.iso
 #   ubuntu-arm64:  ubuntu-26.04-desktop-arm64.iso
 #   nixos:         nixos-minimal-25.11-x86_64-linux.iso
 #   freebsd15:     FreeBSD-15.0-RELEASE-amd64-bootonly.iso  (or disc1)
@@ -54,7 +55,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 ISO_DIR="${ISO_DIR:-/Volumes/ISOs}"
-GUEST_IMG_DIR="${GUEST_IMG_DIR:-${REPO_ROOT}/guest-images}"
+GUEST_IMG_DIR="${GUEST_IMG_DIR:-${REPO_ROOT}/build/guest-images}"
+TMP_ROOT="${TMP_ROOT:-${REPO_ROOT}/build/tmp}"
 E2E_SSH_PUBKEY="${E2E_SSH_PUBKEY:-${REPO_ROOT}/tests/e2e/id_ed25519.pub}"
 DISK_SIZE_GB="${DISK_SIZE_GB:-20}"
 QEMU_MEM_MB="${QEMU_MEM_MB:-2048}"
@@ -65,7 +67,7 @@ OS="${1:-}"
 
 OUTPUT_IMG="${2:-}"
 
-mkdir -p "${GUEST_IMG_DIR}"
+mkdir -p "${GUEST_IMG_DIR}" "${TMP_ROOT}"
 
 # ── SSH key ────────────────────────────────────────────────────────────────────
 
@@ -153,12 +155,12 @@ find_expect() {
 
 # ── Ubuntu AMD64 bootstrap ─────────────────────────────────────────────────────
 #
-# Ubuntu 24.04 server ISO supports cloud-init "autoinstall" natively.
+# Ubuntu 26.04 desktop ISO supports cloud-init "autoinstall" natively.
 # We create a CIDATA seed ISO with user-data (autoinstall.yaml) and mount it
 # alongside the Ubuntu installer ISO.  The installer runs completely unattended.
 
 bootstrap_ubuntu_amd64() {
-    local iso="${ISO_DIR}/ubuntu-24.04-live-server-amd64.iso"
+    local iso="${ISO_DIR}/ubuntu-26.04-desktop-amd64.iso"
     local out="${OUTPUT_IMG:-${GUEST_IMG_DIR}/ubuntu-amd64.img}"
     local qemu="qemu-system-x86_64"
 
@@ -167,12 +169,12 @@ bootstrap_ubuntu_amd64() {
 
     ensure_ssh_key
 
-    info "Bootstrapping Ubuntu 24.04 amd64 → ${out}"
+    info "Bootstrapping Ubuntu 26.04 amd64 → ${out}"
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
 
     # Build cloud-init seed directory
     local seed_dir
-    seed_dir="$(mktemp -d)"
+    seed_dir="$(mktemp -d "${TMP_ROOT}/agentos-ubuntu-amd64-seed.XXXXXX")"
     trap 'rm -rf "${seed_dir}"' EXIT INT TERM
 
     # meta-data (minimal)
@@ -210,7 +212,8 @@ AUTOINSTALL
     make_cidata_iso "${seed_dir}" "${seed_iso}"
 
     info "Launching Ubuntu installer in QEMU (headless — this takes ~10-20 min)..."
-    info "Serial log: /tmp/ubuntu-install-$$.log"
+    local install_log="${TMP_ROOT}/ubuntu-install-$$.log"
+    info "Serial log: ${install_log}"
 
     # Ubuntu autoinstall: pass ds=nocloud;seedfrom via kernel cmdline
     "${qemu}" \
@@ -222,7 +225,7 @@ AUTOINSTALL
         -drive "file=${seed_iso},readonly=on,media=cdrom,format=raw,index=1" \
         -drive "file=${out},if=virtio,format=raw" \
         -nographic \
-        -serial "file:/tmp/ubuntu-install-$$.log" \
+        -serial "file:${install_log}" \
         -no-reboot 2>/dev/null &
     local qemu_pid=$!
 
@@ -231,7 +234,7 @@ AUTOINSTALL
     while kill -0 "${qemu_pid}" 2>/dev/null; do
         sleep 10
         waited=$(( waited + 10 ))
-        if grep -qF "Installation complete" /tmp/ubuntu-install-$$.log 2>/dev/null; then
+        if grep -qF "Installation complete" "${install_log}" 2>/dev/null; then
             info "Autoinstall complete (${waited}s)"
         fi
         if [ "${waited}" -ge 2400 ]; then
@@ -240,7 +243,7 @@ AUTOINSTALL
         fi
     done
 
-    rm -f "/tmp/ubuntu-install-$$.log"
+    rm -f "${install_log}"
     ok "Ubuntu amd64 image ready: ${out}"
 }
 
@@ -262,7 +265,7 @@ bootstrap_ubuntu_arm64() {
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
 
     local seed_dir
-    seed_dir="$(mktemp -d)"
+    seed_dir="$(mktemp -d "${TMP_ROOT}/agentos-ubuntu-arm64-seed.XXXXXX")"
     trap 'rm -rf "${seed_dir}"' EXIT INT TERM
 
     cat > "${seed_dir}/meta-data" << 'META'
@@ -306,7 +309,7 @@ AUTOINSTALL
         -drive "file=${seed_iso},readonly=on,media=cdrom,format=raw,index=1" \
         -drive "file=${out},if=virtio,format=raw" \
         -nographic \
-        -serial "file:/tmp/ubuntu-arm64-install-$$.log" \
+        -serial "file:${TMP_ROOT}/ubuntu-arm64-install-$$.log" \
         -no-reboot 2>/dev/null &
     local qemu_pid=$!
 
@@ -319,7 +322,7 @@ AUTOINSTALL
             die "Ubuntu ARM64 install did not complete within 60 min"
     done
 
-    rm -f "/tmp/ubuntu-arm64-install-$$.log"
+    rm -f "${TMP_ROOT}/ubuntu-arm64-install-$$.log"
     ok "Ubuntu arm64 image ready: ${out}"
 }
 
@@ -348,11 +351,11 @@ bootstrap_nixos() {
     info "Bootstrapping NixOS 25.11 → ${out}"
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
 
-    local serial_sock="/tmp/nixos-install-$$.sock"
+    local serial_sock="${TMP_ROOT}/nixos-install-$$.sock"
 
     # Write the expect script to a temp file
     local expect_script
-    expect_script="$(mktemp /tmp/nixos-install-XXXXXX.exp)"
+    expect_script="$(mktemp "${TMP_ROOT}/nixos-install-XXXXXX.exp")"
     cat > "${expect_script}" << EXPECT_SCRIPT
 #!/usr/bin/expect -f
 
@@ -481,7 +484,7 @@ bootstrap_freebsd15() {
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
 
     local expect_script
-    expect_script="$(mktemp /tmp/freebsd-install-XXXXXX.exp)"
+    expect_script="$(mktemp "${TMP_ROOT}/freebsd-install-XXXXXX.exp")"
     cat > "${expect_script}" << EXPECT_SCRIPT
 #!/usr/bin/expect -f
 

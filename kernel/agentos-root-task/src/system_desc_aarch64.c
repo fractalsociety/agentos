@@ -348,7 +348,7 @@ const system_desc_t system_desc_aarch64 = {
                   .writable = 1u,
                   .name     = "uefi_data" },
                 { .vaddr    = 0x40000000ULL,
-                  .size     = 0x18000000u,  /* 384 MB FreeBSD guest RAM */
+                  .size     = 0x20000000u,  /* 512 MB FreeBSD guest RAM */
                   .writable = 1u,
                   .name     = "guest_ram" },
             },

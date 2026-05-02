@@ -115,7 +115,7 @@ qemu-system-aarch64 \
     -cpu cortex-a53 \
     -m 2G \
     -display none -monitor none \
-    -chardev socket,id=char0,path=/tmp/agentos-serial.sock,server=on,wait=off \
+    -chardev socket,id=char0,path=build/agentos-serial.sock,server=on,wait=off \
     -serial chardev:char0 \
     -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789 \
     -device virtio-net-device,netdev=net0 \
@@ -244,13 +244,11 @@ domains:
   x86-64 board includes a stub `linux_vmm.elf` for compatibility with the
   system description file.
 
-- **FreeBSD image selection**: the VMM build and QEMU runtime use
-  `AGENTOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` when set, otherwise they prefer the
-  fetched image at `~/.local/agentos-images/freebsd-14.4-aarch64.img` and fall
-  back to `guest-images/freebsd.img` or
-  `guest-images/freebsd-14.4-aarch64.img`. Keeping the kernel extraction and
-  attached disk on the same prepared image is required for the CC-PD
-  login-prompt E2E.
+- **Guest image selection**: `make fetch-guest` stages Ubuntu 26.04 and
+  FreeBSD 15.0 assets from `AGENTOS_ISO_DIR` (default `/Volumes/ISOs`) into
+  `build/guest-images`. The VMM build and QEMU runtime use those build-local
+  images by default; set `AGENTOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` only when
+  testing a non-default FreeBSD image.
 
 - **WASM agent execution**: `swap_slot` PDs load and execute WASM binaries
   via the embedded wasm3 interpreter. Binaries must be signed with

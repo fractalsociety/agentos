@@ -39,7 +39,14 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
         .context("build step failed")?;
     }
 
-    let log_file = tempfile::NamedTempFile::new().context("failed to create temp log file")?;
+    let tmp_dir = repo_root.join("build/tmp");
+    std::fs::create_dir_all(&tmp_dir)
+        .with_context(|| format!("failed to create {}", tmp_dir.display()))?;
+    let log_file = tempfile::Builder::new()
+        .prefix("agentos-qemu-")
+        .suffix(".log")
+        .tempfile_in(&tmp_dir)
+        .context("failed to create build/tmp QEMU log file")?;
     let log_path = log_file.path().to_path_buf();
 
     let needs_ssh_probe = !matches!(args.guest_os.as_str(), "ubuntu" | "freebsd");
@@ -203,9 +210,12 @@ write_files:
     );
 
     ensure_host_port_available(UBUNTU_NOCLOUD_PORT)?;
+    let tmp_dir = repo_root.join("build/tmp");
+    std::fs::create_dir_all(&tmp_dir)
+        .with_context(|| format!("failed to create {}", tmp_dir.display()))?;
     let dir = tempfile::Builder::new()
         .prefix("agentos-nocloud-ubuntu-")
-        .tempdir()
+        .tempdir_in(&tmp_dir)
         .context("failed to create Ubuntu NoCloud tempdir")?;
     std::fs::write(dir.path().join("meta-data"), meta_data)
         .context("failed to write NoCloud meta-data")?;
@@ -336,7 +346,7 @@ pub fn spawn_qemu_with_guest(
                         "virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.1",
                         "-drive",
                         &format!(
-                            "file={},format=raw,id=hd0,if=none,snapshot=on",
+                            "file={},format=raw,id=hd0,if=none,readonly=on,file.locking=off",
                             ubuntu_img.to_str().unwrap()
                         ),
                     ]);
@@ -350,7 +360,7 @@ pub fn spawn_qemu_with_guest(
                         "virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.31",
                         "-drive",
                         &format!(
-                            "file={},format=raw,id=hd0,if=none,snapshot=on",
+                            "file={},format=raw,id=hd0,if=none,readonly=on,file.locking=off",
                             freebsd_img.to_str().unwrap()
                         ),
                     ]);
@@ -456,15 +466,7 @@ pub fn spawn_qemu_with_guest(
 }
 
 fn ubuntu_disk_image(repo_root: &Path) -> std::path::PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        let cached = std::path::PathBuf::from(home)
-            .join(".local/agentos-images")
-            .join("ubuntu-24.04-aarch64.img");
-        if cached.exists() {
-            return cached;
-        }
-    }
-    repo_root.join("guest-images/ubuntu-24.04-aarch64.img")
+    repo_root.join("build/guest-images/ubuntu-26.04-aarch64.iso")
 }
 
 fn freebsd_disk_image(repo_root: &Path) -> std::path::PathBuf {
@@ -475,24 +477,7 @@ fn freebsd_disk_image(repo_root: &Path) -> std::path::PathBuf {
         }
     }
 
-    if let Ok(home) = std::env::var("HOME") {
-        let cached = std::path::PathBuf::from(home)
-            .join(".local/agentos-images")
-            .join("freebsd-14.4-aarch64.img");
-        if cached.exists() {
-            return cached;
-        }
-    }
-
-    let linked = repo_root.join("guest-images/freebsd.img");
-    if linked.exists() {
-        return linked;
-    }
-    let repo_image = repo_root.join("guest-images/freebsd-14.4-aarch64.img");
-    if repo_image.exists() {
-        return repo_image;
-    }
-    repo_image
+    repo_root.join("build/guest-images/freebsd-15.0-aarch64.iso")
 }
 
 fn qemu_netdev_arg(ssh_port: u16) -> anyhow::Result<String> {
@@ -664,15 +649,18 @@ fn wait_for_guest_console_login_via_cc(
     timeout: Duration,
     qemu: &mut Child,
 ) -> anyhow::Result<String> {
-    wait_for_cc_socket(cc_sock, timeout.min(Duration::from_secs(30)), qemu)?;
-    let mut cc = CcClient::connect(cc_sock)?;
+    let mut cc = connect_cc_client(cc_sock, timeout.min(Duration::from_secs(30)), qemu)?;
 
     let start = Instant::now();
     let mut transcript = String::new();
     let mut matched_prompt = None;
     let prompt_markers: &[&str] = match guest_os {
-        "ubuntu" => &["ubuntu login:", "login:"],
-        "freebsd" => &["login:"],
+        "ubuntu" => &[
+            "Press Enter for system maintenance",
+            "ubuntu login:",
+            "login:",
+        ],
+        "freebsd" => &["Enter full pathname of shell", "login:"],
         _ => &["login:"],
     };
 
@@ -693,7 +681,11 @@ fn wait_for_guest_console_login_via_cc(
             }
             Err(err) => {
                 println!("[xtask:test] CC console drain not ready yet: {err:#}");
-                cc = CcClient::connect(cc_sock)?;
+                if !is_transient_cc_read_error(&err) {
+                    if let Ok(next) = CcClient::connect(cc_sock) {
+                        cc = next;
+                    }
+                }
             }
         }
         std::thread::sleep(Duration::from_secs(1));
@@ -710,6 +702,106 @@ fn wait_for_guest_console_login_via_cc(
 
     println!("[xtask:test] CC console matched prompt marker {:?}", prompt);
 
+    if guest_os == "ubuntu" && prompt.contains("system maintenance") {
+        cc_send_raw_bytes(&mut cc, 0, b"\n")?;
+        let shell_start = Instant::now();
+        let mut shell = String::new();
+        while shell_start.elapsed() < Duration::from_secs(45) {
+            ensure_qemu_running(qemu, "waiting for Ubuntu emergency shell via CC-PD API")?;
+            let chunk = match cc_log_stream(&mut cc) {
+                Ok(chunk) => chunk,
+                Err(err) => {
+                    println!("[xtask:test] CC console shell drain not ready yet: {err:#}");
+                    String::new()
+                }
+            };
+            if !chunk.is_empty() {
+                shell.push_str(&chunk);
+                if shell.contains("root@ubuntu") || shell.contains("# ") {
+                    cc_send_raw_bytes(&mut cc, 0, b"echo agentos-e2e\n")?;
+                    let command_start = Instant::now();
+                    let mut command_echo = String::new();
+                    while command_start.elapsed() < Duration::from_secs(20) {
+                        ensure_qemu_running(
+                            qemu,
+                            "waiting for Ubuntu emergency shell command echo via CC-PD API",
+                        )?;
+                        let chunk = cc_log_stream(&mut cc).unwrap_or_default();
+                        if !chunk.is_empty() {
+                            command_echo.push_str(&chunk);
+                            if command_echo.contains("agentos-e2e") {
+                                return Ok(format!(
+                                    "CC console API reached Ubuntu emergency shell after {:?} and echoed a command",
+                                    prompt
+                                ));
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                    anyhow::bail!(
+                        "Ubuntu emergency shell prompt appeared, but command echo was not observed; tail:\n{}",
+                        tail_chars(&command_echo, 2000)
+                    );
+                }
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        anyhow::bail!(
+            "Ubuntu maintenance prompt appeared, but emergency shell did not; tail:\n{}",
+            tail_chars(&shell, 2000)
+        );
+    }
+
+    if guest_os == "freebsd" && prompt.contains("Enter full pathname") {
+        cc_send_raw_bytes(&mut cc, 0, b"\n")?;
+        let shell_start = Instant::now();
+        let mut shell = String::new();
+        while shell_start.elapsed() < Duration::from_secs(30) {
+            ensure_qemu_running(qemu, "waiting for FreeBSD single-user shell via CC-PD API")?;
+            let chunk = match cc_log_stream(&mut cc) {
+                Ok(chunk) => chunk,
+                Err(err) => {
+                    println!("[xtask:test] CC console FreeBSD shell drain not ready yet: {err:#}");
+                    String::new()
+                }
+            };
+            if !chunk.is_empty() {
+                shell.push_str(&chunk);
+                if shell.contains("# ") {
+                    cc_send_raw_bytes(&mut cc, 0, b"echo agentos-e2e\n")?;
+                    let command_start = Instant::now();
+                    let mut command_echo = String::new();
+                    while command_start.elapsed() < Duration::from_secs(20) {
+                        ensure_qemu_running(
+                            qemu,
+                            "waiting for FreeBSD shell command echo via CC-PD API",
+                        )?;
+                        let chunk = cc_log_stream(&mut cc).unwrap_or_default();
+                        if !chunk.is_empty() {
+                            command_echo.push_str(&chunk);
+                            if command_echo.contains("agentos-e2e") {
+                                return Ok(format!(
+                                    "CC console API reached FreeBSD single-user shell after {:?} and echoed a command",
+                                    prompt
+                                ));
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(500));
+                    }
+                    anyhow::bail!(
+                        "FreeBSD single-user shell prompt appeared, but command echo was not observed; tail:\n{}",
+                        tail_chars(&command_echo, 2000)
+                    );
+                }
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        anyhow::bail!(
+            "FreeBSD shell selection prompt appeared, but shell did not; tail:\n{}",
+            tail_chars(&shell, 2000)
+        );
+    }
+
     let probe = "~";
     cc_send_raw_byte(&mut cc, 0, probe.as_bytes()[0])?;
 
@@ -722,7 +814,11 @@ fn wait_for_guest_console_login_via_cc(
             Ok(chunk) => chunk,
             Err(err) => {
                 println!("[xtask:test] CC console post-input drain not ready yet: {err:#}");
-                cc = CcClient::connect(cc_sock)?;
+                if !is_transient_cc_read_error(&err) {
+                    if let Ok(next) = CcClient::connect(cc_sock) {
+                        cc = next;
+                    }
+                }
                 String::new()
             }
         };
@@ -746,19 +842,26 @@ fn wait_for_guest_console_login_via_cc(
     );
 }
 
-pub fn wait_for_cc_socket(
+fn is_transient_cc_read_error(err: &anyhow::Error) -> bool {
+    let rendered = format!("{err:#}");
+    rendered.contains("Resource temporarily unavailable")
+        || rendered.contains("timed out")
+        || rendered.contains("WouldBlock")
+}
+
+fn connect_cc_client(
     cc_sock: &Path,
     timeout: Duration,
     qemu: &mut Child,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<CcClient> {
     let start = Instant::now();
     let mut last_err = None;
     while start.elapsed() < timeout {
-        ensure_qemu_running(qemu, "waiting for CC-PD socket")?;
+        ensure_qemu_running(qemu, "connecting to CC-PD socket")?;
         if cc_sock.exists() {
-            match UnixStream::connect(cc_sock) {
-                Ok(_) => return Ok(()),
-                Err(err) => last_err = Some(err.to_string()),
+            match CcClient::connect(cc_sock) {
+                Ok(cc) => return Ok(cc),
+                Err(err) => last_err = Some(format!("{err:#}")),
             }
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -766,12 +869,33 @@ pub fn wait_for_cc_socket(
 
     if let Some(err) = last_err {
         anyhow::bail!(
-            "CC-PD socket {} exists but did not accept connections within {}s: {}",
+            "failed to connect to {} within {}s: {}",
             cc_sock.display(),
             timeout.as_secs(),
             err
         );
     }
+    anyhow::bail!(
+        "CC-PD socket {} did not appear within {}s",
+        cc_sock.display(),
+        timeout.as_secs()
+    );
+}
+
+pub fn wait_for_cc_socket(
+    cc_sock: &Path,
+    timeout: Duration,
+    qemu: &mut Child,
+) -> anyhow::Result<()> {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        ensure_qemu_running(qemu, "waiting for CC-PD socket")?;
+        if cc_sock.exists() {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
     anyhow::bail!(
         "CC-PD socket {} did not appear within {}s",
         cc_sock.display(),
@@ -815,6 +939,13 @@ fn cc_send_raw_byte(cc: &mut CcClient, guest_handle: u32, byte: u8) -> anyhow::R
         "MSG_CC_SEND_INPUT returned ok={}",
         reply.mr[0]
     );
+    Ok(())
+}
+
+fn cc_send_raw_bytes(cc: &mut CcClient, guest_handle: u32, bytes: &[u8]) -> anyhow::Result<()> {
+    for byte in bytes {
+        cc_send_raw_byte(cc, guest_handle, *byte)?;
+    }
     Ok(())
 }
 

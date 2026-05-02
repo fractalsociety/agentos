@@ -47,6 +47,9 @@ section() { printf "\n${CYAN}--- %s ---${RESET}\n" "$*"; }
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+GUEST_IMG_DIR="${GUEST_IMG_DIR:-${REPO_ROOT}/build/guest-images}"
+BUILD_TMP_DIR="${BUILD_TMP_DIR:-${REPO_ROOT}/build/tmp}"
+mkdir -p "${GUEST_IMG_DIR}" "${BUILD_TMP_DIR}"
 
 E2E_TIMEOUT="${E2E_TIMEOUT:-600}"
 E2E_BOARD="${E2E_BOARD:-qemu_virt_aarch64}"
@@ -142,22 +145,11 @@ PY
 }
 
 default_ubuntu_img() {
-    local cached="${HOME}/.local/agentos-images/ubuntu-24.04-aarch64.img"
-    if [ -f "${cached}" ]; then
-        printf "%s\n" "${cached}"
-    else
-        printf "%s\n" "${REPO_ROOT}/guest-images/ubuntu-24.04-aarch64.img"
-    fi
+    printf "%s\n" "${GUEST_IMG_DIR}/ubuntu-26.04-aarch64.iso"
 }
 
 default_freebsd_img() {
-    if [ -f "${REPO_ROOT}/guest-images/freebsd.img" ]; then
-        printf "%s\n" "${REPO_ROOT}/guest-images/freebsd.img"
-    elif [ -f "${REPO_ROOT}/guest-images/freebsd-14.4-aarch64.img" ]; then
-        printf "%s\n" "${REPO_ROOT}/guest-images/freebsd-14.4-aarch64.img"
-    else
-        printf "%s\n" "${HOME}/.local/agentos-images/freebsd-14.4-aarch64.img"
-    fi
+    printf "%s\n" "${GUEST_IMG_DIR}/freebsd-15.0-aarch64.iso"
 }
 
 abs_path() {
@@ -183,7 +175,7 @@ ensure_ssh_key() {
 start_ubuntu_seed_server() {
     local pubkey
     pubkey="$(cat "${E2E_SSH_KEY}.pub")"
-    SEED_DIR="$(mktemp -d "/tmp/agentos-dual-nocloud.XXXXXX")"
+    SEED_DIR="$(mktemp -d "${BUILD_TMP_DIR}/agentos-dual-nocloud.XXXXXX")"
     {
         printf "instance-id: agentos-dual-ubuntu-%s-%s\n" "$$" "$(date +%s)"
         printf "local-hostname: agentos-linux\n"
@@ -342,6 +334,9 @@ start_qemu() {
     if [ "${disk_snapshot}" = "0" ]; then
         snapshot_opt=""
     fi
+    case "${disk}" in
+        *.iso) snapshot_opt=",readonly=on,file.locking=off" ;;
+    esac
     rm -f "${cc_sock}"
     : > "${serial_log}"
     : > "${qemu_log}"
@@ -479,7 +474,7 @@ main() {
     require_port_free "${E2E_FREEBSD_SSH_PORT}"
     require_port_free "${E2E_SEED_PORT}"
 
-    TMP_DIR="$(mktemp -d "/tmp/agentos-dual-os.XXXXXX")"
+    TMP_DIR="$(mktemp -d "${BUILD_TMP_DIR}/agentos-dual-os.XXXXXX")"
     info "Temp dir: ${TMP_DIR}"
 
     ensure_ssh_key

@@ -2,7 +2,7 @@
 <!--
   freebsd_vmm_test.system: minimal system to boot FreeBSD via EDK2 UEFI.
 
-  Purpose: boot FreeBSD 14 AArch64 inside agentOS using only freebsd_vmm.
+  Purpose: boot FreeBSD 15 AArch64 inside agentOS using only freebsd_vmm.
   No controller, serial_pd, or other PDs present.
 
   Boot path:
@@ -15,13 +15,13 @@
       -cpu cortex-a57 -m 2G -nographic
       -device loader,file=build/qemu_virt_aarch64/freebsd_vmm_test.img,
                addr=0x70000000,cpu-num=0
-      -drive file=guest-images/freebsd-14.4-aarch64.img,format=raw,
+      -drive file=build/guest-images/freebsd-15.0-aarch64.iso,format=raw,
              id=blk0,if=none
       -device virtio-blk-device,drive=blk0
       -global virtio-mmio.force-legacy=false
 
   Memory layout — IDENTITY MAPPED for VirtIO DMA correctness:
-    guest_ram: 384MB at host:0x40000000 -> guest phys 0x40000000  (FreeBSD RAM)
+    guest_ram: 512MB at host:0x40000000 -> guest phys 0x40000000  (FreeBSD RAM)
     uefi_code: 64MB  at host:0x58000000 -> guest phys 0x00000000  (EDK2 code flash)
     uefi_data: 64MB  at host:0x5c000000 -> guest phys 0x04000000  (UEFI var store)
 

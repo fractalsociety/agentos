@@ -3,8 +3,8 @@
 /*
  * freebsd-edk2.dts — Direct FreeBSD kernel FDT for QEMU virt/aarch64.
  *
- * Memory layout (must match freebsd_vmm_test.system guest_ram):
- *   384 MB (0x18000000) at guest phys 0x40000000
+ * Memory layout (must match freebsd_vmm.c and system_desc_aarch64.c):
+ *   512 MB (0x20000000) at guest phys 0x40000000
  *
  * PSCI: SMC method — seL4 intercepts HVC from VCPU EL1 as a seL4 syscall,
  * not a VCPUFault, so we use SMC.  libvmm fault.c routes SMC to handle_psci().
@@ -28,9 +28,9 @@
 		compatible = "arm,psci-1.0\0arm,psci-0.2\0arm,psci";
 	};
 
-	/* 384 MB — matches guest_ram MR size in freebsd_vmm_test.system */
+	/* 512 MB — matches guest_ram MR size in the aarch64 system descriptor. */
 	memory@40000000 {
-		reg = <0x00 0x40000000 0x00 0x18000000>;
+		reg = <0x00 0x40000000 0x00 0x20000000>;
 		device_type = "memory";
 	};
 
@@ -132,7 +132,7 @@
 	};
 
 	chosen {
-		bootargs = "FreeBSD:vfs.root.mountfrom=ufs:/dev/vtbd0p3 console=ttyu0";
+		bootargs = "FreeBSD:-s vfs.root.mountfrom=cd9660:/dev/iso9660/15_0_RELEASE_AARCH64_DVD console=ttyu0";
 		stdout-path = "/pl011@9000000";
 	};
 };

@@ -83,6 +83,8 @@ endif
 # BUILD_DIR and IMAGE depend on BOARD (resolved after board.mk override above)
 BUILD_DIR    := $(ROOT_DIR)build/$(BOARD)
 IMAGE        := $(BUILD_DIR)/agentos.img
+AGENTOS_IMAGES ?= $(ROOT_DIR)build/guest-images
+BUILD_TMP_DIR := $(ROOT_DIR)build/tmp
 
 # ─── OS / arch detection ──────────────────────────────────────────────────────
 UNAME_S := $(shell uname -s)
@@ -154,9 +156,9 @@ ifeq ($(NATIVE_ARCH),aarch64)
                         -cpu $(_NATIVE_CPU) -m 2G \
                         -display none -monitor none \
                         -global virtio-mmio.force-legacy=off \
-                        -chardev socket,id=char0,path=/tmp/agentos-serial.sock,server=on,wait=off \
+                        -chardev socket,id=char0,path=$(ROOT_DIR)build/agentos-serial.sock,server=on,wait=off \
                         -serial chardev:char0 \
-                        -chardev socket,id=cc_pd_char,path=build/cc_pd.sock,server=on,wait=off \
+                        -chardev socket,id=cc_pd_char,path=$(ROOT_DIR)build/cc_pd.sock,server=on,wait=off \
                         -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0 \
                         -device virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0 \
                         $(QEMU_ACCEL_NATIVE) \
@@ -168,7 +170,7 @@ else
   NATIVE_BOARD      := x86_64_generic
   NATIVE_QEMU       := qemu-system-x86_64
   NATIVE_QEMU_FLAGS  = -machine q35 -cpu host -m 2G \
-                        -display none -monitor none -serial unix:/tmp/agentos-serial.sock \
+                        -display none -monitor none -serial unix:$(ROOT_DIR)build/agentos-serial.sock \
                         $(QEMU_ACCEL_NATIVE) \
                         -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789 \
                         -device e1000,netdev=net0 \
@@ -343,13 +345,10 @@ endif
 
 # QEMU flags for interactive run: serial → stdio, SSH port forwarding per guest.
 _RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
-AGENTOS_IMAGES := $(HOME)/.local/agentos-images
-FREEBSD_REPO_IMAGE := $(if $(wildcard $(ROOT_DIR)guest-images/freebsd.img),$(ROOT_DIR)guest-images/freebsd.img,$(ROOT_DIR)guest-images/freebsd-14.4-aarch64.img)
-FREEBSD_CACHE_IMAGE := $(AGENTOS_IMAGES)/freebsd-14.4-aarch64.img
-FREEBSD_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(wildcard $(FREEBSD_CACHE_IMAGE)),$(FREEBSD_CACHE_IMAGE),$(FREEBSD_REPO_IMAGE)))
-_UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-24.04-aarch64.img,format=raw,if=none,id=hd0,snapshot=on \
+FREEBSD_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso)
+_UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,if=none,id=hd0,readonly=on,file.locking=off \
               -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.1
-_FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=hd0,snapshot=on \
+_FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=hd0,readonly=on,file.locking=off \
                -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.31
 _QEMU_BLK_FLAGS = $(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),))
 QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
@@ -357,7 +356,7 @@ QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
                  -display none -monitor none \
                  -global virtio-mmio.force-legacy=off \
                  -serial stdio \
-                 -chardev socket,id=cc_pd_char,path=build/cc_pd.sock,server=on,wait=off \
+                 -chardev socket,id=cc_pd_char,path=$(ROOT_DIR)build/cc_pd.sock,server=on,wait=off \
                  -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0 \
                  -device virtconsole,bus=vser0.0,chardev=cc_pd_char,name=cc.0 \
                  -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789,hostfwd=tcp:127.0.0.1:2222-10.0.2.15:22,hostfwd=tcp:127.0.0.1:2223-10.0.2.15:2223,hostfwd=tcp:127.0.0.1:2224-10.0.2.15:2224 \
@@ -425,8 +424,9 @@ test-snapshot-sched:
 	@echo "║   agentOS — snapshot_sched unit tests    ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
-	cc tests/test_snapshot_sched.c -o /tmp/test_snapshot_sched -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST -DAGENTOS_SNAPSHOT_SCHED
-	@/tmp/test_snapshot_sched
+	@mkdir -p $(BUILD_TMP_DIR)
+	cc tests/test_snapshot_sched.c -o $(BUILD_TMP_DIR)/test_snapshot_sched -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST -DAGENTOS_SNAPSHOT_SCHED
+	@$(BUILD_TMP_DIR)/test_snapshot_sched
 	@echo "✓ snapshot_sched tests passed"
 	@echo ""
 
@@ -439,8 +439,9 @@ test-power-mgr:
 	@echo "║   agentOS — power_mgr unit tests         ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
-	cc tests/test_power_mgr.c -o /tmp/test_power_mgr -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
-	@/tmp/test_power_mgr
+	@mkdir -p $(BUILD_TMP_DIR)
+	cc tests/test_power_mgr.c -o $(BUILD_TMP_DIR)/test_power_mgr -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
+	@$(BUILD_TMP_DIR)/test_power_mgr
 	@echo "✓ power_mgr tests passed"
 	@echo ""
 
@@ -453,8 +454,9 @@ test-proc-server:
 	@echo "║   agentOS — proc_server unit tests       ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
-	cc tests/test_proc_server.c -o /tmp/test_proc_server -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
-	@/tmp/test_proc_server
+	@mkdir -p $(BUILD_TMP_DIR)
+	cc tests/test_proc_server.c -o $(BUILD_TMP_DIR)/test_proc_server -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
+	@$(BUILD_TMP_DIR)/test_proc_server
 	@echo "✓ proc_server tests passed"
 	@echo ""
 
@@ -467,8 +469,9 @@ test-vibeos-contract:
 	@echo "║   agentOS — VibeOS contract tests        ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
-	cc tests/vibe/test_vibeos_contract.c -o /tmp/test_vibeos_contract -I tests -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
-	@/tmp/test_vibeos_contract
+	@mkdir -p $(BUILD_TMP_DIR)
+	cc tests/vibe/test_vibeos_contract.c -o $(BUILD_TMP_DIR)/test_vibeos_contract -I tests -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
+	@$(BUILD_TMP_DIR)/test_vibeos_contract
 	@echo "✓ vibeos contract tests passed"
 	@echo ""
 
@@ -485,6 +488,7 @@ test-integration:
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@echo "[make] Running integration tests..."
+	@mkdir -p $(BUILD_TMP_DIR)
 	@status=0; \
 	for test in \
 	    tests/test_quota.c \
@@ -502,8 +506,9 @@ test-integration:
 	        -I kernel/agentos-root-task/include \
 	        -DAGENTOS_TEST_HOST \
 	        -DAGENTOS_SNAPSHOT_SCHED \
-	        -o /tmp/agentos_test $$test 2>&1 \
-	    && /tmp/agentos_test; then \
+	        $$test \
+	        -o $(BUILD_TMP_DIR)/agentos_test 2>&1 \
+	    && $(BUILD_TMP_DIR)/agentos_test; then \
 	        echo "PASS: $$test"; \
 	    else \
 	        echo "FAIL: $$test"; \
@@ -537,7 +542,7 @@ e2e-dual-os:
 	@bash tests/e2e/run_dual_os_e2e.sh
 
 # Per-guest-OS E2E targets — run the full suite against a specific guest image.
-# Images must exist in guest-images/; create them with: make bootstrap-guest OS=<os>
+# Images must exist in build/guest-images/; create them with: make bootstrap-guest OS=<os>
 e2e-ubuntu-amd64:
 	@chmod +x tests/e2e/run_e2e.sh tests/e2e/*.sh
 	@E2E_GUEST_OS=ubuntu-amd64 bash tests/e2e/run_e2e.sh
@@ -554,16 +559,16 @@ e2e-freebsd15:
 	@chmod +x tests/e2e/run_e2e.sh tests/e2e/*.sh
 	@E2E_GUEST_OS=freebsd15 bash tests/e2e/run_e2e.sh
 
-# e2e-all: run E2E suite for every guest image that exists in guest-images/
+# e2e-all: run E2E suite for every guest image that exists in build/guest-images/
 e2e-all:
 	@chmod +x tests/e2e/run_e2e.sh tests/e2e/*.sh
 	@failed=0; \
 	for gos in freebsd ubuntu-amd64 ubuntu-arm64 nixos freebsd15; do \
 	    img=""; \
 	    case "$$gos" in \
-	        freebsd)       img="$(AGENTOS_IMAGES)/freebsd.img" ;; \
+	        freebsd)       img="$(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso" ;; \
 	        ubuntu-amd64)  img="$(AGENTOS_IMAGES)/ubuntu-amd64.img" ;; \
-	        ubuntu-arm64)  img="$(AGENTOS_IMAGES)/ubuntu-arm64.img" ;; \
+	        ubuntu-arm64)  img="$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso" ;; \
 	        nixos)         img="$(AGENTOS_IMAGES)/nixos.img" ;; \
 	        freebsd15)     img="$(AGENTOS_IMAGES)/freebsd15-amd64.img" ;; \
 	    esac; \
@@ -595,7 +600,7 @@ clean:
 	@rm -rf $(ROOT_DIR)util
 	@rm -f  $(ROOT_DIR).libvmm_cflags.*
 	@rm -f  $(KERNEL_DIR)/report.txt
-	@rm -f  $(ROOT_DIR)build/cc_pd.sock /tmp/agentos-serial.sock
+	@rm -f  $(ROOT_DIR)build/cc_pd.sock $(ROOT_DIR)build/agentos-serial.sock
 	@echo "✓ Clean."
 
 clean-all:

@@ -23,24 +23,28 @@ BOARD_DIR ?= $(AGENTOS_ROOT)/microkit-sdk-2.1.0/board/$(AGENTOS_BOARD)/release
 
 # Guest OS selection: buildroot (default) or ubuntu
 GUEST_OS ?= buildroot
+AGENTOS_IMAGES ?= $(AGENTOS_ROOT)/build/guest-images
 
 # Buildroot guest: download libvmm example images (kernel + initrd)
 BUILDROOT_LINUX_IMAGE  := 85000f3f42a882e4476e57003d53f2bbec8262b0-linux
 BUILDROOT_INITRD_IMAGE := 6dcd1debf64e6d69b178cd0f46b8c4ae7cebe2a5-rootfs.cpio.gz
 IMAGES_URL             := https://trustworthy.systems/Downloads/libvmm/images
 
-# Ubuntu guest: pre-extracted kernel from ubuntu-24.04-arm64.raw
-UBUNTU_KERNEL := $(AGENTOS_ROOT)/guest-images/ubuntu-kernel-6.8.0-Image
-UBUNTU_EMPTY_INITRD := $(BUILD_DIR)/ubuntu-empty-initrd.cpio.gz
+# Ubuntu guest: local Ubuntu 26.04 live ISO assets staged by xtask fetch-guest.
+UBUNTU_KERNEL := $(AGENTOS_IMAGES)/ubuntu-26.04-aarch64-Image
+UBUNTU_INITRD := $(AGENTOS_IMAGES)/ubuntu-26.04-aarch64-initrd
+UBUNTU_DTS_OVERLAY := $(BUILD_DIR)/ubuntu-26.04-overlay.dts
+UBUNTU_INITRD_START := 0x50000000
+UBUNTU_BOOTARGS := earlycon=pl011,0x9000000 console=ttyAMA0,115200 boot=casper systemd.unit=emergency.target systemd.mask=snapd.apparmor.service systemd.mask=snapd.service systemd.mask=snapd.socket cloud-init=disabled maybe-ubiquity ---
 
 ifeq ($(GUEST_OS),ubuntu)
 LINUX_IMAGE  := $(UBUNTU_KERNEL)
-INITRD_IMAGE := $(UBUNTU_EMPTY_INITRD)
-DTS_OVERLAY  := ubuntu-overlay.dts
+INITRD_IMAGE := $(UBUNTU_INITRD)
+DTS_OVERLAY_FILE := $(UBUNTU_DTS_OVERLAY)
 else
 LINUX_IMAGE  := $(BUILD_DIR)/$(BUILDROOT_LINUX_IMAGE)
 INITRD_IMAGE := $(BUILD_DIR)/$(BUILDROOT_INITRD_IMAGE)
-DTS_OVERLAY  := overlay.dts
+DTS_OVERLAY_FILE = $(DTS_DIR)/overlay.dts
 endif
 
 # DTS + tools
@@ -74,11 +78,11 @@ else
 vmm-all: $(BUILD_DIR)/linux_vmm.elf
 endif
 
-# ─── Ubuntu kernel: fetch via xtask (downloads .deb, extracts Image) ─────
+# ─── Ubuntu kernel/initrd: stage local ISO and extract boot assets ────────
 ifeq ($(GUEST_OS),ubuntu)
-$(UBUNTU_KERNEL):
-	@echo "[VMM] Fetching Ubuntu kernel binary (via xtask fetch-guest)..."
-	cargo xtask fetch-guest --os ubuntu
+$(UBUNTU_KERNEL) $(UBUNTU_INITRD):
+	@echo "[VMM] Fetching Ubuntu 26.04 boot assets (via xtask fetch-guest)..."
+	cargo xtask fetch-guest --os ubuntu --output-dir $(AGENTOS_IMAGES)
 endif
 
 # ─── Download buildroot guest images ─────────────────────────────────────
@@ -102,17 +106,21 @@ $(BUILD_DIR)/$(BUILDROOT_INITRD_IMAGE):
 	rm -rf $(BUILD_DIR)/initrd_dl $(BUILD_DIR)/$(BUILDROOT_INITRD_IMAGE).tar.gz
 endif
 
-# ─── Ubuntu guest: empty initrd (Ubuntu uses initrdless boot via PARTUUID) ─
-# A zero-byte gzip stream satisfies package_guest_images.S (non-empty file
-# required) but is ignored by the Ubuntu kernel since ubuntu-overlay.dts
-# has no linux,initrd-start / linux,initrd-end entries in /chosen.
-$(UBUNTU_EMPTY_INITRD):
-	@echo "[VMM] Creating empty initrd for Ubuntu initrdless boot..."
-	@mkdir -p $(BUILD_DIR)
-	printf '' | gzip > $@
-
 # ─── Device tree ──────────────────────────────────────────────────────────
-$(BUILD_DIR)/vm.dts: FORCE $(DTS_DIR)/linux.dts $(DTS_DIR)/$(DTS_OVERLAY)
+$(UBUNTU_DTS_OVERLAY): $(KERNEL_SRC_DIR)/ubuntu-iso-overlay.dts.in $(UBUNTU_INITRD)
+	@mkdir -p $(BUILD_DIR)
+	@echo "[VMM] Generating Ubuntu 26.04 live-ISO overlay..."
+	@initrd_size=$$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' "$(UBUNTU_INITRD)"); \
+	start=$$(( $(UBUNTU_INITRD_START) )); \
+	end=$$(( start + initrd_size )); \
+	end_hex=$$(printf "0x%08x" $$end); \
+	sed \
+		-e 's|@UBUNTU_BOOTARGS@|$(UBUNTU_BOOTARGS)|g' \
+		-e 's|@UBUNTU_INITRD_START@|0x00 $(UBUNTU_INITRD_START)|g' \
+		-e "s|@UBUNTU_INITRD_END@|0x00 $$end_hex|g" \
+		$< > $@
+
+$(BUILD_DIR)/vm.dts: FORCE $(DTS_DIR)/linux.dts $(DTS_OVERLAY_FILE)
 	@mkdir -p $(BUILD_DIR)
 	$(DTSCAT) $(filter-out FORCE,$^) > $@
 
@@ -197,17 +205,25 @@ $(BUILD_DIR)/linux_vmm.elf: FORCE \
 	@echo "[VMM] linux_vmm.elf ✓"
 
 # ─── FreeBSD VMM: direct kernel Image + FDT packaging ─────────────────────
-FREEBSD_CACHED_RAW := $(HOME)/.local/agentos-images/freebsd-14.4-aarch64.img
-FREEBSD_REPO_RAW   := $(AGENTOS_ROOT)/guest-images/freebsd-14.4-aarch64.img
-FREEBSD_RAW_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(FREEBSD_IMAGE),$(FREEBSD_IMAGE),$(if $(wildcard $(FREEBSD_CACHED_RAW)),$(FREEBSD_CACHED_RAW),$(FREEBSD_REPO_RAW))))
+FREEBSD_DEFAULT_IMAGE := $(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso
+FREEBSD_RAW_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(FREEBSD_IMAGE),$(FREEBSD_IMAGE),$(FREEBSD_DEFAULT_IMAGE)))
 FREEBSD_KERNEL_IMAGE := $(BUILD_DIR)/freebsd-kernel.bin
 FREEBSD_DTS := $(KERNEL_SRC_DIR)/freebsd-edk2.dts
 FREEBSD_EXTRACT := $(AGENTOS_ROOT)/tools/extract_freebsd_file.py
 
+$(FREEBSD_RAW_IMAGE):
+	@echo "[VMM] Fetching FreeBSD 15.0 ISO assets (via xtask fetch-guest)..."
+	cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES)
+
 $(FREEBSD_KERNEL_IMAGE): $(FREEBSD_RAW_IMAGE) $(FREEBSD_EXTRACT)
 	@mkdir -p $(BUILD_DIR)
-	@echo "[VMM] Extracting FreeBSD /boot/kernel/kernel.bin..."
-	python3 $(FREEBSD_EXTRACT) $(FREEBSD_RAW_IMAGE) /boot/kernel/kernel.bin $@
+	@echo "[VMM] Extracting FreeBSD kernel..."
+	@case "$(FREEBSD_RAW_IMAGE)" in \
+		*.iso) cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES); \
+		       cp "$(AGENTOS_IMAGES)/freebsd-15.0-aarch64-kernel" $@ ;; \
+		*) python3 $(FREEBSD_EXTRACT) "$(FREEBSD_RAW_IMAGE)" /boot/kernel/kernel.bin $@ || \
+		   python3 $(FREEBSD_EXTRACT) "$(FREEBSD_RAW_IMAGE)" /boot/kernel/kernel $@ ;; \
+	esac
 
 $(BUILD_DIR)/freebsd-edk2.dtb: $(FREEBSD_DTS)
 	@mkdir -p $(BUILD_DIR)
