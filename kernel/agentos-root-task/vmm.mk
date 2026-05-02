@@ -35,7 +35,7 @@ UBUNTU_KERNEL := $(AGENTOS_IMAGES)/ubuntu-26.04-aarch64-Image
 UBUNTU_INITRD := $(AGENTOS_IMAGES)/ubuntu-26.04-aarch64-initrd
 UBUNTU_DTS_OVERLAY := $(BUILD_DIR)/ubuntu-26.04-overlay.dts
 UBUNTU_INITRD_START := 0x50000000
-UBUNTU_BOOTARGS := earlycon=pl011,0x9000000 console=ttyAMA0,115200 boot=casper systemd.unit=emergency.target systemd.mask=snapd.apparmor.service systemd.mask=snapd.service systemd.mask=snapd.socket cloud-init=disabled maybe-ubiquity ---
+UBUNTU_BOOTARGS := earlycon=pl011,0x9000000 console=ttyAMA0,115200n8 boot=casper systemd.unit=multi-user.target systemd.wants=console-getty.service systemd.default_timeout_start_sec=20s systemd.mask=serial-getty@ttyAMA0.service systemd.mask=snapd.apparmor.service systemd.mask=snapd.service systemd.mask=snapd.socket systemd.mask=systemd-udev-settle.service systemd.mask=console-setup.service systemd.mask=ldconfig.service systemd.mask=kdump-tools.service systemd.mask=zfs-load-module.service systemd.mask=zfs-mount.service systemd.mask=zfs-volume-wait.service cloud-init=disabled maybe-ubiquity ---
 
 ifeq ($(GUEST_OS),ubuntu)
 LINUX_IMAGE  := $(UBUNTU_KERNEL)
@@ -107,7 +107,7 @@ $(BUILD_DIR)/$(BUILDROOT_INITRD_IMAGE):
 endif
 
 # ─── Device tree ──────────────────────────────────────────────────────────
-$(UBUNTU_DTS_OVERLAY): $(KERNEL_SRC_DIR)/ubuntu-iso-overlay.dts.in $(UBUNTU_INITRD)
+$(UBUNTU_DTS_OVERLAY): $(KERNEL_SRC_DIR)/ubuntu-iso-overlay.dts.in $(KERNEL_SRC_DIR)/vmm.mk $(UBUNTU_INITRD)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Generating Ubuntu 26.04 live-ISO overlay..."
 	@initrd_size=$$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' "$(UBUNTU_INITRD)"); \

@@ -50,6 +50,10 @@ fn iso_dir() -> PathBuf {
     if let Some(d) = std::env::var_os(ISO_DIR_ENV) {
         return PathBuf::from(d);
     }
+    let local_iso_dir = PathBuf::from("/Volumes/ISOs");
+    if local_iso_dir.is_dir() {
+        return local_iso_dir;
+    }
     let cache_root = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
@@ -312,13 +316,13 @@ fn stage_local_iso(
     dest_name: &str,
     source_url: &str,
 ) -> anyhow::Result<PathBuf> {
-    let src = ensure_cached_iso(source_name, source_url)?;
-
     let dest = output_dir.join(dest_name);
-    if dest.exists() {
+    if dest.exists() && fs::metadata(&dest).map(|m| m.len()).unwrap_or(0) > 0 {
         println!("[fetch-guest] ISO already staged: {}", dest.display());
         return Ok(dest);
     }
+
+    let src = ensure_cached_iso(source_name, source_url)?;
 
     fs::create_dir_all(output_dir)
         .with_context(|| format!("failed to create {}", output_dir.display()))?;

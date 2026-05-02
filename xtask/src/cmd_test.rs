@@ -655,11 +655,7 @@ fn wait_for_guest_console_login_via_cc(
     let mut transcript = String::new();
     let mut matched_prompt = None;
     let prompt_markers: &[&str] = match guest_os {
-        "ubuntu" => &[
-            "Press Enter for system maintenance",
-            "ubuntu login:",
-            "login:",
-        ],
+        "ubuntu" => &["ubuntu login:", "login:"],
         "freebsd" => &["Enter full pathname of shell", "login:"],
         _ => &["login:"],
     };
@@ -701,56 +697,6 @@ fn wait_for_guest_console_login_via_cc(
     })?;
 
     println!("[xtask:test] CC console matched prompt marker {:?}", prompt);
-
-    if guest_os == "ubuntu" && prompt.contains("system maintenance") {
-        cc_send_raw_bytes(&mut cc, 0, b"\n")?;
-        let shell_start = Instant::now();
-        let mut shell = String::new();
-        while shell_start.elapsed() < Duration::from_secs(45) {
-            ensure_qemu_running(qemu, "waiting for Ubuntu emergency shell via CC-PD API")?;
-            let chunk = match cc_log_stream(&mut cc) {
-                Ok(chunk) => chunk,
-                Err(err) => {
-                    println!("[xtask:test] CC console shell drain not ready yet: {err:#}");
-                    String::new()
-                }
-            };
-            if !chunk.is_empty() {
-                shell.push_str(&chunk);
-                if shell.contains("root@ubuntu") || shell.contains("# ") {
-                    cc_send_raw_bytes(&mut cc, 0, b"echo agentos-e2e\n")?;
-                    let command_start = Instant::now();
-                    let mut command_echo = String::new();
-                    while command_start.elapsed() < Duration::from_secs(20) {
-                        ensure_qemu_running(
-                            qemu,
-                            "waiting for Ubuntu emergency shell command echo via CC-PD API",
-                        )?;
-                        let chunk = cc_log_stream(&mut cc).unwrap_or_default();
-                        if !chunk.is_empty() {
-                            command_echo.push_str(&chunk);
-                            if command_echo.contains("agentos-e2e") {
-                                return Ok(format!(
-                                    "CC console API reached Ubuntu emergency shell after {:?} and echoed a command",
-                                    prompt
-                                ));
-                            }
-                        }
-                        std::thread::sleep(Duration::from_millis(500));
-                    }
-                    anyhow::bail!(
-                        "Ubuntu emergency shell prompt appeared, but command echo was not observed; tail:\n{}",
-                        tail_chars(&command_echo, 2000)
-                    );
-                }
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        anyhow::bail!(
-            "Ubuntu maintenance prompt appeared, but emergency shell did not; tail:\n{}",
-            tail_chars(&shell, 2000)
-        );
-    }
 
     if guest_os == "freebsd" && prompt.contains("Enter full pathname") {
         cc_send_raw_bytes(&mut cc, 0, b"\n")?;

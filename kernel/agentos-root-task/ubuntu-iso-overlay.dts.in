@@ -16,10 +16,14 @@
         status = "disabled";
     };
 
+    aliases {
+        serial0 = "/pl011@9000000";
+    };
+
     chosen {
-        stdout-path = "/pl011@9000000";
+        stdout-path = "serial0:115200n8";
         bootargs = "@UBUNTU_BOOTARGS@";
-        linux,stdout-path = "/pl011@9000000";
+        linux,stdout-path = "serial0:115200n8";
         linux,initrd-start = <@UBUNTU_INITRD_START@>;
         linux,initrd-end = <@UBUNTU_INITRD_END@>;
     };
