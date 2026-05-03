@@ -493,6 +493,26 @@ static void cc_trace_record(uint32_t opcode)
 
 static bool     g_boot_guest_present = true;
 static uint32_t g_boot_guest_state = GUEST_STATE_RUNNING;
+#endif
+
+/* Map VIBEOS_STATE_* (0..5) to GUEST_STATE_* (0..6).  vibe_engine reports
+ * its own state taxonomy; the CC contract exposes guest_contract.h states. */
+static uint32_t cc_vibeos_to_guest_state(uint32_t vos_state)
+{
+    /* vibeos: 0=CREATING 1=BOOTING 2=RUNNING 3=PAUSED 4=DEAD 5=MIGRATING
+     * guest:  0=CREATING 1=BINDING 2=READY 3=BOOTING 4=RUNNING 5=SUSPENDED 6=DEAD */
+    switch (vos_state) {
+    case 0u: return GUEST_STATE_CREATING;
+    case 1u: return GUEST_STATE_BOOTING;
+    case 2u: return GUEST_STATE_RUNNING;
+    case 3u: return GUEST_STATE_SUSPENDED;
+    case 4u: return GUEST_STATE_DEAD;
+    case 5u: return GUEST_STATE_BOOTING;  /* migrating ≈ booting on dest */
+    default: return GUEST_STATE_DEAD;
+    }
+}
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
 
 static uint32_t cc_boot_guest_os_type(void)
 {
@@ -828,15 +848,77 @@ static void handle_list_sessions(cc_reply_wire_t *rep)
  * (agentos_gui) get well-formed responses and can display an empty state.
  */
 
+/* Query vibe_engine for the live guest list, filling cc_guest_info_t entries
+ * starting at out[].  Returns the number of dynamic entries written.  The
+ * boot guest is intentionally NOT included here — the caller emits it
+ * separately at handle 0 so existing tests keep their layout assumption. */
+static uint32_t cc_relay_vibe_list(cc_guest_info_t *out, uint32_t max_out)
+{
+    if (max_out == 0u) return 0u;
+
+    sel4_msg_t lreq = {0};
+    sel4_msg_t lrep = {0};
+    lreq.opcode = MSG_VIBEOS_LIST;
+    lreq.length = 4u;
+    cc_wire_wr32(lreq.data, 0u, 0u);  /* offset = 0 */
+
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &lreq, &lrep);
+    if (lrep.opcode != SEL4_ERR_OK) return 0u;
+
+    uint32_t vos_count = cc_wire_rd32(lrep.data, 0u);
+    if (vos_count > max_out) vos_count = max_out;
+
+    uint32_t written = 0u;
+    for (uint32_t i = 0u; i < vos_count; i++) {
+        uint32_t handle = cc_wire_rd32(lrep.data, 4u + i * 4u);
+
+        /* Fetch full status to get state and os_type.  arch is not tracked
+         * by vibe_engine, so default to the build's native arch. */
+        sel4_msg_t sreq = {0};
+        sel4_msg_t srep = {0};
+        sreq.opcode = MSG_VIBEOS_STATUS;
+        sreq.length = 4u;
+        cc_wire_wr32(sreq.data, 0u, handle);
+        sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+
+        uint32_t vos_state = 4u;  /* default to DEAD if status fails */
+        uint32_t os_type   = 0u;
+        if (srep.opcode == SEL4_ERR_OK) {
+            vos_state = cc_wire_rd32(srep.data, 8u);
+            os_type   = cc_wire_rd32(srep.data, 12u);
+        }
+
+        out[written].guest_handle = handle;
+        out[written].state        = cc_vibeos_to_guest_state(vos_state);
+        out[written].os_type      = os_type;
+#if defined(__x86_64__)
+        out[written].arch         = VIBEOS_ARCH_X86_64;
+#else
+        out[written].arch         = VIBEOS_ARCH_AARCH64;
+#endif
+        written++;
+    }
+    return written;
+}
+
 static void handle_list_guests(cc_reply_wire_t *rep)
 {
-#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
     cc_guest_info_t *out = (cc_guest_info_t *)rep->shmem;
-    cc_fill_boot_guest_info(&out[0]);
-    rep->mr[0] = 1u; /* count */
-#else
-    rep->mr[0] = 0u; /* count */
+    uint32_t max_entries = (uint32_t)(CC_WIRE_SHMEM_SIZE / sizeof(cc_guest_info_t));
+    uint32_t count = 0u;
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (g_boot_guest_present && count < max_entries) {
+        cc_fill_boot_guest_info(&out[count]);
+        count++;
+    }
 #endif
+
+    if (count < max_entries) {
+        count += cc_relay_vibe_list(&out[count], max_entries - count);
+    }
+
+    rep->mr[0] = count;
 }
 
 static void handle_list_devices(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -872,18 +954,41 @@ static void handle_list_polecats(cc_reply_wire_t *rep)
 
 static void handle_guest_status(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+    uint32_t handle = req->mr[0];
+
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
-    if (req->mr[0] != CC_BOOT_GUEST_HANDLE) {
+    if (handle == CC_BOOT_GUEST_HANDLE) {
+        cc_guest_status_t *out = (cc_guest_status_t *)rep->shmem;
+        cc_fill_boot_guest_status(out);
+        rep->mr[0] = CC_OK;
+        return;
+    }
+#endif
+
+    /* Dynamic guest — relay to vibe_engine. */
+    sel4_msg_t sreq = {0};
+    sel4_msg_t srep = {0};
+    sreq.opcode = MSG_VIBEOS_STATUS;
+    sreq.length = 4u;
+    cc_wire_wr32(sreq.data, 0u, handle);
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+    if (srep.opcode != SEL4_ERR_OK) {
         rep->mr[0] = CC_ERR_BAD_HANDLE;
         return;
     }
+
     cc_guest_status_t *out = (cc_guest_status_t *)rep->shmem;
-    cc_fill_boot_guest_status(out);
-    rep->mr[0] = CC_OK;
+    out->guest_handle = handle;
+    out->state        = cc_vibeos_to_guest_state(cc_wire_rd32(srep.data, 8u));
+    out->os_type      = cc_wire_rd32(srep.data, 12u);
+#if defined(__x86_64__)
+    out->arch         = VIBEOS_ARCH_X86_64;
 #else
-    (void)req;
-    rep->mr[0] = CC_ERR_BAD_HANDLE;
+    out->arch         = VIBEOS_ARCH_AARCH64;
 #endif
+    out->device_flags = cc_wire_rd32(srep.data, 20u);
+    for (uint32_t i = 0u; i < 3u; i++) out->_reserved[i] = 0u;
+    rep->mr[0] = CC_OK;
 }
 
 static void handle_device_status(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -937,18 +1042,61 @@ static void handle_send_input(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 
 static void handle_snapshot(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
-    (void)req;
-    /* Phase 5: seL4_Call(vibe_engine_ep, MSG_VIBEOS_SNAPSHOT, handle) */
-    rep->mr[0] = CC_ERR_RELAY_FAULT;
-    rep->mr[1] = 0u;
-    rep->mr[2] = 0u;
+    uint32_t handle = req->mr[0];
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (handle == CC_BOOT_GUEST_HANDLE) {
+        /* Boot guest snapshot is not implemented yet; surface a clear error
+         * rather than the previous unconditional relay fault. */
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = 0u;
+        rep->mr[2] = 0u;
+        return;
+    }
+#endif
+
+    sel4_msg_t sreq = {0};
+    sel4_msg_t srep = {0};
+    sreq.opcode = MSG_VIBEOS_SNAPSHOT;
+    sreq.length = 4u;
+    cc_wire_wr32(sreq.data, 0u, handle);
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+    if (srep.opcode != SEL4_ERR_OK) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = srep.opcode;  /* vibeos error in mr[1] for diagnostics */
+        rep->mr[2] = 0u;
+        return;
+    }
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = cc_wire_rd32(srep.data, 8u);   /* snap_lo */
+    rep->mr[2] = cc_wire_rd32(srep.data, 12u);  /* snap_hi */
 }
 
 static void handle_restore(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
-    (void)req;
-    /* Phase 5: seL4_Call(vibe_engine_ep, MSG_VIBEOS_RESTORE, ...) */
-    rep->mr[0] = CC_ERR_RELAY_FAULT;
+    uint32_t handle = req->mr[0];
+
+#if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    if (handle == CC_BOOT_GUEST_HANDLE) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        return;
+    }
+#endif
+
+    sel4_msg_t sreq = {0};
+    sel4_msg_t srep = {0};
+    sreq.opcode = MSG_VIBEOS_RESTORE;
+    sreq.length = 12u;
+    cc_wire_wr32(sreq.data, 0u, handle);
+    cc_wire_wr32(sreq.data, 4u, req->mr[1]);  /* snap_lo */
+    cc_wire_wr32(sreq.data, 8u, req->mr[2]);  /* snap_hi */
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+    if (srep.opcode != SEL4_ERR_OK) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = srep.opcode;
+        return;
+    }
+    rep->mr[0] = CC_OK;
 }
 
 static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -1038,68 +1186,95 @@ static void handle_fault_inject(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 
 static void handle_suspend_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+    uint32_t handle = req->mr[0];
+
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
-    if (req->mr[0] != CC_BOOT_GUEST_HANDLE || !g_boot_guest_present) {
-        rep->mr[0] = CC_ERR_BAD_HANDLE;
-        rep->mr[1] = 0u;
+    if (handle == CC_BOOT_GUEST_HANDLE) {
+        if (!g_boot_guest_present) {
+            rep->mr[0] = CC_ERR_BAD_HANDLE;
+            rep->mr[1] = 0u;
+            return;
+        }
+        uint32_t state = 0u;
+        if (!cc_lifecycle_boot_guest(MSG_GUEST_SUSPEND, 0u, &state)) {
+            rep->mr[0] = CC_ERR_RELAY_FAULT;
+            rep->mr[1] = 0u;
+            return;
+        }
+        rep->mr[0] = CC_OK;
+        rep->mr[1] = state;
         return;
     }
-    uint32_t state = 0u;
-    if (!cc_lifecycle_boot_guest(MSG_GUEST_SUSPEND, 0u, &state)) {
-        rep->mr[0] = CC_ERR_RELAY_FAULT;
-        rep->mr[1] = 0u;
-        return;
-    }
-    rep->mr[0] = CC_OK;
-    rep->mr[1] = state;
-#else
-    (void)req;
-    rep->mr[0] = CC_ERR_BAD_HANDLE;
-    rep->mr[1] = 0u;
 #endif
+
+    /* vibe_engine has no MSG_VIBEOS_SUSPEND opcode yet — dynamic guests
+     * cannot be suspended through cc_pd until that lands. */
+    (void)handle;
+    rep->mr[0] = CC_ERR_RELAY_FAULT;
+    rep->mr[1] = 0u;
 }
 
 static void handle_resume_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+    uint32_t handle = req->mr[0];
+
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
-    if (req->mr[0] != CC_BOOT_GUEST_HANDLE || !g_boot_guest_present) {
-        rep->mr[0] = CC_ERR_BAD_HANDLE;
-        rep->mr[1] = 0u;
+    if (handle == CC_BOOT_GUEST_HANDLE) {
+        if (!g_boot_guest_present) {
+            rep->mr[0] = CC_ERR_BAD_HANDLE;
+            rep->mr[1] = 0u;
+            return;
+        }
+        uint32_t state = 0u;
+        if (!cc_lifecycle_boot_guest(MSG_GUEST_RESUME, 0u, &state)) {
+            rep->mr[0] = CC_ERR_RELAY_FAULT;
+            rep->mr[1] = 0u;
+            return;
+        }
+        rep->mr[0] = CC_OK;
+        rep->mr[1] = state;
         return;
     }
-    uint32_t state = 0u;
-    if (!cc_lifecycle_boot_guest(MSG_GUEST_RESUME, 0u, &state)) {
-        rep->mr[0] = CC_ERR_RELAY_FAULT;
-        rep->mr[1] = 0u;
-        return;
-    }
-    rep->mr[0] = CC_OK;
-    rep->mr[1] = state;
-#else
-    (void)req;
-    rep->mr[0] = CC_ERR_BAD_HANDLE;
-    rep->mr[1] = 0u;
 #endif
+
+    (void)handle;
+    rep->mr[0] = CC_ERR_RELAY_FAULT;
+    rep->mr[1] = 0u;
 }
 
 static void handle_destroy_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+    uint32_t handle = req->mr[0];
+
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
-    if (req->mr[0] != CC_BOOT_GUEST_HANDLE || !g_boot_guest_present) {
-        rep->mr[0] = CC_ERR_BAD_HANDLE;
+    if (handle == CC_BOOT_GUEST_HANDLE) {
+        if (!g_boot_guest_present) {
+            rep->mr[0] = CC_ERR_BAD_HANDLE;
+            return;
+        }
+        uint32_t state = 0u;
+        if (!cc_lifecycle_boot_guest(MSG_GUEST_DESTROY, req->mr[1], &state)) {
+            rep->mr[0] = CC_ERR_RELAY_FAULT;
+            return;
+        }
+        (void)state;
+        rep->mr[0] = CC_OK;
         return;
     }
-    uint32_t state = 0u;
-    if (!cc_lifecycle_boot_guest(MSG_GUEST_DESTROY, req->mr[1], &state)) {
+#endif
+
+    /* Dynamic guest — relay to vibe_engine MSG_VIBEOS_DESTROY. */
+    sel4_msg_t sreq = {0};
+    sel4_msg_t srep = {0};
+    sreq.opcode = MSG_VIBEOS_DESTROY;
+    sreq.length = 4u;
+    cc_wire_wr32(sreq.data, 0u, handle);
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+    if (srep.opcode != SEL4_ERR_OK) {
         rep->mr[0] = CC_ERR_RELAY_FAULT;
         return;
     }
-    (void)state;
     rep->mr[0] = CC_OK;
-#else
-    (void)req;
-    rep->mr[0] = CC_ERR_BAD_HANDLE;
-#endif
 }
 
 static void handle_trace_start(const cc_req_wire_t *req, cc_reply_wire_t *rep)

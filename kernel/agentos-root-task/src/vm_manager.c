@@ -471,12 +471,41 @@ static uint32_t h_inject_irq(sel4_badge_t ba, const sel4_msg_t *req,
     return SEL4_ERR_OK;
 }
 
+/* ── Nameserver registration ────────────────────────────────────────────
+ * Make this PD discoverable by name so vibe_engine (and any future caller)
+ * can resolve our endpoint via OP_NS_LOOKUP("vm_manager"), unblocking the
+ * vibe_engine → vm_manager relay path.
+ */
+static void vm_manager_register_with_nameserver(seL4_CPtr ns_ep)
+{
+    if (!ns_ep) return;
+    sel4_msg_t req = {0}, rep = {0};
+    req.opcode = 0xD0u;  /* OP_NS_REGISTER */
+    /* data[0..3]   = channel_id (0 for dynamic PD) */
+    /* data[4..7]   = pd_id (0 — assigned by nameserver) */
+    /* data[8..11]  = cap_classes (0) */
+    /* data[12..15] = version (1) */
+    /* data[16..]   = name "vm_manager" */
+    {
+        uint8_t *d = req.data;
+        d[ 0] = 0; d[ 1] = 0; d[ 2] = 0; d[ 3] = 0;
+        d[ 4] = 0; d[ 5] = 0; d[ 6] = 0; d[ 7] = 0;
+        d[ 8] = 0; d[ 9] = 0; d[10] = 0; d[11] = 0;
+        d[12] = 1; d[13] = 0; d[14] = 0; d[15] = 0;
+    }
+    {
+        const char nm[] = "vm_manager";
+        for (int i = 0; nm[i] && (16 + i) < 48; i++)
+            req.data[16 + i] = (uint8_t)nm[i];
+    }
+    req.length = 48;
+    sel4_call(ns_ep, &req, &rep);
+}
+
 /* ── Entry point ────────────────────────────────────────────────────────*/
 
 void vm_manager_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
-    (void)ns_ep;
-
     vmm_mux_init(&g_mux);
 
     for (uint8_t i = 0; i < VM_MAX_SLOTS; i++) {
@@ -490,6 +519,9 @@ void vm_manager_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 
     sel4_dbg_puts("[vm_manager] init: 4-slot VM multiplexer ready\n");
     sel4_dbg_puts("[vm_manager] scheduler: round-robin, 25% quota/slot\n");
+
+    /* Publish under "vm_manager" so vibe_engine's lookup_service finds us. */
+    vm_manager_register_with_nameserver(ns_ep);
 
     static sel4_server_t srv;
     sel4_server_init(&srv, my_ep);
