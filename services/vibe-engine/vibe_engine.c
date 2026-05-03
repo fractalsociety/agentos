@@ -837,7 +837,8 @@ static uint32_t handle_vos_create(sel4_badge_t badge, const sel4_msg_t *req,
     uint32_t ram_mb    = data_rd32(req->data, 4);
     uint32_t dev_flags = data_rd32(req->data, 8);
 
-    if (os_type > 1) {
+    /* Accept VIBEOS_TYPE_LINUX (1) and VIBEOS_TYPE_FREEBSD (2). */
+    if (os_type != 1u && os_type != 2u) {
         data_wr32(rep->data, 0, VIBEOS_ERR_BAD_TYPE);
         rep->length = 4;
         return VIBEOS_ERR_BAD_TYPE;
