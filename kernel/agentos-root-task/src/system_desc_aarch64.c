@@ -41,10 +41,10 @@
 
 #if defined(AGENTOS_FAULT_INJECT)
 #define AOS_AARCH64_PD_COUNT 20u
-#define AOS_CC_INIT_EP_COUNT 4u
+#define AOS_CC_INIT_EP_COUNT 5u
 #else
 #define AOS_AARCH64_PD_COUNT 19u
-#define AOS_CC_INIT_EP_COUNT 3u
+#define AOS_CC_INIT_EP_COUNT 4u
 #endif
 
 /* ── AArch64 system description ───────────────────────────────────────────── */
@@ -414,13 +414,14 @@ const system_desc_t system_desc_aarch64 = {
             .self_svc_id    = SVC_ID_CC_PD,
             .init_ep_count  = AOS_CC_INIT_EP_COUNT,
             .init_eps = {
-                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
-                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_NAMESERVER,  PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,   PD_CNODE_SLOT_LOG_DRAIN_EP  },
 #if defined(AGENTOS_GUEST_FREEBSD)
                 { SVC_ID_FREEBSD_VMM, PD_CNODE_SLOT_GUEST_VMM_EP },
 #else
                 { SVC_ID_LINUX_VMM,   PD_CNODE_SLOT_GUEST_VMM_EP },
 #endif
+                { SVC_ID_VIBE_ENGINE, PD_CNODE_SLOT_VIBE_ENGINE_EP },
 #if defined(AGENTOS_FAULT_INJECT)
                 { SVC_ID_FAULT_INJECT, PD_CNODE_SLOT_FAULT_INJECT_EP },
 #endif

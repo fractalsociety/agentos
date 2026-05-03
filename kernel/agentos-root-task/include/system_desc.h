@@ -235,7 +235,12 @@ typedef struct {
  * passed as arg0 (x0) to the PD's _start, so pd_main(my_ep, ns_ep) receives
  * the correct listen endpoint without any nameserver lookup.
  *
- * Slot 7 is used because slots 0–6 are reserved for init_eps (PD_MAX_INIT_EPS
- * is 8, but only slots 0–4 are currently defined).
+ * Slot 7 is used because slots 0–6 are reserved for init_eps.
  */
 #define PD_CNODE_SLOT_SELF_EP         7u
+
+/* Slot 8 onwards: additional, PD-specific init_ep caps that don't fit the
+ * standard reserved slots above.  The slot number is independent of the
+ * init_eps[] array index — main.c distributes each entry into the slot it
+ * names.  Only PDs whose init_eps reference these slots receive the cap. */
+#define PD_CNODE_SLOT_VIBE_ENGINE_EP  8u

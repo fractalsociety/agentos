@@ -682,6 +682,14 @@ static void cc_wire_wr32(uint8_t *dst, uint32_t off, uint32_t value)
     dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
 }
 
+static uint32_t cc_wire_rd32(const uint8_t *src, uint32_t off)
+{
+    return (uint32_t)src[off + 0u]
+         | ((uint32_t)src[off + 1u] << 8u)
+         | ((uint32_t)src[off + 2u] << 16u)
+         | ((uint32_t)src[off + 3u] << 24u);
+}
+
 /* ─── Session management handlers ───────────────────────────────────────── */
 
 static void handle_connect(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -968,13 +976,37 @@ static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 
 static void handle_create_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
-    (void)req;
     /*
-     * The CC contract now has an explicit creation endpoint, but the
-     * downstream VibeOS CREATE relay is not wired into cc_pd yet.
+     * Relay CC_CREATE_GUEST → VIBEOS_CREATE.  The CC request shmem matches
+     * vibeos_create_req (os_type/arch in bytes 0..3, ram_mb at 4, device_flags
+     * at 16).  vibe_engine's MSG_VIBEOS_CREATE handler reads a flat 12-byte
+     * payload at offsets 0,4,8 (os_type, ram_mb, dev_flags), so we repack.
      */
-    rep->mr[0] = CC_ERR_RELAY_FAULT;
-    rep->mr[1] = 0u;
+    uint8_t  os_type  = req->shmem[0];
+    uint32_t ram_mb   = cc_wire_rd32(req->shmem, 4u);
+    uint32_t dev_mask = cc_wire_rd32(req->shmem, 16u);
+
+    sel4_msg_t msg   = {0};
+    sel4_msg_t reply = {0};
+    msg.opcode = MSG_VIBEOS_CREATE;
+    msg.length = 12u;
+    cc_wire_wr32(msg.data, 0u, (uint32_t)os_type);
+    cc_wire_wr32(msg.data, 4u, ram_mb);
+    cc_wire_wr32(msg.data, 8u, dev_mask);
+
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &msg, &reply);
+    /* sel4_server propagates the handler's return code via reply.opcode
+     * (see sel4_server.h: rep->opcode = rc).  On success rc == SEL4_ERR_OK == 0;
+     * on failure the VIBEOS_ERR_* code (12 = BAD_TYPE, 13 = OOM, etc.) appears
+     * here, while reply.data[0] is the same code echoed by handle_vos_create. */
+    if (reply.opcode != SEL4_ERR_OK) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = reply.opcode;  /* surface vibeos error for diagnostics */
+        return;
+    }
+
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = cc_wire_rd32(reply.data, 4u); /* guest_handle */
 }
 
 static void handle_fault_inject(const cc_req_wire_t *req, cc_reply_wire_t *rep)
