@@ -886,7 +886,15 @@ static uint32_t handle_vos_create(sel4_badge_t badge, const sel4_msg_t *req,
     s_vos[slot].active   = true;
     s_vos[slot].handle   = handle;
     s_vos[slot].os_type  = (uint8_t)os_type;
-    s_vos[slot].state    = (uint8_t)VIBEOS_STATE_BOOTING;
+    /* If g_vmm_ep was resolved, vm_manager will eventually drive the slot
+     * into RUNNING via handle_vos_status's polling logic.  When vm_manager
+     * is the stub (vmm_mux_stub.c on aarch64), no VM ever boots, so the
+     * slot would otherwise sit in BOOTING forever.  Mark it RUNNING up front
+     * in the stub case so the multi-OS UX is exercised end-to-end.  This is
+     * a phantom-guest mode — see bead vmm-libvmm-phantom-guests for the real
+     * libvmm wiring that replaces it. */
+    s_vos[slot].state    = (uint8_t)(g_vmm_ep ? VIBEOS_STATE_BOOTING
+                                              : VIBEOS_STATE_RUNNING);
     s_vos[slot].ram_mb   = ram_mb;
     s_vos[slot].dev_mask = 0;
     s_vos[slot].swap_id  = 0;
