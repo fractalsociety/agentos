@@ -327,12 +327,16 @@ fn stage_local_iso(
     source_url: &str,
 ) -> anyhow::Result<PathBuf> {
     let dest = output_dir.join(dest_name);
-    if staged_iso_ready(&dest)? {
+    if staged_regular_iso_ready(&dest)? {
         println!("[fetch-guest] ISO already staged: {}", dest.display());
         return Ok(dest);
     }
 
     let src = ensure_cached_iso(source_name, source_url)?;
+    if staged_symlink_ready(&dest, &src)? {
+        println!("[fetch-guest] ISO already staged: {}", dest.display());
+        return Ok(dest);
+    }
 
     fs::create_dir_all(output_dir)
         .with_context(|| format!("failed to create {}", output_dir.display()))?;
@@ -359,16 +363,38 @@ fn stage_local_iso(
     Ok(dest)
 }
 
-fn staged_iso_ready(dest: &Path) -> anyhow::Result<bool> {
+fn staged_regular_iso_ready(dest: &Path) -> anyhow::Result<bool> {
     match fs::symlink_metadata(dest) {
-        Ok(_) => {
-            if fs::metadata(dest).map(|m| m.len()).unwrap_or(0) > 0 {
+        Ok(meta) if !meta.file_type().is_symlink() => {
+            if meta.len() > 0 {
                 return Ok(true);
             }
             fs::remove_file(dest)
                 .with_context(|| format!("failed to remove stale ISO stage {}", dest.display()))?;
             Ok(false)
         }
+        Ok(_) => Ok(false),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => {
+            Err(err).with_context(|| format!("failed to inspect staged ISO {}", dest.display()))
+        }
+    }
+}
+
+fn staged_symlink_ready(dest: &Path, src: &Path) -> anyhow::Result<bool> {
+    match fs::symlink_metadata(dest) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            let target = fs::read_link(dest)
+                .with_context(|| format!("failed to read staged ISO link {}", dest.display()))?;
+            if target == src && fs::metadata(dest).map(|m| m.len()).unwrap_or(0) > 0 {
+                return Ok(true);
+            }
+            fs::remove_file(dest).with_context(|| {
+                format!("failed to remove stale ISO symlink {}", dest.display())
+            })?;
+            Ok(false)
+        }
+        Ok(_) => Ok(false),
         Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
         Err(err) => {
             Err(err).with_context(|| format!("failed to inspect staged ISO {}", dest.display()))
