@@ -247,3 +247,5 @@ typedef struct {
  * whose init_eps reference these slots receive the cap. */
 #define PD_CNODE_SLOT_VIBE_ENGINE_EP  8u
 #define PD_CNODE_SLOT_VM_MANAGER_EP   10u
+#define PD_CNODE_SLOT_LINUX_VMM_EP    11u
+#define PD_CNODE_SLOT_FREEBSD_VMM_EP  12u

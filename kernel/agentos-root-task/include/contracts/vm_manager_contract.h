@@ -56,15 +56,14 @@
 /* ── Request / Reply structs ── */
 
 typedef struct __attribute__((packed)) {
-    uint32_t opcode;          /* VM_MANAGER_OP_CREATE */
     uint32_t vm_type;         /* VM_TYPE_* */
-    uint64_t kernel_hash_lo;  /* AgentFS hash of kernel image */
-    uint64_t kernel_hash_hi;
-    uint64_t initrd_hash_lo;  /* AgentFS hash of initrd (0 = none) */
-    uint64_t initrd_hash_hi;
     uint32_t ram_mb;          /* guest physical RAM in MiB */
-    uint32_t vcpu_count;      /* vCPU count (1-8) */
     uint32_t flags;           /* VM_CREATE_FLAG_* */
+    uint32_t vcpu_count;      /* vCPU count (1-8, 0 = default) */
+    uint64_t kernel_hash_lo;  /* AgentFS hash of kernel image (0 = default) */
+    uint64_t kernel_hash_hi;
+    uint64_t initrd_hash_lo;  /* AgentFS hash of initrd (0 = none/default) */
+    uint64_t initrd_hash_hi;
 } vm_manager_req_create_t;
 
 #define VM_CREATE_FLAG_VIRTIO_NET  (1u << 0)

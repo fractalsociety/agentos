@@ -333,13 +333,17 @@ ifdef SEL4_TEST_IMAGE
   CFLAGS_ROOT_TASK += -DAGENTOS_SEL4_TEST_IMAGE=1
 endif
 
-# Guest OS selection: none (default) | linux | freebsd
+# Guest OS selection: none (default) | linux/ubuntu | freebsd | both
 GUEST_OS ?= none
 GUEST_CONFIG_STAMP := $(BUILD_DIR)/guest_config.stamp
 
 # AArch64: include VMM based on GUEST_OS
 ifeq ($(ARCH),aarch64)
-  ifeq ($(GUEST_OS),freebsd)
+  ifeq ($(GUEST_OS),both)
+    CFLAGS += -DAGENTOS_GUEST_LINUX=1 -DAGENTOS_GUEST_FREEBSD=1 -DAGENTOS_GUEST_BOTH=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_GUEST_LINUX=1 -DAGENTOS_GUEST_FREEBSD=1 -DAGENTOS_GUEST_BOTH=1
+    IMAGES += linux_vmm.elf freebsd_vmm.elf
+  else ifeq ($(GUEST_OS),freebsd)
     CFLAGS += -DAGENTOS_GUEST_FREEBSD=1
     CFLAGS_ROOT_TASK += -DAGENTOS_GUEST_FREEBSD=1
     IMAGES += freebsd_vmm.elf
@@ -714,16 +718,16 @@ $(BUILD_DIR)/linux_vmm.elf: FORCE
 		BUILD_DIR=$(BUILD_DIR) \
 		AGENTOS_ARCH=$(AGENTOS_ARCH) \
 		AGENTOS_BOARD=$(AGENTOS_BOARD) \
-		GUEST_OS=$(GUEST_OS) \
+		GUEST_OS=$(if $(filter both,$(GUEST_OS)),ubuntu,$(GUEST_OS)) \
 		vmm-all
 endif
 endif
 endif
 endif
 
-# ─── FreeBSD VMM (AArch64 + GUEST_OS=freebsd) ─────────────────────────────
+# ─── FreeBSD VMM (AArch64 + GUEST_OS=freebsd|both) ─────────────────────────
 ifeq ($(ARCH),aarch64)
-ifeq ($(GUEST_OS),freebsd)
+ifneq ($(filter freebsd both,$(GUEST_OS)),)
 $(BUILD_DIR)/freebsd_vmm.elf: FORCE
 	@echo ""
 	@echo "═══ Building FreeBSD VMM (libvmm + EDK2) ═══"
@@ -759,16 +763,33 @@ endif
 # A minimal fallback TOML is provided; board-specific overrides live in boards/.
 SYSTEM_TOML_DEFAULT := $(abspath $(CURDIR)/agentos.toml)
 ifdef FAULT_INJECT
+ifeq ($(GUEST_OS),both)
+SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-both-fault-inject.toml)
+$(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
+	@mkdir -p $(BUILD_DIR)
+	{ cat $<; printf '\n[[pd]]\nname = "freebsd_vmm"\npriority = 250\n'; printf '\n[[pd]]\nname = "fault_inject"\npriority = 254\n'; } > $@
+else ifeq ($(GUEST_OS),freebsd)
+SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-freebsd-fault-inject.toml)
+$(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
+	@mkdir -p $(BUILD_DIR)
+	{ sed 's/name = "linux_vmm"/name = "freebsd_vmm"/' $<; printf '\n[[pd]]\nname = "fault_inject"\npriority = 254\n'; } > $@
+else
 SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-fault-inject.toml)
 $(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
 	@mkdir -p $(BUILD_DIR)
 	{ cat $<; printf '\n[[pd]]\nname = "fault_inject"\npriority = 254\n'; } > $@
+endif
 else
 ifeq ($(GUEST_OS),freebsd)
 SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-freebsd.toml)
 $(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
 	@mkdir -p $(BUILD_DIR)
 	sed 's/name = "linux_vmm"/name = "freebsd_vmm"/' $< > $@
+else ifeq ($(GUEST_OS),both)
+SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-both.toml)
+$(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
+	@mkdir -p $(BUILD_DIR)
+	{ cat $<; printf '\n[[pd]]\nname = "freebsd_vmm"\npriority = 250\n'; } > $@
 endif
 endif
 _BOARD_TOML := ../../boards/$(BOARD_NAME)/agentos.toml

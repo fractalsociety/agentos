@@ -8,7 +8,7 @@
 #   make help         — show important top-level targets and defaults
 #   make install      — install all build dependencies
 #   make build        — build the kernel image for BOARD/TARGET_ARCH
-#   make run          — build + boot agentOS with a Unix guest in QEMU
+#   make run          — build + boot agentOS with Unix guest support in QEMU
 #   make test         — CI boot test (exit 0/1)
 #   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
 #   make clean        — remove build artifacts for current board
@@ -309,6 +309,9 @@ ifeq ($(GUEST_OS),freebsd)
 	@cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES)
 else ifeq ($(GUEST_OS),ubuntu)
 	@cargo xtask fetch-guest --os ubuntu --output-dir $(AGENTOS_IMAGES)
+else ifeq ($(GUEST_OS),both)
+	@cargo xtask fetch-guest --os ubuntu --output-dir $(AGENTOS_IMAGES)
+	@cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES)
 endif
 
 # =============================================================================
@@ -351,11 +354,11 @@ endif
 # QEMU flags for interactive run: serial → stdio, SSH port forwarding per guest.
 _RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
 FREEBSD_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso)
-_UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,if=none,id=hd0,readonly=on,file.locking=off \
-              -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.1
-_FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=hd0,readonly=on,file.locking=off \
-               -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.31
-_QEMU_BLK_FLAGS = $(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),))
+_UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,if=none,id=ubuntu_hd,readonly=on,file.locking=off \
+              -device virtio-blk-device,drive=ubuntu_hd,bus=virtio-mmio-bus.1
+_FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=freebsd_hd,readonly=on,file.locking=off \
+               -device virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31
+_QEMU_BLK_FLAGS = $(if $(filter both,$(GUEST_OS)),$(_UBUNTU_BLK) $(_FREEBSD_BLK),$(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),)))
 QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
                  -cpu $(_RUN_CPU) -m 2G \
                  -display none -monitor none \
@@ -645,7 +648,7 @@ help:
 	@echo "agentOS - top-level make targets"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=ubuntu|freebsd|none]"
+	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=ubuntu|freebsd|both|none]"
 	@echo ""
 	@echo "Current defaults:"
 	@echo "  TARGET_ARCH     $(TARGET_ARCH)"
@@ -666,6 +669,7 @@ help:
 	@echo "Guest images:"
 	@echo "  make fetch-guest GUEST_OS=ubuntu     Stage Ubuntu 26.04 assets in build/guest-images"
 	@echo "  make fetch-guest GUEST_OS=freebsd    Stage FreeBSD 15.0 assets in build/guest-images"
+	@echo "  make fetch-guest GUEST_OS=both       Stage both Ubuntu and FreeBSD assets"
 	@echo "  make bootstrap-guest OS=<name>       Build guest disks from ISO files in /Volumes/ISOs"
 	@echo "                                      names: ubuntu-amd64 ubuntu-arm64 nixos freebsd15"
 	@echo ""
@@ -688,6 +692,7 @@ help:
 	@echo ""
 	@echo "Common examples:"
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu"
+	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=both"
 	@echo "  make run GUEST_OS=freebsd"
 	@echo "  make test-guest-login QEMU_TEST_TIMEOUT=420"
 	@echo "  cd ../agentos_gui && make run"

@@ -223,6 +223,17 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #define VM_SLOT_ERROR     5u
 #endif
 
+#ifndef VM_TYPE_LINUX
+#define VM_TYPE_LINUX   0u
+#define VM_TYPE_FREEBSD 1u
+#endif
+
+#ifndef VM_CREATE_FLAG_VIRTIO_NET
+#define VM_CREATE_FLAG_VIRTIO_NET  (1u << 0)
+#define VM_CREATE_FLAG_VIRTIO_BLK  (1u << 1)
+#define VM_CREATE_FLAG_SERIAL      (1u << 2)
+#endif
+
 /* Serial / block open opcodes */
 #ifndef MSG_SERIAL_OPEN
 #define MSG_SERIAL_OPEN  0x2001u
@@ -879,10 +890,16 @@ static uint32_t handle_vos_create(sel4_badge_t badge, const sel4_msg_t *req,
     /* PPC to vm_manager: create VM slot */
     {
         sel4_msg_t vreq = {0}, vrep = {0};
+        uint32_t vm_type = (os_type == 2u) ? VM_TYPE_FREEBSD : VM_TYPE_LINUX;
+        uint32_t vm_flags = 0u;
+        if (dev_flags & VIBEOS_DEV_NET)    vm_flags |= VM_CREATE_FLAG_VIRTIO_NET;
+        if (dev_flags & VIBEOS_DEV_BLOCK)  vm_flags |= VM_CREATE_FLAG_VIRTIO_BLK;
+        if (dev_flags & VIBEOS_DEV_SERIAL) vm_flags |= VM_CREATE_FLAG_SERIAL;
         vreq.opcode = OP_VM_CREATE;
-        data_wr32(vreq.data, 0, 0u);      /* label_vaddr */
+        data_wr32(vreq.data, 0, vm_type);
         data_wr32(vreq.data, 4, ram_mb);
-        vreq.length = 8;
+        data_wr32(vreq.data, 8, vm_flags);
+        vreq.length = 12;
         sel4_call(g_vmm_ep, &vreq, &vrep);
         uint32_t vm_ok   = data_rd32(vrep.data, 0);
         uint32_t vm_slot = data_rd32(vrep.data, 4);

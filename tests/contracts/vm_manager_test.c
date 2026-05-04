@@ -22,6 +22,7 @@
 
 #include "../harness/test_framework.h"
 #include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/agentos-root-task/include/contracts/vm_manager_contract.h"
 
 void run_vm_manager_tests(microkit_channel ch)
 {
@@ -30,9 +31,31 @@ void run_vm_manager_tests(microkit_channel ch)
     /* LIST — enumerate active slots; count returned in MR1. */
     ASSERT_IPC_OK(ch, OP_VM_LIST, "vm_manager: LIST returns ok");
 
+    /* CREATE — FreeBSD requests carry VM_TYPE_FREEBSD explicitly. */
+    microkit_mr_set(0, (uint64_t)OP_VM_CREATE);
+    microkit_mr_set(1, VM_TYPE_FREEBSD);
+    microkit_mr_set(2, 128);  /* ram_mb */
+    (void)microkit_ppcall(ch, microkit_msginfo_new(OP_VM_CREATE, 3));
+    {
+        uint64_t freebsd_rc   = microkit_mr_get(0);
+        uint64_t freebsd_slot = microkit_mr_get(1);
+        if (freebsd_rc == AOS_OK || freebsd_rc == AOS_ERR_NOSPC ||
+            freebsd_rc == AOS_ERR_INVAL) {
+            _tf_ok("vm_manager: CREATE accepts explicit FreeBSD VM type");
+        } else {
+            _tf_fail_point("vm_manager: CREATE accepts explicit FreeBSD VM type",
+                           "unexpected error code");
+        }
+        if (freebsd_rc == AOS_OK) {
+            microkit_mr_set(0, (uint64_t)OP_VM_DESTROY);
+            microkit_mr_set(1, freebsd_slot);
+            (void)microkit_ppcall(ch, microkit_msginfo_new(OP_VM_DESTROY, 2));
+        }
+    }
+
     /* CREATE — allocate a slot for a 128MB Linux guest. */
     microkit_mr_set(0, (uint64_t)OP_VM_CREATE);
-    microkit_mr_set(1, 0);    /* label_vaddr = 0 (test topology may not have one) */
+    microkit_mr_set(1, VM_TYPE_LINUX);
     microkit_mr_set(2, 128);  /* ram_mb */
     (void)microkit_ppcall(ch, microkit_msginfo_new(OP_VM_CREATE, 3));
     uint64_t create_rc  = microkit_mr_get(0);

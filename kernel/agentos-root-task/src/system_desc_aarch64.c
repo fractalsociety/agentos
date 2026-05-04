@@ -39,12 +39,26 @@
 
 #include "system_desc.h"
 
-#if defined(AGENTOS_FAULT_INJECT)
+#if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
+#define AOS_AARCH64_PD_COUNT 21u
+#define AOS_CC_INIT_EP_COUNT 5u
+#elif defined(AGENTOS_FAULT_INJECT)
 #define AOS_AARCH64_PD_COUNT 20u
 #define AOS_CC_INIT_EP_COUNT 5u
+#elif defined(AGENTOS_GUEST_BOTH)
+#define AOS_AARCH64_PD_COUNT 20u
+#define AOS_CC_INIT_EP_COUNT 4u
 #else
 #define AOS_AARCH64_PD_COUNT 19u
 #define AOS_CC_INIT_EP_COUNT 4u
+#endif
+
+#if defined(AGENTOS_GUEST_BOTH)
+#define AOS_VM_MANAGER_INIT_EP_COUNT 4u
+#elif defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+#define AOS_VM_MANAGER_INIT_EP_COUNT 3u
+#else
+#define AOS_VM_MANAGER_INIT_EP_COUNT 2u
 #endif
 
 /* ── AArch64 system description ───────────────────────────────────────────── */
@@ -321,7 +335,7 @@ const system_desc_t system_desc_aarch64 = {
          *                (used by ubuntu guest for cloud-init seed disk on bus.3)
          */
         {
-#if defined(AGENTOS_GUEST_FREEBSD)
+#if defined(AGENTOS_GUEST_FREEBSD) && !defined(AGENTOS_GUEST_BOTH)
             .name           = "freebsd_vmm",
             .elf_path       = "freebsd_vmm.elf",
             .stack_size     = 0x10000u,
@@ -384,6 +398,49 @@ const system_desc_t system_desc_aarch64 = {
 #endif
         },
 
+#if defined(AGENTOS_GUEST_BOTH)
+        /* pd[16] — FreeBSD VMM in dual-guest images.
+         *
+         * Linux remains the legacy boot guest at pd[15].  FreeBSD is exposed as
+         * a separate service endpoint so vm_manager can dispatch by VM_TYPE_*.
+         * Its block device uses QEMU virtio-mmio bus 31 (IRQ 79), avoiding the
+         * Linux guest's bus 1/3 IRQs in dual mode.
+         */
+        {
+            .name           = "freebsd_vmm",
+            .elf_path       = "freebsd_vmm.elf",
+            .stack_size     = 0x10000u,
+            .cnode_size_bits = 10u,
+            .priority       = 250u,
+            .self_svc_id    = SVC_ID_FREEBSD_VMM,
+            .init_ep_count  = 2u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+            },
+            .irq_count = 1u,
+            .irqs = {
+                { .irq_number = 79u, .ntfn_badge = 0x2u, .name = "virtio-blk" },
+            },
+            .mr_count = 3u,
+            .memory_regions = {
+                { .vaddr    = 0x00000000ULL,
+                  .size     = 0x04000000u,
+                  .writable = 1u,
+                  .name     = "uefi_code" },
+                { .vaddr    = 0x04000000ULL,
+                  .size     = 0x04000000u,
+                  .writable = 1u,
+                  .name     = "uefi_data" },
+                { .vaddr    = 0x40000000ULL,
+                  .size     = 0x20000000u,
+                  .writable = 1u,
+                  .name     = "guest_ram" },
+            },
+        },
+
+#endif
+
         /* pd[16] — vm_manager (prio 155; multi-VM lifecycle manager)
          * Called by controller to create/destroy/snapshot VMs.  Runs above
          * controller (50) but below all the services it calls. */
@@ -394,10 +451,16 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 155u,
             .self_svc_id    = SVC_ID_VM_MANAGER,
-            .init_ep_count  = 2u,
+            .init_ep_count  = AOS_VM_MANAGER_INIT_EP_COUNT,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+#if defined(AGENTOS_GUEST_LINUX)
+                { SVC_ID_LINUX_VMM,  PD_CNODE_SLOT_LINUX_VMM_EP  },
+#endif
+#if defined(AGENTOS_GUEST_FREEBSD)
+                { SVC_ID_FREEBSD_VMM, PD_CNODE_SLOT_FREEBSD_VMM_EP },
+#endif
             },
         },
 
@@ -417,7 +480,7 @@ const system_desc_t system_desc_aarch64 = {
             .init_eps = {
                 { SVC_ID_NAMESERVER,  PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,   PD_CNODE_SLOT_LOG_DRAIN_EP  },
-#if defined(AGENTOS_GUEST_FREEBSD)
+#if defined(AGENTOS_GUEST_FREEBSD) && !defined(AGENTOS_GUEST_BOTH)
                 { SVC_ID_FREEBSD_VMM, PD_CNODE_SLOT_GUEST_VMM_EP },
 #else
                 { SVC_ID_LINUX_VMM,   PD_CNODE_SLOT_GUEST_VMM_EP },

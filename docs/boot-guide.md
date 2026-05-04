@@ -227,9 +227,10 @@ Important runtime contracts for external users:
   network functionality requires a VirtIO NIC (provided by the QEMU `-netdev`
   + `-device virtio-net-device` flags above).
 
-- **Guest OS VMM selection**: Use `GUEST_OS=ubuntu` for the Linux path or
-  `GUEST_OS=freebsd` for the FreeBSD path. `make build` and `make run` stage
-  the selected image automatically through `make fetch-guest`.
+- **Guest OS VMM selection**: Use `GUEST_OS=ubuntu` for the Linux path,
+  `GUEST_OS=freebsd` for the FreeBSD path, or `GUEST_OS=both` to build a
+  single aarch64 image containing both VMM PDs. `make build` and `make run`
+  stage the selected images automatically through `make fetch-guest`.
 
 ## Agent Signing
 

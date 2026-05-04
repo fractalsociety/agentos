@@ -270,14 +270,14 @@ typedef enum {
 /* vm_manager IPC opcodes (MR0 in PPCs to vm_manager PD, channel CH_VM_MANAGER)
  * NOTE: 0x15/0x16 are shared with OP_CAP_BROKER_RELOAD/OP_CAP_STATUS but those
  * are dispatched by the monitor/cap_broker PD, not vm_manager — no conflict. */
-#define OP_VM_CREATE    0x10u  /* MR1=label_vaddr MR2=ram_mb → MR0=ok MR1=slot_id */
+#define OP_VM_CREATE    0x10u  /* data[0]=VM_TYPE_* data[4]=ram_mb data[8]=flags → ok, slot_id */
 #define OP_VM_DESTROY   0x11u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_START     0x12u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_STOP      0x13u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_PAUSE     0x14u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_RESUME    0x15u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_CONSOLE   0x16u  /* MR1=slot_id → MR0=ok */
-#define OP_VM_INFO      0x17u  /* MR1=slot_id → MR0=ok MR1=state MR2=ram_vaddr */
+#define OP_VM_INFO      0x17u  /* data[0]=slot_id → ok,state,vm_type,ram_mb,vcpu_count,uptime,ram_vaddr */
 #define OP_VM_LIST      0x18u  /* → MR0=ok MR1=count; vm_list_shmem has vm_list_entry_t[] */
 #define OP_VM_SNAPSHOT  0x19u  /* MR1=slot_id → MR0=ok MR1=snap_hash_lo MR2=snap_hash_hi */
 #define OP_VM_RESTORE    0x1Au  /* MR1=slot_id MR2=snap_lo MR3=snap_hi → MR0=ok */
