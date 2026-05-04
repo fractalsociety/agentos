@@ -775,6 +775,14 @@ static uint32_t vmm_msg_rd32(const uint8_t *src, uint32_t off)
            ((uint32_t)src[off + 3u] << 24u);
 }
 
+static void vmm_msg_wr32(uint8_t *dst, uint32_t off, uint32_t value)
+{
+    dst[off + 0u] = (uint8_t)(value & 0xffu);
+    dst[off + 1u] = (uint8_t)((value >> 8u) & 0xffu);
+    dst[off + 2u] = (uint8_t)((value >> 16u) & 0xffu);
+    dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
+}
+
 static void console_tx_push(uint8_t byte)
 {
     if (console_tx_count == GUEST_CONSOLE_TX_RING_SIZE) {
@@ -999,6 +1007,41 @@ static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
     _sel4_mrs_to_msg(&req);
 
     switch (req.opcode) {
+    case MSG_GUEST_CREATE: {
+        if (req.length >= 4u) {
+            uint32_t os_type = vmm_msg_rd32(req.data, 0u);
+            if (os_type != 0u && os_type != LINUX_VMM_OS_TYPE) {
+                rep.opcode = GUEST_ERR_BAD_OS_TYPE;
+                break;
+            }
+        }
+        if (g_guest_state == GUEST_STATE_DEAD) {
+            rep.opcode = GUEST_ERR_DEAD;
+            break;
+        }
+        vmm_msg_wr32(rep.data, 0u, GUEST_OK);
+        vmm_msg_wr32(rep.data, 4u, 0u);
+        rep.length = 8u;
+        rep.opcode = GUEST_OK;
+        break;
+    }
+    case MSG_GUEST_BOOT: {
+        if (req.length < 4u || vmm_msg_rd32(req.data, 0u) != 0u) {
+            rep.opcode = GUEST_ERR_BAD_GUEST_ID;
+            break;
+        }
+        if (g_guest_state == GUEST_STATE_DEAD) {
+            rep.opcode = GUEST_ERR_DEAD;
+            break;
+        }
+        if (!guest_started) {
+            rep.opcode = GUEST_ERR_NOT_READY;
+            break;
+        }
+        g_guest_state = GUEST_STATE_RUNNING;
+        rep.opcode = GUEST_OK;
+        break;
+    }
     case MSG_GUEST_SUSPEND: {
         if (req.length < 4u || vmm_msg_rd32(req.data, 0u) != 0u) {
             rep.opcode = GUEST_ERR_BAD_GUEST_ID;
@@ -1540,7 +1583,9 @@ void linux_vmm_main(seL4_CPtr ep, seL4_CPtr reply_cap)
 #endif
     while (1) {
         seL4_Word label = seL4_MessageInfo_get_label(info);
-        if (label == MSG_GUEST_SEND_INPUT ||
+        if (label == MSG_GUEST_CREATE ||
+            label == MSG_GUEST_BOOT ||
+            label == MSG_GUEST_SEND_INPUT ||
             label == MSG_GUEST_CONSOLE_DRAIN ||
             label == MSG_GUEST_SUSPEND ||
             label == MSG_GUEST_RESUME ||

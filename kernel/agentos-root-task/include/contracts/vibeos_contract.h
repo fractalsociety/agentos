@@ -134,6 +134,21 @@ struct vibeos_check_service_req {
     uint32_t func_class;        /* VIBEOS_FUNC_CLASS_* */
 };
 
+struct vibeos_send_input_req {
+    uint32_t handle;            /* vibeos_handle returned by CREATE */
+    uint32_t event_type;        /* CC_INPUT_* event type */
+    uint32_t keycode;           /* Unicode/codepoint or special key */
+    int32_t  dx;                /* relative pointer X */
+    int32_t  dy;                /* relative pointer Y */
+    uint32_t btn_mask;          /* pointer button bitmask */
+    uint32_t reserved;
+};
+
+struct vibeos_console_drain_req {
+    uint32_t handle;            /* vibeos_handle returned by CREATE */
+    uint32_t max_bytes;         /* clamped to VIBEOS_CONSOLE_INLINE_BYTES */
+};
+
 /* ─── Reply structs ──────────────────────────────────────────────────────── */
 
 struct vibeos_create_reply {
@@ -210,6 +225,18 @@ struct vibeos_check_service_reply {
     uint32_t channel_id;        /* channel for existing PD (valid when exists=1) */
 };
 
+struct vibeos_send_input_reply {
+    uint32_t ok;
+};
+
+#define VIBEOS_CONSOLE_INLINE_BYTES (48u - 8u)
+
+struct vibeos_console_drain_reply {
+    uint32_t ok;
+    uint32_t bytes_drained;
+    uint8_t  data[VIBEOS_CONSOLE_INLINE_BYTES];
+};
+
 /* ─── Shmem layout: VibeOS list entry ───────────────────────────────────── */
 
 typedef struct __attribute__((packed)) {
@@ -244,6 +271,8 @@ typedef struct __attribute__((packed)) {
 #define VIBEOS_OP_BOOT           MSG_VIBEOS_BOOT
 #define VIBEOS_OP_LOAD_MODULE    MSG_VIBEOS_LOAD_MODULE
 #define VIBEOS_OP_CHECK_SERVICE  MSG_VIBEOS_CHECK_SERVICE_EXISTS
+#define VIBEOS_OP_SEND_INPUT     MSG_VIBEOS_SEND_INPUT
+#define VIBEOS_OP_CONSOLE_DRAIN  MSG_VIBEOS_CONSOLE_DRAIN
 
 /* ─── Channel aliases ────────────────────────────────────────────────────── */
 

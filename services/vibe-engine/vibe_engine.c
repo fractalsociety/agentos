@@ -51,6 +51,7 @@ typedef struct {
     uint8_t  data[48];
 } sel4_msg_t;
 
+#define SEL4_MSG_DATA_BYTES 48u
 #define SEL4_ERR_OK          0u
 #define SEL4_ERR_INVALID_OP  1u
 #define SEL4_ERR_NOT_FOUND   2u
@@ -163,12 +164,15 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #define MSG_VIBEOS_LOAD_MODULE          0x240Bu
 #define MSG_VIBEOS_CHECK_SERVICE_EXISTS 0x240Cu
 #define MSG_VIBEOS_CONFIGURE            0x240Du
+#define MSG_VIBEOS_SEND_INPUT           0x240Eu
+#define MSG_VIBEOS_CONSOLE_DRAIN        0x240Fu
 #endif
 
 /* VibeOS error codes */
 #ifndef VIBEOS_OK
 #define VIBEOS_OK                  0u
 #define VIBEOS_ERR_BAD_HANDLE      2u
+#define VIBEOS_ERR_BIND_FAIL       5u
 #define VIBEOS_ERR_WASM_LOAD_FAIL  6u
 #define VIBEOS_ERR_BAD_MODULE_TYPE 9u
 #define VIBEOS_ERR_BAD_FUNC_CLASS  11u
@@ -213,6 +217,8 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #define OP_VM_SNAPSHOT    0x19u
 #define OP_VM_RESTORE     0x1Au
 #define OP_VM_CONFIGURE   0x1Bu
+#define OP_VM_SEND_INPUT  0x1Fu
+#define OP_VM_CONSOLE_DRAIN 0x20u
 #endif
 
 #ifndef VM_SLOT_BOOTING
@@ -1282,6 +1288,96 @@ static uint32_t handle_vos_configure(sel4_badge_t badge, const sel4_msg_t *req,
     return SEL4_ERR_OK;
 }
 
+/* ── MSG_VIBEOS_SEND_INPUT ─────────────────────────────────────────────── */
+static uint32_t handle_vos_send_input(sel4_badge_t badge, const sel4_msg_t *req,
+                                      sel4_msg_t *rep, void *ctx)
+{
+    (void)badge; (void)ctx;
+    uint32_t handle = data_rd32(req->data, 0);
+    int slot = vos_find(handle);
+    if (slot < 0) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NO_HANDLE);
+        rep->length = 4;
+        return VIBEOS_ERR_NO_HANDLE;
+    }
+    if (!g_vmm_ep) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NOT_IMPL);
+        rep->length = 4;
+        return VIBEOS_ERR_NOT_IMPL;
+    }
+
+    sel4_msg_t vreq = {0}, vrep = {0};
+    vreq.opcode = OP_VM_SEND_INPUT;
+    data_wr32(vreq.data, 0, s_vos[slot].vm_slot);
+    for (uint32_t i = 0; i < 24u; i++) {
+        uint32_t src = 4u + i;
+        vreq.data[4u + i] = (src < req->length) ? req->data[src] : 0u;
+    }
+    vreq.length = 28u;
+    sel4_call(g_vmm_ep, &vreq, &vrep);
+
+    uint32_t vm_ok = data_rd32(vrep.data, 0);
+    if (vrep.opcode != SEL4_ERR_OK || vm_ok != 0u) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_BIND_FAIL);
+        rep->length = 4;
+        return VIBEOS_ERR_BIND_FAIL;
+    }
+
+    data_wr32(rep->data, 0, VIBEOS_OK);
+    rep->length = 4;
+    return SEL4_ERR_OK;
+}
+
+/* ── MSG_VIBEOS_CONSOLE_DRAIN ──────────────────────────────────────────── */
+static uint32_t handle_vos_console_drain(sel4_badge_t badge,
+                                         const sel4_msg_t *req,
+                                         sel4_msg_t *rep, void *ctx)
+{
+    (void)badge; (void)ctx;
+    uint32_t handle = data_rd32(req->data, 0);
+    uint32_t max = data_rd32(req->data, 4);
+    int slot = vos_find(handle);
+    if (slot < 0) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NO_HANDLE);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8;
+        return VIBEOS_ERR_NO_HANDLE;
+    }
+    if (!g_vmm_ep) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NOT_IMPL);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8;
+        return VIBEOS_ERR_NOT_IMPL;
+    }
+    if (max > SEL4_MSG_DATA_BYTES - 8u)
+        max = SEL4_MSG_DATA_BYTES - 8u;
+
+    sel4_msg_t vreq = {0}, vrep = {0};
+    vreq.opcode = OP_VM_CONSOLE_DRAIN;
+    data_wr32(vreq.data, 0, s_vos[slot].vm_slot);
+    data_wr32(vreq.data, 4, max);
+    vreq.length = 8u;
+    sel4_call(g_vmm_ep, &vreq, &vrep);
+
+    uint32_t vm_ok = data_rd32(vrep.data, 0);
+    uint32_t n = data_rd32(vrep.data, 4);
+    if (n > SEL4_MSG_DATA_BYTES - 8u)
+        n = SEL4_MSG_DATA_BYTES - 8u;
+    if (vrep.opcode != SEL4_ERR_OK || vm_ok != 0u) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_BIND_FAIL);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8;
+        return VIBEOS_ERR_BIND_FAIL;
+    }
+
+    data_wr32(rep->data, 0, VIBEOS_OK);
+    data_wr32(rep->data, 4, n);
+    for (uint32_t i = 0; i < n; i++)
+        rep->data[8u + i] = vrep.data[8u + i];
+    rep->length = 8u + n;
+    return SEL4_ERR_OK;
+}
+
 /* ── MSG_VIBEOS_LOAD_MODULE ────────────────────────────────────────────── */
 static uint32_t handle_vibeos_load_module(sel4_badge_t badge, const sel4_msg_t *req,
                                            sel4_msg_t *rep, void *ctx)
@@ -1430,6 +1526,8 @@ static uint32_t vibe_engine_dispatch_one(sel4_badge_t badge,
     case MSG_VIBEOS_RESTORE:        return handle_vos_restore(badge, req, rep, (void*)0);
     case MSG_VIBEOS_MIGRATE:        return handle_vos_migrate(badge, req, rep, (void*)0);
     case MSG_VIBEOS_CONFIGURE:      return handle_vos_configure(badge, req, rep, (void*)0);
+    case MSG_VIBEOS_SEND_INPUT:     return handle_vos_send_input(badge, req, rep, (void*)0);
+    case MSG_VIBEOS_CONSOLE_DRAIN:  return handle_vos_console_drain(badge, req, rep, (void*)0);
     default:
         rep->opcode = SEL4_ERR_INVALID_OP;
         rep->length = 0;
@@ -1516,6 +1614,10 @@ void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr ctrl_ep)
                          handle_vos_migrate,  (void*)0);
     sel4_server_register(&g_srv, MSG_VIBEOS_CONFIGURE,
                          handle_vos_configure,(void*)0);
+    sel4_server_register(&g_srv, MSG_VIBEOS_SEND_INPUT,
+                         handle_vos_send_input,(void*)0);
+    sel4_server_register(&g_srv, MSG_VIBEOS_CONSOLE_DRAIN,
+                         handle_vos_console_drain,(void*)0);
 
     dbg_puts("[vibe_engine] *** VibeEngine ALIVE — accepting proposals ***\n");
     sel4_server_run(&g_srv);  /* NEVER RETURNS */

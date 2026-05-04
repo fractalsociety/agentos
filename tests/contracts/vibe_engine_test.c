@@ -1,7 +1,7 @@
 /*
  * vibe_engine_test.c — contract tests for the VibeEngine PD
  *
- * Covers all 17 opcodes dispatched by vibe_engine.c:
+ * Covers all 19 opcodes dispatched by vibe_engine.c:
  *
  * Hot-swap lifecycle (0x40–0x47):
  *   OP_VIBE_HEALTH           (0x45) — liveness + stats
@@ -21,6 +21,8 @@
  *   VIBEOS_OP_UNBIND_DEVICE  (0xB006) — detach a GUEST_DEV_* device
  *   VIBEOS_OP_SNAPSHOT       (0xB007) — checkpoint OS state
  *   VIBEOS_OP_MIGRATE        (0xB009) — must return ERR_NOT_IMPL
+ *   VIBEOS_OP_SEND_INPUT     (0x240E) — write console input
+ *   VIBEOS_OP_CONSOLE_DRAIN  (0x240F) — drain console bytes
  *   VIBEOS_OP_DESTROY        (0xB002) — tear down instance
  *
  * Error paths tested:
@@ -552,6 +554,58 @@ static void test_vos_status_bad_handle(microkit_channel ch)
     }
 }
 
+static void test_vos_console_io(microkit_channel ch)
+{
+    TEST_SECTION("vibe_engine:vos_console_io");
+
+    if (s_vos_handle == 0) {
+        for (int i = 0; i < 2; i++) {
+            _tf_total++; _tf_pass++;
+            _tf_puts("ok "); _tf_put_uint((uint64_t)_tf_total);
+            _tf_puts(" - VOS console I/O: # SKIP (no handle)\n");
+        }
+        return;
+    }
+
+    microkit_mr_set(0, (uint64_t)VIBEOS_OP_SEND_INPUT);
+    microkit_mr_set(1, (uint64_t)s_vos_handle);
+    microkit_mr_set(2, 1);       /* key/input event */
+    microkit_mr_set(3, 0x0Du);   /* Enter */
+    (void)microkit_ppcall(ch, microkit_msginfo_new(VIBEOS_OP_SEND_INPUT, 4));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == VIBEOS_OK || rc == VIBEOS_ERR_BIND_FAIL ||
+            rc == VIBEOS_ERR_NOT_IMPL || rc == VIBEOS_ERR_NO_HANDLE) {
+            _tf_ok("VOS_SEND_INPUT returns ok or structured error");
+        } else {
+            _tf_fail_point("VOS_SEND_INPUT returns ok or structured error",
+                           "unexpected error code");
+        }
+    }
+
+    microkit_mr_set(0, (uint64_t)VIBEOS_OP_CONSOLE_DRAIN);
+    microkit_mr_set(1, (uint64_t)s_vos_handle);
+    microkit_mr_set(2, VIBEOS_CONSOLE_INLINE_BYTES);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(VIBEOS_OP_CONSOLE_DRAIN, 3));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        uint64_t n  = microkit_mr_get(1);
+        if (rc == VIBEOS_OK || rc == VIBEOS_ERR_BIND_FAIL ||
+            rc == VIBEOS_ERR_NOT_IMPL || rc == VIBEOS_ERR_NO_HANDLE) {
+            _tf_ok("VOS_CONSOLE_DRAIN returns ok or structured error");
+        } else {
+            _tf_fail_point("VOS_CONSOLE_DRAIN returns ok or structured error",
+                           "unexpected error code");
+        }
+        if (rc != VIBEOS_OK || n <= VIBEOS_CONSOLE_INLINE_BYTES) {
+            _tf_ok("VOS_CONSOLE_DRAIN byte count is bounded");
+        } else {
+            _tf_fail_point("VOS_CONSOLE_DRAIN byte count is bounded",
+                           "byte count exceeds inline reply capacity");
+        }
+    }
+}
+
 static void test_vos_bind_device(microkit_channel ch)
 {
     TEST_SECTION("vibe_engine:vos_bind_device");
@@ -751,6 +805,7 @@ void run_vibe_engine_tests(microkit_channel ch)
     test_vos_list(ch);
     test_vos_status(ch);
     test_vos_status_bad_handle(ch);
+    test_vos_console_io(ch);
     test_vos_bind_device(ch);
     test_vos_unbind_device(ch);
     test_vos_snapshot(ch);

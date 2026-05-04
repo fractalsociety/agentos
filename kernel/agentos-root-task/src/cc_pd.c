@@ -576,6 +576,14 @@ static void cc_msg_wr32(uint8_t *dst, uint32_t off, uint32_t value)
     dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
 }
 
+static uint32_t cc_msg_rd32(const uint8_t *src, uint32_t off)
+{
+    return (uint32_t)src[off + 0u]
+         | ((uint32_t)src[off + 1u] << 8u)
+         | ((uint32_t)src[off + 2u] << 16u)
+         | ((uint32_t)src[off + 3u] << 24u);
+}
+
 static bool cc_call_boot_guest(uint32_t opcode, const uint8_t *payload,
                                uint32_t payload_len, sel4_msg_t *reply)
 {
@@ -635,6 +643,51 @@ static bool cc_drain_boot_guest_console(uint8_t *dst, uint32_t max,
         total += n;
 
         if (n < SEL4_MSG_DATA_BYTES) break;
+    }
+
+    *bytes_drained = total;
+    return true;
+}
+
+static bool cc_forward_vibe_input(uint32_t handle,
+                                  const cc_input_event_t *event)
+{
+    sel4_msg_t msg = {0}, reply = {0};
+    msg.opcode = MSG_VIBEOS_SEND_INPUT;
+    msg.length = 4u + (uint32_t)sizeof(cc_input_event_t);
+    cc_msg_wr32(msg.data, 0u, handle);
+    __builtin_memcpy(msg.data + 4u, event, sizeof(cc_input_event_t));
+
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &msg, &reply);
+    return reply.opcode == SEL4_ERR_OK && cc_msg_rd32(reply.data, 0u) == 0u;
+}
+
+static bool cc_drain_vibe_console(uint32_t handle, uint8_t *dst,
+                                  uint32_t max, uint32_t *bytes_drained)
+{
+    uint32_t total = 0u;
+    while (total < max) {
+        uint32_t want = max - total;
+        if (want > SEL4_MSG_DATA_BYTES - 8u)
+            want = SEL4_MSG_DATA_BYTES - 8u;
+
+        sel4_msg_t msg = {0}, reply = {0};
+        msg.opcode = MSG_VIBEOS_CONSOLE_DRAIN;
+        msg.length = 8u;
+        cc_msg_wr32(msg.data, 0u, handle);
+        cc_msg_wr32(msg.data, 4u, want);
+        sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &msg, &reply);
+        if (reply.opcode != SEL4_ERR_OK || cc_msg_rd32(reply.data, 0u) != 0u)
+            return false;
+
+        uint32_t n = cc_msg_rd32(reply.data, 4u);
+        if (n > SEL4_MSG_DATA_BYTES - 8u) n = SEL4_MSG_DATA_BYTES - 8u;
+        if (n > max - total) n = max - total;
+        if (n == 0u) break;
+
+        __builtin_memcpy(dst + total, reply.data + 8u, n);
+        total += n;
+        if (n < SEL4_MSG_DATA_BYTES - 8u) break;
     }
 
     *bytes_drained = total;
@@ -1029,11 +1082,15 @@ static void handle_attach_framebuffer(const cc_req_wire_t *req,
 static void handle_send_input(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
+    const cc_input_event_t *event = (const cc_input_event_t *)req->shmem;
     if (req->mr[0] == CC_BOOT_GUEST_HANDLE) {
-        const cc_input_event_t *event = (const cc_input_event_t *)req->shmem;
         rep->mr[0] = cc_forward_boot_guest_input(event) ? CC_OK : CC_ERR_RELAY_FAULT;
         return;
     }
+
+    rep->mr[0] = cc_forward_vibe_input(req->mr[0], event)
+                 ? CC_OK : CC_ERR_BAD_HANDLE;
+    return;
 #else
     (void)req;
 #endif
@@ -1107,6 +1164,21 @@ static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
         if (!cc_drain_boot_guest_console(rep->shmem, CC_WIRE_SHMEM_SIZE,
                                          &drained)) {
             rep->mr[0] = CC_ERR_RELAY_FAULT;
+            rep->mr[1] = 0u;
+            return;
+        }
+        rep->mr[0] = CC_OK;
+        rep->mr[1] = drained;
+        return;
+    }
+
+    if (req->mr[1] == TRACE_PD_CONTROLLER ||
+        req->mr[1] == TRACE_PD_LINUX_VMM ||
+        req->mr[1] == TRACE_PD_FREEBSD_VMM) {
+        uint32_t drained = 0u;
+        if (!cc_drain_vibe_console(req->mr[0], rep->shmem,
+                                   CC_WIRE_SHMEM_SIZE, &drained)) {
+            rep->mr[0] = CC_ERR_BAD_HANDLE;
             rep->mr[1] = 0u;
             return;
         }

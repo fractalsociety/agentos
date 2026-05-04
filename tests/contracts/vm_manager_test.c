@@ -13,6 +13,8 @@
  *   OP_VM_LIST     (0x18) — list all active slots
  *   OP_VM_SNAPSHOT (0x19) — snapshot slot state to AgentFS
  *   OP_VM_RESTORE  (0x1A) — restore slot from snapshot
+ *   OP_VM_SEND_INPUT    (0x1F) — write one console input event
+ *   OP_VM_CONSOLE_DRAIN (0x20) — drain serial console bytes
  *
  * Channel: CH_VM_MANAGER (45) from the controller's perspective.
  *
@@ -28,6 +30,10 @@ _Static_assert(sizeof(vm_manager_reply_info_t) == 48u,
                "OP_VM_INFO reply must fit in the 48-byte inline IPC payload");
 _Static_assert(sizeof(vm_manager_list_entry_t) == 40u,
                "OP_VM_LIST shmem entry layout changed unexpectedly");
+_Static_assert(sizeof(vm_manager_req_send_input_t) == 28u,
+               "OP_VM_SEND_INPUT request must fit in inline IPC payload");
+_Static_assert(sizeof(vm_manager_reply_console_drain_t) == 48u,
+               "OP_VM_CONSOLE_DRAIN reply must fill the 48-byte inline IPC payload");
 
 void run_vm_manager_tests(microkit_channel ch)
 {
@@ -90,11 +96,13 @@ void run_vm_manager_tests(microkit_channel ch)
             "vm_manager: PAUSE (skipped, no slot)",
             "vm_manager: RESUME (skipped, no slot)",
             "vm_manager: CONSOLE (skipped, no slot)",
+            "vm_manager: SEND_INPUT (skipped, no slot)",
+            "vm_manager: CONSOLE_DRAIN (skipped, no slot)",
             "vm_manager: SNAPSHOT (skipped, no slot)",
             "vm_manager: RESTORE (skipped, no slot)",
             "vm_manager: DESTROY (skipped, no slot)",
         };
-        for (int i = 0; i < 9; i++) {
+        for (int i = 0; i < 11; i++) {
             _tf_total++; _tf_pass++;
             _tf_puts("ok "); _tf_put_uint((uint64_t)_tf_total);
             _tf_puts(" - ");
@@ -195,6 +203,41 @@ void run_vm_manager_tests(microkit_channel ch)
             _tf_ok("vm_manager: CONSOLE returns ok, not-found, or unimpl");
         } else {
             _tf_fail_point("vm_manager: CONSOLE returns ok, not-found, or unimpl",
+                           "unexpected error code");
+        }
+    }
+
+    /* SEND_INPUT — write one console input event. */
+    microkit_mr_set(0, (uint64_t)OP_VM_SEND_INPUT);
+    microkit_mr_set(1, test_slot);
+    microkit_mr_set(2, 1);  /* key/input event */
+    microkit_mr_set(3, 0x0Du);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(OP_VM_SEND_INPUT, 4));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND ||
+            rc == AOS_ERR_BUSY || rc == AOS_ERR_INVAL ||
+            rc == AOS_ERR_UNIMPL || rc == 0xFEu) {
+            _tf_ok("vm_manager: SEND_INPUT returns structured status");
+        } else {
+            _tf_fail_point("vm_manager: SEND_INPUT returns structured status",
+                           "unexpected error code");
+        }
+    }
+
+    /* CONSOLE_DRAIN — drain inline serial console bytes. */
+    microkit_mr_set(0, (uint64_t)OP_VM_CONSOLE_DRAIN);
+    microkit_mr_set(1, test_slot);
+    microkit_mr_set(2, VM_MANAGER_CONSOLE_INLINE_BYTES);
+    (void)microkit_ppcall(ch, microkit_msginfo_new(OP_VM_CONSOLE_DRAIN, 3));
+    {
+        uint64_t rc = microkit_mr_get(0);
+        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND ||
+            rc == AOS_ERR_BUSY || rc == AOS_ERR_INVAL ||
+            rc == AOS_ERR_UNIMPL || rc == 0xFEu) {
+            _tf_ok("vm_manager: CONSOLE_DRAIN returns structured status");
+        } else {
+            _tf_fail_point("vm_manager: CONSOLE_DRAIN returns structured status",
                            "unexpected error code");
         }
     }

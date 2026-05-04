@@ -23,6 +23,9 @@
  *   OP_VM_RESTORE   0x1A  data[0]=slot_id, [4]=snap_lo, [8]=snap_hi → ok
  *   OP_VM_CONFIGURE 0x1B  data[0]=slot_id data[4]=ram_mb
  *                         data[8]=cpu_budget_us data[12]=cpu_period_us → ok
+ *   OP_VM_SEND_INPUT    0x1F data[0]=slot_id data[4..]=cc_input_event_t → ok
+ *   OP_VM_CONSOLE_DRAIN 0x20 data[0]=slot_id data[4]=max
+ *                         → ok, bytes, console bytes
  *   OP_VM_SET_QUOTA 0x30  data[0]=slot_id data[4]=cpu_pct → ok
  *   OP_VM_GET_STATS 0x31  data[0]=slot_id → ok, state, max_cpu_pct,
  *                         run_ticks_lo, run_ticks_hi,
@@ -37,6 +40,7 @@
 #include "agentos.h"
 #include "sel4_server.h"
 #include "contracts/guest_contract.h"
+#include "contracts/vibeos_contract.h"
 #include "contracts/vm_manager_contract.h"
 #include "system_desc.h"
 /* vm_manager.h includes vmm_mux.h (found via -I../../freebsd-vmm in Makefile) */
@@ -186,18 +190,45 @@ static uint8_t dedicated_slot_for_type(uint32_t vm_type)
     return 0u;
 }
 
-static uint32_t dedicated_guest_call(uint8_t slot_id, uint32_t opcode,
-                                     uint32_t next_state)
+static uint32_t dedicated_guest_rpc(uint8_t slot_id, uint32_t opcode,
+                                    const uint8_t *payload,
+                                    uint32_t payload_len,
+                                    sel4_msg_t *out)
 {
     if (slot_id >= VM_MAX_SLOTS || !g_slot_vmm_ep[slot_id])
+        return VM_ERR;
+    if (payload_len > SEL4_MSG_DATA_BYTES)
         return VM_ERR;
 
     sel4_msg_t req = {0}, rep = {0};
     req.opcode = opcode;
-    msg_put_u32(&req, 0, 0u);  /* dedicated VMMs expose guest_id 0 */
-    req.length = 4u;
+    if (payload_len > 0u && payload != (const uint8_t *)0) {
+        for (uint32_t i = 0; i < payload_len; i++)
+            req.data[i] = payload[i];
+    }
+    req.length = payload_len;
     sel4_call(g_slot_vmm_ep[slot_id], &req, &rep);
     if (rep.opcode != GUEST_OK)
+        return VM_ERR;
+    if (out != (sel4_msg_t *)0)
+        *out = rep;
+    return VM_OK;
+}
+
+static uint32_t dedicated_guest_call(uint8_t slot_id, uint32_t opcode,
+                                     uint32_t next_state)
+{
+    uint8_t payload[8u];
+    uint32_t len = 4u;
+    payload[0] = 0u; payload[1] = 0u; payload[2] = 0u; payload[3] = 0u;
+    if (opcode == MSG_GUEST_DESTROY) {
+        payload[4] = GUEST_DESTROY_NORMAL;
+        payload[5] = 0u;
+        payload[6] = 0u;
+        payload[7] = 0u;
+        len = 8u;
+    }
+    if (dedicated_guest_rpc(slot_id, opcode, payload, len, (sel4_msg_t *)0) != VM_OK)
         return VM_ERR;
 
     g_mux.slots[slot_id].state = (vm_slot_state_t)next_state;
@@ -212,15 +243,54 @@ static int dedicated_create(uint32_t vm_type, uint32_t ram_mb,
         return -1;
 
     uint8_t slot_id = dedicated_slot_for_type(vm_type);
-    if (slot_id >= VM_MAX_SLOTS || g_mux.slots[slot_id].state != VM_SLOT_FREE)
+    if (slot_id >= VM_MAX_SLOTS)
         return -2;
 
-    sel4_msg_t req = {0}, rep = {0};
-    req.opcode = MSG_GUEST_RESUME;
-    msg_put_u32(&req, 0, 0u);
-    req.length = 4u;
-    sel4_call(ep, &req, &rep);
-    if (rep.opcode != GUEST_OK)
+    if (g_mux.slots[slot_id].state != VM_SLOT_FREE) {
+        if (g_slot_vmm_ep[slot_id] == ep && g_vm_types[slot_id] == vm_type) {
+            *slot_out = slot_id;
+            return 0;
+        }
+        return -2;
+    }
+
+    {
+        sel4_msg_t req = {0}, rep = {0};
+        req.opcode = MSG_GUEST_CREATE;
+        msg_put_u32(&req, 0, vm_type == VM_TYPE_FREEBSD
+                            ? VIBEOS_TYPE_FREEBSD : VIBEOS_TYPE_LINUX);
+        msg_put_u32(&req, 4, flags);
+        msg_put_u32(&req, 16, ram_mb ? ram_mb : (VM_SLOT_RAM_SIZE >> 20));
+        vm_label_copy((char *)&req.data[32],
+                      vm_type == VM_TYPE_FREEBSD ? "freebsd" : "linux",
+                      16u);
+        req.length = 48u;
+        sel4_call(ep, &req, &rep);
+        if (rep.opcode != GUEST_OK)
+            return -3;
+    }
+
+    {
+        sel4_msg_t req = {0}, rep = {0};
+        req.opcode = MSG_GUEST_BOOT;
+        msg_put_u32(&req, 0, 0u);  /* dedicated VMMs expose guest_id 0 */
+        req.length = 4u;
+        sel4_call(ep, &req, &rep);
+        if (rep.opcode != GUEST_OK)
+            return -3;
+    }
+
+    {
+        sel4_msg_t req = {0}, rep = {0};
+        req.opcode = MSG_GUEST_RESUME;
+        msg_put_u32(&req, 0, 0u);
+        req.length = 4u;
+        sel4_call(ep, &req, &rep);
+        if (rep.opcode != GUEST_OK)
+            return -3;
+    }
+
+    if (g_mux.slots[slot_id].state != VM_SLOT_FREE)
         return -3;
 
     vm_slot_t *slot = &g_mux.slots[slot_id];
@@ -424,6 +494,11 @@ static uint32_t h_create(sel4_badge_t ba, const sel4_msg_t *req,
     uint32_t ram_mb  = vm_create_ram_mb(req);
     uint32_t flags   = vm_create_flags(req);
     const char *label = (vm_type == VM_TYPE_FREEBSD) ? "freebsd" : "linux";
+    if (vm_type != VM_TYPE_LINUX && vm_type != VM_TYPE_FREEBSD) {
+        rep_u32(rep, 0, VM_ERR);
+        rep->length = 4;
+        return SEL4_ERR_BAD_ARG;
+    }
     if (ram_mb != 0u && (ram_mb < 64u || (ram_mb & 3u) != 0u)) {
         rep_u32(rep, 0, VM_ERR);
         rep->length = 4;
@@ -588,6 +663,81 @@ static uint32_t h_console(sel4_badge_t ba, const sel4_msg_t *req,
     }
     int r = vmm_mux_switch(&g_mux, slot_id);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR); rep->length = 4;
+    return SEL4_ERR_OK;
+}
+
+static uint32_t h_send_input(sel4_badge_t ba, const sel4_msg_t *req,
+                             sel4_msg_t *rep, void *ctx) {
+    (void)ba; (void)ctx;
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
+    if (slot_id >= VM_MAX_SLOTS ||
+        g_mux.slots[slot_id].state == VM_SLOT_FREE ||
+        !g_slot_vmm_ep[slot_id]) {
+        rep_u32(rep, 0, VM_ERR);
+        rep->length = 4;
+        return SEL4_ERR_NOT_FOUND;
+    }
+
+    uint8_t payload[4u + 24u];
+    payload[0] = 0u; payload[1] = 0u; payload[2] = 0u; payload[3] = 0u;
+    for (uint32_t i = 0; i < 24u; i++) {
+        uint32_t src = 4u + i;
+        payload[4u + i] = (src < req->length) ? req->data[src] : 0u;
+    }
+
+    uint32_t rc = dedicated_guest_rpc(slot_id, MSG_GUEST_SEND_INPUT,
+                                      payload, (uint32_t)sizeof(payload),
+                                      (sel4_msg_t *)0);
+    rep_u32(rep, 0, rc);
+    rep->length = 4;
+    return rc == VM_OK ? SEL4_ERR_OK : SEL4_ERR_INTERNAL;
+}
+
+static uint32_t h_console_drain(sel4_badge_t ba, const sel4_msg_t *req,
+                                sel4_msg_t *rep, void *ctx) {
+    (void)ba; (void)ctx;
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
+    uint32_t max = vm_arg_u32(req, 1);
+    if (max > VM_MANAGER_CONSOLE_INLINE_BYTES)
+        max = VM_MANAGER_CONSOLE_INLINE_BYTES;
+
+    if (slot_id >= VM_MAX_SLOTS ||
+        g_mux.slots[slot_id].state == VM_SLOT_FREE ||
+        !g_slot_vmm_ep[slot_id]) {
+        rep_u32(rep, 0, VM_ERR);
+        rep_u32(rep, 4, 0u);
+        rep->length = 8;
+        return SEL4_ERR_NOT_FOUND;
+    }
+
+    uint8_t payload[8u];
+    payload[0] = 0u; payload[1] = 0u; payload[2] = 0u; payload[3] = 0u;
+    payload[4] = (uint8_t)(max & 0xffu);
+    payload[5] = (uint8_t)((max >> 8) & 0xffu);
+    payload[6] = (uint8_t)((max >> 16) & 0xffu);
+    payload[7] = (uint8_t)((max >> 24) & 0xffu);
+
+    sel4_msg_t vrep = {0};
+    uint32_t rc = dedicated_guest_rpc(slot_id, MSG_GUEST_CONSOLE_DRAIN,
+                                      payload, (uint32_t)sizeof(payload),
+                                      &vrep);
+    if (rc != VM_OK) {
+        rep_u32(rep, 0, VM_ERR);
+        rep_u32(rep, 4, 0u);
+        rep->length = 8;
+        return SEL4_ERR_INTERNAL;
+    }
+
+    uint32_t n = vrep.length;
+    if (n > max) n = max;
+    if (n > VM_MANAGER_CONSOLE_INLINE_BYTES)
+        n = VM_MANAGER_CONSOLE_INLINE_BYTES;
+
+    rep_u32(rep, 0, VM_OK);
+    rep_u32(rep, 4, n);
+    for (uint32_t i = 0; i < n; i++)
+        rep->data[8u + i] = vrep.data[i];
+    rep->length = 8u + n;
     return SEL4_ERR_OK;
 }
 
@@ -824,6 +974,8 @@ void vm_manager_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, OP_VM_SNAPSHOT,     h_snapshot_restore, (void *)0);
     sel4_server_register(&srv, OP_VM_RESTORE,      h_snapshot_restore, (void *)0);
     sel4_server_register(&srv, OP_VM_CONFIGURE,    h_configure,        (void *)0);
+    sel4_server_register(&srv, OP_VM_SEND_INPUT,   h_send_input,       (void *)0);
+    sel4_server_register(&srv, OP_VM_CONSOLE_DRAIN,h_console_drain,    (void *)0);
     sel4_server_register(&srv, OP_VM_SET_QUOTA,    h_set_quota,        (void *)0);
     sel4_server_register(&srv, OP_VM_GET_STATS,    h_get_stats,        (void *)0);
     sel4_server_register(&srv, OP_VM_SET_AFFINITY, h_set_affinity,     (void *)0);

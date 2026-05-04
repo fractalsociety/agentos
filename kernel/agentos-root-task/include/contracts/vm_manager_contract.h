@@ -1,11 +1,11 @@
 #pragma once
-/* VM_MANAGER contract — version 2
+/* VM_MANAGER contract — version 3
  * PD: vm_manager | Source: src/vm_manager.c | Channel: CH_VM_MANAGER=45 (from controller)
  */
 #include <stdint.h>
 #include <stdbool.h>
 
-#define VM_MANAGER_CONTRACT_VERSION 2
+#define VM_MANAGER_CONTRACT_VERSION 3
 
 /* ── Channel IDs (controller perspective) ── */
 #define CH_VM_MANAGER              45u  /* controller -> vm_manager (PPC); cross-ref: agentos.h */
@@ -29,6 +29,8 @@
 #define VM_MANAGER_OP_ATTACH       0x1Cu  /* attach a generic device service to a VM */
 #define VM_MANAGER_OP_DETACH       0x1Du  /* detach a generic device service from a VM */
 #define VM_MANAGER_OP_MIGRATE      0x1Eu  /* move VM to another capability domain */
+#define VM_MANAGER_OP_SEND_INPUT   0x1Fu  /* send one console input event to a VM */
+#define VM_MANAGER_OP_CONSOLE_DRAIN 0x20u /* drain serial console bytes from a VM */
 
 /* ── VM types ── */
 #define VM_TYPE_LINUX              0u  /* Linux guest (linux_vmm) */
@@ -192,6 +194,33 @@ typedef struct __attribute__((packed)) {
     uint32_t status;          /* 0 = ok */
 } vm_manager_reply_configure_t;
 
+typedef struct __attribute__((packed)) {
+    uint32_t slot_id;
+    uint32_t event_type;
+    uint32_t keycode;
+    int32_t  dx;
+    int32_t  dy;
+    uint32_t btn_mask;
+    uint32_t reserved;
+} vm_manager_req_send_input_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t status;          /* 0 = ok */
+} vm_manager_reply_send_input_t;
+
+#define VM_MANAGER_CONSOLE_INLINE_BYTES (48u - 8u)
+
+typedef struct __attribute__((packed)) {
+    uint32_t slot_id;
+    uint32_t max_bytes;
+} vm_manager_req_console_drain_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t status;          /* 0 = ok */
+    uint32_t bytes_drained;   /* bytes copied into data[] */
+    uint8_t  data[VM_MANAGER_CONSOLE_INLINE_BYTES];
+} vm_manager_reply_console_drain_t;
+
 /* ── Error codes ── */
 typedef enum {
     VM_MANAGER_OK             = 0,
@@ -209,6 +238,8 @@ typedef enum {
 
 /* ── Invariants ──
  * - vm_manager dispatches to linux_vmm or freebsd_vmm based on VM_TYPE_*.
+ * - Console input/drain is always addressed by vm_manager slot_id; callers
+ *   never call a Linux/FreeBSD VMM endpoint directly.
  * - All VM operations are serialized per slot; concurrent ops on the same slot are rejected.
  * - SNAPSHOT pauses the VM during serialization; VM resumes after AgentFS write completes.
  * - RESTORE requires slot in STOPPED state; it replaces all state.

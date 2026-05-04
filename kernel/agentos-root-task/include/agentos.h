@@ -282,6 +282,8 @@ typedef enum {
 #define OP_VM_SNAPSHOT  0x19u  /* MR1=slot_id → MR0=ok MR1=snap_hash_lo MR2=snap_hash_hi */
 #define OP_VM_RESTORE    0x1Au  /* MR1=slot_id MR2=snap_lo MR3=snap_hi → MR0=ok */
 #define OP_VM_CONFIGURE  0x1Bu  /* MR1=slot_id MR2=ram_mb MR3=cpu_budget_us MR4=cpu_period_us → MR0=ok */
+#define OP_VM_SEND_INPUT      0x1Fu  /* data[0]=slot_id data[4..]=cc_input_event_t → ok */
+#define OP_VM_CONSOLE_DRAIN   0x20u  /* data[0]=slot_id data[4]=max → ok,bytes,data[] */
 
 /* Channel IDs for HURD-parity VM management PDs */
 #define CH_VM_MANAGER   45u   /* controller PPCs into vm_manager */
@@ -912,6 +914,8 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_VIBEOS_LOAD_MODULE          0x240B  /* MR1=handle MR2=module_type MR3=module_size → MR0=ok MR1=swap_id */
 #define MSG_VIBEOS_CHECK_SERVICE_EXISTS 0x240C  /* MR1=func_class → MR0=ok MR1=exists MR2=pd_handle MR3=channel_id */
 #define MSG_VIBEOS_CONFIGURE            0x240D  /* MR1=handle; vibeos_configure_req in shmem → MR0=ok */
+#define MSG_VIBEOS_SEND_INPUT           0x240E  /* MR1=handle; cc_input_event_t in shmem → MR0=ok */
+#define MSG_VIBEOS_CONSOLE_DRAIN        0x240F  /* MR1=handle MR2=max → MR0=ok MR1=bytes */
 
 /* CH_VIBEOS_ENGINE: canonical alias for CH_VIBEENGINE; use in new code */
 #define CH_VIBEOS_ENGINE                CH_VIBEENGINE
