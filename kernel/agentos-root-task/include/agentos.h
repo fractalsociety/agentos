@@ -277,7 +277,7 @@ typedef enum {
 #define OP_VM_PAUSE     0x14u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_RESUME    0x15u  /* MR1=slot_id → MR0=ok */
 #define OP_VM_CONSOLE   0x16u  /* MR1=slot_id → MR0=ok */
-#define OP_VM_INFO      0x17u  /* data[0]=slot_id → ok,state,vm_type,ram_mb,vcpu_count,uptime,ram_vaddr */
+#define OP_VM_INFO      0x17u  /* data[0]=slot_id → ok,state,vm_type,ram_mb,vcpu_count,uptime,ram_vaddr,ram_gpa,devices */
 #define OP_VM_LIST      0x18u  /* → MR0=ok MR1=count; vm_list_shmem has vm_list_entry_t[] */
 #define OP_VM_SNAPSHOT  0x19u  /* MR1=slot_id → MR0=ok MR1=snap_hash_lo MR2=snap_hash_hi */
 #define OP_VM_RESTORE    0x1Au  /* MR1=slot_id MR2=snap_lo MR3=snap_hi → MR0=ok */

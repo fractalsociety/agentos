@@ -516,7 +516,7 @@ static uint32_t cc_vibeos_to_guest_state(uint32_t vos_state)
 
 static uint32_t cc_boot_guest_os_type(void)
 {
-#if defined(AGENTOS_GUEST_FREEBSD)
+#if defined(AGENTOS_GUEST_FREEBSD) && !defined(AGENTOS_GUEST_BOTH)
     return VIBEOS_TYPE_FREEBSD;
 #else
     return VIBEOS_TYPE_LINUX;

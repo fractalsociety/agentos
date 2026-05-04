@@ -16,7 +16,8 @@
  *   OP_VM_RESUME    0x15  data[0]=slot_id → ok
  *   OP_VM_CONSOLE   0x16  data[0]=slot_id → ok
  *   OP_VM_INFO      0x17  data[0]=slot_id
- *                         → ok, state, VM_TYPE_*, ram_mb, vcpu_count, uptime, ram_vaddr
+ *                         → ok, state, VM_TYPE_*, ram_mb, vcpu_count, uptime,
+ *                           ram_vaddr, ram_gpa, device_flags
  *   OP_VM_LIST      0x18  → ok, count; vm_list_shmem has vm_list_entry_t[]
  *   OP_VM_SNAPSHOT  0x19  data[0]=slot_id → ok, snap_hash_lo, snap_hash_hi
  *   OP_VM_RESTORE   0x1A  data[0]=slot_id, [4]=snap_lo, [8]=snap_hi → ok
@@ -46,21 +47,10 @@
  */
 uintptr_t vm_list_vaddr;   /* set by linker (setvar_vaddr) */
 
-/* ── VM list entry written into vm_list_shmem on OP_VM_LIST ─────────────
- * Packed so the controller can read it without alignment surprises.
- */
-typedef struct __attribute__((packed)) {
-    uint8_t  slot_id;
-    uint8_t  state;      /* VM_SLOT_* from vmm_mux.h */
-    uint8_t  vm_type;    /* VM_TYPE_* from vm_manager_contract.h */
-    uint8_t  _pad;
-    uint32_t ram_mb;
-    char     label[16];
-} vm_list_entry_t;
-
 /* ── Global VM multiplexer ─────────────────────────────────────────────── */
 static vm_mux_t g_mux;
 static uint8_t  g_vm_types[VM_MAX_SLOTS];
+static uint32_t g_vm_flags[VM_MAX_SLOTS];
 static seL4_CPtr g_linux_vmm_ep;
 static seL4_CPtr g_freebsd_vmm_ep;
 static seL4_CPtr g_slot_vmm_ep[VM_MAX_SLOTS];
@@ -151,6 +141,14 @@ static inline uint32_t vm_create_ram_mb(const sel4_msg_t *req)
     return msg_u32(req, 4);
 }
 
+static inline uint32_t vm_create_flags(const sel4_msg_t *req)
+{
+    uint32_t first = msg_u32(req, 0);
+    if (first == VM_TYPE_LINUX || first == VM_TYPE_FREEBSD)
+        return msg_u32(req, 8);
+    return 0u;
+}
+
 static void vm_label_copy(char *dst, const char *src, uint32_t max)
 {
     uint32_t i = 0;
@@ -163,6 +161,22 @@ static void vm_label_copy(char *dst, const char *src, uint32_t max)
 static seL4_CPtr vm_endpoint_for_type(uint32_t vm_type)
 {
     return (vm_type == VM_TYPE_FREEBSD) ? g_freebsd_vmm_ep : g_linux_vmm_ep;
+}
+
+static uint32_t vm_service_for_type(uint32_t vm_type)
+{
+    return (vm_type == VM_TYPE_FREEBSD) ? SVC_ID_FREEBSD_VMM : SVC_ID_LINUX_VMM;
+}
+
+static uintptr_t dedicated_ram_base(uint32_t vm_type, uint8_t slot_id)
+{
+#if defined(AGENTOS_GUEST_BOTH)
+    if (vm_type == VM_TYPE_FREEBSD)
+        return 0xc0000000UL;
+#else
+    (void)vm_type;
+#endif
+    return VM_SLOT_RAM_BASE(slot_id);
 }
 
 static uint8_t dedicated_slot_for_type(uint32_t vm_type)
@@ -190,7 +204,8 @@ static uint32_t dedicated_guest_call(uint8_t slot_id, uint32_t opcode,
     return VM_OK;
 }
 
-static int dedicated_create(uint32_t vm_type, uint32_t ram_mb, uint8_t *slot_out)
+static int dedicated_create(uint32_t vm_type, uint32_t ram_mb,
+                            uint32_t flags, uint8_t *slot_out)
 {
     seL4_CPtr ep = vm_endpoint_for_type(vm_type);
     if (!ep)
@@ -209,17 +224,19 @@ static int dedicated_create(uint32_t vm_type, uint32_t ram_mb, uint8_t *slot_out
         return -3;
 
     vm_slot_t *slot = &g_mux.slots[slot_id];
+    uintptr_t ram_base = dedicated_ram_base(vm_type, slot_id);
     slot->id = slot_id;
     slot->state = VM_SLOT_RUNNING;
-    slot->ram_vaddr = 0x40000000UL;
+    slot->ram_vaddr = ram_base;
     slot->ram_size = (ram_mb ? ((size_t)ram_mb << 20) : VM_SLOT_RAM_SIZE);
-    slot->ram_paddr = VM_SLOT_RAM_BASE(slot_id);
+    slot->ram_paddr = ram_base;
     slot->vcpu_id = (uint32_t)slot_id;
     vm_label_copy(slot->label,
                   vm_type == VM_TYPE_FREEBSD ? "freebsd" : "linux",
                   (uint32_t)sizeof(slot->label));
 
     g_vm_types[slot_id] = (uint8_t)vm_type;
+    g_vm_flags[slot_id] = flags;
     g_slot_vmm_ep[slot_id] = ep;
     g_mux.slot_count++;
     g_mux.active_slot = slot_id;
@@ -236,6 +253,7 @@ static uint32_t dedicated_destroy(uint8_t slot_id)
     g_mux.slots[slot_id].state = VM_SLOT_FREE;
     g_slot_vmm_ep[slot_id] = 0u;
     g_vm_types[slot_id] = VM_TYPE_LINUX;
+    g_vm_flags[slot_id] = 0u;
     if (g_mux.slot_count > 0u)
         g_mux.slot_count--;
     return VM_OK;
@@ -404,6 +422,7 @@ static uint32_t h_create(sel4_badge_t ba, const sel4_msg_t *req,
     (void)ba; (void)ctx;
     uint32_t vm_type = vm_create_vm_type(req);
     uint32_t ram_mb  = vm_create_ram_mb(req);
+    uint32_t flags   = vm_create_flags(req);
     const char *label = (vm_type == VM_TYPE_FREEBSD) ? "freebsd" : "linux";
     if (ram_mb != 0u && (ram_mb < 64u || (ram_mb & 3u) != 0u)) {
         rep_u32(rep, 0, VM_ERR);
@@ -412,7 +431,7 @@ static uint32_t h_create(sel4_badge_t ba, const sel4_msg_t *req,
     }
 
     uint8_t slot_id = 0xFFu;
-    int dedicated_rc = dedicated_create(vm_type, ram_mb, &slot_id);
+    int dedicated_rc = dedicated_create(vm_type, ram_mb, flags, &slot_id);
     if (dedicated_rc == -2) {
         rep_u32(rep, 0, VM_ERR);
         rep->length = 4;
@@ -440,6 +459,7 @@ static uint32_t h_create(sel4_badge_t ba, const sel4_msg_t *req,
         return SEL4_ERR_NO_MEM;
     }
     g_vm_types[slot_id] = (uint8_t)vm_type;
+    g_vm_flags[slot_id] = flags;
 
     /* Rebalance quotas equally across all now-active slots.
      * Reset credits so existing slots don't carry excess credit from their
@@ -476,8 +496,10 @@ static uint32_t h_destroy(sel4_badge_t ba, const sel4_msg_t *req,
         return SEL4_ERR_OK;
     }
     int r = vmm_mux_destroy(&g_mux, slot_id);
-    if (r == 0 && slot_id < VM_MAX_SLOTS)
+    if (r == 0 && slot_id < VM_MAX_SLOTS) {
         g_vm_types[slot_id] = VM_TYPE_LINUX;
+        g_vm_flags[slot_id] = 0u;
+    }
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR);
     rep->length = 4;
     return SEL4_ERR_OK;
@@ -585,7 +607,9 @@ static uint32_t h_info(sel4_badge_t ba, const sel4_msg_t *req,
     rep_u32(rep, 16, 1u);
     rep_u64(rep, 20, 0u);
     rep_u64(rep, 28, (uint64_t)s->ram_vaddr);
-    rep->length = 36;
+    rep_u64(rep, 36, (uint64_t)s->ram_paddr);
+    rep_u32(rep, 44, g_vm_flags[slot_id]);
+    rep->length = 48;
     return SEL4_ERR_OK;
 }
 
@@ -594,20 +618,24 @@ static uint32_t h_list(sel4_badge_t ba, const sel4_msg_t *req,
     (void)ba; (void)req; (void)ctx;
     uint32_t count = 0;
     if (vm_list_vaddr) {
-        vm_list_entry_t *entries = (vm_list_entry_t *)(uintptr_t)vm_list_vaddr;
+        vm_manager_list_entry_t *entries =
+            (vm_manager_list_entry_t *)(uintptr_t)vm_list_vaddr;
         for (uint8_t i = 0; i < VM_MAX_SLOTS; i++) {
             vm_slot_t *s = &g_mux.slots[i];
             if (s->state != VM_SLOT_FREE) {
                 entries[count].slot_id = i;
                 entries[count].state   = (uint8_t)s->state;
                 entries[count].vm_type = g_vm_types[i];
-                entries[count]._pad    = 0;
+                entries[count].reserved = 0;
                 entries[count].ram_mb  = (uint32_t)(s->ram_size >> 20);
                 for (int j = 0; j < 15; j++) {
                     entries[count].label[j] = s->label[j];
                     if (!s->label[j]) break;
                 }
                 entries[count].label[15] = '\0';
+                entries[count].ram_gpa = (uint64_t)s->ram_paddr;
+                entries[count].device_flags = g_vm_flags[i];
+                entries[count].vmm_service_id = vm_service_for_type(g_vm_types[i]);
                 count++;
             }
         }
@@ -771,6 +799,7 @@ void vm_manager_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
         g_quotas[i].preempt_count = 0;
         g_affinity[i]             = 0xFFFFFFFFu;
         g_vm_types[i]             = VM_TYPE_LINUX;
+        g_vm_flags[i]             = 0u;
         g_slot_vmm_ep[i]          = 0u;
     }
     g_sched_current = 0;

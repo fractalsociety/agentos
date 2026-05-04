@@ -736,6 +736,7 @@ $(BUILD_DIR)/freebsd_vmm.elf: FORCE
 		AGENTOS_ARCH=$(AGENTOS_ARCH) \
 		AGENTOS_BOARD=$(AGENTOS_BOARD) \
 		GUEST_OS=freebsd \
+		VMM_DUAL_GUEST=$(if $(filter both,$(GUEST_OS)),1,0) \
 		vmm-all
 	@echo "═══ freebsd_vmm.elf ✓ ═══"
 endif

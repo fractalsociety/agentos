@@ -23,6 +23,7 @@ BOARD_DIR ?= $(AGENTOS_ROOT)/microkit-sdk-2.1.0/board/$(AGENTOS_BOARD)/release
 
 # Guest OS selection: buildroot (default) or ubuntu
 GUEST_OS ?= buildroot
+VMM_DUAL_GUEST ?= 0
 AGENTOS_IMAGES ?= $(AGENTOS_ROOT)/build/guest-images
 
 # Buildroot guest: download libvmm example images (kernel + initrd)
@@ -69,6 +70,19 @@ VMM_CFLAGS := \
     -I$(KERNEL_SRC_DIR)/include \
     -MD -MP \
     -target aarch64-none-elf
+
+ifeq ($(VMM_DUAL_GUEST),1)
+VMM_CFLAGS += -DAGENTOS_GUEST_BOTH=1
+endif
+
+VMM_CONFIG_STAMP := $(BUILD_DIR)/vmm-$(GUEST_OS).stamp
+
+$(VMM_CONFIG_STAMP): FORCE
+	@mkdir -p $(BUILD_DIR)
+	@tmp="$@.tmp"; \
+	printf 'GUEST_OS=%s\nVMM_DUAL_GUEST=%s\n' \
+		'$(GUEST_OS)' '$(VMM_DUAL_GUEST)' > "$$tmp"; \
+	if test -f "$@" && cmp -s "$$tmp" "$@"; then rm -f "$$tmp"; else mv "$$tmp" "$@"; fi
 
 .PHONY: vmm-all vmm-clean FORCE
 
@@ -171,17 +185,17 @@ VMM_PD_ENTRY_OBJ   := $(BUILD_DIR)/pd_entry.vmm.o
 # Makefile also writes $(BUILD_DIR)/linux_vmm.o for the default stub build, and
 # reusing that path can silently link a stale object compiled with incompatible
 # flags.
-$(LINUX_VMM_FULL_OBJ): $(KERNEL_SRC_DIR)/src/linux_vmm.c
+$(LINUX_VMM_FULL_OBJ): $(KERNEL_SRC_DIR)/src/linux_vmm.c $(VMM_CONFIG_STAMP)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Compiling linux_vmm.c..."
 	clang $(VMM_CFLAGS) -c -o $@ $<
 
-$(GPU_SHMEM_FULL_OBJ): $(KERNEL_SRC_DIR)/src/gpu_shmem.c
+$(GPU_SHMEM_FULL_OBJ): $(KERNEL_SRC_DIR)/src/gpu_shmem.c $(VMM_CONFIG_STAMP)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Compiling gpu_shmem.c..."
 	clang $(VMM_CFLAGS) -c -o $@ $<
 
-$(VMM_PD_ENTRY_OBJ): $(KERNEL_SRC_DIR)/src/pd_entry.c
+$(VMM_PD_ENTRY_OBJ): $(KERNEL_SRC_DIR)/src/pd_entry.c $(VMM_CONFIG_STAMP)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Compiling pd_entry.c..."
 	clang $(VMM_CFLAGS) -c -o $@ $<
@@ -209,6 +223,17 @@ FREEBSD_DEFAULT_IMAGE := $(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso
 FREEBSD_RAW_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(FREEBSD_IMAGE),$(FREEBSD_IMAGE),$(FREEBSD_DEFAULT_IMAGE)))
 FREEBSD_KERNEL_IMAGE := $(BUILD_DIR)/freebsd-kernel.bin
 FREEBSD_DTS := $(KERNEL_SRC_DIR)/freebsd-edk2.dts
+FREEBSD_DTS_EFFECTIVE := $(FREEBSD_DTS)
+ifeq ($(VMM_DUAL_GUEST),1)
+FREEBSD_DTS_EFFECTIVE := $(BUILD_DIR)/freebsd-edk2-dual.dts
+$(FREEBSD_DTS_EFFECTIVE): $(FREEBSD_DTS) $(VMM_CONFIG_STAMP) $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(BUILD_DIR)
+	@echo "[VMM] Generating dual-guest FreeBSD device tree..."
+	sed -e 's/memory@40000000/memory@c0000000/' \
+	    -e 's/guest phys 0x40000000/guest phys 0xc0000000/' \
+	    -e 's/reg = <0x00 0x40000000 0x00 0x20000000>/reg = <0x00 0xc0000000 0x00 0x20000000>/' \
+	    $< > $@
+endif
 FREEBSD_EXTRACT := $(AGENTOS_ROOT)/tools/extract_freebsd_file.py
 
 $(FREEBSD_RAW_IMAGE):
@@ -225,7 +250,7 @@ $(FREEBSD_KERNEL_IMAGE): $(FREEBSD_RAW_IMAGE) $(FREEBSD_EXTRACT)
 		   python3 $(FREEBSD_EXTRACT) "$(FREEBSD_RAW_IMAGE)" /boot/kernel/kernel $@ ;; \
 	esac
 
-$(BUILD_DIR)/freebsd-edk2.dtb: $(FREEBSD_DTS)
+$(BUILD_DIR)/freebsd-edk2.dtb: $(FREEBSD_DTS_EFFECTIVE)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Compiling FreeBSD direct-boot device tree..."
 	$(DTC) -q -I dts -O dtb $< > $@
@@ -239,7 +264,7 @@ $(BUILD_DIR)/freebsd_images.o: $(PKG_IMG) $(FREEBSD_KERNEL_IMAGE) $(BUILD_DIR)/f
 		$(PKG_IMG) -o $@
 
 # ─── Compile freebsd_vmm.c ───────────────────────────────────────────────
-$(BUILD_DIR)/freebsd_vmm.o: $(KERNEL_SRC_DIR)/src/freebsd_vmm.c
+$(BUILD_DIR)/freebsd_vmm.o: $(KERNEL_SRC_DIR)/src/freebsd_vmm.c $(VMM_CONFIG_STAMP)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Compiling freebsd_vmm.c..."
 	clang $(VMM_CFLAGS) -c -o $@ $<

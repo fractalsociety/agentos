@@ -403,8 +403,11 @@ const system_desc_t system_desc_aarch64 = {
          *
          * Linux remains the legacy boot guest at pd[15].  FreeBSD is exposed as
          * a separate service endpoint so vm_manager can dispatch by VM_TYPE_*.
-         * Its block device uses QEMU virtio-mmio bus 31 (IRQ 79), avoiding the
-         * Linux guest's bus 1/3 IRQs in dual mode.
+         * Its guest RAM is identity-mapped at 0xc0000000 because QEMU/seL4
+         * expose that window as identity-mappable device untyped memory, while
+         * 0x60000000 is occupied by kernel/root-task image memory. Its block
+         * device uses QEMU virtio-mmio bus 31 (IRQ 79), avoiding the Linux
+         * guest's bus 1/3 IRQs.
          */
         {
             .name           = "freebsd_vmm",
@@ -432,7 +435,7 @@ const system_desc_t system_desc_aarch64 = {
                   .size     = 0x04000000u,
                   .writable = 1u,
                   .name     = "uefi_data" },
-                { .vaddr    = 0x40000000ULL,
+                { .vaddr    = 0xc0000000ULL,
                   .size     = 0x20000000u,
                   .writable = 1u,
                   .name     = "guest_ram" },

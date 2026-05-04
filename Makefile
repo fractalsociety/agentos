@@ -359,8 +359,9 @@ _UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,
 _FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=freebsd_hd,readonly=on,file.locking=off \
                -device virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31
 _QEMU_BLK_FLAGS = $(if $(filter both,$(GUEST_OS)),$(_UBUNTU_BLK) $(_FREEBSD_BLK),$(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),)))
+QEMU_RUN_MEM ?= $(if $(filter both,$(GUEST_OS)),3G,2G)
 QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
-                 -cpu $(_RUN_CPU) -m 2G \
+                 -cpu $(_RUN_CPU) -m $(QEMU_RUN_MEM) \
                  -display none -monitor none \
                  -global virtio-mmio.force-legacy=off \
                  -serial stdio \
@@ -385,6 +386,7 @@ run:
 	@echo "Arch   : $(NATIVE_ARCH)"
 	@echo "Board  : $(NATIVE_BOARD)"
 	@echo "Accel  : $(if $(QEMU_ACCEL_NATIVE),$(QEMU_ACCEL_NATIVE),none (TCG))"
+	@echo "Memory : $(QEMU_RUN_MEM)"
 	@echo "Guest  : $(GUEST_OS)"
 	@echo "Image  : $(NATIVE_IMAGE)"
 	@echo "CC-PD  : $(ROOT_DIR)build/cc_pd.sock"
@@ -655,6 +657,7 @@ help:
 	@echo "  BOARD_NAME      $(BOARD_NAME)"
 	@echo "  BOARD           $(BOARD)"
 	@echo "  GUEST_OS        $(GUEST_OS)"
+	@echo "  QEMU_RUN_MEM    $(QEMU_RUN_MEM)"
 	@echo "  BUILD_DIR       $(BUILD_DIR)"
 	@echo "  AGENTOS_IMAGES  $(AGENTOS_IMAGES)"
 	@echo ""
@@ -663,6 +666,7 @@ help:
 	@echo "  make install          Install host build dependencies (alias: make deps)"
 	@echo "  make build            Fetch the selected guest image and build agentOS"
 	@echo "  make run              Build native agentOS and boot QEMU with CC-PD socket"
+	@echo "                        Uses QEMU_RUN_MEM=3G automatically for GUEST_OS=both"
 	@echo "  make test             Build and run the QEMU boot/API smoke test"
 	@echo "  make test-guest-login Boot Ubuntu and FreeBSD to an interactive serial prompt"
 	@echo ""

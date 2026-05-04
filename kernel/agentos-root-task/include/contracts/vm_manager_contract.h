@@ -1,11 +1,11 @@
 #pragma once
-/* VM_MANAGER contract — version 1
+/* VM_MANAGER contract — version 2
  * PD: vm_manager | Source: src/vm_manager.c | Channel: CH_VM_MANAGER=45 (from controller)
  */
 #include <stdint.h>
 #include <stdbool.h>
 
-#define VM_MANAGER_CONTRACT_VERSION 1
+#define VM_MANAGER_CONTRACT_VERSION 2
 
 /* ── Channel IDs (controller perspective) ── */
 #define CH_VM_MANAGER              45u  /* controller -> vm_manager (PPC); cross-ref: agentos.h */
@@ -118,6 +118,8 @@ typedef struct __attribute__((packed)) {
     uint32_t vcpu_count;
     uint64_t uptime_ns;
     uint64_t ram_vaddr;       /* host VA of guest RAM base */
+    uint64_t ram_gpa;         /* guest physical RAM base */
+    uint32_t device_flags;    /* VM_CREATE_FLAG_* actually assigned */
 } vm_manager_reply_info_t;
 
 typedef struct __attribute__((packed)) {
@@ -134,12 +136,15 @@ typedef struct __attribute__((packed)) {
 
 /* Entry written to shmem for LIST */
 typedef struct __attribute__((packed)) {
-    uint32_t slot_id;
-    uint32_t vm_type;
-    uint32_t state;
+    uint8_t slot_id;
+    uint8_t state;            /* VM_SLOT_* */
+    uint8_t vm_type;          /* VM_TYPE_* */
+    uint8_t reserved;
     uint32_t ram_mb;
-    uint32_t vcpu_count;
-    uint64_t uptime_ns;
+    char label[16];
+    uint64_t ram_gpa;         /* guest physical RAM base */
+    uint32_t device_flags;    /* VM_CREATE_FLAG_* actually assigned */
+    uint32_t vmm_service_id;  /* SVC_ID_* for the owning VMM PD */
 } vm_manager_list_entry_t;
 
 typedef struct __attribute__((packed)) {

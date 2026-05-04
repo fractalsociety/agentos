@@ -139,6 +139,7 @@ make help                                     # show supported top-level targets
 make install                                  # install host build dependencies
 make run                                      # build + QEMU + Ubuntu 26.04 guest
 make run GUEST_OS=freebsd                     # build + QEMU + FreeBSD 15.0 guest
+make run GUEST_OS=both                        # boot Linux and FreeBSD VMM PDs together
 make test-guest-login                         # prove Ubuntu and FreeBSD serial login via CC-PD
 ```
 
@@ -155,13 +156,17 @@ cd ../agentos_gui && make run
 ```bash
 make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu    # AArch64 + Ubuntu 26.04
 make build TARGET_ARCH=aarch64 GUEST_OS=freebsd   # AArch64 + FreeBSD 15.0
+make build TARGET_ARCH=aarch64 GUEST_OS=both      # Package both guest VMM PDs
 make build TARGET_ARCH=x86_64 GUEST_OS=none       # x86_64 root-task smoke image
 make fetch-guest GUEST_OS=ubuntu                  # stage Ubuntu assets only
 make fetch-guest GUEST_OS=freebsd                 # stage FreeBSD assets only
+make fetch-guest GUEST_OS=both                    # stage both guest OS assets
 ```
 
 Guest images and temporary build artifacts stay under `build/`. Use
 `AGENTOS_IMAGES=/path/to/cache` only when intentionally overriding the default.
+`make run GUEST_OS=both` automatically uses `QEMU_RUN_MEM=3G` so Linux and
+FreeBSD can use independent identity-mapped guest RAM windows.
 
 ### FreeBSD host
 

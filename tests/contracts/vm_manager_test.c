@@ -24,6 +24,11 @@
 #include "../../kernel/agentos-root-task/include/agentos.h"
 #include "../../kernel/agentos-root-task/include/contracts/vm_manager_contract.h"
 
+_Static_assert(sizeof(vm_manager_reply_info_t) == 48u,
+               "OP_VM_INFO reply must fit in the 48-byte inline IPC payload");
+_Static_assert(sizeof(vm_manager_list_entry_t) == 40u,
+               "OP_VM_LIST shmem entry layout changed unexpectedly");
+
 void run_vm_manager_tests(microkit_channel ch)
 {
     TEST_SECTION("vm_manager");
@@ -110,6 +115,17 @@ void run_vm_manager_tests(microkit_channel ch)
         } else {
             _tf_fail_point("vm_manager: INFO returns ok or not-found",
                            "unexpected error code");
+        }
+        if (rc == AOS_OK) {
+            uint64_t len = microkit_mr_get(1);
+            if (len >= sizeof(vm_manager_reply_info_t)) {
+                _tf_ok("vm_manager: INFO exposes full v2 resource record");
+            } else {
+                _tf_fail_point("vm_manager: INFO exposes full v2 resource record",
+                               "reply payload shorter than vm_manager_reply_info_t");
+            }
+        } else {
+            _tf_ok("vm_manager: INFO v2 resource record skipped # TODO no slot");
         }
     }
 

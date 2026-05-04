@@ -82,6 +82,10 @@ make test-guest-login
 `make run` launches QEMU and creates `build/cc_pd.sock`, which is consumed by
 `agentctl`, E2E tests, and the external GUI in `../agentos_gui`.
 
+For dual Linux+FreeBSD VMM testing, use `make run GUEST_OS=both`. That mode
+automatically runs QEMU with 3 GB RAM so the FreeBSD VMM can use its
+independent `0xc0000000` identity-mapped guest RAM window.
+
 ## Contract Surface
 
 FreeBSD must use the same OS-neutral contracts as every other guest:

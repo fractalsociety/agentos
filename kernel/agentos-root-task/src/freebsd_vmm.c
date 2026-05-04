@@ -1,23 +1,25 @@
 /*
  * agentOS FreeBSD VMM — Virtual Machine Monitor
  *
- * Boots FreeBSD 14 AArch64 directly from /boot/kernel/kernel.bin using libvmm
+ * Boots FreeBSD 15 AArch64 directly from /boot/kernel/kernel.bin using libvmm
  * on seL4/Microkit.
  *
  * Boot sequence:
- *   1. VMM copies kernel.bin (_guest_kernel_image) to guest phys 0x40000000.
+ *   1. VMM copies kernel.bin (_guest_kernel_image) to the guest RAM base.
  *   2. VMM copies freebsd-edk2.dtb (_guest_dtb_image) near the top of guest RAM.
- *   3. guest_start(0x40000000, fdt, 0): vCPU PC = FreeBSD Image entry, EL1h.
+ *   3. guest_start(kernel, fdt, 0): vCPU PC = FreeBSD Image entry, EL1h.
  *   4. FreeBSD reads /chosen/bootargs, mounts /dev/vtbd0p3, and uses the
  *      QEMU virtio-mmio devices exposed in the FDT.
  *
  * Memory layout (host phys -> guest phys):
- *   guest_ram (512MB) host:0x40000000 -> guest:0x40000000  (main RAM)
- *     [kernel.bin at 0x40000000, FDT at 0x5f000000]
+ *   single-FreeBSD image: guest_ram at 0x40000000, FDT at 0x5f000000.
+ *   dual Linux+FreeBSD image: FreeBSD guest_ram at 0xc0000000, FDT at
+ *   0xdf000000, leaving Linux's 0x40000000 window independent.
  *
- * IRQ passthrough (freebsd_vmm_test.system assigns):
- *   id=3 -> badge 0x08 -> INTID 79 (SPI 47, virtio-blk bus 31 = slot 31)
- *   id=6 -> badge 0x40 -> INTID 33 (SPI 1,  PL011 UART console)
+ * IRQ passthrough:
+ *   single-FreeBSD image: net INTID 48 at IRQ cap slot 64, block INTID 79 at 65
+ *   dual Linux+FreeBSD image: Linux owns net INTID 48, FreeBSD owns only
+ *   block INTID 79 at IRQ cap slot 64.
  *
  * QEMU bus assignment: QEMU assigns -device virtio-blk-device to the highest
  * available virtio-mmio bus (bus 31), at 0xa003e00, SPI 47 = INTID 79.
@@ -88,18 +90,32 @@ vmm_vcpu_t g_vmm_vcpus[VMM_MAX_VCPUS];
 static uint32_t g_guest_state = GUEST_STATE_RUNNING;
 
 /* ── IRQ capabilities ────────────────────────────────────────────────────── */
+#if defined(AGENTOS_GUEST_BOTH)
+#define FREEBSD_VMM_HAS_NET_IRQ 0u
+#define FREEBSD_VMM_BLK_IRQ_CAP_INDEX 0u
+#else
+#define FREEBSD_VMM_HAS_NET_IRQ 1u
+#define FREEBSD_VMM_BLK_IRQ_CAP_INDEX 1u
+#endif
+
 static const seL4_CPtr g_virtio_blk_irq_cap =
-    (seL4_CPtr)(AGENTOS_IRQ_CAP_BASE + 1u);    /* INTID 79, SPI 47 */
+    (seL4_CPtr)(AGENTOS_IRQ_CAP_BASE + FREEBSD_VMM_BLK_IRQ_CAP_INDEX);
+#if FREEBSD_VMM_HAS_NET_IRQ
 static const seL4_CPtr g_virtio_net_irq_cap =
     (seL4_CPtr)(AGENTOS_IRQ_CAP_BASE + 0u);    /* INTID 48, SPI 16 */
+#endif
 
 /* ── Notification badge bits from system_desc_aarch64.c ─────────────────── */
+#if FREEBSD_VMM_HAS_NET_IRQ
 #define VIRTIO_NET_NTFN_BADGE  0x1u
+#endif
 #define VIRTIO_BLK_NTFN_BADGE  0x2u
 
 /* ── GIC INTID values ────────────────────────────────────────────────────── */
 #define VIRTIO_BLK_IRQ  79u    /* QEMU virt bus 31 = 0xa003e00, SPI 47 */
+#if FREEBSD_VMM_HAS_NET_IRQ
 #define VIRTIO_NET_IRQ  48u    /* QEMU virt bus 0  = 0xa000000, SPI 16 */
+#endif
 
 /* ── Guest image symbols (kernel Image + FDT from package_guest_images.S) ── */
 extern char _guest_kernel_image[];
@@ -114,10 +130,16 @@ uintptr_t guest_ram_vaddr;   /* VMM virtual address of guest_ram MR */
 
 #define FREEBSD_UEFI_CODE_VADDR 0x00000000UL
 #define FREEBSD_UEFI_DATA_VADDR 0x04000000UL
+#if defined(AGENTOS_GUEST_BOTH)
+#define FREEBSD_GUEST_RAM_VADDR 0xc0000000UL
+#define FREEBSD_KERNEL_VADDR    0xc0000000UL
+#define FREEBSD_FDT_VADDR       0xdf000000UL
+#else
 #define FREEBSD_GUEST_RAM_VADDR 0x40000000UL
-#define FREEBSD_GUEST_RAM_SIZE  0x20000000UL
 #define FREEBSD_KERNEL_VADDR    0x40000000UL
 #define FREEBSD_FDT_VADDR       0x5f000000UL
+#endif
+#define FREEBSD_GUEST_RAM_SIZE  0x20000000UL
 #define FREEBSD_UEFI_DATA_SIZE  0x04000000UL
 #define FREEBSD_VTIMER_IRQ      27u
 
@@ -140,11 +162,13 @@ static void virtio_blk_ack(size_t vcpu_id, int irq, void *cookie)
     seL4_IRQHandler_Ack(g_virtio_blk_irq_cap);
 }
 
+#if FREEBSD_VMM_HAS_NET_IRQ
 static void virtio_net_ack(size_t vcpu_id, int irq, void *cookie)
 {
     (void)vcpu_id; (void)irq; (void)cookie;
     seL4_IRQHandler_Ack(g_virtio_net_irq_cap);
 }
+#endif
 
 static void uart_ack(size_t vcpu_id, int irq, void *cookie)
 {
@@ -610,12 +634,16 @@ void init(void)
         LOG_VMM_ERR("Failed to register PL011 UART fault handler\n");
     }
 
+#if FREEBSD_VMM_HAS_NET_IRQ
     if (!virq_register(GUEST_BOOT_VCPU_ID, VIRTIO_NET_IRQ, &virtio_net_ack, NULL)) {
         LOG_VMM_ERR("Failed to register virtio-net IRQ %u\n", VIRTIO_NET_IRQ);
         return;
     }
     seL4_IRQHandler_Ack(g_virtio_net_irq_cap);
     LOG_VMM("  VirtIO-net IRQ %u registered\n", VIRTIO_NET_IRQ);
+#else
+    LOG_VMM("  VirtIO-net IRQ disabled; dual guest mode reserves it for Linux\n");
+#endif
 
     /* VirtIO-blk: QEMU assigns to highest bus = bus 31 = 0xa003e00, SPI 47 = INTID 79 */
     if (!virq_register(GUEST_BOOT_VCPU_ID, VIRTIO_BLK_IRQ, &virtio_blk_ack, NULL)) {
@@ -659,6 +687,7 @@ static void freebsd_vmm_notified(seL4_Word badge)
         }
     }
 
+#if FREEBSD_VMM_HAS_NET_IRQ
     if (badge & (seL4_Word)VIRTIO_NET_NTFN_BADGE) {
         bool injected = virq_inject(VIRTIO_NET_IRQ);
         if (ntfn_count <= 10 || ntfn_count % 1000 == 0 || !injected)
@@ -669,6 +698,7 @@ static void freebsd_vmm_notified(seL4_Word badge)
             seL4_IRQHandler_Ack(g_virtio_net_irq_cap);
         }
     }
+#endif
 }
 
 static bool freebsd_handle_vppi_event(size_t vcpu_id)
