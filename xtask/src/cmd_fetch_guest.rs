@@ -1,7 +1,8 @@
 use crate::{FetchGuestArgs, GuestOs};
 use anyhow::Context;
+use std::ffi::OsString;
 use std::fs;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -46,19 +47,27 @@ fn build_tmp_dir() -> anyhow::Result<PathBuf> {
     Ok(dir)
 }
 
-fn iso_dir() -> PathBuf {
-    if let Some(d) = std::env::var_os(ISO_DIR_ENV) {
+fn iso_dir_from_env(
+    agentos_iso_dir: Option<OsString>,
+    xdg_cache_home: Option<OsString>,
+    home: Option<OsString>,
+) -> PathBuf {
+    if let Some(d) = agentos_iso_dir {
         return PathBuf::from(d);
     }
-    let local_iso_dir = PathBuf::from("/Volumes/ISOs");
-    if local_iso_dir.is_dir() {
-        return local_iso_dir;
-    }
-    let cache_root = std::env::var_os("XDG_CACHE_HOME")
+    let cache_root = xdg_cache_home
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .or_else(|| home.map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     cache_root.join("agentos").join("isos")
+}
+
+fn iso_dir() -> PathBuf {
+    iso_dir_from_env(
+        std::env::var_os(ISO_DIR_ENV),
+        std::env::var_os("XDG_CACHE_HOME"),
+        std::env::var_os("HOME"),
+    )
 }
 
 fn ensure_cached_iso(iso_name: &str, url: &str) -> anyhow::Result<PathBuf> {
@@ -73,11 +82,7 @@ fn ensure_cached_iso(iso_name: &str, url: &str) -> anyhow::Result<PathBuf> {
     let curl = find_tool(&["curl", "/opt/homebrew/bin/curl", "/usr/bin/curl"])?;
     let tmp = cached.with_extension("part");
     let _ = fs::remove_file(&tmp);
-    println!(
-        "[fetch-guest] Downloading {} -> {}",
-        url,
-        cached.display()
-    );
+    println!("[fetch-guest] Downloading {} -> {}", url, cached.display());
     let status = std::process::Command::new(&curl)
         .arg("--fail")
         .arg("--location")
@@ -93,13 +98,8 @@ fn ensure_cached_iso(iso_name: &str, url: &str) -> anyhow::Result<PathBuf> {
         "downloaded ISO is empty: {}",
         url
     );
-    fs::rename(&tmp, &cached).with_context(|| {
-        format!(
-            "failed to move {} to {}",
-            tmp.display(),
-            cached.display()
-        )
-    })?;
+    fs::rename(&tmp, &cached)
+        .with_context(|| format!("failed to move {} to {}", tmp.display(), cached.display()))?;
     Ok(cached)
 }
 
@@ -118,7 +118,12 @@ pub fn run(args: &FetchGuestArgs) -> anyhow::Result<()> {
 }
 
 fn fetch_ubuntu(output_dir: &Path) -> anyhow::Result<()> {
-    let iso = stage_local_iso(output_dir, UBUNTU_ISO_NAME, UBUNTU_IMAGE_NAME, UBUNTU_ISO_URL)?;
+    let iso = stage_local_iso(
+        output_dir,
+        UBUNTU_ISO_NAME,
+        UBUNTU_IMAGE_NAME,
+        UBUNTU_ISO_URL,
+    )?;
     extract_ubuntu_initrd(&iso, &output_dir.join(UBUNTU_INITRD_NAME))?;
     extract_ubuntu_kernel(&iso, &output_dir.join(UBUNTU_KERNEL_NAME))?;
     println!(
@@ -186,7 +191,12 @@ fn extract_ubuntu_initrd(iso: &Path, initrd_dest: &Path) -> anyhow::Result<()> {
 }
 
 fn fetch_freebsd(output_dir: &Path) -> anyhow::Result<()> {
-    let iso = stage_local_iso(output_dir, FREEBSD_ISO_NAME, FREEBSD_IMAGE_NAME, FREEBSD_ISO_URL)?;
+    let iso = stage_local_iso(
+        output_dir,
+        FREEBSD_ISO_NAME,
+        FREEBSD_IMAGE_NAME,
+        FREEBSD_ISO_URL,
+    )?;
     extract_freebsd_kernel(&iso, &output_dir.join(FREEBSD_KERNEL_NAME))?;
     println!(
         "[fetch-guest] FreeBSD {} assets ready under {}",
@@ -317,7 +327,7 @@ fn stage_local_iso(
     source_url: &str,
 ) -> anyhow::Result<PathBuf> {
     let dest = output_dir.join(dest_name);
-    if dest.exists() && fs::metadata(&dest).map(|m| m.len()).unwrap_or(0) > 0 {
+    if staged_iso_ready(&dest)? {
         println!("[fetch-guest] ISO already staged: {}", dest.display());
         return Ok(dest);
     }
@@ -349,6 +359,23 @@ fn stage_local_iso(
     Ok(dest)
 }
 
+fn staged_iso_ready(dest: &Path) -> anyhow::Result<bool> {
+    match fs::symlink_metadata(dest) {
+        Ok(_) => {
+            if fs::metadata(dest).map(|m| m.len()).unwrap_or(0) > 0 {
+                return Ok(true);
+            }
+            fs::remove_file(dest)
+                .with_context(|| format!("failed to remove stale ISO stage {}", dest.display()))?;
+            Ok(false)
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(false),
+        Err(err) => {
+            Err(err).with_context(|| format!("failed to inspect staged ISO {}", dest.display()))
+        }
+    }
+}
+
 #[cfg(unix)]
 fn symlink_file(src: &Path, dest: &Path) -> std::io::Result<()> {
     std::os::unix::fs::symlink(src, dest)
@@ -357,6 +384,37 @@ fn symlink_file(src: &Path, dest: &Path) -> std::io::Result<()> {
 #[cfg(not(unix))]
 fn symlink_file(src: &Path, dest: &Path) -> std::io::Result<()> {
     fs::copy(src, dest).map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn iso_dir_prefers_explicit_agentos_iso_dir() {
+        let dir = iso_dir_from_env(
+            Some(OsString::from("/tmp/agentos-isos")),
+            Some(OsString::from("/tmp/xdg-cache")),
+            Some(OsString::from("/tmp/home")),
+        );
+        assert_eq!(dir, PathBuf::from("/tmp/agentos-isos"));
+    }
+
+    #[test]
+    fn iso_dir_defaults_to_xdg_cache() {
+        let dir = iso_dir_from_env(
+            None,
+            Some(OsString::from("/tmp/xdg-cache")),
+            Some(OsString::from("/tmp/home")),
+        );
+        assert_eq!(dir, PathBuf::from("/tmp/xdg-cache/agentos/isos"));
+    }
+
+    #[test]
+    fn iso_dir_defaults_to_home_cache_without_xdg() {
+        let dir = iso_dir_from_env(None, None, Some(OsString::from("/tmp/home")));
+        assert_eq!(dir, PathBuf::from("/tmp/home/.cache/agentos/isos"));
+    }
 }
 
 fn extract_iso_file(iso: &Path, entry: &str, dest: &Path) -> anyhow::Result<()> {

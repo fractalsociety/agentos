@@ -670,7 +670,7 @@ help:
 	@echo "  make fetch-guest GUEST_OS=ubuntu     Stage Ubuntu 26.04 assets in build/guest-images"
 	@echo "  make fetch-guest GUEST_OS=freebsd    Stage FreeBSD 15.0 assets in build/guest-images"
 	@echo "  make fetch-guest GUEST_OS=both       Stage both Ubuntu and FreeBSD assets"
-	@echo "  make bootstrap-guest OS=<name>       Build guest disks from ISO files in /Volumes/ISOs"
+	@echo "  make bootstrap-guest OS=<name>       Build guest disks from cached or downloaded ISOs"
 	@echo "                                      names: ubuntu-amd64 ubuntu-arm64 nixos freebsd15"
 	@echo ""
 	@echo "Test targets:"
