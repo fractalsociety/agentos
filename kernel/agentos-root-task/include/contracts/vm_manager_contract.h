@@ -25,10 +25,10 @@
 #define VM_MANAGER_OP_RESTORE      0x1Au  /* restore VM from AgentFS snapshot */
 
 /* vibeOS-parity extended operations */
-#define VM_MANAGER_OP_ATTACH       0x1Bu  /* attach a generic device service to a VM */
-#define VM_MANAGER_OP_DETACH       0x1Cu  /* detach a generic device service from a VM */
-#define VM_MANAGER_OP_MIGRATE      0x1Du  /* move VM to another capability domain */
-#define VM_MANAGER_OP_CONFIGURE    0x1Eu  /* modify VM parameters without destroying */
+#define VM_MANAGER_OP_CONFIGURE    0x1Bu  /* modify VM parameters without destroying */
+#define VM_MANAGER_OP_ATTACH       0x1Cu  /* attach a generic device service to a VM */
+#define VM_MANAGER_OP_DETACH       0x1Du  /* detach a generic device service from a VM */
+#define VM_MANAGER_OP_MIGRATE      0x1Eu  /* move VM to another capability domain */
 
 /* ── VM types ── */
 #define VM_TYPE_LINUX              0u  /* Linux guest (linux_vmm) */

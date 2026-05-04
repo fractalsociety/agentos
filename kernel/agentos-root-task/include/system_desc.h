@@ -35,13 +35,14 @@
  * PD_IRQHANDLER_SLOT_BASE — first CNode slot in a PD's own CNode reserved for
  * seL4 IRQ handler capabilities distributed by the root task during boot.
  *
- * Slot layout within the PD's CNode (cnode_size_bits == 6 → 64 slots):
- *   Slots  0 .. PD_MAX_INIT_EPS-1   — initial endpoint caps (pd_init_ep_t)
+ * Slot layout within the PD's CNode:
+ *   Slots  0 .. 8, 10 ...          — initial endpoint caps (pd_init_ep_t)
+ *   Slot   9                       — MCS reply object (see sel4_ipc.h)
  *   Slots 64 .. 64+PD_MAX_IRQS-1   — IRQ handler caps (one per irq_desc_t)
  *
- * 64 is chosen to sit well above the maximum init_ep_count (PD_MAX_INIT_EPS=8)
- * and well below the practical CNode capacity (2^6=64 or larger).  PDs that
- * need IRQ handler caps must be created with cnode_size_bits >= 7 (128 slots).
+ * 64 is chosen to sit above the well-known endpoint slots and below the
+ * practical CNode capacity.  PDs that need IRQ handler caps must be created
+ * with cnode_size_bits >= 7 (128 slots).
  */
 #define PD_IRQHANDLER_SLOT_BASE  64u
 
@@ -240,7 +241,9 @@ typedef struct {
 #define PD_CNODE_SLOT_SELF_EP         7u
 
 /* Slot 8 onwards: additional, PD-specific init_ep caps that don't fit the
- * standard reserved slots above.  The slot number is independent of the
- * init_eps[] array index — main.c distributes each entry into the slot it
- * names.  Only PDs whose init_eps reference these slots receive the cap. */
+ * standard reserved slots above.  Slot 9 is reserved by sel4_ipc.h for the
+ * MCS reply object.  The slot number is independent of the init_eps[] array
+ * index — main.c distributes each entry into the slot it names.  Only PDs
+ * whose init_eps reference these slots receive the cap. */
 #define PD_CNODE_SLOT_VIBE_ENGINE_EP  8u
+#define PD_CNODE_SLOT_VM_MANAGER_EP   10u

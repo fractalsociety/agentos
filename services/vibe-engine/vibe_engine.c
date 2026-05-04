@@ -168,15 +168,15 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 /* VibeOS error codes */
 #ifndef VIBEOS_OK
 #define VIBEOS_OK                  0u
-#define VIBEOS_ERR_BAD_TYPE        1u
-#define VIBEOS_ERR_OOM             2u
-#define VIBEOS_ERR_BAD_HANDLE      3u
-#define VIBEOS_ERR_NO_HANDLE       4u
-#define VIBEOS_ERR_WRONG_STATE     5u
-#define VIBEOS_ERR_NOT_IMPL        6u
-#define VIBEOS_ERR_BAD_MODULE_TYPE 7u
-#define VIBEOS_ERR_WASM_LOAD_FAIL  8u
-#define VIBEOS_ERR_BAD_FUNC_CLASS  9u
+#define VIBEOS_ERR_BAD_HANDLE      2u
+#define VIBEOS_ERR_WASM_LOAD_FAIL  6u
+#define VIBEOS_ERR_BAD_MODULE_TYPE 9u
+#define VIBEOS_ERR_BAD_FUNC_CLASS  11u
+#define VIBEOS_ERR_BAD_TYPE        12u
+#define VIBEOS_ERR_OOM             13u
+#define VIBEOS_ERR_NO_HANDLE       14u
+#define VIBEOS_ERR_WRONG_STATE     15u
+#define VIBEOS_ERR_NOT_IMPL        16u
 #endif
 
 /* VibeOS states */
@@ -185,8 +185,9 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #define VIBEOS_STATE_BOOTING   1u
 #define VIBEOS_STATE_RUNNING   2u
 #define VIBEOS_STATE_PAUSED    3u
-#define VIBEOS_STATE_SNAPSHOT  4u
-#define VIBEOS_STATE_DEAD      5u
+#define VIBEOS_STATE_DEAD      4u
+#define VIBEOS_STATE_MIGRATING 5u
+#define VIBEOS_STATE_SNAPSHOT  6u
 #endif
 
 /* VibeOS device flags */
@@ -204,14 +205,22 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 
 /* VM manager opcodes */
 #ifndef OP_VM_CREATE
-#define OP_VM_CREATE      0x3001u
-#define OP_VM_START       0x3002u
-#define OP_VM_STOP        0x3003u
-#define OP_VM_DESTROY     0x3004u
-#define OP_VM_INFO        0x3005u
-#define OP_VM_SNAPSHOT    0x3006u
-#define OP_VM_RESTORE     0x3007u
-#define OP_VM_CONFIGURE   0x3008u
+#define OP_VM_CREATE      0x10u
+#define OP_VM_DESTROY     0x11u
+#define OP_VM_START       0x12u
+#define OP_VM_STOP        0x13u
+#define OP_VM_INFO        0x17u
+#define OP_VM_SNAPSHOT    0x19u
+#define OP_VM_RESTORE     0x1Au
+#define OP_VM_CONFIGURE   0x1Bu
+#endif
+
+#ifndef VM_SLOT_BOOTING
+#define VM_SLOT_BOOTING   1u
+#define VM_SLOT_RUNNING   2u
+#define VM_SLOT_SUSPENDED 3u
+#define VM_SLOT_HALTED    4u
+#define VM_SLOT_ERROR     5u
 #endif
 
 /* Serial / block open opcodes */
@@ -351,6 +360,10 @@ static seL4_CPtr g_net_ep    = 0;  /* net_pd endpoint (was CH_NET_PD=48)        
 
 static sel4_server_t g_srv;
 
+#ifndef PD_CNODE_SLOT_VM_MANAGER_EP
+#define PD_CNODE_SLOT_VM_MANAGER_EP 10u
+#endif
+
 /* Forward declarations */
 static bool validate_wasm_header(const uint8_t *data, uint32_t size);
 static int  vos_find(uint32_t handle);
@@ -390,8 +403,8 @@ static seL4_CPtr lookup_service(seL4_CPtr ns_ep, const char *name)
         req.data[i] = (uint8_t)name[i];
     req.length = 47;
     sel4_call(ns_ep, &req, &rep);
-    if (rep.opcode == 0u)  /* NS_OK */
-        return (seL4_CPtr)data_rd32(rep.data, 0);  /* channel_id field */
+    if (rep.opcode == 0u && data_rd32(rep.data, 0) == 0u)
+        return (seL4_CPtr)data_rd32(rep.data, 4);
     return 0;
 }
 
@@ -849,6 +862,13 @@ static uint32_t handle_vos_create(sel4_badge_t badge, const sel4_msg_t *req,
         return VIBEOS_ERR_OOM;
     }
 
+    if (!g_vmm_ep) {
+        dbg_puts("[vibe_engine] VOS_CREATE: vm_manager endpoint unavailable\n");
+        data_wr32(rep->data, 0, VIBEOS_ERR_OOM);
+        rep->length = 4;
+        return VIBEOS_ERR_OOM;
+    }
+
     int slot = vos_alloc();
     if (slot < 0) {
         data_wr32(rep->data, 0, VIBEOS_ERR_OOM);
@@ -857,7 +877,7 @@ static uint32_t handle_vos_create(sel4_badge_t badge, const sel4_msg_t *req,
     }
 
     /* PPC to vm_manager: create VM slot */
-    if (g_vmm_ep) {
+    {
         sel4_msg_t vreq = {0}, vrep = {0};
         vreq.opcode = OP_VM_CREATE;
         data_wr32(vreq.data, 0, 0u);      /* label_vaddr */
@@ -886,15 +906,7 @@ static uint32_t handle_vos_create(sel4_badge_t badge, const sel4_msg_t *req,
     s_vos[slot].active   = true;
     s_vos[slot].handle   = handle;
     s_vos[slot].os_type  = (uint8_t)os_type;
-    /* If g_vmm_ep was resolved, vm_manager will eventually drive the slot
-     * into RUNNING via handle_vos_status's polling logic.  When vm_manager
-     * is the stub (vmm_mux_stub.c on aarch64), no VM ever boots, so the
-     * slot would otherwise sit in BOOTING forever.  Mark it RUNNING up front
-     * in the stub case so the multi-OS UX is exercised end-to-end.  This is
-     * a phantom-guest mode — see bead vmm-libvmm-phantom-guests for the real
-     * libvmm wiring that replaces it. */
-    s_vos[slot].state    = (uint8_t)(g_vmm_ep ? VIBEOS_STATE_BOOTING
-                                              : VIBEOS_STATE_RUNNING);
+    s_vos[slot].state    = (uint8_t)VIBEOS_STATE_BOOTING;
     s_vos[slot].ram_mb   = ram_mb;
     s_vos[slot].dev_mask = 0;
     s_vos[slot].swap_id  = 0;
@@ -1002,9 +1014,16 @@ static uint32_t handle_vos_status(sel4_badge_t badge, const sel4_msg_t *req,
         sel4_call(g_vmm_ep, &vreq, &vrep);
         uint32_t vm_ok    = data_rd32(vrep.data, 0);
         uint32_t vm_state = data_rd32(vrep.data, 4);
-        if (vm_ok == 0 && vm_state == 3 &&
-            s_vos[slot].state == (uint8_t)VIBEOS_STATE_BOOTING) {
-            s_vos[slot].state = (uint8_t)VIBEOS_STATE_RUNNING;
+        if (vm_ok == 0) {
+            if (vm_state == VM_SLOT_RUNNING) {
+                s_vos[slot].state = (uint8_t)VIBEOS_STATE_RUNNING;
+            } else if (vm_state == VM_SLOT_BOOTING) {
+                s_vos[slot].state = (uint8_t)VIBEOS_STATE_BOOTING;
+            } else if (vm_state == VM_SLOT_SUSPENDED) {
+                s_vos[slot].state = (uint8_t)VIBEOS_STATE_PAUSED;
+            } else if (vm_state == VM_SLOT_HALTED || vm_state == VM_SLOT_ERROR) {
+                s_vos[slot].state = (uint8_t)VIBEOS_STATE_DEAD;
+            }
         }
     }
 
@@ -1434,6 +1453,10 @@ void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr ctrl_ep)
     g_block_ep  = lookup_service(ns_ep, "block_pd");
     g_net_ep    = lookup_service(ns_ep, "net_pd");
     g_vmm_ep    = lookup_service(ns_ep, "vm_manager");
+#if defined(__aarch64__) && !defined(AGENTOS_TEST_HOST)
+    if (!g_vmm_ep)
+        g_vmm_ep = (seL4_CPtr)PD_CNODE_SLOT_VM_MANAGER_EP;
+#endif
 
     /* Register ourselves */
     register_with_nameserver(ns_ep);

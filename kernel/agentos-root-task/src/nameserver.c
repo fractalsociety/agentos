@@ -82,6 +82,41 @@ static int ns_strcmp(const char *a, const char *b)
     return 0;
 }
 
+static void ns_copy_name_from_data(char *dst, const sel4_msg_t *req,
+                                   uint32_t off)
+{
+    for (int i = 0; i < NS_NAME_MAX; i++) {
+        uint32_t pos = off + (uint32_t)i;
+        dst[i] = (pos < SEL4_MSG_DATA_BYTES) ? (char)req->data[pos] : '\0';
+    }
+    dst[NS_NAME_MAX - 1] = '\0';
+}
+
+static void ns_read_name(char *dst, const sel4_msg_t *req,
+                         uint32_t raw_off, uint32_t legacy_off,
+                         int legacy_mr_start)
+{
+    if (req->opcode != 0u) {
+        ns_copy_name_from_data(dst, req, raw_off);
+        return;
+    }
+
+    ns_copy_name_from_data(dst, req, legacy_off);
+    if (ns_strlen(dst) == 0)
+        ns_unpack_name(dst, legacy_mr_start);
+}
+
+static uint32_t ns_req_op(const sel4_msg_t *req)
+{
+    return req->opcode ? req->opcode : (uint32_t)msg_u32(req, 0);
+}
+
+static uint32_t ns_req_u32(const sel4_msg_t *req,
+                           uint32_t raw_off, uint32_t legacy_off)
+{
+    return msg_u32(req, req->opcode ? raw_off : legacy_off);
+}
+
 /* ── Registry helpers ────────────────────────────────────────────────────── */
 
 static int registry_find_by_name(const char *name)
@@ -122,13 +157,13 @@ static int registry_alloc(void)
  */
 static uint32_t handle_register(const sel4_msg_t *req, sel4_msg_t *rep)
 {
-    uint32_t channel_id  = (uint32_t)msg_u32(req, 4);
-    uint32_t pd_id       = (uint32_t)msg_u32(req, 8);
-    uint32_t cap_classes = (uint32_t)msg_u32(req, 12);
-    uint32_t version     = (uint32_t)msg_u32(req, 16);
+    uint32_t channel_id  = ns_req_u32(req, 0, 4);
+    uint32_t pd_id       = ns_req_u32(req, 4, 8);
+    uint32_t cap_classes = ns_req_u32(req, 8, 12);
+    uint32_t version     = ns_req_u32(req, 12, 16);
 
     char name[NS_NAME_MAX];
-    ns_unpack_name(name, 5);
+    ns_read_name(name, req, 16, 20, 5);
 
     if (ns_strlen(name) == 0) {
         rep_u32(rep, 0, NS_ERR_BAD_ARGS);
@@ -182,7 +217,7 @@ static uint32_t handle_register(const sel4_msg_t *req, sel4_msg_t *rep)
 static uint32_t handle_lookup(const sel4_msg_t *req, sel4_msg_t *rep)
 {
     char name[NS_NAME_MAX];
-    ns_unpack_name(name, 1);
+    ns_read_name(name, req, 0, 4, 1);
 
     if (ns_strlen(name) == 0) {
         rep_u32(rep, 0, NS_ERR_BAD_ARGS);
@@ -215,8 +250,8 @@ static uint32_t handle_lookup(const sel4_msg_t *req, sel4_msg_t *rep)
  */
 static uint32_t handle_update_status(const sel4_msg_t *req, sel4_msg_t *rep)
 {
-    uint32_t channel_id = (uint32_t)msg_u32(req, 4);
-    uint8_t  new_status = (uint8_t)msg_u32(req, 8);
+    uint32_t channel_id = ns_req_u32(req, 0, 4);
+    uint8_t  new_status = (uint8_t)ns_req_u32(req, 4, 8);
 
     int slot = registry_find_by_channel(channel_id);
     if (slot < 0) {
@@ -286,7 +321,7 @@ static uint32_t handle_list(sel4_msg_t *rep)
  */
 static uint32_t handle_deregister(const sel4_msg_t *req, sel4_msg_t *rep)
 {
-    uint32_t channel_id = (uint32_t)msg_u32(req, 4);
+    uint32_t channel_id = ns_req_u32(req, 0, 4);
 
     int slot = registry_find_by_channel(channel_id);
     if (slot < 0) {
@@ -378,7 +413,7 @@ static uint32_t handle_lookup_gated(uint32_t badge,
     (void)requester_pd;  /* available for future per-PD audit logging */
 
     char name[NS_NAME_MAX];
-    ns_unpack_name(name, 1);
+    ns_read_name(name, req, 0, 4, 1);
 
     if (ns_strlen(name) == 0) {
         rep_u32(rep, 0, NS_ERR_BAD_ARGS);
@@ -420,7 +455,7 @@ static uint32_t handle_lookup_gated(uint32_t badge,
 static uint32_t nameserver_h_dispatch(sel4_badge_t b, const sel4_msg_t *req, sel4_msg_t *rep, void *ctx)
 {
     (void)ctx;
-    uint32_t op = (uint32_t)msg_u32(req, 0);
+    uint32_t op = ns_req_op(req);
 
     switch (op) {
     case OP_NS_REGISTER:      return handle_register(req, rep);

@@ -7,23 +7,25 @@
  * Controller calls in via the vm_manager IPC endpoint.
  *
  * Opcodes (opcode in data[0..3]):
- *   OP_VM_CREATE    0x10  data[4]=label_vaddr data[8]=ram_mb → ok, slot_id
- *   OP_VM_DESTROY   0x11  data[4]=slot_id → ok
- *   OP_VM_START     0x12  data[4]=slot_id → ok
- *   OP_VM_STOP      0x13  data[4]=slot_id → ok
- *   OP_VM_PAUSE     0x14  data[4]=slot_id → ok
- *   OP_VM_RESUME    0x15  data[4]=slot_id → ok
- *   OP_VM_CONSOLE   0x16  data[4]=slot_id → ok
- *   OP_VM_INFO      0x17  data[4]=slot_id → ok, state, ram_vaddr
+ *   OP_VM_CREATE    0x10  data[0]=label_vaddr data[4]=ram_mb → ok, slot_id
+ *   OP_VM_DESTROY   0x11  data[0]=slot_id → ok
+ *   OP_VM_START     0x12  data[0]=slot_id → ok
+ *   OP_VM_STOP      0x13  data[0]=slot_id → ok
+ *   OP_VM_PAUSE     0x14  data[0]=slot_id → ok
+ *   OP_VM_RESUME    0x15  data[0]=slot_id → ok
+ *   OP_VM_CONSOLE   0x16  data[0]=slot_id → ok
+ *   OP_VM_INFO      0x17  data[0]=slot_id → ok, state, ram_vaddr
  *   OP_VM_LIST      0x18  → ok, count; vm_list_shmem has vm_list_entry_t[]
- *   OP_VM_SNAPSHOT  0x19  data[4]=slot_id → ok, snap_hash_lo, snap_hash_hi
- *   OP_VM_RESTORE   0x1A  data[4]=slot_id, [8]=snap_lo, [12]=snap_hi → ok
- *   OP_VM_SET_QUOTA 0x1B  data[4]=slot_id data[8]=cpu_pct → ok
- *   OP_VM_GET_STATS 0x1C  data[4]=slot_id → ok, state, max_cpu_pct,
+ *   OP_VM_SNAPSHOT  0x19  data[0]=slot_id → ok, snap_hash_lo, snap_hash_hi
+ *   OP_VM_RESTORE   0x1A  data[0]=slot_id, [4]=snap_lo, [8]=snap_hi → ok
+ *   OP_VM_CONFIGURE 0x1B  data[0]=slot_id data[4]=ram_mb
+ *                         data[8]=cpu_budget_us data[12]=cpu_period_us → ok
+ *   OP_VM_SET_QUOTA 0x30  data[0]=slot_id data[4]=cpu_pct → ok
+ *   OP_VM_GET_STATS 0x31  data[0]=slot_id → ok, state, max_cpu_pct,
  *                         run_ticks_lo, run_ticks_hi,
  *                         preempt_count_lo, preempt_count_hi
- *   OP_VM_SET_AFFINITY 0x1D data[4]=slot_id data[8]=cpu_mask → ok
- *   OP_VM_INJECT_IRQ   0x1E data[4]=slot_id data[8]=irq_num  → ok
+ *   OP_VM_SET_AFFINITY 0x32 data[0]=slot_id data[4]=cpu_mask → ok
+ *   OP_VM_INJECT_IRQ   0x33 data[0]=slot_id data[4]=irq_num  → ok
  *
  * E5-S8: migrated from Microkit to raw seL4 IPC.
  */
@@ -54,10 +56,10 @@ typedef struct __attribute__((packed)) {
 static vm_mux_t g_mux;
 
 /* ── Additional IPC opcodes (extend vmm_mux.h's OP_VM_* set) ──────────── */
-#define OP_VM_SET_QUOTA    0x1Bu
-#define OP_VM_GET_STATS    0x1Cu
-#define OP_VM_SET_AFFINITY 0x1Du
-#define OP_VM_INJECT_IRQ   0x1Eu
+#define OP_VM_SET_QUOTA    0x30u
+#define OP_VM_GET_STATS    0x31u
+#define OP_VM_SET_AFFINITY 0x32u
+#define OP_VM_INJECT_IRQ   0x33u
 
 /* ── Result codes ────────────────────────────────────────────────────────*/
 #define VM_OK       0u
@@ -98,6 +100,17 @@ static inline void rep_u32(sel4_msg_t *m, uint32_t off, uint32_t v) {
 static inline void rep_u64(sel4_msg_t *m, uint32_t off, uint64_t v) {
     rep_u32(m, off,     (uint32_t)(v & 0xFFFFFFFFU));
     rep_u32(m, off + 4, (uint32_t)(v >> 32));
+}
+
+static inline uint32_t vm_arg_u32(const sel4_msg_t *req, uint32_t arg)
+{
+    uint32_t raw_off = arg * 4u;
+    if (req->length >= raw_off + 4u)
+        return msg_u32(req, raw_off);
+
+    /* Compatibility with older tests/callers that encoded the opcode in
+     * data[0] even though sel4_msg_t already carries req->opcode. */
+    return msg_u32(req, raw_off + 4u);
 }
 
 /* ── Helper: print a small decimal number without libc ──────────────────*/
@@ -261,7 +274,7 @@ int vmm_inject_irq(uint8_t slot_id, uint32_t irq_num)
 static uint32_t h_create(sel4_badge_t ba, const sel4_msg_t *req,
                            sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    const char *label = (const char *)(uintptr_t)msg_u32(req, 4);
+    const char *label = (const char *)(uintptr_t)vm_arg_u32(req, 0);
     if (!label || (uintptr_t)label < 0x1000u) label = "vm";
     uint8_t slot_id = vmm_mux_create(&g_mux, label);
     if (slot_id == 0xFF) {
@@ -297,7 +310,7 @@ static uint32_t h_create(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_destroy(sel4_badge_t ba, const sel4_msg_t *req,
                             sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     int r = vmm_mux_destroy(&g_mux, slot_id);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR);
     rep->length = 4;
@@ -307,7 +320,7 @@ static uint32_t h_destroy(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_start(sel4_badge_t ba, const sel4_msg_t *req,
                           sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     uint32_t result = VM_ERR;
     if (slot_id < VM_MAX_SLOTS && g_mux.slots[slot_id].state != VM_SLOT_FREE) {
         if (g_mux.slots[slot_id].state == VM_SLOT_RUNNING ||
@@ -325,7 +338,7 @@ static uint32_t h_start(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_stop(sel4_badge_t ba, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     uint32_t result = VM_ERR;
     if (slot_id < VM_MAX_SLOTS && g_mux.slots[slot_id].state != VM_SLOT_FREE) {
         int r = vmm_mux_pause(&g_mux, slot_id);
@@ -338,7 +351,7 @@ static uint32_t h_stop(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_pause(sel4_badge_t ba, const sel4_msg_t *req,
                           sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     int r = vmm_mux_pause(&g_mux, slot_id);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR); rep->length = 4;
     return SEL4_ERR_OK;
@@ -347,7 +360,7 @@ static uint32_t h_pause(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_resume(sel4_badge_t ba, const sel4_msg_t *req,
                            sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     int r = vmm_mux_resume(&g_mux, slot_id);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR); rep->length = 4;
     return SEL4_ERR_OK;
@@ -356,7 +369,7 @@ static uint32_t h_resume(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_console(sel4_badge_t ba, const sel4_msg_t *req,
                             sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     int r = vmm_mux_switch(&g_mux, slot_id);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR); rep->length = 4;
     return SEL4_ERR_OK;
@@ -365,7 +378,7 @@ static uint32_t h_console(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_info(sel4_badge_t ba, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     if (slot_id >= VM_MAX_SLOTS) {
         rep_u32(rep, 0, VM_ERR); rep->length = 4;
         return SEL4_ERR_BAD_ARG;
@@ -415,11 +428,45 @@ static uint32_t h_snapshot_restore(sel4_badge_t ba, const sel4_msg_t *req,
     return SEL4_ERR_OK;
 }
 
+static uint32_t h_configure(sel4_badge_t ba, const sel4_msg_t *req,
+                              sel4_msg_t *rep, void *ctx) {
+    (void)ba; (void)ctx;
+    uint8_t  slot_id       = (uint8_t)vm_arg_u32(req, 0);
+    uint32_t new_ram_mb    = vm_arg_u32(req, 1);
+    uint32_t cpu_budget_us = vm_arg_u32(req, 2);
+    uint32_t cpu_period_us = vm_arg_u32(req, 3);
+
+    if (slot_id >= VM_MAX_SLOTS ||
+        g_mux.slots[slot_id].state == VM_SLOT_FREE) {
+        rep_u32(rep, 0, VM_ERR);
+        rep->length = 4;
+        return SEL4_ERR_NOT_FOUND;
+    }
+
+    uint32_t current_ram_mb =
+        (uint32_t)(g_mux.slots[slot_id].ram_size >> 20);
+    if (new_ram_mb != 0u && new_ram_mb != current_ram_mb) {
+        rep_u32(rep, 0, VM_NOT_IMPL);
+        rep->length = 4;
+        return SEL4_ERR_OK;
+    }
+
+    if (cpu_budget_us != 0u && cpu_period_us != 0u) {
+        uint32_t pct = (cpu_budget_us >= cpu_period_us)
+                       ? 100u : (cpu_budget_us * 100u) / cpu_period_us;
+        (void)vm_set_quota(&g_mux, slot_id, (uint8_t)pct);
+    }
+
+    rep_u32(rep, 0, VM_OK);
+    rep->length = 4;
+    return SEL4_ERR_OK;
+}
+
 static uint32_t h_set_quota(sel4_badge_t ba, const sel4_msg_t *req,
                               sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
-    uint8_t cpu_pct = (uint8_t)msg_u32(req, 8);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
+    uint8_t cpu_pct = (uint8_t)vm_arg_u32(req, 1);
     int r = vm_set_quota(&g_mux, slot_id, cpu_pct);
     if (r == 0) {
         sel4_dbg_puts("[vm_manager] SET_QUOTA slot=");
@@ -435,7 +482,7 @@ static uint32_t h_set_quota(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_get_stats(sel4_badge_t ba, const sel4_msg_t *req,
                               sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t slot_id = (uint8_t)msg_u32(req, 4);
+    uint8_t slot_id = (uint8_t)vm_arg_u32(req, 0);
     vm_stats_t stats;
     int r = vm_get_stats(&g_mux, slot_id, &stats);
     if (r != 0) {
@@ -454,8 +501,8 @@ static uint32_t h_get_stats(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_set_affinity(sel4_badge_t ba, const sel4_msg_t *req,
                                  sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t  slot_id  = (uint8_t)msg_u32(req, 4);
-    uint32_t cpu_mask = msg_u32(req, 8);
+    uint8_t  slot_id  = (uint8_t)vm_arg_u32(req, 0);
+    uint32_t cpu_mask = vm_arg_u32(req, 1);
     int r = vmm_set_affinity(slot_id, cpu_mask);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR); rep->length = 4;
     return SEL4_ERR_OK;
@@ -464,8 +511,8 @@ static uint32_t h_set_affinity(sel4_badge_t ba, const sel4_msg_t *req,
 static uint32_t h_inject_irq(sel4_badge_t ba, const sel4_msg_t *req,
                                sel4_msg_t *rep, void *ctx) {
     (void)ba; (void)ctx;
-    uint8_t  slot_id = (uint8_t)msg_u32(req, 4);
-    uint32_t irq_num = msg_u32(req, 8);
+    uint8_t  slot_id = (uint8_t)vm_arg_u32(req, 0);
+    uint32_t irq_num = vm_arg_u32(req, 1);
     int r = vmm_inject_irq(slot_id, irq_num);
     rep_u32(rep, 0, r == 0 ? VM_OK : VM_ERR); rep->length = 4;
     return SEL4_ERR_OK;
@@ -536,6 +583,7 @@ void vm_manager_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, OP_VM_LIST,         h_list,             (void *)0);
     sel4_server_register(&srv, OP_VM_SNAPSHOT,     h_snapshot_restore, (void *)0);
     sel4_server_register(&srv, OP_VM_RESTORE,      h_snapshot_restore, (void *)0);
+    sel4_server_register(&srv, OP_VM_CONFIGURE,    h_configure,        (void *)0);
     sel4_server_register(&srv, OP_VM_SET_QUOTA,    h_set_quota,        (void *)0);
     sel4_server_register(&srv, OP_VM_GET_STATS,    h_get_stats,        (void *)0);
     sel4_server_register(&srv, OP_VM_SET_AFFINITY, h_set_affinity,     (void *)0);

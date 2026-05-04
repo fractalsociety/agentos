@@ -201,10 +201,9 @@ static inline uint32_t sel4_client_call(seL4_CPtr ep,
  *   - Build a sel4_msg_t with opcode = OP_NS_LOOKUP and the service name
  *     packed into the first min(NS_SERVICE_NAME_MAX-1, 47) bytes of data[].
  *   - Call sel4_call(client->nameserver_ep, &req, &rep).
- *   - If rep.opcode == SEL4_ERR_OK (nameserver maps NS_OK → SEL4_ERR_OK):
- *       the nameserver has minted a copy of the service's endpoint cap into
- *       client->next_free_slot of this PD's CNode.  Record ep = next_free_slot,
- *       advance next_free_slot, add to cache.
+ *   - If reply data[0] == NS_OK:
+ *       reply data[4] contains the caller-visible endpoint cap slot/channel_id.
+ *       Record it and add it to the cache.
  *   - Otherwise propagate the error code.
  *
  * Parameters:
@@ -220,8 +219,9 @@ static inline uint32_t sel4_client_call(seL4_CPtr ep,
  *   evicted; if all 16 slots are full, connect fails with SEL4_ERR_NO_MEM.
  *
  * NOTE on nameserver reply mapping:
- *   The nameserver returns NS_OK (0) on success and NS_ERR_NOT_FOUND on
- *   failure.  Because SEL4_ERR_OK == 0 and SEL4_ERR_NOT_FOUND == 2 we map:
+ *   The nameserver returns NS_OK (0) in reply data[0] on success and
+ *   NS_ERR_NOT_FOUND on failure.  Because SEL4_ERR_OK == 0 and
+ *   SEL4_ERR_NOT_FOUND == 2 we map:
  *     NS_OK           → SEL4_ERR_OK
  *     NS_ERR_NOT_FOUND → SEL4_ERR_NOT_FOUND
  *     any other NS_ERR_* → SEL4_ERR_INTERNAL
@@ -282,14 +282,9 @@ static inline uint32_t sel4_client_connect(sel4_client_t *client,
     sel4_call(client->nameserver_ep, &req, &rep);
 
     /* ── 4. Map nameserver reply codes to SEL4_ERR_* ─────────────────────── */
-    uint32_t ns_status = rep.opcode;
+    uint32_t ns_status = msg_u32(&rep, 0);
     if (ns_status == (uint32_t)NS_OK) {
-        /*
-         * The nameserver has placed the minted endpoint cap into
-         * client->next_free_slot in our CNode.  Record and advance.
-         */
-        seL4_CPtr ep = client->next_free_slot;
-        client->next_free_slot++;
+        seL4_CPtr ep = (seL4_CPtr)msg_u32(&rep, 4);
 
         /* Populate cache entry. */
         _sel4_copy_name(client->entries[free_slot].name, name,

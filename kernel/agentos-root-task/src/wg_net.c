@@ -816,10 +816,10 @@ static void register_with_nameserver(seL4_CPtr ns_ep,
     lreq.data[0] = 'n'; lreq.data[1] = 'e'; lreq.data[2] = 't'; lreq.data[3] = '\0';
     lreq.length = 4;
     sel4_call(ns_ep, &lreq, &lrep);
-    if (lrep.opcode == 0u) {
-        /* Nameserver returns channel_id in data[0..3]; in seL4 this would
+    if (lrep.opcode == 0u && data_rd32(lrep.data, 0) == 0u) {
+        /* Nameserver returns channel_id in data[4..7]; in seL4 this would
          * be a minted cap.  Record as g_net_ep. */
-        g_net_ep = (seL4_CPtr)data_rd32(lrep.data, 0);
+        g_net_ep = (seL4_CPtr)data_rd32(lrep.data, 4);
     }
 #else
     (void)rep;

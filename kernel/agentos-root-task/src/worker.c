@@ -245,8 +245,8 @@ static seL4_CPtr lookup_service(seL4_CPtr ns_ep, const char *svc_name)
         req.data[i] = (uint8_t)(svc_name[i] ? svc_name[i] : 0);
     req.length = NS_NAME_MAX;
     sel4_call(ns_ep, &req, &rep);
-    if (rep.opcode != 0u) return 0;
-    return (seL4_CPtr)data_rd32(rep.data, 0);
+    if (rep.opcode != 0u || data_rd32(rep.data, 0) != 0u) return 0;
+    return (seL4_CPtr)data_rd32(rep.data, 4);
 }
 
 /* ── IPC handlers ────────────────────────────────────────────────────────── */

@@ -318,11 +318,11 @@ static seL4_CPtr lookup_service(seL4_CPtr ns_ep, const char *svc_name)
         req.data[i] = (uint8_t)(svc_name[i] ? svc_name[i] : 0);
     req.length = NS_NAME_MAX;
     sel4_call(ns_ep, &req, &rep);
-    if (rep.opcode != 0u) return 0; /* NS_OK == 0 */
+    if (rep.opcode != 0u || data_rd32(rep.data, 0) != 0u) return 0;
     /* MR1 = channel_id in the nameserver reply.  On raw seL4 this becomes
      * the endpoint cap slot delivered by the nameserver via cap transfer.
      * In the current implementation the channel_id IS the seL4 cap slot. */
-    return (seL4_CPtr)data_rd32(rep.data, 0);
+    return (seL4_CPtr)data_rd32(rep.data, 4);
 }
 
 /* ── Quota helpers ───────────────────────────────────────────────────────── */
