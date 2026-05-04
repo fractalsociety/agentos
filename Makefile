@@ -13,7 +13,7 @@
 #   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
 #   make clean        — remove build artifacts for current board
 
-.PHONY: all install deps deps-tools submodules channels run test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
+.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -352,7 +352,27 @@ endif
 	@echo ""
 
 # QEMU flags for interactive run: serial → stdio, SSH port forwarding per guest.
-_RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
+#
+# QEMU_FAST=1 enables TCG-mode dev-iteration tweaks on Apple Silicon, where
+# HVF is not usable with seL4 and we are stuck on software emulation:
+#   -cpu max               richer feature set than cortex-a53; some hot paths
+#                          dispatch to faster TCG helpers
+#   -accel tcg,thread=multi  spread translation across host cores
+# These flags only kick in when no hardware accelerator is available
+# (QEMU_ACCEL_NATIVE empty), so passing QEMU_FAST=1 on a Linux/KVM host or
+# x86_64/HVF host is harmless.
+ifeq ($(QEMU_FAST),1)
+  ifeq ($(QEMU_ACCEL_NATIVE),)
+    _RUN_CPU := max
+    _QEMU_FAST_FLAGS := -accel tcg,thread=multi
+  else
+    _RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
+    _QEMU_FAST_FLAGS :=
+  endif
+else
+  _RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
+  _QEMU_FAST_FLAGS :=
+endif
 FREEBSD_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso)
 _UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,if=none,id=ubuntu_hd,readonly=on,file.locking=off \
               -device virtio-blk-device,drive=ubuntu_hd,bus=virtio-mmio-bus.1
@@ -362,6 +382,7 @@ _QEMU_BLK_FLAGS = $(if $(filter both,$(GUEST_OS)),$(_UBUNTU_BLK) $(_FREEBSD_BLK)
 QEMU_RUN_MEM ?= $(if $(filter both,$(GUEST_OS)),3G,2G)
 QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
                  -cpu $(_RUN_CPU) -m $(QEMU_RUN_MEM) \
+                 $(_QEMU_FAST_FLAGS) \
                  -display none -monitor none \
                  -global virtio-mmio.force-legacy=off \
                  -serial stdio \
@@ -385,7 +406,7 @@ run:
 	@echo ""
 	@echo "Arch   : $(NATIVE_ARCH)"
 	@echo "Board  : $(NATIVE_BOARD)"
-	@echo "Accel  : $(if $(QEMU_ACCEL_NATIVE),$(QEMU_ACCEL_NATIVE),none (TCG))"
+	@echo "Accel  : $(if $(QEMU_ACCEL_NATIVE),$(QEMU_ACCEL_NATIVE),$(if $(filter 1,$(QEMU_FAST)),tcg multi-thread + cpu max,none (TCG)))"
 	@echo "Memory : $(QEMU_RUN_MEM)"
 	@echo "Guest  : $(GUEST_OS)"
 	@echo "Image  : $(NATIVE_IMAGE)"
@@ -398,6 +419,14 @@ run:
 	@echo "Exit QEMU: Ctrl-A X"
 	@echo "──────────────────────────────────────────────"
 	@$(NATIVE_QEMU) $(QEMU_RUN_FLAGS)
+
+# run-fast: same as run, with TCG-mode performance knobs enabled.
+# On Apple Silicon (TCG-only because HVF is incompatible with seL4) this
+# adds -accel tcg,thread=multi and switches the CPU model to 'max', giving
+# a noticeable boot-time speedup for dev iteration.  On Linux/KVM hosts
+# QEMU_FAST is a no-op since hardware acceleration is already in use.
+run-fast:
+	@$(MAKE) run QEMU_FAST=1
 
 # =============================================================================
 # test: CI boot test (exits 0 on success, 1 on failure)
@@ -667,6 +696,8 @@ help:
 	@echo "  make build            Fetch the selected guest image and build agentOS"
 	@echo "  make run              Build native agentOS and boot QEMU with CC-PD socket"
 	@echo "                        Uses QEMU_RUN_MEM=3G automatically for GUEST_OS=both"
+	@echo "  make run-fast         Same as run, plus TCG perf knobs (cpu max + multi-thread)"
+	@echo "                        No-op on Linux/KVM hosts where HW accel is already on"
 	@echo "  make test             Build and run the QEMU boot/API smoke test"
 	@echo "  make test-guest-login Boot Ubuntu and FreeBSD to an interactive serial prompt"
 	@echo ""
