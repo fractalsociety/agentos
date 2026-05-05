@@ -156,7 +156,13 @@ $(BUILD_DIR)/vmm_wrapper.mk: $(KERNEL_SRC_DIR)/vmm_wrapper_template.mk
 
 # ─── Build libvmm.a + libsddf_util_debug.a ───────────────────────────────
 # Run make FROM BUILD_DIR so vmm.mk's relative paths work
-$(BUILD_DIR)/libvmm.a $(BUILD_DIR)/libsddf_util_debug.a: $(BUILD_DIR)/vmm_wrapper.mk
+LIBVMM_INPUTS := $(shell find $(LIBVMM_ABS)/src $(LIBVMM_ABS)/include \
+	$(LIBVMM_ABS)/dep/sddf/include $(LIBVMM_ABS)/vmm.mk \
+	$(KERNEL_SRC_DIR)/vmm_wrapper_template.mk \
+	$(KERNEL_SRC_DIR)/include/sel4_debug_putchar_compat.h \
+	-type f 2>/dev/null)
+
+$(BUILD_DIR)/libvmm.a $(BUILD_DIR)/libsddf_util_debug.a: $(BUILD_DIR)/vmm_wrapper.mk $(LIBVMM_INPUTS)
 	@echo "[VMM] Building libvmm.a and libsddf_util_debug.a (from $(BUILD_DIR))..."
 	$(MAKE) -C $(BUILD_DIR) -f vmm_wrapper.mk vmm-libs
 	@echo "[VMM] Libraries built ✓"
@@ -218,14 +224,14 @@ $(BUILD_DIR)/linux_vmm.elf: FORCE \
 		-o $@
 	@echo "[VMM] linux_vmm.elf ✓"
 
-# ─── FreeBSD VMM: direct kernel Image + FDT packaging ─────────────────────
+# ─── FreeBSD VMM: direct kernel + FDT packaging ───────────────────────────
 FREEBSD_DEFAULT_IMAGE := $(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso
 FREEBSD_RAW_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if $(FREEBSD_IMAGE),$(FREEBSD_IMAGE),$(FREEBSD_DEFAULT_IMAGE)))
 FREEBSD_KERNEL_IMAGE := $(BUILD_DIR)/freebsd-kernel.bin
-FREEBSD_DTS := $(KERNEL_SRC_DIR)/freebsd-edk2.dts
+FREEBSD_DTS := $(KERNEL_SRC_DIR)/freebsd-direct.dts
 FREEBSD_DTS_EFFECTIVE := $(FREEBSD_DTS)
 ifeq ($(VMM_DUAL_GUEST),1)
-FREEBSD_DTS_EFFECTIVE := $(BUILD_DIR)/freebsd-edk2-dual.dts
+FREEBSD_DTS_EFFECTIVE := $(BUILD_DIR)/freebsd-direct-dual.dts
 $(FREEBSD_DTS_EFFECTIVE): $(FREEBSD_DTS) $(VMM_CONFIG_STAMP) $(lastword $(MAKEFILE_LIST))
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Generating dual-guest FreeBSD device tree..."
@@ -250,16 +256,16 @@ $(FREEBSD_KERNEL_IMAGE): $(FREEBSD_RAW_IMAGE) $(FREEBSD_EXTRACT)
 		   python3 $(FREEBSD_EXTRACT) "$(FREEBSD_RAW_IMAGE)" /boot/kernel/kernel $@ ;; \
 	esac
 
-$(BUILD_DIR)/freebsd-edk2.dtb: $(FREEBSD_DTS_EFFECTIVE)
+$(BUILD_DIR)/freebsd-direct.dtb: $(FREEBSD_DTS_EFFECTIVE)
 	@mkdir -p $(BUILD_DIR)
-	@echo "[VMM] Compiling FreeBSD direct-boot device tree..."
+	@echo "[VMM] Compiling FreeBSD device tree..."
 	$(DTC) -q -I dts -O dtb $< > $@
 
-$(BUILD_DIR)/freebsd_images.o: $(PKG_IMG) $(FREEBSD_KERNEL_IMAGE) $(BUILD_DIR)/freebsd-edk2.dtb
+$(BUILD_DIR)/freebsd_images.o: $(PKG_IMG) $(FREEBSD_KERNEL_IMAGE) $(BUILD_DIR)/freebsd-direct.dtb
 	@echo "[VMM] Packaging FreeBSD kernel + FDT images..."
 	clang -c -g3 -x assembler-with-cpp \
 		-DGUEST_KERNEL_IMAGE_PATH=\"$(FREEBSD_KERNEL_IMAGE)\" \
-		-DGUEST_DTB_IMAGE_PATH=\"$(BUILD_DIR)/freebsd-edk2.dtb\" \
+		-DGUEST_DTB_IMAGE_PATH=\"$(BUILD_DIR)/freebsd-direct.dtb\" \
 		-target aarch64-none-elf \
 		$(PKG_IMG) -o $@
 
@@ -287,7 +293,7 @@ $(BUILD_DIR)/freebsd_vmm.elf: $(BUILD_DIR)/freebsd_vmm.o \
 vmm-clean:
 	rm -f $(BUILD_DIR)/linux_vmm.full.o $(BUILD_DIR)/gpu_shmem.full.o $(BUILD_DIR)/pd_entry.vmm.o $(BUILD_DIR)/linux_vmm.elf
 	rm -f $(BUILD_DIR)/freebsd_vmm.o $(BUILD_DIR)/freebsd_images.o $(BUILD_DIR)/freebsd_vmm.elf
-	rm -f $(BUILD_DIR)/freebsd-edk2.dtb
+	rm -f $(BUILD_DIR)/freebsd-direct.dtb
 	rm -f $(BUILD_DIR)/images.o $(BUILD_DIR)/vm.dts $(BUILD_DIR)/vm.dtb
 	rm -f $(BUILD_DIR)/libvmm.a $(BUILD_DIR)/libsddf_util_debug.a
 	rm -f $(BUILD_DIR)/vmm_wrapper.mk

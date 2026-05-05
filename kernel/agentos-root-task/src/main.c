@@ -566,8 +566,6 @@ static void boot_setup_irqs(const pd_desc_t *pd,
  */
 #define VIRTIO_MMIO_PAGE_PA  0x0A000000UL
 #define VIRTIO_MMIO_PAGE_VA  0x0A000000UL
-#define FREEBSD_FW_CFG_PAGE_PA  0x09020000UL
-#define FREEBSD_FW_CFG_PAGE_VA  0x09020000UL
 #define FREEBSD_VIRTIO_MMIO_BUS31_PAGE_PA  0x0A003000UL
 #define FREEBSD_VIRTIO_MMIO_BUS31_PAGE_VA  0x0A003000UL
 
@@ -583,7 +581,6 @@ static void boot_setup_irqs(const pd_desc_t *pd,
 /* Frame cap in root task CNode; seL4_CNode_Copy'd per VSpace that needs output. */
 static seL4_CPtr g_uart_frame_cap = seL4_CapNull;
 static seL4_CPtr g_virtio_mmio_frame_cap = seL4_CapNull;
-static seL4_CPtr g_freebsd_fw_cfg_frame_cap = seL4_CapNull;
 static seL4_CPtr g_freebsd_virtio31_frame_cap = seL4_CapNull;
 
 static volatile uint32_t *g_uart_dr;  /* PL011 UARTDR (offset 0x00) */
@@ -713,6 +710,12 @@ static seL4_Error map_vmm_guest_ram_identity(seL4_CPtr vspace,
                                                    (uint32_t)seL4_ARCH_LargePageObject,
                                                    (uint8_t)seL4_ARCH_LargePageBits,
                                                    &frame);
+        if (err == seL4_InvalidArgument) {
+            err = ut_alloc_phys_cap_typed(guest_pa + off,
+                                          (uint32_t)seL4_ARCH_LargePageObject,
+                                          (uint8_t)seL4_ARCH_LargePageBits,
+                                          &frame);
+        }
         if (err != seL4_NoError) {
             return err;
         }
@@ -1033,16 +1036,6 @@ void root_task_main(const seL4_BootInfo *bi)
         dbg_hex((seL4_Word)virtio_err);
         dbg_puts(" cap=");
         dbg_hex((seL4_Word)g_virtio_mmio_frame_cap);
-        dbg_puts("\n");
-    }
-
-    {
-        seL4_Error fw_err = ut_alloc_device_cap(FREEBSD_FW_CFG_PAGE_PA,
-                                                &g_freebsd_fw_cfg_frame_cap);
-        dbg_puts("[rt] freebsd fw_cfg frame cap err=");
-        dbg_hex((seL4_Word)fw_err);
-        dbg_puts(" cap=");
-        dbg_hex((seL4_Word)g_freebsd_fw_cfg_frame_cap);
         dbg_puts("\n");
     }
 
@@ -1494,25 +1487,6 @@ void root_task_main(const seL4_BootInfo *bi)
         }
 
         if (name_eq(pd->name, "freebsd_vmm")) {
-            if (g_freebsd_fw_cfg_frame_cap != seL4_CapNull) {
-                seL4_Word fw_copy = ut_alloc_slot();
-                seL4_Error fw_err = seL4_NotEnoughMemory;
-                if (fw_copy != seL4_CapNull) {
-                    fw_err = seL4_CNode_Copy(
-                        seL4_CapInitThreadCNode, fw_copy,                    64u,
-                        seL4_CapInitThreadCNode, g_freebsd_fw_cfg_frame_cap, 64u,
-                        seL4_AllRights);
-                    if (fw_err == seL4_NoError) {
-                        fw_err = pd_vspace_map_device_frame(vspace,
-                                                            (seL4_CPtr)fw_copy,
-                                                            FREEBSD_FW_CFG_PAGE_VA);
-                    }
-                }
-                dbg_puts("[rt] FreeBSD fw_cfg map err=");
-                dbg_hex((seL4_Word)fw_err);
-                dbg_puts("\n");
-            }
-
             if (g_freebsd_virtio31_frame_cap != seL4_CapNull) {
                 seL4_Word v31_copy = ut_alloc_slot();
                 seL4_Error v31_err = seL4_NotEnoughMemory;

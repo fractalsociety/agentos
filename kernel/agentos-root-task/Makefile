@@ -730,7 +730,7 @@ ifeq ($(ARCH),aarch64)
 ifneq ($(filter freebsd both,$(GUEST_OS)),)
 $(BUILD_DIR)/freebsd_vmm.elf: FORCE
 	@echo ""
-	@echo "═══ Building FreeBSD VMM (libvmm + EDK2) ═══"
+	@echo "═══ Building FreeBSD VMM (libvmm direct kernel) ═══"
 	$(MAKE) -f vmm.mk \
 		BUILD_DIR=$(BUILD_DIR) \
 		AGENTOS_ARCH=$(AGENTOS_ARCH) \

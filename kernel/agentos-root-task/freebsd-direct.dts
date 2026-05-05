@@ -1,7 +1,7 @@
 /dts-v1/;
 
 /*
- * freebsd-edk2.dts — Direct FreeBSD kernel FDT for QEMU virt/aarch64.
+ * freebsd-direct.dts — Direct FreeBSD kernel FDT for QEMU virt/aarch64.
  *
  * Memory layout (must match freebsd_vmm.c and system_desc_aarch64.c):
  *   512 MB (0x20000000) at guest phys 0x40000000
@@ -58,14 +58,6 @@
 		#interrupt-cells = <0x03>;
 	};
 
-	/* EDK2 code flash + UEFI variable store */
-	flash@0 {
-		bank-width = <0x04>;
-		reg = <0x00 0x00 0x00 0x4000000
-		       0x00 0x4000000 0x00 0x4000000>;
-		compatible = "cfi-flash";
-	};
-
 	cpus {
 		#size-cells = <0x00>;
 		#address-cells = <0x01>;
@@ -96,22 +88,6 @@
 	};
 
 	/*
-	 * QEMU fw_cfg MMIO without the optional DMA aperture.
-	 *
-	 * EDK2 enables fw_cfg DMA when the node exposes the 0x10..0x17 DMA
-	 * address register.  That is unsafe in agentOS: the FreeBSD guest IPA is
-	 * mapped through seL4 page tables, so a guest DMA address is not
-	 * necessarily the same as the outer QEMU machine physical address. Keep
-	 * fw_cfg in register I/O mode; the virtio-mmio node below gives FreeBSD
-	 * the block device it needs to reach an interactive serial login.
-	 */
-	fw-cfg@9020000 {
-		dma-coherent;
-		reg = <0x00 0x9020000 0x00 0x10>;
-		compatible = "qemu,fw-cfg-mmio";
-	};
-
-	/*
 	 * VirtIO-MMIO: only slot 31 (the actual virtio-blk-device).
 	 * QEMU assigns -device virtio-blk-device to bus 31 (highest available),
 	 * at 0xa003e00, SPI 47 = INTID 79, edge trigger.
@@ -132,7 +108,7 @@
 	};
 
 	chosen {
-		bootargs = "FreeBSD:-s vfs.root.mountfrom=cd9660:/dev/iso9660/15_0_RELEASE_AARCH64_DVD console=ttyu0";
+		bootargs = "FreeBSD:vfs.root.mountfrom=cd9660:/dev/iso9660/15_0_RELEASE_AARCH64_DVD console=ttyu0 boot_serial=YES";
 		stdout-path = "/pl011@9000000";
 	};
 };

@@ -139,3 +139,16 @@ seL4_Error ut_alloc_device_cap_typed(seL4_Word paddr,
                                       uint32_t  object_type,
                                       uint8_t   page_bits,
                                       seL4_CPtr *cap_out);
+
+/*
+ * ut_alloc_phys_cap_typed — retype a non-device untyped at a specific
+ * physical address into a page frame cap in the root task's CNode.
+ *
+ * This is used for nested VMM RAM windows that must be identity-backed for
+ * passthrough DMA but are described by seL4 as ordinary RAM rather than device
+ * memory.
+ */
+seL4_Error ut_alloc_phys_cap_typed(seL4_Word paddr,
+                                    uint32_t  object_type,
+                                    uint8_t   page_bits,
+                                    seL4_CPtr *cap_out);

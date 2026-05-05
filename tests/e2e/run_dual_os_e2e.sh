@@ -340,9 +340,13 @@ start_qemu() {
     rm -f "${cc_sock}"
     : > "${serial_log}"
     : > "${qemu_log}"
+    local machine="virt,virtualization=on,highmem=off,secure=off"
+    if [ "${name}" = "freebsd" ]; then
+        machine="${machine},acpi=off"
+    fi
 
     "${E2E_QEMU}" \
-        -machine "virt,virtualization=on,highmem=off,secure=off" \
+        -machine "${machine}" \
         -cpu cortex-a57 \
         -m 2G \
         -display none \

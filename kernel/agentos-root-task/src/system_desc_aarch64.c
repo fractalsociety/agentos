@@ -352,16 +352,8 @@ const system_desc_t system_desc_aarch64 = {
                 { .irq_number = 48u, .ntfn_badge = 0x1u, .name = "virtio-net" },
                 { .irq_number = 79u, .ntfn_badge = 0x2u, .name = "virtio-blk" },
             },
-            .mr_count = 3u,
+            .mr_count = 1u,
             .memory_regions = {
-                { .vaddr    = 0x00000000ULL,
-                  .size     = 0x04000000u,  /* 64 MB EDK2 code flash */
-                  .writable = 1u,
-                  .name     = "uefi_code" },
-                { .vaddr    = 0x04000000ULL,
-                  .size     = 0x04000000u,  /* 64 MB UEFI variable store */
-                  .writable = 1u,
-                  .name     = "uefi_data" },
                 { .vaddr    = 0x40000000ULL,
                   .size     = 0x20000000u,  /* 512 MB FreeBSD guest RAM */
                   .writable = 1u,
@@ -425,16 +417,8 @@ const system_desc_t system_desc_aarch64 = {
             .irqs = {
                 { .irq_number = 79u, .ntfn_badge = 0x2u, .name = "virtio-blk" },
             },
-            .mr_count = 3u,
+            .mr_count = 1u,
             .memory_regions = {
-                { .vaddr    = 0x00000000ULL,
-                  .size     = 0x04000000u,
-                  .writable = 1u,
-                  .name     = "uefi_code" },
-                { .vaddr    = 0x04000000ULL,
-                  .size     = 0x04000000u,
-                  .writable = 1u,
-                  .name     = "uefi_data" },
                 { .vaddr    = 0xc0000000ULL,
                   .size     = 0x20000000u,
                   .writable = 1u,

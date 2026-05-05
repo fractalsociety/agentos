@@ -254,45 +254,12 @@ static int dedicated_create(uint32_t vm_type, uint32_t ram_mb,
         return -2;
     }
 
-    {
-        sel4_msg_t req = {0}, rep = {0};
-        req.opcode = MSG_GUEST_CREATE;
-        msg_put_u32(&req, 0, vm_type == VM_TYPE_FREEBSD
-                            ? VIBEOS_TYPE_FREEBSD : VIBEOS_TYPE_LINUX);
-        msg_put_u32(&req, 4, flags);
-        msg_put_u32(&req, 16, ram_mb ? ram_mb : (VM_SLOT_RAM_SIZE >> 20));
-        vm_label_copy((char *)&req.data[32],
-                      vm_type == VM_TYPE_FREEBSD ? "freebsd" : "linux",
-                      16u);
-        req.length = 48u;
-        sel4_call(ep, &req, &rep);
-        if (rep.opcode != GUEST_OK)
-            return -3;
-    }
-
-    {
-        sel4_msg_t req = {0}, rep = {0};
-        req.opcode = MSG_GUEST_BOOT;
-        msg_put_u32(&req, 0, 0u);  /* dedicated VMMs expose guest_id 0 */
-        req.length = 4u;
-        sel4_call(ep, &req, &rep);
-        if (rep.opcode != GUEST_OK)
-            return -3;
-    }
-
-    {
-        sel4_msg_t req = {0}, rep = {0};
-        req.opcode = MSG_GUEST_RESUME;
-        msg_put_u32(&req, 0, 0u);
-        req.length = 4u;
-        sel4_call(ep, &req, &rep);
-        if (rep.opcode != GUEST_OK)
-            return -3;
-    }
-
-    if (g_mux.slots[slot_id].state != VM_SLOT_FREE)
-        return -3;
-
+    /* Dedicated Linux/FreeBSD VMM PDs are single-guest services.  Their guest
+     * image setup and initial boot happen during VMM PD init, before the VMM
+     * enters its RPC loop.  OP_VM_CREATE therefore adopts that already-owned
+     * guest into vm_manager's slot namespace; subsequent lifecycle and console
+     * operations dispatch to the dedicated VMM endpoint via MSG_GUEST_*.
+     */
     vm_slot_t *slot = &g_mux.slots[slot_id];
     uintptr_t ram_base = dedicated_ram_base(vm_type, slot_id);
     slot->id = slot_id;

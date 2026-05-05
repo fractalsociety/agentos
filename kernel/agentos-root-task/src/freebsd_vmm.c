@@ -1,15 +1,15 @@
 /*
  * agentOS FreeBSD VMM — Virtual Machine Monitor
  *
- * Boots FreeBSD 15 AArch64 directly from /boot/kernel/kernel.bin using libvmm
+ * Boots FreeBSD 15 AArch64 directly from /boot/kernel/kernel using libvmm
  * on seL4/Microkit.
  *
  * Boot sequence:
- *   1. VMM copies kernel.bin (_guest_kernel_image) to the guest RAM base.
- *   2. VMM copies freebsd-edk2.dtb (_guest_dtb_image) near the top of guest RAM.
- *   3. guest_start(kernel, fdt, 0): vCPU PC = FreeBSD Image entry, EL1h.
- *   4. FreeBSD reads /chosen/bootargs, mounts /dev/vtbd0p3, and uses the
- *      QEMU virtio-mmio devices exposed in the FDT.
+ *   1. VMM copies the FreeBSD kernel (_guest_kernel_image) to guest RAM.
+ *   2. VMM copies freebsd-direct.dtb (_guest_dtb_image) near the top of RAM.
+ *   3. guest_start(kernel, fdt, 0): vCPU PC = FreeBSD Image entry, x0 = FDT.
+ *   4. FreeBSD mounts the 15.0 DVD ISO from the virtio-blk device and reaches
+ *      the serial installer/login path.
  *
  * Memory layout (host phys -> guest phys):
  *   single-FreeBSD image: guest_ram at 0x40000000, FDT at 0x5f000000.
@@ -24,7 +24,7 @@
  * QEMU bus assignment: QEMU assigns -device virtio-blk-device to the highest
  * available virtio-mmio bus (bus 31), at 0xa003e00, SPI 47 = INTID 79.
  *
- * PSCI: EDK2 uses SMC-based PSCI (psci { method = "smc"; }).
+ * PSCI: FreeBSD uses SMC-based PSCI (psci { method = "smc"; }).
  *   seL4 intercepts HVC from VCPU EL1 as a seL4 UnknownSyscall, so we use SMC.
  *   libvmm fault.c routes HSR_SMC_64_EXCEPTION to smc_handle() / handle_psci().
  *
@@ -118,19 +118,15 @@ static const seL4_CPtr g_virtio_net_irq_cap =
 #define VIRTIO_NET_IRQ  48u    /* QEMU virt bus 0  = 0xa000000, SPI 16 */
 #endif
 
-/* ── Guest image symbols (kernel Image + FDT from package_guest_images.S) ── */
+/* ── Guest image symbols (kernel + FDT from package_guest_images.S) ─────── */
 extern char _guest_kernel_image[];
 extern char _guest_kernel_image_end[];
 extern char _guest_dtb_image[];
 extern char _guest_dtb_image_end[];
 
 /* ── Guest memory map symbols ────────────────────────────────────────────── */
-uintptr_t uefi_code_vaddr;   /* VMM virtual address of uefi_code MR */
-uintptr_t uefi_data_vaddr;   /* VMM virtual address of uefi_data MR */
 uintptr_t guest_ram_vaddr;   /* VMM virtual address of guest_ram MR */
 
-#define FREEBSD_UEFI_CODE_VADDR 0x00000000UL
-#define FREEBSD_UEFI_DATA_VADDR 0x04000000UL
 #if defined(AGENTOS_GUEST_BOTH)
 #define FREEBSD_GUEST_RAM_VADDR 0xc0000000UL
 #define FREEBSD_KERNEL_VADDR    0xc0000000UL
@@ -141,7 +137,6 @@ uintptr_t guest_ram_vaddr;   /* VMM virtual address of guest_ram MR */
 #define FREEBSD_FDT_VADDR       0x5f000000UL
 #endif
 #define FREEBSD_GUEST_RAM_SIZE  0x20000000UL
-#define FREEBSD_UEFI_DATA_SIZE  0x04000000UL
 #define FREEBSD_VTIMER_IRQ      27u
 
 static bool guest_started = false;
@@ -624,18 +619,12 @@ void init(void)
 
     size_t kernel_size = (size_t)(_guest_kernel_image_end - _guest_kernel_image);
     if (kernel_size == 0) {
-        LOG_VMM_ERR("FreeBSD kernel image not linked (build with GUEST_OS=freebsd)\n");
+        LOG_VMM_ERR("FreeBSD kernel image not linked (run make fetch-guest GUEST_OS=freebsd)\n");
         return;
     }
     LOG_VMM("  FreeBSD kernel: %zu bytes (%.1f MB)\n",
             kernel_size, (double)kernel_size / (1024.0 * 1024.0));
 
-    if (uefi_code_vaddr == 0) {
-        uefi_code_vaddr = FREEBSD_UEFI_CODE_VADDR;
-    }
-    if (uefi_data_vaddr == 0) {
-        uefi_data_vaddr = FREEBSD_UEFI_DATA_VADDR;
-    }
     if (guest_ram_vaddr == 0) {
         guest_ram_vaddr = FREEBSD_GUEST_RAM_VADDR;
     }
@@ -703,10 +692,11 @@ void init(void)
         LOG_VMM("  PL011 UART IRQ %u registered\n", FREEBSD_UART_IRQ);
     }
 
-    LOG_VMM("  Starting FreeBSD kernel at guest phys 0x%lx (EL1h)...\n",
-            (unsigned long)FREEBSD_KERNEL_VADDR);
-    guest_start(FREEBSD_KERNEL_VADDR, FREEBSD_FDT_VADDR, 0UL);
     guest_started = true;
+    LOG_VMM("  Starting FreeBSD kernel at guest phys 0x%lx with FDT 0x%lx...\n",
+            (unsigned long)FREEBSD_KERNEL_VADDR,
+            (unsigned long)FREEBSD_FDT_VADDR);
+    guest_start(FREEBSD_KERNEL_VADDR, FREEBSD_FDT_VADDR, 0UL);
     LOG_VMM("  FreeBSD VMM: kernel running\n");
 }
 
@@ -743,32 +733,6 @@ static void freebsd_vmm_notified(seL4_Word badge)
         }
     }
 #endif
-}
-
-static bool freebsd_handle_vppi_event(size_t vcpu_id)
-{
-    static uint64_t vppi_count = 0;
-    vppi_count++;
-
-    seL4_Word ppi_irq = seL4_GetMR(seL4_VPPIEvent_IRQ);
-    seL4_Word cntv_ctl = vmm_vcpu_arm_read_reg(vcpu_id, seL4_VCPUReg_CNTV_CTL);
-    seL4_Word cntv_cval = vmm_vcpu_arm_read_reg(vcpu_id, seL4_VCPUReg_CNTV_CVAL);
-
-    bool injected = vgic_inject_irq(vcpu_id, (int)ppi_irq);
-    if (!injected) {
-        vmm_vcpu_arm_ack_vppi(vcpu_id, ppi_irq);
-    }
-
-    if (vppi_count <= 4 || (vppi_count % 1000000) == 0 || !injected) {
-        LOG_VMM("FreeBSD VPPIEvent #%llu IRQ %lu ctl=0x%lx cval=0x%lx action=%s\n",
-                (unsigned long long)vppi_count,
-                (unsigned long)ppi_irq,
-                (unsigned long)cntv_ctl,
-                (unsigned long)cntv_cval,
-                injected ? "inject" : "ack-drop");
-    }
-
-    return true;
 }
 
 /* ── Fault handler ────────────────────────────────────────────────────────── */
@@ -827,9 +791,34 @@ static seL4_MessageInfo_t freebsd_vmm_fault(seL4_Word badge,
                     (unsigned long)label, (unsigned long)badge);
         }
     }
-    bool success = (label == seL4_Fault_VPPIEvent)
-        ? freebsd_handle_vppi_event(vcpu_id)
-        : fault_handle(vcpu_id, msginfo);
+    if (label == seL4_Fault_VPPIEvent) {
+        static uint64_t vppi_count = 0;
+        vppi_count++;
+        uint64_t ppi_irq = seL4_GetMR(seL4_VPPIEvent_IRQ);
+        seL4_UserContext regs = {0};
+        seL4_TCB_ReadRegisters(vmm_tcb_cap(vcpu_id), 0, 0,
+                               SEL4_USER_CONTEXT_SIZE, &regs);
+        seL4_Word cntv_ctl = vmm_vcpu_arm_read_reg(vcpu_id,
+                                                   seL4_VCPUReg_CNTV_CTL);
+        seL4_Word cntv_cval = vmm_vcpu_arm_read_reg(vcpu_id,
+                                                    seL4_VCPUReg_CNTV_CVAL);
+        bool injected = vgic_inject_irq(vcpu_id, ppi_irq);
+        if (!injected) {
+            vmm_vcpu_arm_ack_vppi(vcpu_id, ppi_irq);
+        }
+        if (vppi_count <= 16u || (vppi_count % 100000u) == 0u) {
+            LOG_VMM("FreeBSD VPPI #%llu irq=%llu pc=0x%lx pstate=0x%lx ctl=0x%lx cval=0x%lx action=%s\n",
+                    (unsigned long long)vppi_count,
+                    (unsigned long long)ppi_irq,
+                    (unsigned long)regs.pc,
+                    (unsigned long)regs.spsr,
+                    (unsigned long)cntv_ctl,
+                    (unsigned long)cntv_cval,
+                    injected ? "inject" : "ack-drop");
+        }
+        return seL4_MessageInfo_new(0, 0, 0, 0);
+    }
+    bool success = fault_handle(vcpu_id, msginfo);
     if (!success)
         LOG_VMM_ERR("Unhandled fault: badge=0x%lx label=0x%lx\n",
                     (unsigned long)badge, (unsigned long)label);

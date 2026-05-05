@@ -28,6 +28,7 @@ endif
 TARGET_ARCH ?= $(CONFIG_TARGET)
 GUEST_OS    ?= $(CONFIG_GUEST_OS)
 QEMU_TEST_TIMEOUT ?= 300
+DUAL_OS_TEST_TIMEOUT ?= 900
 QEMU_TEST_GUEST_OS = $(if $(filter x86_64,$(ARCH)),none,$(GUEST_OS))
 
 # ─── Paths (computed FIRST, before any -include changes MAKEFILE_LIST) ───────
@@ -380,7 +381,10 @@ _FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=freebsd_hd,rea
                -device virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31
 _QEMU_BLK_FLAGS = $(if $(filter both,$(GUEST_OS)),$(_UBUNTU_BLK) $(_FREEBSD_BLK),$(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),)))
 QEMU_RUN_MEM ?= $(if $(filter both,$(GUEST_OS)),3G,2G)
-QEMU_RUN_FLAGS = -machine virt,virtualization=on,highmem=off,secure=off \
+comma := ,
+QEMU_MACHINE_FLAGS_BASE := virt$(comma)virtualization=on$(comma)highmem=off$(comma)secure=off
+QEMU_MACHINE_FLAGS := $(QEMU_MACHINE_FLAGS_BASE)$(if $(filter freebsd both,$(GUEST_OS)),$(comma)acpi=off)
+QEMU_RUN_FLAGS = -machine $(QEMU_MACHINE_FLAGS) \
                  -cpu $(_RUN_CPU) -m $(QEMU_RUN_MEM) \
                  $(_QEMU_FAST_FLAGS) \
                  -display none -monitor none \
@@ -577,8 +581,7 @@ e2e-contract:
 	@BRIDGE_AVAILABLE=1 bash tests/e2e/test_cc_contract.sh
 
 e2e-dual-os:
-	@chmod +x tests/e2e/run_dual_os_e2e.sh
-	@bash tests/e2e/run_dual_os_e2e.sh
+	@cargo xtask qemu-test --board $(BOARD) --guest-os both --timeout-secs $(DUAL_OS_TEST_TIMEOUT)
 
 # Per-guest-OS E2E targets — run the full suite against a specific guest image.
 # Images must exist in build/guest-images/; create them with: make bootstrap-guest OS=<os>

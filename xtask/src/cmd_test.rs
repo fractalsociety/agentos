@@ -15,10 +15,18 @@ const CC_REQ_SIZE: usize = 4 + 12 + CC_WIRE_SHMEM_SIZE;
 const CC_REPLY_SIZE: usize = 16 + CC_WIRE_SHMEM_SIZE;
 const CC_IO_TIMEOUT: Duration = Duration::from_secs(45);
 const CC_OK: u32 = 0;
+const CC_ERR_RELAY_FAULT: u32 = 8;
 const MSG_CC_LOG_STREAM: u32 = 0x2610;
+const MSG_CC_CREATE_GUEST: u32 = 0x2611;
 const MSG_CC_SEND_INPUT: u32 = 0x260d;
 const CC_INPUT_KEY_DOWN: u32 = 0x01;
 const CC_INPUT_RAW_BYTE_BASE: u32 = 0x100;
+const VIBEOS_TYPE_LINUX: u8 = 0x01;
+const VIBEOS_TYPE_FREEBSD: u8 = 0x02;
+const VIBEOS_ARCH_AARCH64: u8 = 0x01;
+const VIBEOS_DEV_SERIAL: u32 = 1 << 0;
+const VIBEOS_DEV_NET: u32 = 1 << 1;
+const VIBEOS_DEV_BLOCK: u32 = 1 << 2;
 
 pub fn run(args: &TestArgs) -> anyhow::Result<()> {
     let repo_root = repo_root()?;
@@ -80,6 +88,7 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
             );
             wait_for_guest_console_login_via_cc(
                 &cc_sock,
+                0,
                 "ubuntu",
                 Duration::from_secs(args.timeout_secs),
                 &mut qemu,
@@ -92,7 +101,19 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
             );
             wait_for_guest_console_login_via_cc(
                 &cc_sock,
+                0,
                 "freebsd",
+                Duration::from_secs(args.timeout_secs),
+                &mut qemu,
+            )
+        }
+        "both" => {
+            println!(
+                "[xtask:test] Creating Linux and FreeBSD through CC-PD/vm_manager ({})...",
+                cc_sock.display()
+            );
+            wait_for_dual_guest_consoles_via_cc(
+                &cc_sock,
                 Duration::from_secs(args.timeout_secs),
                 &mut qemu,
             )
@@ -296,14 +317,20 @@ pub fn spawn_qemu_with_guest(
             let build_dir = repo_root.join("build").join(board);
             let loader = build_dir.join("loader.elf");
             let _ = std::fs::remove_file(&cc_sock);
+            let machine = if guest_os == "freebsd" || guest_os == "both" {
+                "virt,virtualization=on,highmem=off,secure=off,acpi=off"
+            } else {
+                "virt,virtualization=on,highmem=off,secure=off"
+            };
+            let memory = if guest_os == "both" { "3G" } else { "2G" };
 
             let mut c = std::process::Command::new("qemu-system-aarch64");
             c.arg("-machine")
-                .arg("virt,virtualization=on,highmem=off,secure=off")
+                .arg(machine)
                 .arg("-cpu")
                 .arg("cortex-a57")
                 .arg("-m")
-                .arg("2G")
+                .arg(memory)
                 .arg("-display")
                 .arg("none")
                 .arg("-monitor")
@@ -332,7 +359,7 @@ pub fn spawn_qemu_with_guest(
                     "loader,file={},addr=0x48000000",
                     build_image.display()
                 ));
-            if guest_os == "ubuntu" {
+            if guest_os == "ubuntu" || guest_os == "both" {
                 /* ubuntu: root disk on bus.1 (vda). NoCloud data is served
                  * over QEMU user-net; do not also attach a stale seed disk. */
                 let ubuntu_img = ubuntu_disk_image(repo_root);
@@ -351,21 +378,23 @@ pub fn spawn_qemu_with_guest(
                         ),
                     ]);
                 }
-            } else if guest_os == "freebsd" {
+            }
+            if guest_os == "freebsd" || guest_os == "both" {
                 let freebsd_img = freebsd_disk_image(repo_root);
                 if freebsd_img.exists() {
                     println!("[xtask:test] FreeBSD disk image: {}", freebsd_img.display());
                     c.args([
                         "-device",
-                        "virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.31",
+                        "virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31",
                         "-drive",
                         &format!(
-                            "file={},format=raw,id=hd0,if=none,readonly=on,file.locking=off",
+                            "file={},format=raw,id=freebsd_hd,if=none,readonly=on,file.locking=off",
                             freebsd_img.to_str().unwrap()
                         ),
                     ]);
                 }
-            } else {
+            }
+            if guest_os != "ubuntu" && guest_os != "freebsd" && guest_os != "both" {
                 /* buildroot / default: optional generic disk on bus.1 */
                 let disk = build_dir.join("disk.img");
                 if disk.exists() {
@@ -645,6 +674,7 @@ impl CcClient {
 
 fn wait_for_guest_console_login_via_cc(
     cc_sock: &Path,
+    guest_handle: u32,
     guest_os: &str,
     timeout: Duration,
     qemu: &mut Child,
@@ -656,16 +686,33 @@ fn wait_for_guest_console_login_via_cc(
     let mut matched_prompt = None;
     let prompt_markers: &[&str] = match guest_os {
         "ubuntu" => &["ubuntu login:", "login:"],
-        "freebsd" => &["Enter full pathname of shell", "login:"],
+        "freebsd" => &["Console type [vt100]:", "login:"],
         _ => &["login:"],
     };
 
     while start.elapsed() < timeout {
         ensure_qemu_running(qemu, "waiting for guest login prompt via CC-PD API")?;
-        match cc_log_stream(&mut cc) {
+        match cc_log_stream_for_handle(&mut cc, guest_handle) {
             Ok(chunk) => {
                 if !chunk.is_empty() {
                     transcript.push_str(&chunk);
+                    if guest_os == "ubuntu"
+                        && (transcript.contains("emergency mode")
+                            || transcript.contains("Emergency Shell")
+                            || transcript.contains("Press Enter for maintenance"))
+                    {
+                        anyhow::bail!(
+                            "Ubuntu reached an emergency or maintenance path instead of multi-user login; tail:\n{}",
+                            tail_chars(&transcript, 4000)
+                        );
+                    }
+                    if guest_os == "freebsd" && transcript.contains("Enter full pathname of shell")
+                    {
+                        anyhow::bail!(
+                            "FreeBSD reached single-user shell selection instead of the normal installer/login path; tail:\n{}",
+                            tail_chars(&transcript, 4000)
+                        );
+                    }
                     if let Some(marker) = prompt_markers
                         .iter()
                         .find(|marker| transcript.contains(**marker))
@@ -698,65 +745,15 @@ fn wait_for_guest_console_login_via_cc(
 
     println!("[xtask:test] CC console matched prompt marker {:?}", prompt);
 
-    if guest_os == "freebsd" && prompt.contains("Enter full pathname") {
-        cc_send_raw_bytes(&mut cc, 0, b"\n")?;
-        let shell_start = Instant::now();
-        let mut shell = String::new();
-        while shell_start.elapsed() < Duration::from_secs(30) {
-            ensure_qemu_running(qemu, "waiting for FreeBSD single-user shell via CC-PD API")?;
-            let chunk = match cc_log_stream(&mut cc) {
-                Ok(chunk) => chunk,
-                Err(err) => {
-                    println!("[xtask:test] CC console FreeBSD shell drain not ready yet: {err:#}");
-                    String::new()
-                }
-            };
-            if !chunk.is_empty() {
-                shell.push_str(&chunk);
-                if shell.contains("# ") {
-                    cc_send_raw_bytes(&mut cc, 0, b"echo agentos-e2e\n")?;
-                    let command_start = Instant::now();
-                    let mut command_echo = String::new();
-                    while command_start.elapsed() < Duration::from_secs(20) {
-                        ensure_qemu_running(
-                            qemu,
-                            "waiting for FreeBSD shell command echo via CC-PD API",
-                        )?;
-                        let chunk = cc_log_stream(&mut cc).unwrap_or_default();
-                        if !chunk.is_empty() {
-                            command_echo.push_str(&chunk);
-                            if command_echo.contains("agentos-e2e") {
-                                return Ok(format!(
-                                    "CC console API reached FreeBSD single-user shell after {:?} and echoed a command",
-                                    prompt
-                                ));
-                            }
-                        }
-                        std::thread::sleep(Duration::from_millis(500));
-                    }
-                    anyhow::bail!(
-                        "FreeBSD single-user shell prompt appeared, but command echo was not observed; tail:\n{}",
-                        tail_chars(&command_echo, 2000)
-                    );
-                }
-            }
-            std::thread::sleep(Duration::from_millis(500));
-        }
-        anyhow::bail!(
-            "FreeBSD shell selection prompt appeared, but shell did not; tail:\n{}",
-            tail_chars(&shell, 2000)
-        );
-    }
-
     let probe = "~";
-    cc_send_raw_byte(&mut cc, 0, probe.as_bytes()[0])?;
+    cc_send_raw_byte(&mut cc, guest_handle, probe.as_bytes()[0])?;
 
     let mut echo = String::new();
     let echo_deadline = Duration::from_secs(20).min(timeout.saturating_sub(start.elapsed()));
     let echo_start = Instant::now();
     while echo_start.elapsed() < echo_deadline {
         ensure_qemu_running(qemu, "waiting for guest console input echo via CC-PD API")?;
-        let chunk = match cc_log_stream(&mut cc) {
+        let chunk = match cc_log_stream_for_handle(&mut cc, guest_handle) {
             Ok(chunk) => chunk,
             Err(err) => {
                 println!("[xtask:test] CC console post-input drain not ready yet: {err:#}");
@@ -771,9 +768,9 @@ fn wait_for_guest_console_login_via_cc(
         if !chunk.is_empty() {
             echo.push_str(&chunk);
             if echo.contains(probe) {
-                let _ = cc_send_raw_byte(&mut cc, 0, 0x15); /* Ctrl-U: clear login input */
+                let _ = cc_send_raw_byte(&mut cc, guest_handle, 0x15); /* Ctrl-U */
                 return Ok(format!(
-                    "CC console API saw {guest_os} login prompt {:?} and guest echoed raw input {:?}",
+                    "CC console API saw {guest_os} handle {guest_handle} prompt {:?} and guest echoed raw input {:?}",
                     prompt, probe
                 ));
             }
@@ -786,6 +783,121 @@ fn wait_for_guest_console_login_via_cc(
         probe,
         tail_chars(&echo, 2000)
     );
+}
+
+fn try_create_guest_via_cc(
+    cc: &mut CcClient,
+    os_type: u8,
+    ram_mb: u32,
+) -> anyhow::Result<Result<u32, (u32, u32)>> {
+    let mut shmem = [0u8; 52];
+    shmem[0] = os_type;
+    shmem[1] = VIBEOS_ARCH_AARCH64;
+    wr32(&mut shmem, 4, ram_mb);
+    wr32(
+        &mut shmem,
+        16,
+        VIBEOS_DEV_SERIAL | VIBEOS_DEV_NET | VIBEOS_DEV_BLOCK,
+    );
+
+    let reply = cc
+        .call(MSG_CC_CREATE_GUEST, 0, 0, 0, &shmem)
+        .context("MSG_CC_CREATE_GUEST failed")?;
+    if reply.mr[0] == CC_OK {
+        Ok(Ok(reply.mr[1]))
+    } else {
+        Ok(Err((reply.mr[0], reply.mr[1])))
+    }
+}
+
+fn create_guest_via_cc_wait(
+    cc_sock: &Path,
+    os_type: u8,
+    ram_mb: u32,
+    label: &str,
+    timeout: Duration,
+    qemu: &mut Child,
+) -> anyhow::Result<u32> {
+    let start = Instant::now();
+    let mut cc = connect_cc_client(cc_sock, timeout.min(Duration::from_secs(30)), qemu)?;
+    let mut attempts = 0u32;
+    let mut last_err = String::from("no create attempt completed");
+
+    while start.elapsed() < timeout {
+        attempts += 1;
+        ensure_qemu_running(qemu, &format!("creating {label} guest through CC-PD"))?;
+
+        match try_create_guest_via_cc(&mut cc, os_type, ram_mb) {
+            Ok(Ok(handle)) => {
+                println!(
+                    "[xtask:test] created {label} guest handle={handle} after {attempts} attempt(s)"
+                );
+                return Ok(handle);
+            }
+            Ok(Err((status, detail))) => {
+                last_err = format!("MSG_CC_CREATE_GUEST returned ok={status} detail={detail}");
+                if status != CC_ERR_RELAY_FAULT {
+                    anyhow::bail!("failed to create {label} guest: {last_err}");
+                }
+                if attempts == 1 || attempts % 5 == 0 {
+                    println!("[xtask:test] {label} guest create not ready yet: {last_err}");
+                }
+            }
+            Err(err) => {
+                last_err = format!("{err:#}");
+                if attempts == 1 || attempts % 5 == 0 {
+                    println!(
+                        "[xtask:test] {label} guest create transport not ready yet: {last_err}"
+                    );
+                }
+                if let Ok(next) = CcClient::connect(cc_sock) {
+                    cc = next;
+                }
+            }
+        }
+
+        std::thread::sleep(Duration::from_secs(1));
+    }
+
+    anyhow::bail!(
+        "timed out after {}s creating {label} guest through CC-PD/vm_manager; last error: {last_err}",
+        timeout.as_secs()
+    );
+}
+
+fn wait_for_dual_guest_consoles_via_cc(
+    cc_sock: &Path,
+    timeout: Duration,
+    qemu: &mut Child,
+) -> anyhow::Result<String> {
+    let create_timeout = timeout.min(Duration::from_secs(120));
+    let linux_handle = create_guest_via_cc_wait(
+        cc_sock,
+        VIBEOS_TYPE_LINUX,
+        512,
+        "Linux",
+        create_timeout,
+        qemu,
+    )
+    .context("failed to create Linux guest through vm_manager")?;
+    let freebsd_handle = create_guest_via_cc_wait(
+        cc_sock,
+        VIBEOS_TYPE_FREEBSD,
+        512,
+        "FreeBSD",
+        create_timeout,
+        qemu,
+    )
+    .context("failed to create FreeBSD guest through vm_manager")?;
+
+    let linux =
+        wait_for_guest_console_login_via_cc(cc_sock, linux_handle, "ubuntu", timeout, qemu)?;
+    let freebsd =
+        wait_for_guest_console_login_via_cc(cc_sock, freebsd_handle, "freebsd", timeout, qemu)?;
+
+    Ok(format!(
+        "dual CC/vm_manager consoles ready: linux_handle={linux_handle} ({linux}); freebsd_handle={freebsd_handle} ({freebsd})"
+    ))
 }
 
 fn is_transient_cc_read_error(err: &anyhow::Error) -> bool {
@@ -859,9 +971,9 @@ fn ensure_qemu_running(qemu: &mut Child, context: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cc_log_stream(cc: &mut CcClient) -> anyhow::Result<String> {
+fn cc_log_stream_for_handle(cc: &mut CcClient, guest_handle: u32) -> anyhow::Result<String> {
     let reply = cc
-        .call(MSG_CC_LOG_STREAM, 0, 0, 0, &[])
+        .call(MSG_CC_LOG_STREAM, guest_handle, 0, 0, &[])
         .context("MSG_CC_LOG_STREAM failed")?;
     anyhow::ensure!(
         reply.mr[0] == CC_OK,
@@ -885,13 +997,6 @@ fn cc_send_raw_byte(cc: &mut CcClient, guest_handle: u32, byte: u8) -> anyhow::R
         "MSG_CC_SEND_INPUT returned ok={}",
         reply.mr[0]
     );
-    Ok(())
-}
-
-fn cc_send_raw_bytes(cc: &mut CcClient, guest_handle: u32, bytes: &[u8]) -> anyhow::Result<()> {
-    for byte in bytes {
-        cc_send_raw_byte(cc, guest_handle, *byte)?;
-    }
     Ok(())
 }
 
