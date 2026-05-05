@@ -166,6 +166,8 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #define MSG_VIBEOS_CONFIGURE            0x240Du
 #define MSG_VIBEOS_SEND_INPUT           0x240Eu
 #define MSG_VIBEOS_CONSOLE_DRAIN        0x240Fu
+#define MSG_VIBEOS_SUSPEND              0x2410u
+#define MSG_VIBEOS_RESUME               0x2411u
 #endif
 
 /* VibeOS error codes */
@@ -213,6 +215,8 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #define OP_VM_DESTROY     0x11u
 #define OP_VM_START       0x12u
 #define OP_VM_STOP        0x13u
+#define OP_VM_PAUSE       0x14u
+#define OP_VM_RESUME      0x15u
 #define OP_VM_INFO        0x17u
 #define OP_VM_SNAPSHOT    0x19u
 #define OP_VM_RESTORE     0x1Au
@@ -1378,6 +1382,64 @@ static uint32_t handle_vos_console_drain(sel4_badge_t badge,
     return SEL4_ERR_OK;
 }
 
+/* ── MSG_VIBEOS_SUSPEND / MSG_VIBEOS_RESUME ────────────────────────────────
+ * Move a vibe slot between RUNNING and PAUSED.  When g_vmm_ep is set,
+ * delegate to vm_manager's OP_VM_PAUSE / OP_VM_RESUME and update slot
+ * state on success.  In phantom-guest mode (g_vmm_ep == 0) just update
+ * the local state so the multi-OS UX still cycles through pause/resume
+ * end-to-end while the libvmm work (agentos-9wb) lands. */
+static uint32_t handle_vos_pause_resume(sel4_badge_t badge,
+                                         const sel4_msg_t *req,
+                                         sel4_msg_t *rep, void *ctx)
+{
+    (void)badge;
+    bool resuming = ((uintptr_t)ctx == (uintptr_t)MSG_VIBEOS_RESUME);
+    uint32_t handle = data_rd32(req->data, 0);
+    int slot = vos_find(handle);
+    if (slot < 0) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NO_HANDLE);
+        rep->length = 4;
+        return VIBEOS_ERR_NO_HANDLE;
+    }
+
+    uint8_t cur = s_vos[slot].state;
+    if (resuming) {
+        if (cur != (uint8_t)VIBEOS_STATE_PAUSED) {
+            data_wr32(rep->data, 0, VIBEOS_ERR_WRONG_STATE);
+            rep->length = 4;
+            return VIBEOS_ERR_WRONG_STATE;
+        }
+    } else {
+        if (cur != (uint8_t)VIBEOS_STATE_RUNNING &&
+            cur != (uint8_t)VIBEOS_STATE_BOOTING) {
+            data_wr32(rep->data, 0, VIBEOS_ERR_WRONG_STATE);
+            rep->length = 4;
+            return VIBEOS_ERR_WRONG_STATE;
+        }
+    }
+
+    if (g_vmm_ep) {
+        sel4_msg_t vreq = {0}, vrep = {0};
+        vreq.opcode = resuming ? OP_VM_RESUME : OP_VM_PAUSE;
+        data_wr32(vreq.data, 0, s_vos[slot].vm_slot);
+        vreq.length = 4;
+        sel4_call(g_vmm_ep, &vreq, &vrep);
+        if (vrep.opcode != SEL4_ERR_OK || data_rd32(vrep.data, 0) != 0u) {
+            data_wr32(rep->data, 0, VIBEOS_ERR_BIND_FAIL);
+            rep->length = 4;
+            return VIBEOS_ERR_BIND_FAIL;
+        }
+    }
+
+    s_vos[slot].state = (uint8_t)(resuming ? VIBEOS_STATE_RUNNING
+                                            : VIBEOS_STATE_PAUSED);
+
+    data_wr32(rep->data, 0, VIBEOS_OK);
+    data_wr32(rep->data, 4, s_vos[slot].state);
+    rep->length = 8;
+    return SEL4_ERR_OK;
+}
+
 /* ── MSG_VIBEOS_LOAD_MODULE ────────────────────────────────────────────── */
 static uint32_t handle_vibeos_load_module(sel4_badge_t badge, const sel4_msg_t *req,
                                            sel4_msg_t *rep, void *ctx)
@@ -1528,6 +1590,10 @@ static uint32_t vibe_engine_dispatch_one(sel4_badge_t badge,
     case MSG_VIBEOS_CONFIGURE:      return handle_vos_configure(badge, req, rep, (void*)0);
     case MSG_VIBEOS_SEND_INPUT:     return handle_vos_send_input(badge, req, rep, (void*)0);
     case MSG_VIBEOS_CONSOLE_DRAIN:  return handle_vos_console_drain(badge, req, rep, (void*)0);
+    case MSG_VIBEOS_SUSPEND:
+        return handle_vos_pause_resume(badge, req, rep, (void*)(uintptr_t)MSG_VIBEOS_SUSPEND);
+    case MSG_VIBEOS_RESUME:
+        return handle_vos_pause_resume(badge, req, rep, (void*)(uintptr_t)MSG_VIBEOS_RESUME);
     default:
         rep->opcode = SEL4_ERR_INVALID_OP;
         rep->length = 0;
@@ -1618,6 +1684,10 @@ void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr ctrl_ep)
                          handle_vos_send_input,(void*)0);
     sel4_server_register(&g_srv, MSG_VIBEOS_CONSOLE_DRAIN,
                          handle_vos_console_drain,(void*)0);
+    sel4_server_register(&g_srv, MSG_VIBEOS_SUSPEND,
+                         handle_vos_pause_resume, (void*)(uintptr_t)MSG_VIBEOS_SUSPEND);
+    sel4_server_register(&g_srv, MSG_VIBEOS_RESUME,
+                         handle_vos_pause_resume, (void*)(uintptr_t)MSG_VIBEOS_RESUME);
 
     dbg_puts("[vibe_engine] *** VibeEngine ALIVE — accepting proposals ***\n");
     sel4_server_run(&g_srv);  /* NEVER RETURNS */

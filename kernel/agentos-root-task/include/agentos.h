@@ -916,6 +916,8 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_VIBEOS_CONFIGURE            0x240D  /* MR1=handle; vibeos_configure_req in shmem → MR0=ok */
 #define MSG_VIBEOS_SEND_INPUT           0x240E  /* MR1=handle; cc_input_event_t in shmem → MR0=ok */
 #define MSG_VIBEOS_CONSOLE_DRAIN        0x240F  /* MR1=handle MR2=max → MR0=ok MR1=bytes */
+#define MSG_VIBEOS_SUSPEND              0x2410  /* in: data[0..3]=handle → reply data[0..3]=status data[4..7]=state */
+#define MSG_VIBEOS_RESUME               0x2411  /* in: data[0..3]=handle → reply data[0..3]=status data[4..7]=state */
 
 /* CH_VIBEOS_ENGINE: canonical alias for CH_VIBEENGINE; use in new code */
 #define CH_VIBEOS_ENGINE                CH_VIBEENGINE

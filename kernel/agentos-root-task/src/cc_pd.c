@@ -1322,11 +1322,20 @@ static void handle_suspend_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     }
 #endif
 
-    /* vibe_engine has no MSG_VIBEOS_SUSPEND opcode yet — dynamic guests
-     * cannot be suspended through cc_pd until that lands. */
-    (void)handle;
-    rep->mr[0] = CC_ERR_RELAY_FAULT;
-    rep->mr[1] = 0u;
+    /* Dynamic guest — relay to vibe_engine MSG_VIBEOS_SUSPEND. */
+    sel4_msg_t sreq = {0};
+    sel4_msg_t srep = {0};
+    sreq.opcode = MSG_VIBEOS_SUSPEND;
+    sreq.length = 4u;
+    cc_wire_wr32(sreq.data, 0u, handle);
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+    if (srep.opcode != SEL4_ERR_OK) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = srep.opcode;
+        return;
+    }
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = cc_vibeos_to_guest_state(cc_wire_rd32(srep.data, 4u));
 }
 
 static void handle_resume_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -1352,9 +1361,20 @@ static void handle_resume_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     }
 #endif
 
-    (void)handle;
-    rep->mr[0] = CC_ERR_RELAY_FAULT;
-    rep->mr[1] = 0u;
+    /* Dynamic guest — relay to vibe_engine MSG_VIBEOS_RESUME. */
+    sel4_msg_t sreq = {0};
+    sel4_msg_t srep = {0};
+    sreq.opcode = MSG_VIBEOS_RESUME;
+    sreq.length = 4u;
+    cc_wire_wr32(sreq.data, 0u, handle);
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
+    if (srep.opcode != SEL4_ERR_OK) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = srep.opcode;
+        return;
+    }
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = cc_vibeos_to_guest_state(cc_wire_rd32(srep.data, 4u));
 }
 
 static void handle_destroy_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)

@@ -273,6 +273,8 @@ typedef struct __attribute__((packed)) {
 #define VIBEOS_OP_CHECK_SERVICE  MSG_VIBEOS_CHECK_SERVICE_EXISTS
 #define VIBEOS_OP_SEND_INPUT     MSG_VIBEOS_SEND_INPUT
 #define VIBEOS_OP_CONSOLE_DRAIN  MSG_VIBEOS_CONSOLE_DRAIN
+#define VIBEOS_OP_SUSPEND        MSG_VIBEOS_SUSPEND
+#define VIBEOS_OP_RESUME         MSG_VIBEOS_RESUME
 
 /* ─── Channel aliases ────────────────────────────────────────────────────── */
 
