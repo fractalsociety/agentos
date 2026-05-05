@@ -732,12 +732,55 @@ static bool cc_lifecycle_boot_guest(uint32_t opcode, uint32_t reason,
 }
 #endif
 
+/* cc_pd has no EOF signal from the host-side socket — when a client process
+ * dies ungracefully, qemu's chardev silently accepts a new connection but
+ * the leaked session lingers.  Aging every other active session on each
+ * dispatch (cc_age_sessions) plus reaping the oldest active session when
+ * alloc_session has no free slot lets the next new caller reclaim a slot
+ * without a full reboot.  No threshold: the session table is small and the
+ * oldest-active session is by definition the most stale once the table is
+ * full, so unconditionally reap it.  ticks_since_active >= 1 means the
+ * session has not been touched on the current dispatch, so the in-flight
+ * caller is never reaped from under itself. */
+static void cc_age_sessions(void)
+{
+    for (uint32_t i = 0u; i < CC_MAX_SESSIONS; i++) {
+        if (g_sessions[i].active &&
+            g_sessions[i].ticks_since_active < UINT32_MAX) {
+            g_sessions[i].ticks_since_active++;
+        }
+    }
+}
+
+static int reap_oldest_session(void)
+{
+    int victim = -1;
+    uint32_t oldest = 0u;
+    for (int i = 0; i < (int)CC_MAX_SESSIONS; i++) {
+        if (g_sessions[i].active &&
+            g_sessions[i].ticks_since_active >= 1u &&
+            g_sessions[i].ticks_since_active >= oldest) {
+            oldest = g_sessions[i].ticks_since_active;
+            victim = i;
+        }
+    }
+    if (victim >= 0) {
+        g_sessions[victim].active       = false;
+        g_sessions[victim].state        = CC_SESSION_STATE_EXPIRED;
+        g_sessions[victim].resp_pending = 0u;
+        g_sessions[victim].resp_len     = 0u;
+    }
+    return victim;
+}
+
 static int alloc_session(void)
 {
     for (int i = 0; i < (int)CC_MAX_SESSIONS; i++) {
         if (!g_sessions[i].active) return i;
     }
-    return -1;
+    /* Table full — reclaim the oldest active slot.  This is the recovery
+     * path for clients that disconnect ungracefully (no MSG_CC_DISCONNECT). */
+    return reap_oldest_session();
 }
 
 static bool valid_session(uint32_t sid)
@@ -1396,6 +1439,13 @@ static void handle_trace_dump(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 
 static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
+    /* Age active sessions before dispatch.  Handlers that touch a specific
+     * session (CONNECT/SEND/RECV/STATUS) reset that slot's tick counter back
+     * to 0 inside themselves, so the net effect is: every session except the
+     * one being touched ages by one tick per dispatch.  alloc_session uses
+     * this to identify abandoned sessions when the table is full. */
+    cc_age_sessions();
+
     switch (req->opcode) {
     /* Session management */
     case MSG_CC_CONNECT:    handle_connect(req, rep);          break;
