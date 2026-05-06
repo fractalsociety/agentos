@@ -120,7 +120,13 @@ static seL4_Word g_cap_base;  /* set to bi->empty.start in root_task_main */
  */
 #define PD_DEFAULT_SC_BUDGET_US   10000u
 #define PD_DEFAULT_SC_PERIOD_US   1000000u
-#define VMM_SC_BUDGET_US          90000u
+/*
+ * Each VMM gets one sched context for the VMM PD and one for the guest vCPU.
+ * A 90% budget works for a single guest but overcommits the single-core QEMU
+ * E2E path when Linux and FreeBSD run together.  Keep the pair small enough
+ * that two guests can make forward progress concurrently.
+ */
+#define VMM_SC_BUDGET_US          25000u
 #define VMM_SC_PERIOD_US          100000u
 
 /*
@@ -582,6 +588,7 @@ static void boot_setup_irqs(const pd_desc_t *pd,
 static seL4_CPtr g_uart_frame_cap = seL4_CapNull;
 static seL4_CPtr g_virtio_mmio_frame_cap = seL4_CapNull;
 static seL4_CPtr g_freebsd_virtio31_frame_cap = seL4_CapNull;
+static seL4_CPtr g_gic_vcpu_frame_cap = seL4_CapNull;
 
 static volatile uint32_t *g_uart_dr;  /* PL011 UARTDR (offset 0x00) */
 static volatile uint32_t *g_uart_fr;  /* PL011 UARTFR (offset 0x18) */
@@ -691,6 +698,27 @@ static int name_eq(const char *a, const char *b)
     while (*a && *b && *a == *b) { a++; b++; }
     return (*a == '\0' && *b == '\0');
 }
+
+#ifdef CONFIG_KERNEL_MCS
+static seL4_Word sched_node_for_pd(const pd_desc_t *pd)
+{
+    if (name_eq(pd->name, "freebsd_vmm")) {
+        return 1u;
+    }
+    return 0u;
+}
+
+static seL4_CPtr schedcontrol_for_node(const seL4_BootInfo *bi, seL4_Word node)
+{
+    if (node >= bi->numNodes) {
+        node = 0u;
+    }
+    if (bi->schedcontrol.start + node >= bi->schedcontrol.end) {
+        node = 0u;
+    }
+    return (seL4_CPtr)(bi->schedcontrol.start + node);
+}
+#endif
 
 #if defined(__aarch64__)
 static seL4_Error map_vmm_guest_ram_identity(seL4_CPtr vspace,
@@ -817,7 +845,7 @@ static seL4_Error setup_vmm_guest_vcpu(const pd_desc_t *pd,
     }
 
     err = seL4_SchedControl_ConfigureFlags(
-              bi->schedcontrol.start,
+              schedcontrol_for_node(bi, sched_node_for_pd(pd)),
               (seL4_SchedContext)guest_sc_slot,
               VMM_SC_BUDGET_US,
               VMM_SC_PERIOD_US,
@@ -972,6 +1000,14 @@ void root_task_main(const seL4_BootInfo *bi)
     dbg_puts("\n");
     dbg_puts("[rt] cnodeSizeBits=");
     dbg_hex(bi->initThreadCNodeSizeBits);
+#ifdef CONFIG_KERNEL_MCS
+    dbg_puts(" nodes=");
+    dbg_hex(bi->numNodes);
+    dbg_puts(" schedcontrol=");
+    dbg_hex(bi->schedcontrol.start);
+    dbg_puts("..");
+    dbg_hex(bi->schedcontrol.end);
+#endif
     dbg_puts("\n");
 
     dbg_puts("[rt] ut_alloc_init ok\n");
@@ -1028,6 +1064,16 @@ void root_task_main(const seL4_BootInfo *bi)
     }
     dbg_puts("[rt] UART mapped, direct PL011 output active\n");
 #endif
+
+    {
+        seL4_Error gic_err = ut_alloc_device_cap(GIC_VCPU_IF_PA,
+                                                 &g_gic_vcpu_frame_cap);
+        dbg_puts("[rt] GIC vCPU frame cap err=");
+        dbg_hex((seL4_Word)gic_err);
+        dbg_puts(" cap=");
+        dbg_hex((seL4_Word)g_gic_vcpu_frame_cap);
+        dbg_puts("\n");
+    }
 
     {
         seL4_Error virtio_err = ut_alloc_device_cap(VIRTIO_MMIO_PAGE_PA,
@@ -1248,7 +1294,7 @@ void root_task_main(const seL4_BootInfo *bi)
             }
 
             sc_err = seL4_SchedControl_ConfigureFlags(
-                         bi->schedcontrol.start,
+                         schedcontrol_for_node(bi, sched_node_for_pd(pd)),
                          (seL4_SchedContext)PD_SLOT_SC(i),
                          sc_budget,
                          sc_period,
@@ -1446,12 +1492,22 @@ void root_task_main(const seL4_BootInfo *bi)
          * at 0x08040000. Without this pass-through mapping Linux faults as
          * soon as it writes GICC_PMR during IRQ setup.
          */
-        if (name_eq(pd->name, "linux_vmm") || name_eq(pd->name, "freebsd_vmm")) {
-            seL4_CPtr gic_vcpu_cap = seL4_CapNull;
-            seL4_Error gic_err = ut_alloc_device_cap(GIC_VCPU_IF_PA, &gic_vcpu_cap);
+        if (g_gic_vcpu_frame_cap != seL4_CapNull &&
+            (name_eq(pd->name, "linux_vmm") || name_eq(pd->name, "freebsd_vmm"))) {
+            seL4_Word gic_copy = ut_alloc_slot();
+            seL4_Error gic_err = seL4_NotEnoughMemory;
+            if (gic_copy != seL4_CapNull) {
+                gic_err = seL4_CNode_Copy(
+                    seL4_CapInitThreadCNode, gic_copy,               64u,
+                    seL4_CapInitThreadCNode, g_gic_vcpu_frame_cap,   64u,
+                    seL4_AllRights);
+            }
+            dbg_puts("[rt] VMM GIC vCPU CNode_Copy err=");
+            dbg_hex((seL4_Word)gic_err);
+            dbg_puts("\n");
             if (gic_err == seL4_NoError) {
                 gic_err = pd_vspace_map_device_frame(vspace,
-                                                      gic_vcpu_cap,
+                                                      (seL4_CPtr)gic_copy,
                                                       GIC_VCPU_IF_VA);
             }
             dbg_puts("[rt] VMM GIC vCPU map err=");

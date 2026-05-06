@@ -13,8 +13,8 @@
  *
  * Memory layout (host phys -> guest phys):
  *   single-FreeBSD image: guest_ram at 0x40000000, FDT at 0x5f000000.
- *   dual Linux+FreeBSD image: FreeBSD guest_ram at 0xc0000000, FDT at
- *   0xdf000000, leaving Linux's 0x40000000 window independent.
+ *   dual Linux+FreeBSD image: FreeBSD keeps the standalone-proven
+ *   0x40000000 guest RAM window while Linux uses a separate high window.
  *
  * IRQ passthrough:
  *   single-FreeBSD image: net INTID 48 at IRQ cap slot 64, block INTID 79 at 65
@@ -88,7 +88,11 @@ void microkit_dbg_put32(uint32_t v)
 seL4_IPCBuffer *__sel4_ipc_buffer = NULL;
 
 vmm_vcpu_t g_vmm_vcpus[VMM_MAX_VCPUS];
+#if defined(AGENTOS_GUEST_BOTH)
+static uint32_t g_guest_state = GUEST_STATE_READY;
+#else
 static uint32_t g_guest_state = GUEST_STATE_RUNNING;
+#endif
 
 /* ── IRQ capabilities ────────────────────────────────────────────────────── */
 #if defined(AGENTOS_GUEST_BOTH)
@@ -127,19 +131,19 @@ extern char _guest_dtb_image_end[];
 /* ── Guest memory map symbols ────────────────────────────────────────────── */
 uintptr_t guest_ram_vaddr;   /* VMM virtual address of guest_ram MR */
 
-#if defined(AGENTOS_GUEST_BOTH)
-#define FREEBSD_GUEST_RAM_VADDR 0xc0000000UL
-#define FREEBSD_KERNEL_VADDR    0xc0000000UL
-#define FREEBSD_FDT_VADDR       0xdf000000UL
-#else
 #define FREEBSD_GUEST_RAM_VADDR 0x40000000UL
 #define FREEBSD_KERNEL_VADDR    0x40000000UL
 #define FREEBSD_FDT_VADDR       0x5f000000UL
-#endif
 #define FREEBSD_GUEST_RAM_SIZE  0x20000000UL
 #define FREEBSD_VTIMER_IRQ      27u
 
+#ifndef FREEBSD_IRQ_TRACE
+#define FREEBSD_IRQ_TRACE 0
+#endif
+
 static bool guest_started = false;
+static bool g_freebsd_startable = false;
+static bool g_freebsd_runtime_ready = false;
 
 static void freebsd_copy_to_guest(uintptr_t dst_addr, const void *src, size_t n)
 {
@@ -147,6 +151,20 @@ static void freebsd_copy_to_guest(uintptr_t dst_addr, const void *src, size_t n)
     const uint8_t *s = (const uint8_t *)src;
     for (size_t i = 0; i < n; i++) {
         dst[i] = s[i];
+    }
+}
+
+static void freebsd_clear_guest_ram(uintptr_t base, size_t size)
+{
+    volatile uint64_t *p = (volatile uint64_t *)base;
+    size_t words = size / sizeof(*p);
+    for (size_t i = 0u; i < words; i++) {
+        p[i] = 0u;
+    }
+
+    volatile uint8_t *tail = (volatile uint8_t *)(base + words * sizeof(*p));
+    for (size_t i = words * sizeof(*p); i < size; i++) {
+        *tail++ = 0u;
     }
 }
 
@@ -210,6 +228,7 @@ static uint32_t pl011_cr = PL011_CR_TXE | PL011_CR_RXE;
 static uint32_t pl011_ifls = 0x12u;
 static uint32_t pl011_imsc;
 static uint32_t pl011_dmacr;
+static uint32_t pl011_irq_latch;
 
 static uint8_t console_tx_ring[GUEST_CONSOLE_TX_RING_SIZE];
 static uint32_t console_tx_head;
@@ -279,22 +298,44 @@ static bool console_rx_pop(uint8_t *byte)
 
 static uint32_t pl011_pending_irqs(void)
 {
-    uint32_t pending = 0u;
+    uint32_t pending = pl011_irq_latch;
     if (console_rx_count > 0u) {
         pending |= PL011_RXIS | PL011_RTIS;
-    }
-    if ((pl011_cr & PL011_CR_TXE) != 0u) {
-        pending |= PL011_TXIS;
     }
     return pending;
 }
 
 static void pl011_maybe_inject_irq(void)
 {
-    if (guest_started && ((pl011_pending_irqs() & pl011_imsc) != 0u)) {
-        (void)virq_inject(FREEBSD_UART_IRQ);
+    uint32_t pending = pl011_pending_irqs();
+    uint32_t masked = pending & pl011_imsc;
+    if (guest_started && masked != 0u) {
+        bool injected = virq_inject(FREEBSD_UART_IRQ);
+        if (!injected) {
+            LOG_VMM_ERR("PL011 IRQ pending=0x%lx imsc=0x%lx inject failed\n",
+                        (unsigned long)pending,
+                        (unsigned long)pl011_imsc);
+        }
     }
 }
+
+#if FREEBSD_IRQ_TRACE
+static void freebsd_log_irq_state(const char *where, unsigned count)
+{
+    if (count <= 8u || (count % 1000u) == 0u) {
+        LOG_VMM("%s irq%u pending=%u enabled=%u inflight=%u irq%u pending=%u enabled=%u inflight=%u\n",
+                where,
+                VIRTIO_BLK_IRQ,
+                vgic_irq_is_pending(GUEST_BOOT_VCPU_ID, VIRTIO_BLK_IRQ) ? 1u : 0u,
+                vgic_irq_is_enabled(GUEST_BOOT_VCPU_ID, VIRTIO_BLK_IRQ) ? 1u : 0u,
+                vgic_irq_is_inflight(GUEST_BOOT_VCPU_ID, VIRTIO_BLK_IRQ) ? 1u : 0u,
+                FREEBSD_UART_IRQ,
+                vgic_irq_is_pending(GUEST_BOOT_VCPU_ID, FREEBSD_UART_IRQ) ? 1u : 0u,
+                vgic_irq_is_enabled(GUEST_BOOT_VCPU_ID, FREEBSD_UART_IRQ) ? 1u : 0u,
+                vgic_irq_is_inflight(GUEST_BOOT_VCPU_ID, FREEBSD_UART_IRQ) ? 1u : 0u);
+    }
+}
+#endif
 
 static void guest_console_write(uint8_t byte)
 {
@@ -414,6 +455,9 @@ static void pl011_write(size_t offset, uint64_t fsr, seL4_UserContext *regs)
     switch (offset) {
     case PL011_DR:
         guest_console_write((uint8_t)(value & 0xffu));
+        if ((pl011_cr & PL011_CR_TXE) != 0u) {
+            pl011_irq_latch |= PL011_TXIS;
+        }
         pl011_maybe_inject_irq();
         break;
     case PL011_RSR_ECR:
@@ -443,6 +487,7 @@ static void pl011_write(size_t offset, uint64_t fsr, seL4_UserContext *regs)
         pl011_maybe_inject_irq();
         break;
     case PL011_ICR:
+        pl011_irq_latch &= ~(value & (PL011_RXIS | PL011_TXIS | PL011_RTIS));
         pl011_maybe_inject_irq();
         break;
     case PL011_DMACR:
@@ -466,6 +511,89 @@ static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
 
     pl011_write(offset, (uint64_t)fsr, regs);
     return true;
+}
+
+static bool freebsd_vmm_prepare_runtime(void)
+{
+    if (g_freebsd_runtime_ready) {
+        return true;
+    }
+
+    if (!virq_controller_init()) {
+        LOG_VMM_ERR("Failed to initialise vGIC\n");
+        return false;
+    }
+
+    if (!fault_register_vm_exception_handler(PL011_BASE, PL011_SIZE,
+                                             pl011_fault_handler, NULL)) {
+        LOG_VMM_ERR("Failed to register PL011 UART fault handler\n");
+        return false;
+    }
+
+#if FREEBSD_VMM_HAS_NET_IRQ
+    if (!virq_register(GUEST_BOOT_VCPU_ID, VIRTIO_NET_IRQ, &virtio_net_ack, NULL)) {
+        LOG_VMM_ERR("Failed to register virtio-net IRQ %u\n", VIRTIO_NET_IRQ);
+        return false;
+    }
+    seL4_IRQHandler_Ack(g_virtio_net_irq_cap);
+    LOG_VMM("  VirtIO-net IRQ %u registered\n", VIRTIO_NET_IRQ);
+#else
+    LOG_VMM("  VirtIO-net IRQ disabled; dual guest mode reserves it for Linux\n");
+#endif
+
+    /* VirtIO-blk: QEMU assigns to highest bus = bus 31 = 0xa003e00, SPI 47 = INTID 79 */
+    if (!virq_register(GUEST_BOOT_VCPU_ID, VIRTIO_BLK_IRQ, &virtio_blk_ack, NULL)) {
+        LOG_VMM_ERR("Failed to register virtio-blk IRQ %u\n", VIRTIO_BLK_IRQ);
+        return false;
+    }
+    seL4_IRQHandler_Ack(g_virtio_blk_irq_cap);
+    LOG_VMM("  VirtIO-blk IRQ %u registered\n", VIRTIO_BLK_IRQ);
+
+    if (!virq_register(GUEST_BOOT_VCPU_ID, FREEBSD_UART_IRQ, &uart_ack, NULL)) {
+        LOG_VMM_ERR("Failed to register UART IRQ %u\n", FREEBSD_UART_IRQ);
+        return false;
+    }
+    LOG_VMM("  PL011 UART IRQ %u registered\n", FREEBSD_UART_IRQ);
+
+    g_freebsd_runtime_ready = true;
+    return true;
+}
+
+static bool freebsd_vmm_start_guest(void)
+{
+    if (guest_started) {
+        return true;
+    }
+    if (!g_freebsd_startable) {
+        return false;
+    }
+    if (!freebsd_vmm_prepare_runtime()) {
+        return false;
+    }
+
+    LOG_VMM("  Starting FreeBSD kernel at guest phys 0x%lx with FDT 0x%lx...\n",
+            (unsigned long)FREEBSD_KERNEL_VADDR,
+            (unsigned long)FREEBSD_FDT_VADDR);
+    guest_start(FREEBSD_KERNEL_VADDR, FREEBSD_FDT_VADDR, 0UL);
+    guest_started = true;
+    g_guest_state = GUEST_STATE_RUNNING;
+    LOG_VMM("  FreeBSD VMM: kernel running\n");
+    return true;
+}
+
+static void freebsd_vmm_suspend_guest_tcb(void)
+{
+    seL4_UserContext regs = {0};
+    seL4_Error err = seL4_TCB_ReadRegisters(
+        (seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID),
+        true,
+        0,
+        SEL4_USER_CONTEXT_SIZE,
+        &regs);
+    if (err != seL4_NoError) {
+        LOG_VMM_ERR("FreeBSD guest suspend/read-registers failed: %d\n", (int)err);
+        seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+    }
 }
 
 static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
@@ -503,7 +631,7 @@ static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
             rep.opcode = GUEST_ERR_DEAD;
             break;
         }
-        if (!guest_started) {
+        if (!guest_started && !freebsd_vmm_start_guest()) {
             rep.opcode = GUEST_ERR_NOT_READY;
             break;
         }
@@ -521,7 +649,8 @@ static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
             break;
         }
         if (g_guest_state != GUEST_STATE_SUSPENDED) {
-            seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+            freebsd_vmm_suspend_guest_tcb();
+            vmm_vcpu_arm_ack_vppi(GUEST_BOOT_VCPU_ID, FREEBSD_VTIMER_IRQ);
             g_guest_state = GUEST_STATE_SUSPENDED;
         }
         rep.opcode = GUEST_OK;
@@ -549,7 +678,8 @@ static seL4_MessageInfo_t freebsd_vmm_rpc(seL4_MessageInfo_t info)
             break;
         }
         if (g_guest_state != GUEST_STATE_DEAD) {
-            seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+            freebsd_vmm_suspend_guest_tcb();
+            vmm_vcpu_arm_ack_vppi(GUEST_BOOT_VCPU_ID, FREEBSD_VTIMER_IRQ);
             g_guest_state = GUEST_STATE_DEAD;
         }
         rep.opcode = GUEST_OK;
@@ -638,6 +768,9 @@ void init(void)
         return;
     }
 
+    LOG_VMM("  Clearing FreeBSD guest RAM window...\n");
+    freebsd_clear_guest_ram(guest_ram_vaddr, FREEBSD_GUEST_RAM_SIZE);
+
     freebsd_copy_to_guest(kernel_dst, _guest_kernel_image, kernel_size);
     LOG_VMM("  FreeBSD kernel copied to guest phys 0x%lx\n",
             (unsigned long)FREEBSD_KERNEL_VADDR);
@@ -657,47 +790,13 @@ void init(void)
         LOG_VMM_ERR("FDT not embedded, guest_ram_vaddr unset, or FDT out of RAM\n");
     }
 
-    if (!virq_controller_init()) {
-        LOG_VMM_ERR("Failed to initialise vGIC\n");
-        return;
-    }
-
-    if (!fault_register_vm_exception_handler(PL011_BASE, PL011_SIZE,
-                                             pl011_fault_handler, NULL)) {
-        LOG_VMM_ERR("Failed to register PL011 UART fault handler\n");
-    }
-
-#if FREEBSD_VMM_HAS_NET_IRQ
-    if (!virq_register(GUEST_BOOT_VCPU_ID, VIRTIO_NET_IRQ, &virtio_net_ack, NULL)) {
-        LOG_VMM_ERR("Failed to register virtio-net IRQ %u\n", VIRTIO_NET_IRQ);
-        return;
-    }
-    seL4_IRQHandler_Ack(g_virtio_net_irq_cap);
-    LOG_VMM("  VirtIO-net IRQ %u registered\n", VIRTIO_NET_IRQ);
+    g_freebsd_startable = true;
+#if defined(AGENTOS_GUEST_BOTH)
+    g_guest_state = GUEST_STATE_READY;
+    LOG_VMM("  FreeBSD guest ready; waiting for lifecycle BOOT\n");
 #else
-    LOG_VMM("  VirtIO-net IRQ disabled; dual guest mode reserves it for Linux\n");
+    (void)freebsd_vmm_start_guest();
 #endif
-
-    /* VirtIO-blk: QEMU assigns to highest bus = bus 31 = 0xa003e00, SPI 47 = INTID 79 */
-    if (!virq_register(GUEST_BOOT_VCPU_ID, VIRTIO_BLK_IRQ, &virtio_blk_ack, NULL)) {
-        LOG_VMM_ERR("Failed to register virtio-blk IRQ %u\n", VIRTIO_BLK_IRQ);
-        return;
-    }
-    seL4_IRQHandler_Ack(g_virtio_blk_irq_cap);
-    LOG_VMM("  VirtIO-blk IRQ %u registered\n", VIRTIO_BLK_IRQ);
-
-    if (!virq_register(GUEST_BOOT_VCPU_ID, FREEBSD_UART_IRQ, &uart_ack, NULL)) {
-        LOG_VMM_ERR("Failed to register UART IRQ %u\n", FREEBSD_UART_IRQ);
-    } else {
-        LOG_VMM("  PL011 UART IRQ %u registered\n", FREEBSD_UART_IRQ);
-    }
-
-    guest_started = true;
-    LOG_VMM("  Starting FreeBSD kernel at guest phys 0x%lx with FDT 0x%lx...\n",
-            (unsigned long)FREEBSD_KERNEL_VADDR,
-            (unsigned long)FREEBSD_FDT_VADDR);
-    guest_start(FREEBSD_KERNEL_VADDR, FREEBSD_FDT_VADDR, 0UL);
-    LOG_VMM("  FreeBSD VMM: kernel running\n");
 }
 
 /* ── Notification handler ─────────────────────────────────────────────────── */
@@ -710,11 +809,18 @@ static void freebsd_vmm_notified(seL4_Word badge)
         LOG_VMM("notified #%llu badge=0x%lx\n",
                 (unsigned long long)ntfn_count, (unsigned long)badge);
 
+    if (!g_freebsd_runtime_ready) {
+        return;
+    }
+
     if (badge & (seL4_Word)VIRTIO_BLK_NTFN_BADGE) {
         bool injected = virq_inject(VIRTIO_BLK_IRQ);
         if (ntfn_count <= 10 || ntfn_count % 1000 == 0 || !injected)
             LOG_VMM("virtio-blk IRQ %u: inject=%s\n",
                     VIRTIO_BLK_IRQ, injected ? "ok" : "deferred");
+#if FREEBSD_IRQ_TRACE
+        freebsd_log_irq_state("virtio-blk state after inject", (unsigned)ntfn_count);
+#endif
         if (!injected) {
             LOG_VMM_ERR("virtio-blk IRQ %u dropped\n", VIRTIO_BLK_IRQ);
             seL4_IRQHandler_Ack(g_virtio_blk_irq_cap);
@@ -751,8 +857,11 @@ static seL4_MessageInfo_t freebsd_vmm_fault(seL4_Word badge,
         uint64_t ec = (hsr >> 26) & 0x3f;
         if (ec == 0x01) { /* HSR_WFx = 0x01 */
             wfi_count++;
-            if (wfi_count <= 3 || wfi_count % 100000 == 0)
+            if (wfi_count <= 3)
                 LOG_VMM("WFI fault #%llu\n", (unsigned long long)wfi_count);
+#if FREEBSD_IRQ_TRACE
+            freebsd_log_irq_state("WFI irq state", (unsigned)wfi_count);
+#endif
         } else {
             other_vcpu_count++;
             if (other_vcpu_count <= 5)
@@ -806,7 +915,7 @@ static seL4_MessageInfo_t freebsd_vmm_fault(seL4_Word badge,
         if (!injected) {
             vmm_vcpu_arm_ack_vppi(vcpu_id, ppi_irq);
         }
-        if (vppi_count <= 16u || (vppi_count % 100000u) == 0u) {
+        if (vppi_count <= 4u) {
             LOG_VMM("FreeBSD VPPI #%llu irq=%llu pc=0x%lx pstate=0x%lx ctl=0x%lx cval=0x%lx action=%s\n",
                     (unsigned long long)vppi_count,
                     (unsigned long long)ppi_irq,

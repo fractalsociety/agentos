@@ -5,9 +5,12 @@ use std::fs;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::UNIX_EPOCH;
 
 const ISO_DIR_ENV: &str = "AGENTOS_ISO_DIR";
 const COPY_ISOS_ENV: &str = "AGENTOS_COPY_ISOS";
+const FREEBSD_IMAGE_ENV: &str = "AGENTOS_FREEBSD_IMAGE";
+const FREEBSD_IMAGE_COMPAT_ENV: &str = "FREEBSD_IMAGE";
 
 const UBUNTU_VERSION: &str = "26.04";
 const UBUNTU_ISO_NAME: &str = "ubuntu-26.04-desktop-arm64.iso";
@@ -134,8 +137,8 @@ fn fetch_ubuntu(output_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn extract_ubuntu_initrd(iso: &Path, initrd_dest: &Path) -> anyhow::Result<()> {
-    if initrd_dest.exists() && fs::metadata(initrd_dest).map(|m| m.len()).unwrap_or(0) > 0 {
+fn extract_ubuntu_initrd(_iso: &Path, initrd_dest: &Path) -> anyhow::Result<()> {
+    if ubuntu_e2e_initrd_ready(initrd_dest)? {
         println!(
             "[fetch-guest] Ubuntu E2E initrd already staged: {}",
             initrd_dest.display()
@@ -148,55 +151,244 @@ fn extract_ubuntu_initrd(iso: &Path, initrd_dest: &Path) -> anyhow::Result<()> {
         .prefix("agentos-ubuntu-initrd-")
         .tempdir_in(&tmp_root)
         .context("failed to create Ubuntu initrd tempdir under build/tmp")?;
-    let full_initrd = tmp_dir.path().join("initrd.full");
-    extract_iso_file(iso, "casper/initrd", &full_initrd)?;
-
-    let full = fs::read(&full_initrd)
-        .with_context(|| format!("failed to read {}", full_initrd.display()))?;
-    let trailer =
-        find_subslice(&full, b"TRAILER!!!").context("Ubuntu initrd missing first CPIO trailer")?;
-    let tail_start = find_subslice_from(&full, b"\x28\xb5\x2f\xfd", trailer)
-        .context("Ubuntu initrd missing zstd userspace payload")?;
-
-    let minmods_dir = tmp_dir.path().join("minmods");
-    fs::create_dir_all(&minmods_dir)
-        .with_context(|| format!("failed to create {}", minmods_dir.display()))?;
-    let entries = archive_entries(&full_initrd)?;
-    let required_suffixes = [
-        "kernel/fs/isofs/isofs.ko.zst",
-        "kernel/fs/nls/nls_iso8859-1.ko.zst",
-        "kernel/fs/overlayfs/overlay.ko.zst",
-    ];
-    for suffix in required_suffixes {
-        let entry = entries
-            .iter()
-            .find(|entry| entry.ends_with(suffix))
-            .with_context(|| format!("Ubuntu initrd missing required module {suffix}"))?;
-        extract_archive_file(&full_initrd, entry, &minmods_dir.join(entry))?;
-    }
-
-    let minmods_cpio = tmp_dir.path().join("minmods.cpio");
-    create_newc_archive(&minmods_dir, &minmods_cpio)?;
-
-    let mut out = fs::read(&minmods_cpio)
-        .with_context(|| format!("failed to read {}", minmods_cpio.display()))?;
-    out.extend_from_slice(&full[tail_start..]);
+    let init = build_linux_e2e_init(tmp_dir.path())?;
+    let out = create_ubuntu_e2e_initramfs(&init)?;
     write_output(initrd_dest, &out)?;
     println!(
-        "[fetch-guest] Built Ubuntu {} E2E initrd -> {}",
+        "[fetch-guest] Built Ubuntu {} deterministic E2E initrd -> {}",
         UBUNTU_VERSION,
         initrd_dest.display()
     );
     Ok(())
 }
 
+fn ubuntu_e2e_initrd_ready(initrd: &Path) -> anyhow::Result<bool> {
+    if !initrd.exists() || fs::metadata(initrd).map(|m| m.len()).unwrap_or(0) == 0 {
+        return Ok(false);
+    }
+    let entries = archive_entries(initrd).unwrap_or_default();
+    Ok(entries
+        .iter()
+        .any(|entry| entry == "init" || entry == "./init")
+        && entries
+            .iter()
+            .any(|entry| entry == "agentos-init-v2" || entry == "./agentos-init-v2"))
+}
+
+fn build_linux_e2e_init(work_dir: &Path) -> anyhow::Result<Vec<u8>> {
+    let init_s = work_dir.join("agentos-linux-e2e-init.S");
+    let init_elf = work_dir.join("init");
+    fs::write(&init_s, LINUX_E2E_INIT_ASM)
+        .with_context(|| format!("failed to write {}", init_s.display()))?;
+
+    let clang = find_tool(&[
+        "clang",
+        "/opt/homebrew/opt/llvm/bin/clang",
+        "/opt/homebrew/opt/llvm@22/bin/clang",
+        "/opt/homebrew/opt/llvm@21/bin/clang",
+        "/usr/bin/clang",
+    ])?;
+    let status = std::process::Command::new(&clang)
+        .args([
+            "-target",
+            "aarch64-linux-gnu",
+            "-nostdlib",
+            "-static",
+            "-fuse-ld=lld",
+            "-Wl,-e,_start",
+            "-Wl,--build-id=none",
+        ])
+        .arg(&init_s)
+        .arg("-o")
+        .arg(&init_elf)
+        .status()
+        .with_context(|| format!("failed to run {}", clang.display()))?;
+    anyhow::ensure!(
+        status.success(),
+        "{} failed building E2E init",
+        clang.display()
+    );
+
+    let init =
+        fs::read(&init_elf).with_context(|| format!("failed to read {}", init_elf.display()))?;
+    anyhow::ensure!(
+        init.starts_with(b"\x7fELF"),
+        "built E2E init is not an ELF binary"
+    );
+    Ok(init)
+}
+
+fn create_ubuntu_e2e_initramfs(init_elf: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut ino = 1u32;
+    append_newc_dir(&mut out, ".", ino)?;
+    ino += 1;
+    append_newc_dir(&mut out, "dev", ino)?;
+    ino += 1;
+    append_newc_chr(&mut out, "dev/console", ino, 0o600, 5, 1)?;
+    ino += 1;
+    append_newc_chr(&mut out, "dev/null", ino, 0o666, 1, 3)?;
+    ino += 1;
+    append_newc_file(&mut out, "init", ino, 0o755, init_elf)?;
+    ino += 1;
+    append_newc_file(&mut out, "agentos-init-v2", ino, 0o444, b"console-open\n")?;
+    ino += 1;
+    append_newc_trailer(&mut out, ino)?;
+    Ok(out)
+}
+
+fn append_newc_dir(out: &mut Vec<u8>, name: &str, ino: u32) -> anyhow::Result<()> {
+    append_newc_entry(out, name, ino, 0o040755, 2, 0, 0, 0, 0, &[])
+}
+
+fn append_newc_chr(
+    out: &mut Vec<u8>,
+    name: &str,
+    ino: u32,
+    perms: u32,
+    major: u32,
+    minor: u32,
+) -> anyhow::Result<()> {
+    append_newc_entry(out, name, ino, 0o020000 | perms, 1, 0, 0, major, minor, &[])
+}
+
+fn append_newc_file(
+    out: &mut Vec<u8>,
+    name: &str,
+    ino: u32,
+    perms: u32,
+    data: &[u8],
+) -> anyhow::Result<()> {
+    append_newc_entry(out, name, ino, 0o100000 | perms, 1, 0, 0, 0, 0, data)
+}
+
+fn append_newc_trailer(out: &mut Vec<u8>, ino: u32) -> anyhow::Result<()> {
+    append_newc_entry(out, "TRAILER!!!", ino, 0, 1, 0, 0, 0, 0, &[])
+}
+
+fn append_newc_entry(
+    out: &mut Vec<u8>,
+    name: &str,
+    ino: u32,
+    mode: u32,
+    nlink: u32,
+    uid: u32,
+    gid: u32,
+    rdevmajor: u32,
+    rdevminor: u32,
+    data: &[u8],
+) -> anyhow::Result<()> {
+    let namesize = name.len() + 1;
+    let filesize = u32::try_from(data.len()).context("initramfs entry too large")?;
+    let header = format!(
+        "070701{ino:08x}{mode:08x}{uid:08x}{gid:08x}{nlink:08x}{mtime:08x}{filesize:08x}{devmajor:08x}{devminor:08x}{rdevmajor:08x}{rdevminor:08x}{namesize:08x}{check:08x}",
+        mtime = 0u32,
+        devmajor = 0u32,
+        devminor = 0u32,
+        check = 0u32
+    );
+    anyhow::ensure!(header.len() == 110, "newc header length mismatch");
+    out.extend_from_slice(header.as_bytes());
+    out.extend_from_slice(name.as_bytes());
+    out.push(0);
+    pad_newc(out);
+    out.extend_from_slice(data);
+    pad_newc(out);
+    Ok(())
+}
+
+fn pad_newc(out: &mut Vec<u8>) {
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+}
+
+const LINUX_E2E_INIT_ASM: &str = r#"
+.section .text
+.global _start
+_start:
+    mov  x0, #-100
+    adrp x1, dev_console
+    add  x1, x1, :lo12:dev_console
+    mov  x2, #2
+    mov  x3, #0
+    mov  x8, #56
+    svc  #0
+    cmp  x0, #0
+    b.ge 0f
+    mov  x19, #0
+    b 2f
+0:
+    mov  x19, x0
+2:
+    adrp x1, banner
+    add  x1, x1, :lo12:banner
+    mov  x0, #1
+    mov  x2, #banner_len
+    mov  x8, #64
+    svc  #0
+
+1:
+    mov  x0, x19
+    adrp x1, inbuf
+    add  x1, x1, :lo12:inbuf
+    mov  x2, #1
+    mov  x8, #63
+    svc  #0
+    cmp  x0, #1
+    b.eq 3f
+    mov  x8, #124
+    svc  #0
+    b 1b
+
+3:
+    mov  x0, #1
+    adrp x1, inbuf
+    add  x1, x1, :lo12:inbuf
+    mov  x2, #1
+    mov  x8, #64
+    svc  #0
+
+    ldrb w3, [x1]
+    cmp  w3, #10
+    b.ne 1b
+
+    mov  x0, #1
+    adrp x1, prompt
+    add  x1, x1, :lo12:prompt
+    mov  x2, #prompt_len
+    mov  x8, #64
+    svc  #0
+    b 1b
+
+.section .rodata
+banner:
+    .ascii "agentOS Linux E2E init\nagentos-linux login: "
+banner_end:
+.equ banner_len, banner_end - banner
+prompt:
+    .ascii "agentos-linux login: "
+prompt_end:
+.equ prompt_len, prompt_end - prompt
+dev_console:
+    .asciz "/dev/console"
+
+.section .bss
+.balign 16
+inbuf:
+    .skip 1
+"#;
+
 fn fetch_freebsd(output_dir: &Path) -> anyhow::Result<()> {
-    let iso = stage_local_iso(
-        output_dir,
-        FREEBSD_ISO_NAME,
-        FREEBSD_IMAGE_NAME,
-        FREEBSD_ISO_URL,
-    )?;
+    let iso = match freebsd_source_override(output_dir)? {
+        Some(src) => stage_existing_iso(output_dir, &src, FREEBSD_IMAGE_NAME)?,
+        None => stage_local_iso(
+            output_dir,
+            FREEBSD_ISO_NAME,
+            FREEBSD_IMAGE_NAME,
+            FREEBSD_ISO_URL,
+        )?,
+    };
     extract_freebsd_kernel(&iso, &output_dir.join(FREEBSD_KERNEL_NAME))?;
     println!(
         "[fetch-guest] FreeBSD {} assets ready under {}",
@@ -221,54 +413,13 @@ fn archive_entries(archive: &Path) -> anyhow::Result<Vec<String>> {
     Ok(stdout.lines().map(|line| line.to_string()).collect())
 }
 
-fn extract_archive_file(archive: &Path, entry: &str, dest: &Path) -> anyhow::Result<()> {
-    if let Some(parent) = dest.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-    let out =
-        fs::File::create(dest).with_context(|| format!("failed to create {}", dest.display()))?;
-    let status = std::process::Command::new("bsdtar")
-        .arg("-xOf")
-        .arg(archive)
-        .arg(entry)
-        .stdout(Stdio::from(out))
-        .status()
-        .context("failed to run bsdtar")?;
-    anyhow::ensure!(status.success(), "bsdtar failed extracting {entry}");
-    Ok(())
-}
-
-fn create_newc_archive(input_dir: &Path, dest: &Path) -> anyhow::Result<()> {
-    let out =
-        fs::File::create(dest).with_context(|| format!("failed to create {}", dest.display()))?;
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg("find . | LC_ALL=C sort | cpio -o -H newc --quiet")
-        .current_dir(input_dir)
-        .stdout(Stdio::from(out))
-        .status()
-        .context("failed to run cpio")?;
-    anyhow::ensure!(status.success(), "cpio failed creating {}", dest.display());
-    Ok(())
-}
-
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    find_subslice_from(haystack, needle, 0)
-}
-
-fn find_subslice_from(haystack: &[u8], needle: &[u8], start: usize) -> Option<usize> {
-    if needle.is_empty() || start >= haystack.len() {
-        return None;
-    }
-    haystack[start..]
-        .windows(needle.len())
-        .position(|window| window == needle)
-        .map(|idx| start + idx)
-}
-
 fn extract_freebsd_kernel(iso: &Path, kernel_dest: &Path) -> anyhow::Result<()> {
-    if kernel_dest.exists() && fs::metadata(kernel_dest).map(|m| m.len()).unwrap_or(0) > 0 {
+    let source_id = source_file_identity(iso)?;
+    let source_stamp = PathBuf::from(format!("{}.source", kernel_dest.display()));
+    if kernel_dest.exists()
+        && fs::metadata(kernel_dest).map(|m| m.len()).unwrap_or(0) > 0
+        && fs::read_to_string(&source_stamp).unwrap_or_default() == source_id
+    {
         println!(
             "[fetch-guest] FreeBSD kernel already extracted: {}",
             kernel_dest.display()
@@ -313,6 +464,7 @@ fn extract_freebsd_kernel(iso: &Path, kernel_dest: &Path) -> anyhow::Result<()> 
     image[0x38..0x3c].copy_from_slice(b"ARMd");
     image.extend_from_slice(&payload);
     write_output(kernel_dest, &image)?;
+    write_output(&source_stamp, source_id.as_bytes())?;
     println!(
         "[fetch-guest] Built FreeBSD arm64 kernel.bin image -> {}",
         kernel_dest.display()
@@ -361,6 +513,104 @@ fn stage_local_iso(
     }
 
     Ok(dest)
+}
+
+fn freebsd_source_override(output_dir: &Path) -> anyhow::Result<Option<PathBuf>> {
+    let staged = output_dir.join(FREEBSD_IMAGE_NAME);
+    for env in [FREEBSD_IMAGE_ENV, FREEBSD_IMAGE_COMPAT_ENV] {
+        let Some(value) = std::env::var_os(env) else {
+            continue;
+        };
+        if value.is_empty() {
+            continue;
+        }
+
+        let path = PathBuf::from(value);
+        if path == staged {
+            continue;
+        }
+        if path.exists() && staged.exists() {
+            let src_canon = path.canonicalize().ok();
+            let staged_canon = staged.canonicalize().ok();
+            if src_canon.is_some() && src_canon == staged_canon {
+                continue;
+            }
+        }
+
+        anyhow::ensure!(
+            path.exists(),
+            "{} points to missing FreeBSD image {}",
+            env,
+            path.display()
+        );
+        anyhow::ensure!(
+            fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > 0,
+            "{} points to empty FreeBSD image {}",
+            env,
+            path.display()
+        );
+        return Ok(Some(path));
+    }
+    Ok(None)
+}
+
+fn stage_existing_iso(output_dir: &Path, src: &Path, dest_name: &str) -> anyhow::Result<PathBuf> {
+    let dest = output_dir.join(dest_name);
+    let src = src
+        .canonicalize()
+        .with_context(|| format!("failed to resolve {}", src.display()))?;
+
+    if fs::symlink_metadata(&dest).is_ok() {
+        if let Ok(existing) = dest.canonicalize() {
+            if existing == src && fs::metadata(&dest).map(|m| m.len()).unwrap_or(0) > 0 {
+                println!("[fetch-guest] ISO already staged: {}", dest.display());
+                return Ok(dest);
+            }
+        }
+        fs::remove_file(&dest)
+            .with_context(|| format!("failed to remove stale ISO stage {}", dest.display()))?;
+    }
+
+    fs::create_dir_all(output_dir)
+        .with_context(|| format!("failed to create {}", output_dir.display()))?;
+
+    if std::env::var(COPY_ISOS_ENV).ok().as_deref() == Some("1") {
+        println!(
+            "[fetch-guest] Copying {} -> {}",
+            src.display(),
+            dest.display()
+        );
+        fs::copy(&src, &dest)
+            .with_context(|| format!("failed to copy {} to {}", src.display(), dest.display()))?;
+    } else {
+        println!(
+            "[fetch-guest] Staging ISO symlink {} -> {}",
+            dest.display(),
+            src.display()
+        );
+        symlink_file(&src, &dest).with_context(|| {
+            format!("failed to symlink {} to {}", dest.display(), src.display())
+        })?;
+    }
+
+    Ok(dest)
+}
+
+fn source_file_identity(path: &Path) -> anyhow::Result<String> {
+    let resolved = path
+        .canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string();
+    let meta = fs::metadata(path)
+        .with_context(|| format!("failed to inspect source file {}", path.display()))?;
+    let modified = meta.modified().unwrap_or(UNIX_EPOCH);
+    let modified = modified.duration_since(UNIX_EPOCH).unwrap_or_default();
+    Ok(format!(
+        "path={resolved}\nlen={}\nmtime_ns={}\n",
+        meta.len(),
+        modified.as_nanos()
+    ))
 }
 
 fn staged_regular_iso_ready(dest: &Path) -> anyhow::Result<bool> {

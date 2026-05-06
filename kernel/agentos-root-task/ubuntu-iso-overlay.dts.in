@@ -7,9 +7,9 @@
 / {
     dma-coherent;
 
-    memory@40000000 {
+    memory@@UBUNTU_RAM_NODE@ {
         device_type = "memory";
-        reg = <0x00 0x40000000 0x00 0x20000000>;
+        reg = <@UBUNTU_RAM_BASE@ 0x00 0x20000000>;
     };
 
     flash@0 {

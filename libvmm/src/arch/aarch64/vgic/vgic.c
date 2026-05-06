@@ -166,3 +166,13 @@ bool vgic_irq_is_inflight(size_t vcpu_id, int irq)
     }
     return false;
 }
+
+bool vgic_irq_is_pending(size_t vcpu_id, int irq)
+{
+    return is_pending(&vgic, irq, (int)vcpu_id);
+}
+
+bool vgic_irq_is_enabled(size_t vcpu_id, int irq)
+{
+    return is_enabled(&vgic, irq, (int)vcpu_id);
+}

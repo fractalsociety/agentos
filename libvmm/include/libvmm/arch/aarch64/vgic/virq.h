@@ -206,6 +206,7 @@ static inline int vgic_find_empty_list_reg(vgic_t *vgic, size_t vcpu_id)
 {
     vgic_vcpu_t *vgic_vcpu = get_vgic_vcpu(vgic, vcpu_id);
     assert(vgic_vcpu);
+
     for (int i = 0; i < ARRAY_SIZE(vgic_vcpu->lr_shadow); i++) {
         if (vgic_vcpu->lr_shadow[i].virq == VIRQ_INVALID) {
             return i;

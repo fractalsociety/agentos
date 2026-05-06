@@ -70,3 +70,5 @@ bool vgic_register_irq(size_t vcpu_id, int virq_num, virq_ack_fn_t ack_fn, void 
 bool vgic_inject_irq(size_t vcpu_id, int irq);
 /* Returns true if irq is currently in a vCPU LR (injected but not yet EOI'd). */
 bool vgic_irq_is_inflight(size_t vcpu_id, int irq);
+bool vgic_irq_is_pending(size_t vcpu_id, int irq);
+bool vgic_irq_is_enabled(size_t vcpu_id, int irq);

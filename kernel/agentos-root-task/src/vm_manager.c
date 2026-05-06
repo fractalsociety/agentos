@@ -172,10 +172,17 @@ static uint32_t vm_service_for_type(uint32_t vm_type)
     return (vm_type == VM_TYPE_FREEBSD) ? SVC_ID_FREEBSD_VMM : SVC_ID_LINUX_VMM;
 }
 
+static uint32_t dedicated_vmm_os_type(uint32_t vm_type)
+{
+    return (vm_type == VM_TYPE_FREEBSD) ? 0x02u : 0x01u;
+}
+
 static uintptr_t dedicated_ram_base(uint32_t vm_type, uint8_t slot_id)
 {
 #if defined(AGENTOS_GUEST_BOTH)
     if (vm_type == VM_TYPE_FREEBSD)
+        return 0x40000000UL;
+    if (vm_type == VM_TYPE_LINUX)
         return 0xc0000000UL;
 #else
     (void)vm_type;
@@ -185,8 +192,8 @@ static uintptr_t dedicated_ram_base(uint32_t vm_type, uint8_t slot_id)
 
 static uint8_t dedicated_slot_for_type(uint32_t vm_type)
 {
-    if (vm_type == VM_TYPE_FREEBSD && g_linux_vmm_ep && g_freebsd_vmm_ep)
-        return 1u;
+    if (g_linux_vmm_ep && g_freebsd_vmm_ep)
+        return (vm_type == VM_TYPE_LINUX) ? 0u : 1u;
     return 0u;
 }
 
@@ -255,10 +262,9 @@ static int dedicated_create(uint32_t vm_type, uint32_t ram_mb,
     }
 
     /* Dedicated Linux/FreeBSD VMM PDs are single-guest services.  Their guest
-     * image setup and initial boot happen during VMM PD init, before the VMM
-     * enters its RPC loop.  OP_VM_CREATE therefore adopts that already-owned
-     * guest into vm_manager's slot namespace; subsequent lifecycle and console
-     * operations dispatch to the dedicated VMM endpoint via MSG_GUEST_*.
+     * image setup happens during VMM PD init, but the guest is not run until
+     * vm_manager relays CREATE+BOOT.  That keeps dual-guest boots ordered and
+     * makes the CC lifecycle call the real owner of guest startup.
      */
     vm_slot_t *slot = &g_mux.slots[slot_id];
     uintptr_t ram_base = dedicated_ram_base(vm_type, slot_id);
@@ -277,6 +283,29 @@ static int dedicated_create(uint32_t vm_type, uint32_t ram_mb,
     g_slot_vmm_ep[slot_id] = ep;
     g_mux.slot_count++;
     g_mux.active_slot = slot_id;
+
+    {
+        uint8_t payload[4u];
+        uint32_t os_type = dedicated_vmm_os_type(vm_type);
+        payload[0] = (uint8_t)(os_type & 0xffu);
+        payload[1] = (uint8_t)((os_type >> 8u) & 0xffu);
+        payload[2] = (uint8_t)((os_type >> 16u) & 0xffu);
+        payload[3] = (uint8_t)((os_type >> 24u) & 0xffu);
+        if (dedicated_guest_rpc(slot_id, MSG_GUEST_CREATE, payload,
+                                (uint32_t)sizeof(payload),
+                                (sel4_msg_t *)0) != VM_OK ||
+            dedicated_guest_call(slot_id, MSG_GUEST_BOOT,
+                                 VM_SLOT_RUNNING) != VM_OK) {
+            g_slot_vmm_ep[slot_id] = 0u;
+            g_vm_types[slot_id] = VM_TYPE_LINUX;
+            g_vm_flags[slot_id] = 0u;
+            slot->state = VM_SLOT_FREE;
+            if (g_mux.slot_count > 0u)
+                g_mux.slot_count--;
+            return -3;
+        }
+    }
+
     *slot_out = slot_id;
     return 0;
 }

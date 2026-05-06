@@ -123,6 +123,14 @@ struct vibeos_boot_req {
     uint32_t handle;
 };
 
+struct vibeos_suspend_req {
+    uint32_t handle;
+};
+
+struct vibeos_resume_req {
+    uint32_t handle;
+};
+
 struct vibeos_load_module_req {
     uint32_t handle;
     uint32_t module_type;       /* VIBEOS_MODULE_TYPE_* */
@@ -200,6 +208,16 @@ struct vibeos_migrate_reply {
 
 struct vibeos_boot_reply {
     uint32_t ok;
+};
+
+struct vibeos_suspend_reply {
+    uint32_t ok;
+    uint32_t state;             /* VIBEOS_STATE_PAUSED on success */
+};
+
+struct vibeos_resume_reply {
+    uint32_t ok;
+    uint32_t state;             /* VIBEOS_STATE_RUNNING on success */
 };
 
 struct vibeos_configure_req {

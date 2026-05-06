@@ -472,7 +472,11 @@ seL4_IPCBuffer *__sel4_ipc_buffer = NULL;
 /* vmm_caps.c is not included in libvmm.a — define g_vmm_vcpus here.
  * Populated by vmm_register_vcpu() calls in init() before any libvmm use. */
 vmm_vcpu_t g_vmm_vcpus[VMM_MAX_VCPUS];
+#if defined(AGENTOS_GUEST_BOTH)
+static uint32_t g_guest_state = GUEST_STATE_READY;
+#else
 static uint32_t g_guest_state = GUEST_STATE_RUNNING;
+#endif
 
 /* ── Caps resolved at init time ──────────────────────────────────────── */
 static seL4_CPtr g_serial_ep        = 0;
@@ -495,9 +499,16 @@ static uint32_t vmm_affinity[VMM_MAX_SLOTS];
  * placed below the DTB. */
 #define GUEST_RAM_SIZE          0x20000000
 
-/* Guest DTB and initrd placement addresses (must match DTS) */
-#define GUEST_DTB_VADDR         0x5f000000
-#define GUEST_INIT_RAM_DISK_VADDR 0x50000000
+/* Guest RAM, DTB, and initrd placement addresses (must match DTS). */
+#if defined(AGENTOS_GUEST_BOTH)
+#define LINUX_GUEST_RAM_VADDR      0xc0000000UL
+#define GUEST_DTB_VADDR            0xdf000000UL
+#define GUEST_INIT_RAM_DISK_VADDR  0xd0000000UL
+#else
+#define LINUX_GUEST_RAM_VADDR      0x40000000UL
+#define GUEST_DTB_VADDR            0x5f000000UL
+#define GUEST_INIT_RAM_DISK_VADDR  0x50000000UL
+#endif
 
 /* ─── Channel IDs ────────────────────────────────────────────────────── */
 
@@ -543,8 +554,9 @@ static uint32_t vmm_affinity[VMM_MAX_SLOTS];
  * so this badge never fires and the init guard below is a no-op.
  */
 #define UART_NTFN_BADGE          (1u << 6)
-#define VMM_IRQ_LOG_INTERVAL     1000u
+#define VMM_IRQ_LOG_INTERVAL     100000u
 #define VMM_FAULT_BADGE_FLAG     (1ULL << 62)
+#define LINUX_VTIMER_IRQ         27u
 
 /*
  * IRQ handler capabilities placed by the raw root task at
@@ -570,7 +582,7 @@ extern char _guest_dtb_image_end[];
 extern char _guest_initrd_image[];
 extern char _guest_initrd_image_end[];
 
-/* Microkit sets this to the start of guest_ram MR (0x40000000) */
+/* Microkit sets this to the start of guest_ram MR. */
 uintptr_t guest_ram_vaddr;
 
 /* ─── Vaddr variables (set by Microkit from manifest) ───────────────── */
@@ -585,6 +597,8 @@ uintptr_t serial_shmem_linux_vaddr __attribute__((weak));
 /* ─── State ──────────────────────────────────────────────────────────── */
 
 static bool     guest_started      = false;
+static bool     g_linux_startable  = false;
+static uintptr_t g_linux_kernel_pc = 0u;
 static bool     gpu_shmem_ready    = false;
 
 /* ─── Guest binding state (guest_contract.h compliance) ─────────────── */
@@ -829,9 +843,6 @@ static uint32_t pl011_pending_irqs(void)
     if (console_rx_count > 0u) {
         pending |= PL011_RXIS | PL011_RTIS;
     }
-    if ((pl011_cr & PL011_CR_TXE) != 0u) {
-        pending |= PL011_TXIS;
-    }
     return pending;
 }
 
@@ -952,8 +963,22 @@ static uint32_t pl011_read(size_t offset)
     }
 }
 
+static void linux_clear_guest_ram(uintptr_t base, size_t size)
+{
+    volatile uint64_t *p = (volatile uint64_t *)base;
+    size_t words = size / sizeof(*p);
+    for (size_t i = 0u; i < words; i++) {
+        p[i] = 0u;
+    }
+
+    volatile uint8_t *tail = (volatile uint8_t *)(base + words * sizeof(*p));
+    for (size_t i = words * sizeof(*p); i < size; i++) {
+        *tail++ = 0u;
+    }
+}
+
 static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
-                                 seL4_UserContext *regs, void *data)
+                                seL4_UserContext *regs, void *data)
 {
     (void)vcpu_id;
     (void)data;
@@ -999,6 +1024,38 @@ static bool pl011_fault_handler(size_t vcpu_id, size_t offset, size_t fsr,
     return true;
 }
 
+static bool linux_vmm_start_guest(void)
+{
+    if (guest_started) {
+        return true;
+    }
+    if (!g_linux_startable || g_linux_kernel_pc == 0u) {
+        return false;
+    }
+
+    LOG_VMM("  Starting Linux guest...\n");
+    guest_start(g_linux_kernel_pc, GUEST_DTB_VADDR, GUEST_INIT_RAM_DISK_VADDR);
+    guest_started = true;
+    g_guest_state = GUEST_STATE_RUNNING;
+    LOG_VMM("  Linux guest started successfully\n");
+    return true;
+}
+
+static void linux_vmm_suspend_guest_tcb(void)
+{
+    seL4_UserContext regs = {0};
+    seL4_Error err = seL4_TCB_ReadRegisters(
+        (seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID),
+        true,
+        0,
+        SEL4_USER_CONTEXT_SIZE,
+        &regs);
+    if (err != seL4_NoError) {
+        LOG_VMM_ERR("Linux guest suspend/read-registers failed: %d\n", (int)err);
+        seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+    }
+}
+
 static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
 {
     (void)info;
@@ -1034,7 +1091,7 @@ static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
             rep.opcode = GUEST_ERR_DEAD;
             break;
         }
-        if (!guest_started) {
+        if (!guest_started && !linux_vmm_start_guest()) {
             rep.opcode = GUEST_ERR_NOT_READY;
             break;
         }
@@ -1052,7 +1109,8 @@ static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
             break;
         }
         if (g_guest_state != GUEST_STATE_SUSPENDED) {
-            seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+            linux_vmm_suspend_guest_tcb();
+            vmm_vcpu_arm_ack_vppi(GUEST_BOOT_VCPU_ID, LINUX_VTIMER_IRQ);
             g_guest_state = GUEST_STATE_SUSPENDED;
         }
         rep.opcode = GUEST_OK;
@@ -1080,7 +1138,8 @@ static seL4_MessageInfo_t linux_vmm_rpc(seL4_MessageInfo_t info)
             break;
         }
         if (g_guest_state != GUEST_STATE_DEAD) {
-            seL4_TCB_Suspend((seL4_CPtr)(AGENTOS_VMM_TCB_CAP_BASE + GUEST_BOOT_VCPU_ID));
+            linux_vmm_suspend_guest_tcb();
+            vmm_vcpu_arm_ack_vppi(GUEST_BOOT_VCPU_ID, LINUX_VTIMER_IRQ);
             g_guest_state = GUEST_STATE_DEAD;
         }
         rep.opcode = GUEST_OK;
@@ -1219,11 +1278,11 @@ void init(void)
     for (uint8_t i = 0; i < VMM_MAX_SLOTS; i++)
         vmm_affinity[i] = 0xFFFFFFFFu;
 
-    /* In raw seL4 mode (no Microkit), the root task maps 256 MB at 0x40000000
+    /* In raw seL4 mode (no Microkit), the root task maps guest RAM
      * into this PD's VSpace and leaves guest_ram_vaddr uninitialised (0).
      * Use the fixed convention address as a fallback. */
     if (guest_ram_vaddr == 0u) {
-        guest_ram_vaddr = 0x40000000UL;
+        guest_ram_vaddr = LINUX_GUEST_RAM_VADDR;
     }
 
     LOG_VMM("agentOS linux_vmm starting \"linux_vmm\"\n");
@@ -1246,6 +1305,9 @@ void init(void)
     LOG_VMM("  Kernel: %zu bytes\n", kernel_size);
     LOG_VMM("  DTB:    %zu bytes\n", dtb_size);
     LOG_VMM("  Initrd: %zu bytes\n", initrd_size);
+
+    LOG_VMM("  Clearing guest RAM window...\n");
+    linux_clear_guest_ram(guest_ram_vaddr, GUEST_RAM_SIZE);
 
     uintptr_t kernel_pc = linux_setup_images(
         guest_ram_vaddr,
@@ -1329,12 +1391,14 @@ void init(void)
         /* If not registered, PL011 uses fault-emulation path — non-fatal */
     }
 
-    /* Start the guest! */
-    LOG_VMM("  Starting Linux guest...\n");
-    guest_start(kernel_pc, GUEST_DTB_VADDR, GUEST_INIT_RAM_DISK_VADDR);
-    guest_started = true;
-
-    LOG_VMM("  Linux guest started successfully\n");
+    g_linux_kernel_pc = kernel_pc;
+    g_linux_startable = true;
+#if defined(AGENTOS_GUEST_BOTH)
+    g_guest_state = GUEST_STATE_READY;
+    LOG_VMM("  Linux guest ready; waiting for lifecycle BOOT\n");
+#else
+    (void)linux_vmm_start_guest();
+#endif
 
     /* Initialise GPU shared memory channel (consumer role — receives from seL4 PDs) */
     if (gpu_tensor_buf_vaddr) {
@@ -1544,6 +1608,7 @@ static seL4_MessageInfo_t linux_vmm_fault(seL4_Word badge,
     /* Microkit 2.1 encodes VCPU fault badges as (1ULL<<62)|vcpu_id.
      * Strip the upper flag bits to recover the raw vcpu_id. */
     size_t vcpu_id = badge & ~VMM_FAULT_BADGE_FLAG;
+
     bool success = fault_handle(vcpu_id, msginfo);
     (void)success;
     /* UART MMIO fault compliance stub — silently accept, guest continues. */

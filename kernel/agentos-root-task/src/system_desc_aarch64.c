@@ -347,14 +347,22 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
             },
-            .irq_count = 2u,
+            .irq_count =
+#if defined(AGENTOS_GUEST_BOTH)
+                1u,
+#else
+                2u,
+#endif
             .irqs = {
+#if !defined(AGENTOS_GUEST_BOTH)
                 { .irq_number = 48u, .ntfn_badge = 0x1u, .name = "virtio-net" },
+#endif
                 { .irq_number = 79u, .ntfn_badge = 0x2u, .name = "virtio-blk" },
             },
             .mr_count = 1u,
             .memory_regions = {
-                { .vaddr    = 0x40000000ULL,
+                { .vaddr    =
+                              0x40000000ULL,
                   .size     = 0x20000000u,  /* 512 MB FreeBSD guest RAM */
                   .writable = 1u,
                   .name     = "guest_ram" },
@@ -377,12 +385,15 @@ const system_desc_t system_desc_aarch64 = {
                 { .irq_number = 49u, .ntfn_badge = 0x2u, .name = "virtio-blk0" },
                 { .irq_number = 51u, .ntfn_badge = 0x4u, .name = "virtio-blk1" },
             },
-            /* 512 MB guest RAM mapped at 0x40000000 (AArch64 DRAM base).
-             * linux_vmm uses this as guest_ram_vaddr for libvmm image setup.
-             * GPA 0x40000000 matches the QEMU virt board's DRAM region. */
+            /* 512 MB guest RAM. */
             .mr_count = 1u,
             .memory_regions = {
-                { .vaddr    = 0x40000000ULL,
+                { .vaddr    =
+#if defined(AGENTOS_GUEST_BOTH)
+                              0xc0000000ULL,
+#else
+                              0x40000000ULL,
+#endif
                   .size     = 0x20000000u,  /* 512 MB */
                   .writable = 1u,
                   .name     = "guest_ram" },
@@ -393,13 +404,8 @@ const system_desc_t system_desc_aarch64 = {
 #if defined(AGENTOS_GUEST_BOTH)
         /* pd[16] — FreeBSD VMM in dual-guest images.
          *
-         * Linux remains the legacy boot guest at pd[15].  FreeBSD is exposed as
-         * a separate service endpoint so vm_manager can dispatch by VM_TYPE_*.
-         * Its guest RAM is identity-mapped at 0xc0000000 because QEMU/seL4
-         * expose that window as identity-mappable device untyped memory, while
-         * 0x60000000 is occupied by kernel/root-task image memory. Its block
-         * device uses QEMU virtio-mmio bus 31 (IRQ 79), avoiding the Linux
-         * guest's bus 1/3 IRQs.
+         * FreeBSD remains in the standalone-proven 0x40000000 layout. Linux
+         * uses a separate high guest RAM window in dual images.
          */
         {
             .name           = "freebsd_vmm",
@@ -419,8 +425,8 @@ const system_desc_t system_desc_aarch64 = {
             },
             .mr_count = 1u,
             .memory_regions = {
-                { .vaddr    = 0xc0000000ULL,
-                  .size     = 0x20000000u,
+                { .vaddr    = 0x40000000ULL,
+                  .size     = 0x20000000u,  /* 512 MB FreeBSD guest RAM */
                   .writable = 1u,
                   .name     = "guest_ram" },
             },

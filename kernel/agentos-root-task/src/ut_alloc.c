@@ -437,6 +437,10 @@ seL4_Error ut_alloc_device_cap(seL4_Word paddr, seL4_CPtr *cap_out)
          * creating the desired frame.  Dummy caps remain in the root CNode but are
          * never used again (device MMIO pages — not a resource leak in practice). */
         seL4_Word target_page = (paddr - ut_start) >> 12u; /* 4 KB pages from base */
+        if (g_dev_ut[i].pages_used > target_page) {
+            *cap_out = seL4_CapNull;
+            return seL4_InvalidArgument;
+        }
         while (g_dev_ut[i].pages_used < target_page) {
             seL4_Word dummy = ut_alloc_slot();
             if (dummy == seL4_CapNull) {

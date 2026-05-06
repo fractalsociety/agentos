@@ -512,6 +512,22 @@ static uint32_t cc_vibeos_to_guest_state(uint32_t vos_state)
     }
 }
 
+static void cc_msg_wr32(uint8_t *dst, uint32_t off, uint32_t value)
+{
+    dst[off + 0u] = (uint8_t)(value & 0xffu);
+    dst[off + 1u] = (uint8_t)((value >> 8u) & 0xffu);
+    dst[off + 2u] = (uint8_t)((value >> 16u) & 0xffu);
+    dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
+}
+
+static uint32_t cc_msg_rd32(const uint8_t *src, uint32_t off)
+{
+    return (uint32_t)src[off + 0u]
+         | ((uint32_t)src[off + 1u] << 8u)
+         | ((uint32_t)src[off + 2u] << 16u)
+         | ((uint32_t)src[off + 3u] << 24u);
+}
+
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
 
 static uint32_t cc_boot_guest_os_type(void)
@@ -566,22 +582,6 @@ static bool cc_boot_guest_has_device(uint32_t dev_type)
     default:
         return false;
     }
-}
-
-static void cc_msg_wr32(uint8_t *dst, uint32_t off, uint32_t value)
-{
-    dst[off + 0u] = (uint8_t)(value & 0xffu);
-    dst[off + 1u] = (uint8_t)((value >> 8u) & 0xffu);
-    dst[off + 2u] = (uint8_t)((value >> 16u) & 0xffu);
-    dst[off + 3u] = (uint8_t)((value >> 24u) & 0xffu);
-}
-
-static uint32_t cc_msg_rd32(const uint8_t *src, uint32_t off)
-{
-    return (uint32_t)src[off + 0u]
-         | ((uint32_t)src[off + 1u] << 8u)
-         | ((uint32_t)src[off + 2u] << 16u)
-         | ((uint32_t)src[off + 3u] << 24u);
 }
 
 static bool cc_call_boot_guest(uint32_t opcode, const uint8_t *payload,
@@ -731,6 +731,28 @@ static bool cc_lifecycle_boot_guest(uint32_t opcode, uint32_t reason,
     return true;
 }
 #endif
+
+static bool cc_lifecycle_vibeos_guest(uint32_t opcode, uint32_t handle,
+                                      uint32_t *new_state)
+{
+    sel4_msg_t req = {0};
+    sel4_msg_t rep = {0};
+    req.opcode = opcode;
+    req.length = 4u;
+    cc_msg_wr32(req.data, 0u, handle);
+
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &req, &rep);
+    if (rep.opcode != SEL4_ERR_OK || cc_msg_rd32(rep.data, 0u) != VIBEOS_OK) {
+        return false;
+    }
+
+    if (new_state != NULL) {
+        *new_state = (rep.length >= 8u)
+            ? cc_vibeos_to_guest_state(cc_msg_rd32(rep.data, 4u))
+            : 0u;
+    }
+    return true;
+}
 
 /* cc_pd has no EOF signal from the host-side socket — when a client process
  * dies ungracefully, qemu's chardev silently accepts a new connection but
@@ -1322,20 +1344,14 @@ static void handle_suspend_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     }
 #endif
 
-    /* Dynamic guest — relay to vibe_engine MSG_VIBEOS_SUSPEND. */
-    sel4_msg_t sreq = {0};
-    sel4_msg_t srep = {0};
-    sreq.opcode = MSG_VIBEOS_SUSPEND;
-    sreq.length = 4u;
-    cc_wire_wr32(sreq.data, 0u, handle);
-    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
-    if (srep.opcode != SEL4_ERR_OK) {
+    uint32_t state = 0u;
+    if (!cc_lifecycle_vibeos_guest(MSG_VIBEOS_SUSPEND, handle, &state)) {
         rep->mr[0] = CC_ERR_RELAY_FAULT;
-        rep->mr[1] = srep.opcode;
+        rep->mr[1] = 0u;
         return;
     }
     rep->mr[0] = CC_OK;
-    rep->mr[1] = cc_vibeos_to_guest_state(cc_wire_rd32(srep.data, 4u));
+    rep->mr[1] = state;
 }
 
 static void handle_resume_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -1361,20 +1377,14 @@ static void handle_resume_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     }
 #endif
 
-    /* Dynamic guest — relay to vibe_engine MSG_VIBEOS_RESUME. */
-    sel4_msg_t sreq = {0};
-    sel4_msg_t srep = {0};
-    sreq.opcode = MSG_VIBEOS_RESUME;
-    sreq.length = 4u;
-    cc_wire_wr32(sreq.data, 0u, handle);
-    sel4_call((seL4_CPtr)PD_CNODE_SLOT_VIBE_ENGINE_EP, &sreq, &srep);
-    if (srep.opcode != SEL4_ERR_OK) {
+    uint32_t state = 0u;
+    if (!cc_lifecycle_vibeos_guest(MSG_VIBEOS_RESUME, handle, &state)) {
         rep->mr[0] = CC_ERR_RELAY_FAULT;
-        rep->mr[1] = srep.opcode;
+        rep->mr[1] = 0u;
         return;
     }
     rep->mr[0] = CC_OK;
-    rep->mr[1] = cc_vibeos_to_guest_state(cc_wire_rd32(srep.data, 4u));
+    rep->mr[1] = state;
 }
 
 static void handle_destroy_guest(const cc_req_wire_t *req, cc_reply_wire_t *rep)

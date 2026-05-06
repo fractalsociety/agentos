@@ -1020,6 +1020,92 @@ static uint32_t handle_vos_destroy(sel4_badge_t badge, const sel4_msg_t *req,
     return SEL4_ERR_OK;
 }
 
+/* ── MSG_VIBEOS_SUSPEND ────────────────────────────────────────────────── */
+static uint32_t handle_vos_suspend(sel4_badge_t badge, const sel4_msg_t *req,
+                                   sel4_msg_t *rep, void *ctx)
+{
+    (void)badge; (void)ctx;
+    uint32_t handle = data_rd32(req->data, 0);
+    int slot = vos_find(handle);
+    if (slot < 0) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NO_HANDLE);
+        rep->length = 4;
+        return VIBEOS_ERR_NO_HANDLE;
+    }
+    if (s_vos[slot].state == (uint8_t)VIBEOS_STATE_DEAD) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_WRONG_STATE);
+        rep->length = 4;
+        return VIBEOS_ERR_WRONG_STATE;
+    }
+    if (!g_vmm_ep) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NOT_IMPL);
+        rep->length = 4;
+        return VIBEOS_ERR_NOT_IMPL;
+    }
+
+    sel4_msg_t vreq = {0}, vrep = {0};
+    vreq.opcode = OP_VM_STOP;
+    data_wr32(vreq.data, 0, s_vos[slot].vm_slot);
+    vreq.length = 4;
+    sel4_call(g_vmm_ep, &vreq, &vrep);
+
+    uint32_t vm_ok = data_rd32(vrep.data, 0);
+    if (vrep.opcode != SEL4_ERR_OK || vm_ok != 0u) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_BIND_FAIL);
+        rep->length = 4;
+        return VIBEOS_ERR_BIND_FAIL;
+    }
+
+    s_vos[slot].state = (uint8_t)VIBEOS_STATE_PAUSED;
+    data_wr32(rep->data, 0, VIBEOS_OK);
+    data_wr32(rep->data, 4, VIBEOS_STATE_PAUSED);
+    rep->length = 8;
+    return SEL4_ERR_OK;
+}
+
+/* ── MSG_VIBEOS_RESUME ─────────────────────────────────────────────────── */
+static uint32_t handle_vos_resume(sel4_badge_t badge, const sel4_msg_t *req,
+                                  sel4_msg_t *rep, void *ctx)
+{
+    (void)badge; (void)ctx;
+    uint32_t handle = data_rd32(req->data, 0);
+    int slot = vos_find(handle);
+    if (slot < 0) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NO_HANDLE);
+        rep->length = 4;
+        return VIBEOS_ERR_NO_HANDLE;
+    }
+    if (s_vos[slot].state == (uint8_t)VIBEOS_STATE_DEAD) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_WRONG_STATE);
+        rep->length = 4;
+        return VIBEOS_ERR_WRONG_STATE;
+    }
+    if (!g_vmm_ep) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_NOT_IMPL);
+        rep->length = 4;
+        return VIBEOS_ERR_NOT_IMPL;
+    }
+
+    sel4_msg_t vreq = {0}, vrep = {0};
+    vreq.opcode = OP_VM_RESUME;
+    data_wr32(vreq.data, 0, s_vos[slot].vm_slot);
+    vreq.length = 4;
+    sel4_call(g_vmm_ep, &vreq, &vrep);
+
+    uint32_t vm_ok = data_rd32(vrep.data, 0);
+    if (vrep.opcode != SEL4_ERR_OK || vm_ok != 0u) {
+        data_wr32(rep->data, 0, VIBEOS_ERR_BIND_FAIL);
+        rep->length = 4;
+        return VIBEOS_ERR_BIND_FAIL;
+    }
+
+    s_vos[slot].state = (uint8_t)VIBEOS_STATE_RUNNING;
+    data_wr32(rep->data, 0, VIBEOS_OK);
+    data_wr32(rep->data, 4, VIBEOS_STATE_RUNNING);
+    rep->length = 8;
+    return SEL4_ERR_OK;
+}
+
 /* ── MSG_VIBEOS_STATUS ─────────────────────────────────────────────────── */
 static uint32_t handle_vos_status(sel4_badge_t badge, const sel4_msg_t *req,
                                    sel4_msg_t *rep, void *ctx)
@@ -1574,6 +1660,8 @@ static uint32_t vibe_engine_dispatch_one(sel4_badge_t badge,
     case OP_VIBE_LIST_SERVICES:     return handle_list_services(badge, req, rep, (void*)0);
     case MSG_VIBEOS_CREATE:         return handle_vos_create(badge, req, rep, (void*)0);
     case MSG_VIBEOS_DESTROY:        return handle_vos_destroy(badge, req, rep, (void*)0);
+    case MSG_VIBEOS_SUSPEND:        return handle_vos_suspend(badge, req, rep, (void*)0);
+    case MSG_VIBEOS_RESUME:         return handle_vos_resume(badge, req, rep, (void*)0);
     case MSG_VIBEOS_STATUS:         return handle_vos_status(badge, req, rep, (void*)0);
     case MSG_VIBEOS_LIST:           return handle_vos_list(badge, req, rep, (void*)0);
     case MSG_VIBEOS_BIND_DEVICE:
@@ -1658,6 +1746,10 @@ void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr ctrl_ep)
                          handle_vos_create,   (void*)0);
     sel4_server_register(&g_srv, MSG_VIBEOS_DESTROY,
                          handle_vos_destroy,  (void*)0);
+    sel4_server_register(&g_srv, MSG_VIBEOS_SUSPEND,
+                         handle_vos_suspend,  (void*)0);
+    sel4_server_register(&g_srv, MSG_VIBEOS_RESUME,
+                         handle_vos_resume,   (void*)0);
     sel4_server_register(&g_srv, MSG_VIBEOS_STATUS,
                          handle_vos_status,   (void*)0);
     sel4_server_register(&g_srv, MSG_VIBEOS_LIST,

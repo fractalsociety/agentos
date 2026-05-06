@@ -15,7 +15,8 @@ AGENTOS_BOARD ?= qemu_virt_riscv64
 # The board package provides arch-specific seL4 API headers (sel4/sel4.h, etc.)
 REPO_ROOT_MK  := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 SEL4_SDK      ?= $(REPO_ROOT_MK)/microkit-sdk-2.1.0
-SEL4_INC_DIR  := $(SEL4_SDK)/board/$(AGENTOS_BOARD)/release/include
+SEL4_PROFILE  ?= release
+SEL4_INC_DIR  := $(SEL4_SDK)/board/$(AGENTOS_BOARD)/$(SEL4_PROFILE)/include
 
 # Linker script: agentOS-owned replacement for microkit.ld
 AGENTOS_LD    := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../../tools/ld/agentos.ld)
@@ -367,6 +368,7 @@ $(GUEST_CONFIG_STAMP): FORCE
 	@tmp="$@.tmp"; \
 	printf 'ARCH=%s\nBOARD=%s\nGUEST_OS=%s\nFAULT_INJECT=%s\nSEL4_TEST_IMAGE=%s\n' \
 		'$(ARCH)' '$(AGENTOS_BOARD)' '$(GUEST_OS)' '$(FAULT_INJECT)' '$(SEL4_TEST_IMAGE)' > "$$tmp"; \
+	printf 'SEL4_PROFILE=%s\n' '$(SEL4_PROFILE)' >> "$$tmp"; \
 	if test -f "$@" && cmp -s "$$tmp" "$@"; then rm -f "$$tmp"; else mv "$$tmp" "$@"; fi
 
 $(BUILD_DIR)/rt_main.o: $(GUEST_CONFIG_STAMP)
@@ -376,6 +378,7 @@ else ifeq ($(ARCH),x86_64)
 $(BUILD_DIR)/rt_system_desc_x86_64.o: $(GUEST_CONFIG_STAMP)
 endif
 $(BUILD_DIR)/cc_pd.o: $(GUEST_CONFIG_STAMP)
+$(BUILD_DIR)/vm_manager.o: $(GUEST_CONFIG_STAMP)
 
 IMAGE_FILE  := $(BUILD_DIR)/agentos.img
 
@@ -718,7 +721,9 @@ $(BUILD_DIR)/linux_vmm.elf: FORCE
 		BUILD_DIR=$(BUILD_DIR) \
 		AGENTOS_ARCH=$(AGENTOS_ARCH) \
 		AGENTOS_BOARD=$(AGENTOS_BOARD) \
+		SEL4_PROFILE=$(SEL4_PROFILE) \
 		GUEST_OS=$(if $(filter both,$(GUEST_OS)),ubuntu,$(GUEST_OS)) \
+		VMM_DUAL_GUEST=$(if $(filter both,$(GUEST_OS)),1,0) \
 		vmm-all
 endif
 endif
@@ -735,6 +740,7 @@ $(BUILD_DIR)/freebsd_vmm.elf: FORCE
 		BUILD_DIR=$(BUILD_DIR) \
 		AGENTOS_ARCH=$(AGENTOS_ARCH) \
 		AGENTOS_BOARD=$(AGENTOS_BOARD) \
+		SEL4_PROFILE=$(SEL4_PROFILE) \
 		GUEST_OS=freebsd \
 		VMM_DUAL_GUEST=$(if $(filter both,$(GUEST_OS)),1,0) \
 		vmm-all
@@ -798,7 +804,7 @@ _BOARD_TOML_NONEMPTY := $(shell [ -s "$(_BOARD_TOML)" ] && printf '%s' "$(_BOARD
 SYSTEM_TOML := $(if $(_BOARD_TOML_NONEMPTY),$(_BOARD_TOML_NONEMPTY),$(SYSTEM_TOML_DEFAULT))
 
 # Kernel ELF: pulled directly from the Microkit SDK release package
-KERNEL_ELF  := $(SEL4_SDK)/board/$(AGENTOS_BOARD)/release/elf/sel4.elf
+KERNEL_ELF  := $(SEL4_SDK)/board/$(AGENTOS_BOARD)/$(SEL4_PROFILE)/elf/sel4.elf
 
 # On AArch64, loader.elf is also a build artifact (needed at QEMU launch time).
 # We add it as a dependency so it is rebuilt whenever the loader sources change.

@@ -84,6 +84,8 @@ else
   BIOS ?= /usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin
 endif
 
+SEL4_PROFILE ?= release
+
 # BUILD_DIR and IMAGE depend on BOARD (resolved after board.mk override above)
 BUILD_DIR    := $(ROOT_DIR)build/$(BOARD)
 IMAGE        := $(BUILD_DIR)/agentos.img
@@ -340,6 +342,7 @@ endif
 		BUILD_DIR=$(BUILD_DIR) \
 		AGENTOS_BOARD=$(BOARD) \
 		AGENTOS_ARCH=$(ARCH) \
+		SEL4_PROFILE=$(SEL4_PROFILE) \
 		AGENTOS_FREEBSD_IMAGE=$(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(FREEBSD_IMAGE)) \
 		GUEST_OS=$(GUEST_OS) \
 		BOARD_NAME=$(BOARD_NAME) \
@@ -381,11 +384,13 @@ _FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=freebsd_hd,rea
                -device virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31
 _QEMU_BLK_FLAGS = $(if $(filter both,$(GUEST_OS)),$(_UBUNTU_BLK) $(_FREEBSD_BLK),$(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),)))
 QEMU_RUN_MEM ?= $(if $(filter both,$(GUEST_OS)),3G,2G)
+QEMU_RUN_SMP ?= $(if $(filter smp-% smp,$(SEL4_PROFILE)),4,1)
 comma := ,
 QEMU_MACHINE_FLAGS_BASE := virt$(comma)virtualization=on$(comma)highmem=off$(comma)secure=off
 QEMU_MACHINE_FLAGS := $(QEMU_MACHINE_FLAGS_BASE)$(if $(filter freebsd both,$(GUEST_OS)),$(comma)acpi=off)
 QEMU_RUN_FLAGS = -machine $(QEMU_MACHINE_FLAGS) \
                  -cpu $(_RUN_CPU) -m $(QEMU_RUN_MEM) \
+                 -smp $(QEMU_RUN_SMP) \
                  $(_QEMU_FAST_FLAGS) \
                  -display none -monitor none \
                  -global virtio-mmio.force-legacy=off \

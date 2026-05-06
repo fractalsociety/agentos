@@ -87,8 +87,9 @@ make test-guest-login
 
 For dual Linux+FreeBSD VMM testing, use `make e2e-dual-os` or
 `make run GUEST_OS=both`. That mode runs one agentOS image with both
-dedicated VMM PDs and 3 GB of outer QEMU RAM so the FreeBSD VMM can use its
-independent `0xc0000000` identity-mapped guest RAM window.
+dedicated VMM PDs and 3 GB of outer QEMU RAM. FreeBSD keeps the
+standalone-proven `0x40000000` identity-mapped guest RAM window; Linux uses
+`0xc0000000` in dual mode.
 
 ## Contract Surface
 

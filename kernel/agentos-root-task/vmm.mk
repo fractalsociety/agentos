@@ -19,7 +19,8 @@ DTC            := dtc
 # BOARD_DIR: seL4 SDK board package containing include/ and lib/.
 # Default matches the SDK bundled in the repo; override when invoking vmm.mk
 # directly with a different SDK installation.
-BOARD_DIR ?= $(AGENTOS_ROOT)/microkit-sdk-2.1.0/board/$(AGENTOS_BOARD)/release
+SEL4_PROFILE ?= release
+BOARD_DIR ?= $(AGENTOS_ROOT)/microkit-sdk-2.1.0/board/$(AGENTOS_BOARD)/$(SEL4_PROFILE)
 
 # Guest OS selection: buildroot (default) or ubuntu
 GUEST_OS ?= buildroot
@@ -35,8 +36,16 @@ IMAGES_URL             := https://trustworthy.systems/Downloads/libvmm/images
 UBUNTU_KERNEL := $(AGENTOS_IMAGES)/ubuntu-26.04-aarch64-Image
 UBUNTU_INITRD := $(AGENTOS_IMAGES)/ubuntu-26.04-aarch64-initrd
 UBUNTU_DTS_OVERLAY := $(BUILD_DIR)/ubuntu-26.04-overlay.dts
+ifeq ($(VMM_DUAL_GUEST),1)
+UBUNTU_RAM_BASE := 0xc0000000
+UBUNTU_RAM_NODE := c0000000
+UBUNTU_INITRD_START := 0xd0000000
+else
+UBUNTU_RAM_BASE := 0x40000000
+UBUNTU_RAM_NODE := 40000000
 UBUNTU_INITRD_START := 0x50000000
-UBUNTU_BOOTARGS := earlycon=pl011,0x9000000 console=ttyAMA0,115200n8 boot=casper systemd.unit=multi-user.target systemd.wants=console-getty.service systemd.default_timeout_start_sec=20s systemd.mask=serial-getty@ttyAMA0.service systemd.mask=snapd.apparmor.service systemd.mask=snapd.service systemd.mask=snapd.socket systemd.mask=systemd-udev-settle.service systemd.mask=console-setup.service systemd.mask=ldconfig.service systemd.mask=kdump-tools.service systemd.mask=zfs-load-module.service systemd.mask=zfs-mount.service systemd.mask=zfs-volume-wait.service cloud-init=disabled maybe-ubiquity ---
+endif
+UBUNTU_BOOTARGS := earlycon=pl011,0x9000000 console=ttyAMA0,115200n8 rdinit=/init panic=-1
 
 ifeq ($(GUEST_OS),ubuntu)
 LINUX_IMAGE  := $(UBUNTU_KERNEL)
@@ -50,6 +59,17 @@ endif
 
 # DTS + tools
 DTS_DIR := $(LIBVMM_ABS)/examples/simple/board/qemu_virt_aarch64
+LINUX_DTS_BASE := $(DTS_DIR)/linux.dts
+ifeq ($(VMM_DUAL_GUEST),1)
+LINUX_DTS_BASE := $(BUILD_DIR)/linux-dual.dts
+$(LINUX_DTS_BASE): $(DTS_DIR)/linux.dts $(VMM_CONFIG_STAMP) $(lastword $(MAKEFILE_LIST))
+	@mkdir -p $(BUILD_DIR)
+	@echo "[VMM] Generating dual-guest Linux base device tree..."
+	sed \
+		-e 's|memory@40000000|memory@$(UBUNTU_RAM_NODE)|g' \
+		-e 's|0x00 0x40000000 0x00 0x80000000|0x00 $(UBUNTU_RAM_BASE) 0x00 0x20000000|g' \
+		$< > $@
+endif
 DTSCAT  := $(LIBVMM_ABS)/tools/dtscat
 PKG_IMG := $(LIBVMM_ABS)/tools/package_guest_images.S
 
@@ -80,8 +100,8 @@ VMM_CONFIG_STAMP := $(BUILD_DIR)/vmm-$(GUEST_OS).stamp
 $(VMM_CONFIG_STAMP): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@tmp="$@.tmp"; \
-	printf 'GUEST_OS=%s\nVMM_DUAL_GUEST=%s\n' \
-		'$(GUEST_OS)' '$(VMM_DUAL_GUEST)' > "$$tmp"; \
+	printf 'GUEST_OS=%s\nVMM_DUAL_GUEST=%s\nSEL4_PROFILE=%s\n' \
+		'$(GUEST_OS)' '$(VMM_DUAL_GUEST)' '$(SEL4_PROFILE)' > "$$tmp"; \
 	if test -f "$@" && cmp -s "$$tmp" "$@"; then rm -f "$$tmp"; else mv "$$tmp" "$@"; fi
 
 .PHONY: vmm-all vmm-clean FORCE
@@ -121,7 +141,7 @@ $(BUILD_DIR)/$(BUILDROOT_INITRD_IMAGE):
 endif
 
 # ─── Device tree ──────────────────────────────────────────────────────────
-$(UBUNTU_DTS_OVERLAY): $(KERNEL_SRC_DIR)/ubuntu-iso-overlay.dts.in $(KERNEL_SRC_DIR)/vmm.mk $(UBUNTU_INITRD)
+$(UBUNTU_DTS_OVERLAY): $(KERNEL_SRC_DIR)/ubuntu-iso-overlay.dts.in $(KERNEL_SRC_DIR)/vmm.mk $(UBUNTU_INITRD) $(VMM_CONFIG_STAMP)
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Generating Ubuntu 26.04 live-ISO overlay..."
 	@initrd_size=$$(python3 -c 'import os,sys; print(os.path.getsize(sys.argv[1]))' "$(UBUNTU_INITRD)"); \
@@ -130,11 +150,13 @@ $(UBUNTU_DTS_OVERLAY): $(KERNEL_SRC_DIR)/ubuntu-iso-overlay.dts.in $(KERNEL_SRC_
 	end_hex=$$(printf "0x%08x" $$end); \
 	sed \
 		-e 's|@UBUNTU_BOOTARGS@|$(UBUNTU_BOOTARGS)|g' \
+		-e 's|@UBUNTU_RAM_NODE@|$(UBUNTU_RAM_NODE)|g' \
+		-e 's|@UBUNTU_RAM_BASE@|0x00 $(UBUNTU_RAM_BASE)|g' \
 		-e 's|@UBUNTU_INITRD_START@|0x00 $(UBUNTU_INITRD_START)|g' \
 		-e "s|@UBUNTU_INITRD_END@|0x00 $$end_hex|g" \
 		$< > $@
 
-$(BUILD_DIR)/vm.dts: FORCE $(DTS_DIR)/linux.dts $(DTS_OVERLAY_FILE)
+$(BUILD_DIR)/vm.dts: FORCE $(LINUX_DTS_BASE) $(DTS_OVERLAY_FILE)
 	@mkdir -p $(BUILD_DIR)
 	$(DTSCAT) $(filter-out FORCE,$^) > $@
 
@@ -144,7 +166,7 @@ $(BUILD_DIR)/vm.dtb: FORCE $(BUILD_DIR)/vm.dts
 # ─── Generate wrapper Makefile in BUILD_DIR ───────────────────────────────
 # vmm.mk uses vpath and is designed to be included, not invoked via -f.
 # We generate a wrapper Makefile in BUILD_DIR and run make from there.
-$(BUILD_DIR)/vmm_wrapper.mk: $(KERNEL_SRC_DIR)/vmm_wrapper_template.mk
+$(BUILD_DIR)/vmm_wrapper.mk: $(KERNEL_SRC_DIR)/vmm_wrapper_template.mk $(VMM_CONFIG_STAMP) $(lastword $(MAKEFILE_LIST))
 	@mkdir -p $(BUILD_DIR)
 	sed \
 		-e 's|@LIBVMM@|$(LIBVMM_ABS)|g' \
@@ -230,16 +252,6 @@ FREEBSD_RAW_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(if
 FREEBSD_KERNEL_IMAGE := $(BUILD_DIR)/freebsd-kernel.bin
 FREEBSD_DTS := $(KERNEL_SRC_DIR)/freebsd-direct.dts
 FREEBSD_DTS_EFFECTIVE := $(FREEBSD_DTS)
-ifeq ($(VMM_DUAL_GUEST),1)
-FREEBSD_DTS_EFFECTIVE := $(BUILD_DIR)/freebsd-direct-dual.dts
-$(FREEBSD_DTS_EFFECTIVE): $(FREEBSD_DTS) $(VMM_CONFIG_STAMP) $(lastword $(MAKEFILE_LIST))
-	@mkdir -p $(BUILD_DIR)
-	@echo "[VMM] Generating dual-guest FreeBSD device tree..."
-	sed -e 's/memory@40000000/memory@c0000000/' \
-	    -e 's/guest phys 0x40000000/guest phys 0xc0000000/' \
-	    -e 's/reg = <0x00 0x40000000 0x00 0x20000000>/reg = <0x00 0xc0000000 0x00 0x20000000>/' \
-	    $< > $@
-endif
 FREEBSD_EXTRACT := $(AGENTOS_ROOT)/tools/extract_freebsd_file.py
 
 $(FREEBSD_RAW_IMAGE):
@@ -256,7 +268,7 @@ $(FREEBSD_KERNEL_IMAGE): $(FREEBSD_RAW_IMAGE) $(FREEBSD_EXTRACT)
 		   python3 $(FREEBSD_EXTRACT) "$(FREEBSD_RAW_IMAGE)" /boot/kernel/kernel $@ ;; \
 	esac
 
-$(BUILD_DIR)/freebsd-direct.dtb: $(FREEBSD_DTS_EFFECTIVE)
+$(BUILD_DIR)/freebsd-direct.dtb: $(FREEBSD_DTS_EFFECTIVE) $(VMM_CONFIG_STAMP) $(lastword $(MAKEFILE_LIST))
 	@mkdir -p $(BUILD_DIR)
 	@echo "[VMM] Compiling FreeBSD device tree..."
 	$(DTC) -q -I dts -O dtb $< > $@

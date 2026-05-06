@@ -19,8 +19,12 @@ const CC_ERR_RELAY_FAULT: u32 = 8;
 const MSG_CC_LOG_STREAM: u32 = 0x2610;
 const MSG_CC_CREATE_GUEST: u32 = 0x2611;
 const MSG_CC_SEND_INPUT: u32 = 0x260d;
+const MSG_CC_SUSPEND_GUEST: u32 = 0x2613;
+const MSG_CC_RESUME_GUEST: u32 = 0x2614;
+const MSG_CC_DESTROY_GUEST: u32 = 0x2615;
 const CC_INPUT_KEY_DOWN: u32 = 0x01;
 const CC_INPUT_RAW_BYTE_BASE: u32 = 0x100;
+const GUEST_DESTROY_NORMAL: u32 = 0;
 const VIBEOS_TYPE_LINUX: u8 = 0x01;
 const VIBEOS_TYPE_FREEBSD: u8 = 0x02;
 const VIBEOS_ARCH_AARCH64: u8 = 0x01;
@@ -55,7 +59,9 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
         .suffix(".log")
         .tempfile_in(&tmp_dir)
         .context("failed to create build/tmp QEMU log file")?;
-    let log_path = log_file.path().to_path_buf();
+    let (_, log_path) = log_file
+        .keep()
+        .context("failed to persist build/tmp QEMU log file")?;
 
     let needs_ssh_probe = !matches!(args.guest_os.as_str(), "ubuntu" | "freebsd");
     let ssh_port = if needs_ssh_probe {
@@ -109,7 +115,7 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
         }
         "both" => {
             println!(
-                "[xtask:test] Creating Linux and FreeBSD through CC-PD/vm_manager ({})...",
+                "[xtask:test] Creating FreeBSD and Linux through CC-PD/vm_manager ({})...",
                 cc_sock.display()
             );
             wait_for_dual_guest_consoles_via_cc(
@@ -323,6 +329,13 @@ pub fn spawn_qemu_with_guest(
                 "virt,virtualization=on,highmem=off,secure=off"
             };
             let memory = if guest_os == "both" { "3G" } else { "2G" };
+            let sel4_profile =
+                std::env::var("SEL4_PROFILE").unwrap_or_else(|_| String::from("release"));
+            let smp = if sel4_profile.starts_with("smp-") || sel4_profile == "smp" {
+                "4"
+            } else {
+                "1"
+            };
 
             let mut c = std::process::Command::new("qemu-system-aarch64");
             c.arg("-machine")
@@ -331,12 +344,14 @@ pub fn spawn_qemu_with_guest(
                 .arg("cortex-a57")
                 .arg("-m")
                 .arg(memory)
+                .arg("-smp")
+                .arg(smp)
                 .arg("-display")
                 .arg("none")
                 .arg("-monitor")
                 .arg("none")
                 .arg("-serial")
-                .arg("stdio")
+                .arg(format!("file:{}", log_path.display()))
                 .arg("-global")
                 .arg("virtio-mmio.force-legacy=off")
                 .arg("-chardev")
@@ -484,12 +499,23 @@ pub fn spawn_qemu_with_guest(
         }
     };
 
-    let child = cmd
-        .stdout(log_file.try_clone()?)
-        .stderr(log_file)
-        .process_group(0)
-        .spawn()
-        .context("failed to spawn QEMU")?;
+    let child = if board == "qemu_virt_aarch64" {
+        let stderr_path = log_path.with_extension("qemu.stderr");
+        let stderr_file = std::fs::File::create(&stderr_path)
+            .with_context(|| format!("failed to create {}", stderr_path.display()))?;
+        println!("[xtask:test] QEMU stderr: {}", stderr_path.display());
+        cmd.stdout(std::process::Stdio::null())
+            .stderr(stderr_file)
+            .process_group(0)
+            .spawn()
+            .context("failed to spawn QEMU")?
+    } else {
+        cmd.stdout(log_file.try_clone()?)
+            .stderr(log_file)
+            .process_group(0)
+            .spawn()
+            .context("failed to spawn QEMU")?
+    };
     println!("[xtask:test] QEMU pid={}", child.id());
     Ok(child)
 }
@@ -684,11 +710,9 @@ fn wait_for_guest_console_login_via_cc(
     let start = Instant::now();
     let mut transcript = String::new();
     let mut matched_prompt = None;
-    let prompt_markers: &[&str] = match guest_os {
-        "ubuntu" => &["ubuntu login:", "login:"],
-        "freebsd" => &["Console type [vt100]:", "login:"],
-        _ => &["login:"],
-    };
+    let prompt_markers = guest_prompt_markers(guest_os);
+    let mut freebsd_console_type_accepted = false;
+    let mut freebsd_installer_shell_requested = false;
 
     while start.elapsed() < timeout {
         ensure_qemu_running(qemu, "waiting for guest login prompt via CC-PD API")?;
@@ -696,28 +720,43 @@ fn wait_for_guest_console_login_via_cc(
             Ok(chunk) => {
                 if !chunk.is_empty() {
                     transcript.push_str(&chunk);
-                    if guest_os == "ubuntu"
-                        && (transcript.contains("emergency mode")
-                            || transcript.contains("Emergency Shell")
-                            || transcript.contains("Press Enter for maintenance"))
+                    reject_bad_guest_path(guest_os, &transcript)?;
+                    if guest_os == "freebsd"
+                        && !freebsd_console_type_accepted
+                        && transcript.contains("Console type [vt100]:")
                     {
-                        anyhow::bail!(
-                            "Ubuntu reached an emergency or maintenance path instead of multi-user login; tail:\n{}",
-                            tail_chars(&transcript, 4000)
+                        println!(
+                            "[xtask:test] FreeBSD console type prompt reached; accepting vt100"
                         );
+                        cc_send_raw_byte(&mut cc, guest_handle, b'\r')?;
+                        freebsd_console_type_accepted = true;
                     }
-                    if guest_os == "freebsd" && transcript.contains("Enter full pathname of shell")
+                    if guest_os == "freebsd"
+                        && !freebsd_installer_shell_requested
+                        && transcript.contains("FreeBSD Installer")
+                        && transcript.contains("begin an installation or use the live")
                     {
-                        anyhow::bail!(
-                            "FreeBSD reached single-user shell selection instead of the normal installer/login path; tail:\n{}",
-                            tail_chars(&transcript, 4000)
-                        );
+                        println!("[xtask:test] FreeBSD installer menu reached; selecting shell");
+                        cc_send_raw_bytes(&mut cc, guest_handle, b"\t\r")?;
+                        freebsd_installer_shell_requested = true;
                     }
-                    if let Some(marker) = prompt_markers
+
+                    let matched = if let Some(marker) = prompt_markers
                         .iter()
                         .find(|marker| transcript.contains(**marker))
                     {
-                        matched_prompt = Some((*marker).to_string());
+                        Some((*marker).to_string())
+                    } else if guest_os == "freebsd"
+                        && freebsd_installer_shell_requested
+                        && freebsd_shell_prompt_seen(&transcript)
+                    {
+                        Some(String::from("installer shell prompt"))
+                    } else {
+                        None
+                    };
+
+                    if let Some(marker) = matched {
+                        matched_prompt = Some(marker);
                         break;
                     }
                 }
@@ -745,21 +784,87 @@ fn wait_for_guest_console_login_via_cc(
 
     println!("[xtask:test] CC console matched prompt marker {:?}", prompt);
 
-    let probe = "~";
-    cc_send_raw_byte(&mut cc, guest_handle, probe.as_bytes()[0])?;
+    let proof = verify_guest_console_input(
+        cc_sock,
+        &mut cc,
+        guest_handle,
+        guest_os,
+        timeout
+            .saturating_sub(start.elapsed())
+            .min(Duration::from_secs(20)),
+        qemu,
+    )?;
+    Ok(format!(
+        "CC console API saw {guest_os} handle {guest_handle} prompt {:?} and {proof}",
+        prompt
+    ))
+}
+
+fn guest_prompt_markers(guest_os: &str) -> &'static [&'static str] {
+    match guest_os {
+        "ubuntu" => &["agentos-linux login:", "ubuntu login:", "login:"],
+        "freebsd" => &["login:"],
+        _ => &["login:"],
+    }
+}
+
+fn reject_bad_guest_path(guest_os: &str, transcript: &str) -> anyhow::Result<()> {
+    if guest_os == "ubuntu"
+        && (transcript.contains("emergency mode")
+            || transcript.contains("Emergency Shell")
+            || transcript.contains("Press Enter for maintenance"))
+    {
+        anyhow::bail!(
+            "Ubuntu reached an emergency or maintenance path instead of multi-user login; tail:\n{}",
+            tail_chars(transcript, 4000)
+        );
+    }
+    if guest_os == "freebsd"
+        && (transcript.contains("mountroot>")
+            || transcript.contains("Manual root filesystem specification")
+            || transcript.contains("Mounting from cd9660:")
+                && transcript.contains("failed with error")
+            || transcript.contains("Enter full pathname")
+            || transcript.contains("single-user"))
+    {
+        anyhow::bail!(
+            "FreeBSD reached mountroot, maintenance, or single-user fallback instead of a normal login or configured installer shell; tail:\n{}",
+            tail_chars(transcript, 4000)
+        );
+    }
+    Ok(())
+}
+
+fn freebsd_shell_prompt_seen(transcript: &str) -> bool {
+    transcript.contains("\n# ") || transcript.contains("\r# ") || transcript.ends_with("# ")
+}
+
+fn verify_guest_console_input(
+    cc_sock: &Path,
+    cc: &mut CcClient,
+    guest_handle: u32,
+    guest_os: &str,
+    timeout: Duration,
+    qemu: &mut Child,
+) -> anyhow::Result<String> {
+    let probe = if guest_os == "ubuntu" {
+        "agentos-linux-proof\n"
+    } else {
+        "~"
+    };
+    cc_send_raw_bytes(cc, guest_handle, probe.as_bytes())?;
 
     let mut echo = String::new();
-    let echo_deadline = Duration::from_secs(20).min(timeout.saturating_sub(start.elapsed()));
-    let echo_start = Instant::now();
-    while echo_start.elapsed() < echo_deadline {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
         ensure_qemu_running(qemu, "waiting for guest console input echo via CC-PD API")?;
-        let chunk = match cc_log_stream_for_handle(&mut cc, guest_handle) {
+        let chunk = match cc_log_stream_for_handle(cc, guest_handle) {
             Ok(chunk) => chunk,
             Err(err) => {
                 println!("[xtask:test] CC console post-input drain not ready yet: {err:#}");
                 if !is_transient_cc_read_error(&err) {
                     if let Ok(next) = CcClient::connect(cc_sock) {
-                        cc = next;
+                        *cc = next;
                     }
                 }
                 String::new()
@@ -767,20 +872,19 @@ fn wait_for_guest_console_login_via_cc(
         };
         if !chunk.is_empty() {
             echo.push_str(&chunk);
-            if echo.contains(probe) {
-                let _ = cc_send_raw_byte(&mut cc, guest_handle, 0x15); /* Ctrl-U */
-                return Ok(format!(
-                    "CC console API saw {guest_os} handle {guest_handle} prompt {:?} and guest echoed raw input {:?}",
-                    prompt, probe
-                ));
+            if echo.contains(probe.trim_end()) {
+                if guest_os != "ubuntu" {
+                    let _ = cc_send_raw_byte(cc, guest_handle, 0x15); /* Ctrl-U */
+                }
+                return Ok(format!("guest echoed {:?}", probe.trim_end()));
             }
         }
         std::thread::sleep(Duration::from_millis(500));
     }
 
     anyhow::bail!(
-        "guest reached login prompt via CC-PD API, but did not echo raw input {:?}; post-input tail:\n{}",
-        probe,
+        "guest reached prompt, but did not echo input {:?}; post-input tail:\n{}",
+        probe.trim_end(),
         tail_chars(&echo, 2000)
     );
 }
@@ -870,16 +974,9 @@ fn wait_for_dual_guest_consoles_via_cc(
     timeout: Duration,
     qemu: &mut Child,
 ) -> anyhow::Result<String> {
+    let start = Instant::now();
     let create_timeout = timeout.min(Duration::from_secs(120));
-    let linux_handle = create_guest_via_cc_wait(
-        cc_sock,
-        VIBEOS_TYPE_LINUX,
-        512,
-        "Linux",
-        create_timeout,
-        qemu,
-    )
-    .context("failed to create Linux guest through vm_manager")?;
+
     let freebsd_handle = create_guest_via_cc_wait(
         cc_sock,
         VIBEOS_TYPE_FREEBSD,
@@ -890,13 +987,71 @@ fn wait_for_dual_guest_consoles_via_cc(
     )
     .context("failed to create FreeBSD guest through vm_manager")?;
 
-    let linux =
-        wait_for_guest_console_login_via_cc(cc_sock, linux_handle, "ubuntu", timeout, qemu)?;
-    let freebsd =
-        wait_for_guest_console_login_via_cc(cc_sock, freebsd_handle, "freebsd", timeout, qemu)?;
+    let freebsd = wait_for_guest_console_login_via_cc(
+        cc_sock,
+        freebsd_handle,
+        "freebsd",
+        timeout.saturating_sub(start.elapsed()),
+        qemu,
+    )?;
+
+    let linux_handle = create_guest_via_cc_wait(
+        cc_sock,
+        VIBEOS_TYPE_LINUX,
+        512,
+        "Linux",
+        create_timeout,
+        qemu,
+    )
+    .context("failed to create Linux guest through vm_manager")?;
+
+    let linux = wait_for_guest_console_login_via_cc(
+        cc_sock,
+        linux_handle,
+        "ubuntu",
+        timeout.saturating_sub(start.elapsed()),
+        qemu,
+    )?;
+
+    let mut cc = connect_cc_client(cc_sock, timeout.min(Duration::from_secs(30)), qemu)?;
+    let linux_after_freebsd = verify_guest_console_input(
+        cc_sock,
+        &mut cc,
+        linux_handle,
+        "ubuntu",
+        Duration::from_secs(20),
+        qemu,
+    )?;
+    let freebsd_after_linux = verify_guest_console_input(
+        cc_sock,
+        &mut cc,
+        freebsd_handle,
+        "freebsd",
+        Duration::from_secs(20),
+        qemu,
+    )?;
+    let linux_suspend_state = suspend_guest_via_cc(&mut cc, linux_handle)
+        .context("failed to suspend Linux guest after dual console proof")?;
+    println!(
+        "[xtask:test] suspended Linux guest handle={linux_handle} state={linux_suspend_state}"
+    );
+    let linux_resume_state = resume_guest_via_cc(&mut cc, linux_handle)
+        .context("failed to resume Linux guest after dual console proof")?;
+    println!("[xtask:test] resumed Linux guest handle={linux_handle} state={linux_resume_state}");
+    let linux_after_resume = verify_guest_console_input(
+        cc_sock,
+        &mut cc,
+        linux_handle,
+        "ubuntu",
+        Duration::from_secs(20),
+        qemu,
+    )?;
+
+    destroy_guest_via_cc(&mut cc, linux_handle).context("failed to destroy Linux guest")?;
+    destroy_guest_via_cc(&mut cc, freebsd_handle).context("failed to destroy FreeBSD guest")?;
 
     Ok(format!(
-        "dual CC/vm_manager consoles ready: linux_handle={linux_handle} ({linux}); freebsd_handle={freebsd_handle} ({freebsd})"
+        "dual CC/vm_manager consoles ready: linux_handle={linux_handle} ({linux}; after_freebsd={linux_after_freebsd}; after_resume={linux_after_resume}); freebsd_handle={freebsd_handle} ({freebsd}; after_linux={freebsd_after_linux}); both destroyed"
     ))
 }
 
@@ -998,6 +1153,57 @@ fn cc_send_raw_byte(cc: &mut CcClient, guest_handle: u32, byte: u8) -> anyhow::R
         reply.mr[0]
     );
     Ok(())
+}
+
+fn cc_send_raw_bytes(cc: &mut CcClient, guest_handle: u32, bytes: &[u8]) -> anyhow::Result<()> {
+    for byte in bytes {
+        cc_send_raw_byte(cc, guest_handle, *byte)?;
+    }
+    Ok(())
+}
+
+fn destroy_guest_via_cc(cc: &mut CcClient, guest_handle: u32) -> anyhow::Result<()> {
+    let reply = cc
+        .call(
+            MSG_CC_DESTROY_GUEST,
+            guest_handle,
+            GUEST_DESTROY_NORMAL,
+            0,
+            &[],
+        )
+        .context("MSG_CC_DESTROY_GUEST failed")?;
+    anyhow::ensure!(
+        reply.mr[0] == CC_OK,
+        "MSG_CC_DESTROY_GUEST returned ok={}",
+        reply.mr[0]
+    );
+    Ok(())
+}
+
+fn lifecycle_guest_via_cc(
+    cc: &mut CcClient,
+    opcode: u32,
+    guest_handle: u32,
+    action: &str,
+) -> anyhow::Result<u32> {
+    let reply = cc
+        .call(opcode, guest_handle, 0, 0, &[])
+        .with_context(|| format!("MSG_CC_{action}_GUEST failed"))?;
+    anyhow::ensure!(
+        reply.mr[0] == CC_OK,
+        "MSG_CC_{action}_GUEST returned ok={} detail={}",
+        reply.mr[0],
+        reply.mr[1]
+    );
+    Ok(reply.mr[1])
+}
+
+fn suspend_guest_via_cc(cc: &mut CcClient, guest_handle: u32) -> anyhow::Result<u32> {
+    lifecycle_guest_via_cc(cc, MSG_CC_SUSPEND_GUEST, guest_handle, "SUSPEND")
+}
+
+fn resume_guest_via_cc(cc: &mut CcClient, guest_handle: u32) -> anyhow::Result<u32> {
+    lifecycle_guest_via_cc(cc, MSG_CC_RESUME_GUEST, guest_handle, "RESUME")
 }
 
 pub fn cc_call(

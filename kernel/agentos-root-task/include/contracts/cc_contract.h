@@ -37,9 +37,9 @@
  *   MSG_CC_LOG_STREAM        → log_drain (OP_LOG_WRITE)
  *   MSG_CC_CREATE_GUEST      → vibe_engine (MSG_VIBEOS_CREATE)
  *   MSG_CC_FAULT_INJECT      → fault_inject (OP_FAULT_INJECT)
- *   MSG_CC_SUSPEND_GUEST     → guest_pd (MSG_GUEST_SUSPEND)
- *   MSG_CC_RESUME_GUEST      → guest_pd (MSG_GUEST_RESUME)
- *   MSG_CC_DESTROY_GUEST     → guest_pd (MSG_GUEST_DESTROY)
+ *   MSG_CC_SUSPEND_GUEST     → vibe_engine (MSG_VIBEOS_SUSPEND) or boot guest_pd
+ *   MSG_CC_RESUME_GUEST      → vibe_engine (MSG_VIBEOS_RESUME) or boot guest_pd
+ *   MSG_CC_DESTROY_GUEST     → vibe_engine (MSG_VIBEOS_DESTROY) or boot guest_pd
  *   MSG_CC_TRACE_START       → trace_recorder (OP_TRACE_START)
  *   MSG_CC_TRACE_STOP        → trace_recorder (OP_TRACE_STOP)
  *   MSG_CC_TRACE_QUERY       → trace_recorder (OP_TRACE_QUERY)
