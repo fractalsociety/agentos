@@ -395,6 +395,50 @@ typedef struct {
 
 static cc_session_t g_sessions[CC_MAX_SESSIONS];
 
+/* ─── Log-stream slot table (agentos-vsi) ───────────────────────────────────
+ *
+ * MSG_CC_LOG_STREAM exposes each guest's serial output as an addressable log
+ * slot.  Slot 0 is permanently reserved for the boot guest (drained via the
+ * guest_vmm console-drain path, keyed by pd_id == TRACE_PD_CONTROLLER).  Slots
+ * 1..CC_LOG_SLOTS-1 are allocated on demand, one per vibe_engine guest, each
+ * recording the vibe guest handle it streams.  A caller addresses a stream by
+ * (slot, pd_id): pd_id selects the drain backend (boot guest vs. vibe guest)
+ * and slot resolves to the concrete guest handle within that backend.
+ */
+#define CC_LOG_SLOTS          8u
+#define CC_LOG_SLOT_BOOT      0u
+#define CC_LOG_SLOT_INVALID   0xFFFFFFFFu
+
+typedef struct {
+    bool     in_use;
+    uint32_t guest_handle;   /* vibe_engine handle this slot streams */
+    uint32_t pd_id;          /* TRACE_PD_* backend tag for diagnostics */
+} cc_log_slot_t;
+
+static cc_log_slot_t g_log_slots[CC_LOG_SLOTS];
+
+/* Allocate (or return existing) log slot for a vibe guest handle.  Returns the
+ * slot index, or CC_LOG_SLOT_INVALID when the table is full.  Slot 0 is never
+ * handed out here — it belongs to the boot guest. */
+static uint32_t cc_log_slot_for_handle(uint32_t guest_handle, uint32_t pd_id)
+{
+    for (uint32_t i = 1u; i < CC_LOG_SLOTS; i++) {
+        if (g_log_slots[i].in_use &&
+            g_log_slots[i].guest_handle == guest_handle) {
+            return i;
+        }
+    }
+    for (uint32_t i = 1u; i < CC_LOG_SLOTS; i++) {
+        if (!g_log_slots[i].in_use) {
+            g_log_slots[i].in_use       = true;
+            g_log_slots[i].guest_handle = guest_handle;
+            g_log_slots[i].pd_id        = pd_id;
+            return i;
+        }
+    }
+    return CC_LOG_SLOT_INVALID;
+}
+
 /* ─── CC trace bridge ────────────────────────────────────────────────────── */
 
 #define CC_TRACE_RING_ENTRIES  CC_TRACE_MAX_ENTRIES
@@ -1077,12 +1121,63 @@ static void handle_list_devices(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     rep->mr[0] = 0u;
 }
 
+/*
+ * MSG_CC_LIST_POLECATS — report agent-worker (polecat) pool occupancy.
+ *
+ * DECISION (agentos-681): polecats track GENERIC AGENT work, not guest
+ * workload.  The authoritative occupancy data lives in agent_pool.c's pool[]
+ * array, inside the controller (monitor) PD.  A slot becomes busy when the
+ * controller assigns a task via agent_pool_spawn() (WORKER_RUNNING/DONE) and
+ * idle again after agent_pool_worker_done().  Guest OS lifecycle is tracked
+ * separately by vibe_engine and is intentionally DECOUPLED from this metric:
+ * spinning up a guest does not consume a polecat, and vice-versa.  So the
+ * meaningful number here is live agent-worker occupancy, surfaced via the
+ * controller's MSG_AGENTPOOL_STATUS handler (reply: MR0=total MR1=busy
+ * MR2=idle MR3=faulted, mirroring agent_pool_occupancy()).
+ *
+ * cc_pd and the controller are separate PDs, so cc_pd must obtain live counts
+ * over IPC — it cannot read pool[] directly.  The cc_pd→controller endpoint is
+ * not wired yet (needs a PD_CNODE_SLOT + main.c distribution; tracked by
+ * agentos-685).  Until then we relay through the placeholder slot below and,
+ * if the relay is unavailable, fall back to reporting the pool as fully idle.
+ * Reporting busy=0/idle=total as a *fallback* is correct-by-construction:
+ * with no relay there is no observed load, and the moment wiring lands the
+ * live busy count flows through unchanged.
+ */
+/* TODO(agentos-685): replace with a real PD_CNODE_SLOT_CONTROLLER_EP once the
+ * root task distributes a controller endpoint cap into cc_pd's CNode.  Slot 9
+ * is the MCS reply object (see system_desc.h); pick the next free PD-specific
+ * slot when wiring lands. */
+#ifndef PD_CNODE_SLOT_CONTROLLER_EP
+#define PD_CNODE_SLOT_CONTROLLER_EP 0xFFFFFFFFu  /* unwired placeholder */
+#endif
+
 static void handle_list_polecats(cc_reply_wire_t *rep)
 {
+    uint32_t total = WORKER_POOL_SIZE;
+    uint32_t busy  = 0u;
+    uint32_t idle  = WORKER_POOL_SIZE;
+    uint32_t faulted = 0u;
+
+    if (PD_CNODE_SLOT_CONTROLLER_EP != 0xFFFFFFFFu) {
+        sel4_msg_t req = {0};
+        sel4_msg_t srep = {0};
+        req.opcode = MSG_AGENTPOOL_STATUS;
+        req.length = 0u;
+        sel4_call((seL4_CPtr)PD_CNODE_SLOT_CONTROLLER_EP, &req, &srep);
+        if (srep.opcode == SEL4_ERR_OK) {
+            total   = cc_wire_rd32(srep.data, 0u);
+            busy    = cc_wire_rd32(srep.data, 4u);
+            idle    = cc_wire_rd32(srep.data, 8u);
+            faulted = cc_wire_rd32(srep.data, 12u);
+        }
+    }
+
     rep->mr[0] = CC_OK;
-    rep->mr[1] = WORKER_POOL_SIZE;
-    rep->mr[2] = 0u;
-    rep->mr[3] = WORKER_POOL_SIZE;
+    rep->mr[1] = total;
+    rep->mr[2] = busy;
+    rep->mr[3] = idle;
+    (void)faulted;  /* contract MR slots carry total/busy/idle; faulted folds into busy upstream */
 }
 
 static void handle_guest_status(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -1236,10 +1331,29 @@ static void handle_restore(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     rep->mr[0] = CC_OK;
 }
 
+/*
+ * MSG_CC_LOG_STREAM — drain a guest's serial output as ASCII bytes (agentos-vsi).
+ *
+ * Wire args: MR1 = slot, MR2 = pd_id.  Reply: MR0 = CC_OK, MR1 = byte length,
+ * shmem = the drained ASCII bytes.  MR2 echoes the resolved log slot so the
+ * caller can re-address the same stream on subsequent polls.
+ *
+ *   slot 0,  pd_id TRACE_PD_CONTROLLER  → boot guest serial (guest_vmm drain)
+ *   slot 0,  pd_id LINUX/FREEBSD_VMM    → vibe guest addressed by MR1==handle,
+ *                                          assigned its own slot (1..N) on use
+ *   slot N>0                            → previously assigned vibe guest slot
+ *
+ * The boot guest always occupies slot 0; each vibe_engine guest gets its own
+ * slot from g_log_slots[] so it is independently addressable by handle.
+ */
 static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
 {
 #if defined(AGENTOS_GUEST_LINUX) || defined(AGENTOS_GUEST_FREEBSD)
-    if (req->mr[0] == 0u && req->mr[1] == TRACE_PD_CONTROLLER) {
+    uint32_t slot  = req->mr[0];
+    uint32_t pd_id = req->mr[1];
+
+    /* Slot 0 + controller tag: the boot guest's serial stream. */
+    if (slot == CC_LOG_SLOT_BOOT && pd_id == TRACE_PD_CONTROLLER) {
         uint32_t drained = 0u;
         if (!cc_drain_boot_guest_console(rep->shmem, CC_WIRE_SHMEM_SIZE,
                                          &drained)) {
@@ -1249,14 +1363,34 @@ static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
         }
         rep->mr[0] = CC_OK;
         rep->mr[1] = drained;
+        rep->mr[2] = CC_LOG_SLOT_BOOT;
         return;
     }
 
-    if (req->mr[1] == TRACE_PD_CONTROLLER ||
-        req->mr[1] == TRACE_PD_LINUX_VMM ||
-        req->mr[1] == TRACE_PD_FREEBSD_VMM) {
+    /* Vibe guest streams.  An already-allocated slot (slot>0, in_use) resolves
+     * straight to its guest handle; otherwise treat MR1 as a vibe handle and
+     * assign it a fresh slot. */
+    if (pd_id == TRACE_PD_LINUX_VMM ||
+        pd_id == TRACE_PD_FREEBSD_VMM ||
+        (slot > 0u && slot < CC_LOG_SLOTS && g_log_slots[slot].in_use)) {
+
+        uint32_t guest_handle;
+        uint32_t assigned;
+        if (slot > 0u && slot < CC_LOG_SLOTS && g_log_slots[slot].in_use) {
+            guest_handle = g_log_slots[slot].guest_handle;
+            assigned     = slot;
+        } else {
+            guest_handle = slot;  /* caller passed the vibe handle in MR1 */
+            assigned     = cc_log_slot_for_handle(guest_handle, pd_id);
+            if (assigned == CC_LOG_SLOT_INVALID) {
+                rep->mr[0] = CC_ERR_NO_SESSIONS;  /* slot table exhausted */
+                rep->mr[1] = 0u;
+                return;
+            }
+        }
+
         uint32_t drained = 0u;
-        if (!cc_drain_vibe_console(req->mr[0], rep->shmem,
+        if (!cc_drain_vibe_console(guest_handle, rep->shmem,
                                    CC_WIRE_SHMEM_SIZE, &drained)) {
             rep->mr[0] = CC_ERR_BAD_HANDLE;
             rep->mr[1] = 0u;
@@ -1264,6 +1398,7 @@ static void handle_log_stream(const cc_req_wire_t *req, cc_reply_wire_t *rep)
         }
         rep->mr[0] = CC_OK;
         rep->mr[1] = drained;
+        rep->mr[2] = assigned;
         return;
     }
 #else

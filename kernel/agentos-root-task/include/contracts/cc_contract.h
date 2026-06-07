@@ -328,18 +328,30 @@ struct cc_reply_restore {
 /* ─── MSG_CC_LOG_STREAM ──────────────────────────────────────────────────── */
 
 /*
- * Relay a log drain flush on behalf of the caller.  cc_pd forwards to
- * log_drain via OP_LOG_WRITE and returns the number of bytes drained.
+ * Drain a guest's serial output as ASCII bytes (agentos-vsi).  cc_pd resolves
+ * (slot, pd_id) to a concrete guest console and returns the drained bytes in
+ * cc_shmem with the byte count in bytes_drained.
+ *
+ * Slot model:
+ *   - slot 0 + pd_id == TRACE_PD_CONTROLLER : boot guest serial stream.
+ *   - pd_id == TRACE_PD_LINUX_VMM / TRACE_PD_FREEBSD_VMM : a vibe_engine guest.
+ *     On first use, pass the vibe guest handle in `slot`; cc_pd assigns the
+ *     guest its own log slot (1..N) and returns that slot in `log_slot`.
+ *   - slot N>0 : re-address a previously assigned vibe guest stream directly.
+ *
+ * Each guest is independently addressable: the boot guest owns slot 0 and each
+ * vibe guest owns a distinct slot for the lifetime of cc_pd's slot table.
  */
 
 struct cc_req_log_stream {
-    uint32_t slot;             /* log ring slot index (0..MAX_LOG_RINGS-1) */
-    uint32_t pd_id;            /* TRACE_PD_* identifier for the source PD */
+    uint32_t slot;             /* 0 = boot guest; else vibe handle / assigned slot */
+    uint32_t pd_id;            /* TRACE_PD_* identifier selecting the drain backend */
 };
 
 struct cc_reply_log_stream {
     uint32_t ok;
-    uint32_t bytes_drained;
+    uint32_t bytes_drained;    /* ASCII bytes written to cc_shmem */
+    uint32_t log_slot;         /* slot this stream resolved to (echo / first-assign) */
 };
 
 /* ─── MSG_CC_CREATE_GUEST ───────────────────────────────────────────────── */

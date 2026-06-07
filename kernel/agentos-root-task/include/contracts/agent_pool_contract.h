@@ -54,6 +54,21 @@ struct agentpool_reply_status {
     uint32_t faulted;
 };
 
+/* ─── Controller-side occupancy query ───────────────────────────────────────
+ *
+ * agent_pool_occupancy() lives in the controller (monitor) PD alongside the
+ * pool[] array.  It returns the live busy/idle/faulted breakdown that backs
+ * MSG_AGENTPOOL_STATUS, which cc_pd relays out as MSG_CC_LIST_POLECATS
+ * (see agentos-681).  Counts satisfy total == busy + idle + faulted.
+ *
+ * NOTE: this is a controller-PD function, not an IPC opcode.  cc_pd (a
+ * separate PD / address space) cannot call it directly; it must reach the
+ * controller via the MSG_AGENTPOOL_STATUS PPC.  The prototype is published
+ * here so the controller's relay handler and host tests share one definition.
+ */
+void agent_pool_occupancy(uint32_t *total_out, uint32_t *busy_out,
+                          uint32_t *idle_out, uint32_t *faulted_out);
+
 /* ─── Error codes ────────────────────────────────────────────────────────── */
 
 enum agentpool_error {

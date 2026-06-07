@@ -201,6 +201,38 @@ void agent_pool_status(int *idle_out, int *running_out) {
     if (running_out) *running_out = running;
 }
 
+/*
+ * agent_pool_occupancy — live occupancy snapshot for the MSG_AGENTPOOL_STATUS
+ * relay (cc_pd MSG_CC_LIST_POLECATS, see agentos-681).
+ *
+ * "Polecats" are the generic agent workers tracked by this pool — they are
+ * NOT guest OSes.  A slot is busy iff a task has been assigned to it via
+ * agent_pool_spawn() (WORKER_RUNNING) and not yet released by
+ * agent_pool_worker_done() (back to WORKER_IDLE).  This is decoupled from
+ * guest lifecycle, which vibe_engine tracks separately.
+ *
+ * Counts are derived from the live pool[] array so "busy" is non-zero under
+ * real agent load.  total == busy + idle + faulted by construction.  Any of
+ * the out pointers may be NULL.
+ */
+void agent_pool_occupancy(uint32_t *total_out, uint32_t *busy_out,
+                          uint32_t *idle_out, uint32_t *faulted_out) {
+    uint32_t busy = 0, idle = 0, faulted = 0;
+    for (int i = 0; i < AGENT_POOL_SIZE; i++) {
+        switch (pool[i].state) {
+        case WORKER_RUNNING:
+        case WORKER_DONE:    busy++;    break;  /* assigned, not yet reaped */
+        case WORKER_FAULT:   faulted++; break;
+        case WORKER_IDLE:
+        default:             idle++;    break;
+        }
+    }
+    if (total_out)   *total_out   = (uint32_t)AGENT_POOL_SIZE;
+    if (busy_out)    *busy_out    = busy;
+    if (idle_out)    *idle_out    = idle;
+    if (faulted_out) *faulted_out = faulted;
+}
+
 /* =========================================================================
  * Worker PD code — runs in each worker_N protection domain
  * =========================================================================*/

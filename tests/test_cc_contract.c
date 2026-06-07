@@ -371,7 +371,7 @@ static int test_cc_req_reply_sizes(void)
     CHECK(sizeof(struct cc_req_restore)           == 3 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_reply_restore)         == 1 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_req_log_stream)        == 2 * sizeof(uint32_t));
-    CHECK(sizeof(struct cc_reply_log_stream)      == 2 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_reply_log_stream)      == 3 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_req_create_guest)      == 1 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_reply_create_guest)    == 2 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_req_fault_inject)      == 3 * sizeof(uint32_t));
