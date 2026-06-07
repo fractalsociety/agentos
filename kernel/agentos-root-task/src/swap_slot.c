@@ -131,6 +131,7 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #include "sel4_ipc.h"
 #include "sel4_server.h"
 #include "wasm3_host.h"
+#include "pd_startup_record.h"
 
 #endif /* AGENTOS_TEST_HOST */
 
@@ -513,10 +514,19 @@ void swap_slot_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
-    /* The current descriptor exposes one generic swap_slot image.  Until the
-     * root task passes per-slot startup records, use slot 0 and no direct
-     * controller notification cap; controller interactions still arrive over
-     * this PD's server endpoint. */
-    swap_slot_main(my_ep, ns_ep, 0u, 0u);
+    /*
+     * Slot id and the controller-notification cap come from the per-instance
+     * startup record the root task maps at PD_STARTUP_RECORD_VA (agentos-3ev).
+     * If the record is absent/invalid the accessors fall back to slot 0 / no
+     * controller cap, preserving the legacy behaviour without hard-coding it
+     * here.  controller_ntfn is a CNode slot number, valid as a seL4_CPtr in
+     * this PD's capability space.
+     */
+    const pd_startup_record_t *rec =
+        (const pd_startup_record_t *)PD_STARTUP_RECORD_VA;
+    uint32_t  slot_index   = pd_startup_record_slot_id(rec);
+    seL4_CPtr controller_ep = (seL4_CPtr)pd_startup_record_controller_ntfn(rec);
+
+    swap_slot_main(my_ep, ns_ep, controller_ep, slot_index);
 }
 #endif /* !AGENTOS_TEST_HOST */

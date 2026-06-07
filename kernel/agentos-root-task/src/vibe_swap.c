@@ -137,6 +137,7 @@ static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 #include "sel4_ipc.h"
 #include "sel4_server.h"
 #include "sel4_client.h"
+#include "pd_startup_record.h"
 
 #endif /* AGENTOS_TEST_HOST */
 
@@ -711,4 +712,29 @@ void vibe_swap_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     vs_dbg_puts("[vibe_swap] *** VibeSwap ALIVE ***\n");
     sel4_server_run(&g_srv);  /* NEVER RETURNS */
 }
+
+/*
+ * Standalone-image entry point (agentos-3ev).
+ *
+ * vibe_swap.c is normally linked into the controller/monitor image, which
+ * provides its own pd_main; defining pd_main here unconditionally would clash.
+ * When vibe_swap is built as its own standalone PD image, the build defines
+ * VIBE_SWAP_STANDALONE and this pd_main becomes the image entry point.  It
+ * reads the four swap_slot worker endpoint caps from peer_ep[0..3] of the
+ * per-instance startup record at PD_STARTUP_RECORD_VA instead of relying on
+ * stale Microkit channel IDs.  Absent caps degrade to PD_STARTUP_CAP_NONE.
+ */
+#ifdef VIBE_SWAP_STANDALONE
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    const pd_startup_record_t *rec =
+        (const pd_startup_record_t *)PD_STARTUP_RECORD_VA;
+    seL4_CPtr slot_ep0 = (seL4_CPtr)pd_startup_record_peer_ep(rec, 0u);
+    seL4_CPtr slot_ep1 = (seL4_CPtr)pd_startup_record_peer_ep(rec, 1u);
+    seL4_CPtr slot_ep2 = (seL4_CPtr)pd_startup_record_peer_ep(rec, 2u);
+    seL4_CPtr slot_ep3 = (seL4_CPtr)pd_startup_record_peer_ep(rec, 3u);
+
+    vibe_swap_main(my_ep, ns_ep, slot_ep0, slot_ep1, slot_ep2, slot_ep3);
+}
+#endif /* VIBE_SWAP_STANDALONE */
 #endif /* !AGENTOS_TEST_HOST */

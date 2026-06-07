@@ -168,6 +168,7 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 #include "sel4_server.h"
 #include "sel4_client.h"
 #include "nameserver.h"
+#include "pd_startup_record.h"
 
 static inline uint32_t data_rd32(const uint8_t *d, int off)
 {
@@ -941,6 +942,17 @@ void wg_net_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
-    wg_net_main(my_ep, ns_ep, 0u);
+    /*
+     * The controller-notification cap is supplied by the root task in the
+     * per-instance startup record at PD_STARTUP_RECORD_VA (agentos-3ev).  An
+     * absent/invalid record yields PD_STARTUP_CAP_NONE, matching the legacy
+     * "no direct controller cap" behaviour without hard-coding it.
+     */
+    const pd_startup_record_t *rec =
+        (const pd_startup_record_t *)PD_STARTUP_RECORD_VA;
+    seL4_CPtr controller_ntfn =
+        (seL4_CPtr)pd_startup_record_controller_ntfn(rec);
+
+    wg_net_main(my_ep, ns_ep, controller_ntfn);
 }
 #endif /* !AGENTOS_TEST_HOST */

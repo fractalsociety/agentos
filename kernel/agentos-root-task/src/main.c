@@ -44,6 +44,7 @@
                                 cap_tree_verify_all_pds                            */
 #include "system_desc.h"     /* system_desc_t, pd_desc_t, SVC_ID_*, PD_IRQHANDLER_SLOT_BASE */
 #include "agentos.h"         /* sel4_dbg_puts                                    */
+#include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
 #include <stdint.h>
 
 /*
@@ -697,6 +698,117 @@ static int name_eq(const char *a, const char *b)
 {
     while (*a && *b && *a == *b) { a++; b++; }
     return (*a == '\0' && *b == '\0');
+}
+
+/* True iff name starts with prefix. */
+static int name_has_prefix(const char *name, const char *prefix)
+{
+    while (*prefix) {
+        if (*name != *prefix) return 0;
+        name++; prefix++;
+    }
+    return 1;
+}
+
+/*
+ * pd_is_parameterized — true for PDs that consume a per-instance startup
+ * record (agentos-3ev): swap_slot[_N], app_slot[_N], wg_net, vibe_swap.
+ */
+static int pd_is_parameterized(const char *name)
+{
+    return name_has_prefix(name, "swap_slot") ||
+           name_has_prefix(name, "app_slot")  ||
+           name_eq(name, "wg_net")            ||
+           name_eq(name, "vibe_swap");
+}
+
+/*
+ * pd_startup_slot_id — derive the per-instance slot id from a PD name of the
+ * form "<base>_<n>" (e.g. swap_slot_2 → 2).  Names without a numeric suffix
+ * (e.g. "wg_net", "swap_slot") map to slot 0.
+ */
+static uint32_t pd_startup_slot_id(const char *name)
+{
+    const char *last_us = 0;
+    for (const char *p = name; *p; p++) {
+        if (*p == '_') last_us = p;
+    }
+    if (!last_us || last_us[1] == '\0') return 0u;
+    uint32_t v = 0u;
+    for (const char *d = last_us + 1; *d; d++) {
+        if (*d < '0' || *d > '9') return 0u;  /* non-numeric suffix → slot 0 */
+        v = v * 10u + (uint32_t)(*d - '0');
+    }
+    return v;
+}
+
+/*
+ * pd_fill_startup_record — populate *rec for a parameterized PD.
+ *
+ * Slot id comes from the PD name suffix.  The controller-notification cap and
+ * peer endpoint caps are taken from the CNode slots the root task already
+ * provisions for this PD via pd->init_eps[] (see PD_CNODE_SLOT_* in
+ * system_desc.h).  This replaces the legacy hard-coded slot 0 / NULL cap.
+ *
+ * Until these PDs are listed in the system descriptor with concrete init_eps,
+ * the cap fields resolve to PD_STARTUP_CAP_NONE, which the wrappers treat
+ * exactly like the old default — but the slot id is now always correct.
+ */
+static void pd_fill_startup_record(const pd_desc_t *pd, pd_startup_record_t *rec)
+{
+    pd_startup_record_init(rec);
+    rec->slot_id = pd_startup_slot_id(pd->name);
+
+    /*
+     * Translate the PD's already-provisioned init_eps into the record's cap
+     * fields, expressed as CNode slot numbers (valid as seL4_CPtr in the PD's
+     * own cap space):
+     *   - an init_ep destined for the cap-broker slot is surfaced as the
+     *     controller-notification cap (the broker is the controller path);
+     *   - every non-standard init_ep (slot >= PD_CNODE_SLOT_VIBE_ENGINE_EP) is
+     *     surfaced as a generic peer ep, so vibe_swap's four worker eps and
+     *     app_slot's spawn-server ep become visible to the wrapper.
+     * Standard reserved slots (nameserver, serial, log_drain, self, …) are not
+     * per-instance peers and are intentionally skipped.
+     */
+    uint32_t peer_n = 0u;
+    for (uint32_t e = 0u; e < pd->init_ep_count && e < PD_MAX_INIT_EPS; e++) {
+        uint16_t slot = pd->init_eps[e].cnode_slot;
+        if (slot == PD_CNODE_SLOT_CAP_BROKER_EP) {
+            rec->controller_ntfn = (uint32_t)slot;
+        } else if (slot >= PD_CNODE_SLOT_VIBE_ENGINE_EP &&
+                   peer_n < PD_STARTUP_MAX_PEER_EPS) {
+            rec->peer_ep[peer_n++] = (uint32_t)slot;
+        }
+    }
+    rec->peer_ep_count = peer_n;
+}
+
+/*
+ * provision_pd_startup_record — allocate a frame, write the populated record
+ * via a root-task scratch mapping, then remap it read-into the PD's VSpace at
+ * PD_STARTUP_RECORD_VA.  Mirrors the cc_pd startup-record mechanism.
+ *
+ * Returns seL4_NoError on success.  A single frame cap can only be mapped
+ * once, so we unmap from the root task before mapping into the PD.
+ */
+static seL4_Error provision_pd_startup_record(const pd_desc_t *pd,
+                                              seL4_CPtr pd_vspace)
+{
+    seL4_CPtr frame = seL4_CapNull;
+    seL4_Error ve = ut_alloc_cap(seL4_ARM_SmallPageObject, 0u, &frame);
+    if (ve != seL4_NoError) return ve;
+
+    ve = pd_vspace_map_device_frame(seL4_CapInitThreadVSpace, frame,
+                                    RT_VQ_SCRATCH_VA);
+    if (ve != seL4_NoError) return ve;
+
+    pd_startup_record_t *rec = (pd_startup_record_t *)RT_VQ_SCRATCH_VA;
+    pd_fill_startup_record(pd, rec);
+    AGENTOS_MEMORY_FENCE();
+
+    seL4_ARCH_Page_Unmap(frame);
+    return pd_vspace_map_device_frame(pd_vspace, frame, PD_STARTUP_RECORD_VA);
 }
 
 #ifdef CONFIG_KERNEL_MCS
@@ -1671,6 +1783,23 @@ void root_task_main(const seL4_BootInfo *bi)
                     dbg_puts("\n");
                 }
             }
+        }
+
+        /* ── 4g.4.8: Startup record for parameterized PDs (agentos-3ev) ────── */
+        /*
+         * swap_slot, app_slot, wg_net, and (standalone) vibe_swap each read a
+         * per-instance startup record at PD_STARTUP_RECORD_VA carrying their
+         * slot id and peer/controller endpoint cap slots.  Provisioning it here
+         * removes the TEMPORARY hard-coded slot 0 / NULL controller cap from
+         * those wrappers.
+         */
+        if (pd_is_parameterized(pd->name)) {
+            seL4_Error sr = provision_pd_startup_record(pd, vspace);
+            dbg_puts("[rt] startup record for ");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)sr);
+            dbg_puts("\n");
         }
 
         /* ── 4g.5: Bind hardware IRQ handler caps into the PD's CNode ─────── */

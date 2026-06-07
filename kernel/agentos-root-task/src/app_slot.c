@@ -118,6 +118,7 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 #include "sel4_ipc.h"     /* sel4_msg_t, sel4_badge_t, SEL4_ERR_* */
 #include "sel4_server.h"  /* sel4_server_t, sel4_server_init/register/run */
 #include <sel4/sel4.h>    /* seL4_DebugPutChar */
+#include "pd_startup_record.h"
 
 #endif /* AGENTOS_TEST_HOST */
 
@@ -460,18 +461,20 @@ static uint32_t app_slot_get_index(void)  { return g_slot.slot_index; }
 /* ── Entry point ─────────────────────────────────────────────────────────── */
 
 #ifndef AGENTOS_TEST_HOST
-void app_slot_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr spawn_ep)
+void app_slot_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr spawn_ep,
+                   uint32_t slot_index)
 {
     dbg_puts("[app_slot] ready, waiting for ELF staging notification\n");
 
     g_spawn_ep = spawn_ep;
 
     /*
-     * The slot_index is not passed as a named argument — the root task
-     * differentiates instances by the my_ep cap value.  For registration
-     * we use a sentinel 0; monitoring systems can correlate via app_id.
+     * slot_index is supplied per-instance by the root task via the startup
+     * record (agentos-3ev), so a single app_slot image can back multiple
+     * instances.  It is used to register a distinct nameserver entry; monitors
+     * can correlate via this slot id rather than the opaque my_ep cap value.
      */
-    register_with_nameserver(ns_ep, 0u);
+    register_with_nameserver(ns_ep, slot_index);
 
     g_slot.state       = APPSLOT_STATE_IDLE;
     g_slot.slot_failed = false;
@@ -487,6 +490,18 @@ void app_slot_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr spawn_ep)
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
-    app_slot_main(my_ep, ns_ep, 0u);
+    /*
+     * Read slot id and the spawn-server peer endpoint from the per-instance
+     * startup record at PD_STARTUP_RECORD_VA (agentos-3ev).  peer_ep[0] carries
+     * the spawn-server endpoint cap slot for this app_slot; an absent/invalid
+     * record yields slot 0 / PD_STARTUP_CAP_NONE, matching the prior default
+     * without hard-coding it.
+     */
+    const pd_startup_record_t *rec =
+        (const pd_startup_record_t *)PD_STARTUP_RECORD_VA;
+    uint32_t  slot_index = pd_startup_record_slot_id(rec);
+    seL4_CPtr spawn_ep   = (seL4_CPtr)pd_startup_record_peer_ep(rec, 0u);
+
+    app_slot_main(my_ep, ns_ep, spawn_ep, slot_index);
 }
 #endif /* !AGENTOS_TEST_HOST */

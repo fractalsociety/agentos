@@ -58,6 +58,11 @@ const SUITES: &[Suite] = &[
         name: "test_vibeos",
         sources: &["tests/api/test_vibeos.c"],
     },
+    Suite {
+        // agentos-3ev: parameterized-PD startup-record contract.
+        name: "test_pd_startup_record",
+        sources: &["tests/test_pd_startup_record.c"],
+    },
     // NOTE: tests/integration/ suites include harness/test_framework.h which
     // depends on <microkit.h> from the Microkit SDK.  Those suites are
     // on-target only and are NOT compiled by the host-side runner.
