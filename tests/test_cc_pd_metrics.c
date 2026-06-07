@@ -33,8 +33,10 @@
  * Zero means "rings not mapped" so log_drain_write() is a safe no-op on host. */
 uintptr_t log_drain_rings_vaddr = 0;
 
-#define PASS(name)  do { printf("  PASS  %s\n", name); return 0; } while(0)
-#define FAIL(msg)   do { printf("  FAIL  %s:%d: %s\n", __FILE__, __LINE__, msg); return 1; } while(0)
+/* TAP output: each test function emits exactly one `ok`/`not ok` line. */
+static int g_tap = 0;
+#define PASS(name)  do { printf("ok %d - %s\n", ++g_tap, name); return 0; } while(0)
+#define FAIL(msg)   do { printf("not ok %d - %s:%d: %s\n", ++g_tap, __FILE__, __LINE__, msg); return 1; } while(0)
 #define CHECK(cond) do { if (!(cond)) FAIL(#cond); } while(0)
 
 /* ── Real agent_pool.c public surface (compiled into this binary) ── */
@@ -204,12 +206,13 @@ static const test_fn tests[] = {
 
 int main(void)
 {
-    printf("cc_pd metrics tests (agentos-681 / agentos-vsi)\n");
+    printf("# cc_pd metrics tests (agentos-681 / agentos-vsi)\n");
     int failed = 0;
     size_t n = sizeof(tests) / sizeof(tests[0]);
+    printf("1..%zu\n", n);
     for (size_t i = 0; i < n; i++)
         failed += tests[i]();
-    printf("%s (%zu/%zu passed)\n",
+    printf("# %s (%zu/%zu passed)\n",
            failed == 0 ? "ALL PASS" : "FAILURES DETECTED",
            n - (size_t)failed, n);
     return failed == 0 ? 0 : 1;

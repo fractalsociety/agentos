@@ -30,6 +30,9 @@ struct Suite {
     /// primary test file; remaining entries are implementation files pulled in
     /// alongside it.
     sources: &'static [&'static str],
+    /// Extra compiler arguments for this suite (e.g. a `-include` host shim
+    /// needed when a real kernel source pulls in the Microkit IPC layer).
+    extra_args: &'static [&'static str],
 }
 
 /// All known host-side test suites.
@@ -41,27 +44,55 @@ const SUITES: &[Suite] = &[
     Suite {
         name: "test_msgbus",
         sources: &["tests/api/test_msgbus.c"],
+        extra_args: &[],
     },
     Suite {
         name: "test_capstore",
         sources: &["tests/api/test_capstore.c"],
+        extra_args: &[],
     },
     Suite {
         name: "test_memfs",
         sources: &["tests/api/test_memfs.c"],
+        extra_args: &[],
     },
     Suite {
         name: "test_logsvc",
         sources: &["tests/api/test_logsvc.c"],
+        extra_args: &[],
     },
     Suite {
         name: "test_vibeos",
         sources: &["tests/api/test_vibeos.c"],
+        extra_args: &[],
     },
     Suite {
         // agentos-3ev: parameterized-PD startup-record contract.
         name: "test_pd_startup_record",
         sources: &["tests/test_pd_startup_record.c"],
+        extra_args: &[],
+    },
+    Suite {
+        // agentos-c7i: Ed25519 + fatal cryptographic selftest gate.
+        name: "test_crypto_selftest",
+        sources: &[
+            "tests/test_crypto_selftest.c",
+            "kernel/agentos-root-task/src/verify.c",
+            "kernel/agentos-root-task/src/ed25519_verify.c",
+            "kernel/agentos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // agentos-681 / agentos-vsi: CC-PD polecat occupancy + log-slot model.
+        // agent_pool.c pulls in the Microkit IPC layer, so force-include the
+        // host shim that stubs microkit_mr_get/set.
+        name: "test_cc_pd_metrics",
+        sources: &[
+            "tests/test_cc_pd_metrics.c",
+            "kernel/agentos-root-task/src/agent_pool.c",
+        ],
+        extra_args: &["-include", "tests/microkit.h"],
     },
     // NOTE: tests/integration/ suites include harness/test_framework.h which
     // depends on <microkit.h> from the Microkit SDK.  Those suites are
@@ -154,6 +185,9 @@ pub fn run(args: &HostTestArgs) -> Result<()> {
 
         // ── Compile ──────────────────────────────────────────────────────────
         let mut cmd = std::process::Command::new(&cc);
+        // Run from the repo root so relative extra args (e.g. `-include
+        // tests/microkit.h`) resolve consistently regardless of invocation cwd.
+        cmd.current_dir(&repo_root);
         cmd.args([
             "-DAGENTOS_TEST_HOST",
             "-std=c11",
@@ -167,6 +201,11 @@ pub fn run(args: &HostTestArgs) -> Result<()> {
         cmd.arg(format!("-I{}", include_root.display()));
         cmd.arg(format!("-I{}", include_harness.display()));
         cmd.arg(format!("-I{}", include_api.display()));
+
+        // Per-suite extra compiler args (e.g. a `-include` host shim).
+        for &arg in suite.extra_args {
+            cmd.arg(arg);
+        }
 
         // Source files (primary + any kernel implementation files)
         for &src in suite.sources {

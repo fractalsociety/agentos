@@ -56,6 +56,9 @@ endif
 # BOARD_ARCH, BOARD_NATIVE, BOARD_UART_*, and optional QEMU_* flags.
 -include boards/$(BOARD_NAME)/board.mk
 
+# Target/QEMU-backed test gates (agentos-0h4, agentos-45b).
+-include mk/target-tests.mk
+
 # Let board.mk override the board name and arch when present.
 ifneq ($(MICROKIT_BOARD),)
   BOARD := $(MICROKIT_BOARD)
