@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include "string_bare.h"
 #include "verify.h"
+#include "monocypher.h"   /* crypto_ed25519_sign / _public_key for the selftest gate */
 
 /* log_drain_write is declared in agentos.h (included above). */
 
@@ -1245,4 +1246,98 @@ bool vibe_verify_module(const uint8_t *wasm, size_t len,
     /* 8. All checks passed */
     log_drain_write(15, 15, "[vibe_verify] OK: module signature verified\n");
     return true;
+}
+
+/* =========================================================================
+ * Section 7: FATAL cryptographic selftest gate
+ *
+ * This is the canonical FATAL crypto selftest gate referenced by monitor.c.
+ * It exercises the *production* Ed25519 verify path (crypto_ed25519_check in
+ * monocypher.c, reached via ed25519_verify) against pinned RFC 8032 known-
+ * answer vectors, and ALSO asserts that a deliberately corrupted signature is
+ * REJECTED.  A failure here means the signature-verification stack is broken —
+ * which would silently let unsigned or tampered modules load — so the gate is
+ * NOT a soft warning.  crypto_selftest() returns nonzero on any discrepancy,
+ * and its sole boot caller (controller_main) HALTS instead of continuing.
+ * ========================================================================= */
+
+/* RFC 8032 §7.1, Ed25519 TEST 2 (single-octet message 0x72). */
+static const uint8_t SELFTEST_SK[32] = {
+    0x4c,0xcd,0x08,0x9b,0x28,0xff,0x96,0xda,0x9d,0xb6,0xc3,0x46,0xec,0x11,0x4e,0x0f,
+    0x5b,0x8a,0x31,0x9f,0x35,0xab,0xa6,0x24,0xda,0x8c,0xf6,0xed,0x4f,0xb8,0xa6,0xfb,
+};
+static const uint8_t SELFTEST_PK[32] = {
+    0x3d,0x40,0x17,0xc3,0xe8,0x43,0x89,0x5a,0x92,0xb7,0x0a,0xa7,0x4d,0x1b,0x7e,0xbc,
+    0x9c,0x98,0x2c,0xcf,0x2e,0xc4,0x96,0x8c,0xc0,0xcd,0x55,0xf1,0x2a,0xf4,0x66,0x0c,
+};
+static const uint8_t SELFTEST_MSG[1] = { 0x72 };
+static const uint8_t SELFTEST_SIG[64] = {
+    0x92,0xa0,0x09,0xa9,0xf0,0xd4,0xca,0xb8,0x72,0x0e,0x82,0x0b,0x5f,0x64,0x25,0x40,
+    0xa2,0xb2,0x7b,0x54,0x16,0x50,0x3f,0x8f,0xb3,0x76,0x22,0x23,0xeb,0xdb,0x69,0xda,
+    0x08,0x5a,0xc1,0xe4,0x3e,0x15,0x99,0x6e,0x45,0x8f,0x36,0x13,0xd0,0xf1,0x1d,0x8c,
+    0x38,0x7b,0x2e,0xae,0xb4,0x30,0x2a,0xee,0xb0,0x0d,0x29,0x16,0x12,0xbb,0x0c,0x00,
+};
+
+/* Verify a known-good pair AND that its corrupted form is rejected.
+ * Returns 0 iff good verifies AND corrupted is rejected. */
+int crypto_selftest_with_vectors(const uint8_t sig[64], const uint8_t *msg,
+                                 size_t msg_len, const uint8_t pk[32])
+{
+    uint8_t bad[64];
+    int i;
+
+    /* Known-GOOD must verify (production path: ed25519_verify → monocypher). */
+    if (ed25519_verify(sig, msg, msg_len, pk) != 0) {
+        return -1;
+    }
+
+    /* Known-BAD: flip a bit in R; the verifier MUST reject it. */
+    for (i = 0; i < 64; i++) bad[i] = sig[i];
+    bad[0] ^= 0x01;
+    if (ed25519_verify(bad, msg, msg_len, pk) == 0) {
+        /* A corrupted signature verified — catastrophic; gate must fail. */
+        return -2;
+    }
+
+    return 0;
+}
+
+int crypto_selftest(void)
+{
+    uint8_t pk[32];
+    uint8_t sig[64];
+    int i;
+
+    /* 1. Known-good RFC 8032 vector verifies; corrupted form is rejected. */
+    if (crypto_selftest_with_vectors(SELFTEST_SIG, SELFTEST_MSG,
+                                     sizeof(SELFTEST_MSG), SELFTEST_PK) != 0) {
+        log_drain_write(15, 15,
+            "[crypto-selftest] FATAL: Ed25519 known-answer verify failed\n");
+        return -1;
+    }
+
+    /* 2. Public-key derivation must reproduce the pinned RFC 8032 pk. */
+    crypto_ed25519_public_key(pk, SELFTEST_SK);
+    for (i = 0; i < 32; i++) {
+        if (pk[i] != SELFTEST_PK[i]) {
+            log_drain_write(15, 15,
+                "[crypto-selftest] FATAL: Ed25519 pubkey derivation mismatch\n");
+            return -2;
+        }
+    }
+
+    /* 3. Signing must reproduce the pinned RFC 8032 signature. */
+    crypto_ed25519_sign(sig, SELFTEST_SK, SELFTEST_PK,
+                        SELFTEST_MSG, sizeof(SELFTEST_MSG));
+    for (i = 0; i < 64; i++) {
+        if (sig[i] != SELFTEST_SIG[i]) {
+            log_drain_write(15, 15,
+                "[crypto-selftest] FATAL: Ed25519 sign known-answer mismatch\n");
+            return -3;
+        }
+    }
+
+    log_drain_write(15, 15,
+        "[crypto-selftest] OK: Ed25519 known-good verified, known-bad rejected\n");
+    return 0;
 }

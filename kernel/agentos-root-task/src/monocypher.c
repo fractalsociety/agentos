@@ -324,36 +324,38 @@ static int gf_neq(const gf a, const gf b)
  */
 static void gf_pow2523(gf o, const gf a)
 {
-    gf c, t0;
+    /*
+     * Canonical ref10 pow22523 addition chain: out = a^((p-5)/8) = a^(2^252-3).
+     *
+     * The previous chain was subtly wrong (its result did not satisfy
+     * out^8 * a^3 == a^-1), which made point decompression reject every valid
+     * Ed25519 public key — and therefore every signature verification.  See
+     * agentos-c7i.
+     */
+    gf t0, t1, t2;
+    int i;
 
-    gf_sq(c, a);
-    gf_mul(t0, c, a);
-    gf_sq(c, t0);
-    gf_mul(t0, c, a);
-    gf_sq(c, t0);
-    gf_sq(c, c);
-    gf_mul(t0, c, t0);
-    gf_sq(c, t0);
-    for (int i = 1; i < 4; i++) gf_sq(c, c);
-    gf_mul(t0, c, t0);
-    gf_sq(c, t0);
-    for (int i = 1; i < 8; i++) gf_sq(c, c);
-    gf_mul(t0, c, t0);
-    gf_sq(c, t0);
-    for (int i = 1; i < 16; i++) gf_sq(c, c);
-    gf_mul(t0, c, t0);
-    gf_sq(c, t0);
-    for (int i = 1; i < 32; i++) gf_sq(c, c);
-    gf_mul(c, c, t0);
-    gf_sq(c, c);
-    for (int i = 1; i < 32; i++) gf_sq(c, c);
-    gf_mul(t0, c, t0);
-    gf_sq(c, t0);
-    for (int i = 1; i < 64; i++) gf_sq(c, c);
-    gf_mul(c, c, t0);
-    gf_sq(c, c);
-    gf_sq(c, c);
-    gf_mul(o, c, a);
+    gf_sq(t0, a);                                   /* t0 = a^2          */
+    gf_sq(t1, t0); gf_sq(t1, t1); gf_mul(t1, a, t1);/* t1 = a^9          */
+    gf_mul(t0, t0, t1);                             /* t0 = a^11         */
+    gf_sq(t0, t0);                                  /* t0 = a^22         */
+    gf_mul(t0, t1, t0);                             /* t0 = a^(2^5-1)    */
+    gf_sq(t1, t0); for (i = 1; i <  5; i++) gf_sq(t1, t1);
+    gf_mul(t0, t1, t0);                             /* t0 = a^(2^10-1)   */
+    gf_sq(t1, t0); for (i = 1; i < 10; i++) gf_sq(t1, t1);
+    gf_mul(t1, t1, t0);                             /* t1 = a^(2^20-1)   */
+    gf_sq(t2, t1); for (i = 1; i < 20; i++) gf_sq(t2, t2);
+    gf_mul(t1, t2, t1);                             /* t1 = a^(2^40-1)   */
+    gf_sq(t1, t1); for (i = 1; i < 10; i++) gf_sq(t1, t1);
+    gf_mul(t0, t1, t0);                             /* t0 = a^(2^50-1)   */
+    gf_sq(t1, t0); for (i = 1; i < 50; i++) gf_sq(t1, t1);
+    gf_mul(t1, t1, t0);                             /* t1 = a^(2^100-1)  */
+    gf_sq(t2, t1); for (i = 1; i < 100; i++) gf_sq(t2, t2);
+    gf_mul(t1, t2, t1);                             /* t1 = a^(2^200-1)  */
+    gf_sq(t1, t1); for (i = 1; i < 50; i++) gf_sq(t1, t1);
+    gf_mul(t0, t1, t0);                             /* t0 = a^(2^250-1)  */
+    gf_sq(t0, t0); gf_sq(t0, t0);                   /* t0 = a^(2^252-4)  */
+    gf_mul(o, t0, a);                               /* o  = a^(2^252-3)  */
 }
 
 /* ── Extended Twisted Edwards point operations ───────────────────────────── */
@@ -521,9 +523,17 @@ static int pt_unpackneg(gf r[4], const uint8_t p[32])
     gf_mul(chk, chk, den);
     if (gf_neq(chk, num)) return -1;
 
-    /* Negate x if parity doesn't match sign bit */
+    /*
+     * pt_unpackneg returns the NEGATED point (-A), as required by the Ed25519
+     * verification equation [S]B + [H](-A) == R.  TweetNaCl negates x exactly
+     * when the recovered root's parity EQUALS the encoded sign bit: this both
+     * selects the correct decoded x and flips its sign in one step.
+     *
+     * (The previous code negated on parity != sign, which decoded +A instead
+     * of -A and made every valid signature fail verification — see agentos-c7i.)
+     */
     gf_pack(pb, r[0]);
-    if ((int)(pb[0] & 1) != (int)sign) {
+    if ((int)(pb[0] & 1) == (int)sign) {
         gf_sub(r[0], gf0, r[0]);
     }
 
@@ -540,141 +550,156 @@ static int pt_unpackneg(gf r[4], const uint8_t p[32])
  */
 static void sc_reduce(uint8_t r[64])
 {
-    long long x[64];
-    long long carry;
+    /*
+     * Canonical ref10 reduction of a 512-bit little-endian integer modulo the
+     * Ed25519 group order l = 2^252 + 27742317777372353535851937790883648493.
+     *
+     * The input is loaded as 24 limbs of 21 bits each (s0..s23) and folded down
+     * using the precomputed coefficients of 2^252 mod l, then carry-propagated
+     * and serialised back as 32 little-endian bytes.  r[32..63] are zeroed.
+     *
+     * (The previous implementation loaded byte-wide limbs but used 21-bit carry
+     * chains and 21-bit packing — an inconsistent hybrid that produced wrong
+     * results for any input engaging the high limbs, breaking both sign and
+     * verify.  See agentos-c7i.)
+     */
+    /*
+     * Load 24 signed 21-bit limbs from the 64-byte little-endian input.
+     * Limb i occupies bits [21*i, 21*i+21).  We read it generically from the
+     * byte stream so the bit alignment is exact for every limb (hand-unrolled
+     * offsets are extremely error-prone past the first few limbs).
+     */
+    long long s[24];
+    for (int i = 0; i < 24; i++) {
+        unsigned bit = (unsigned)(21 * i);
+        unsigned byte = bit >> 3;
+        unsigned shift = bit & 7;
+        /* 21 bits can span up to 4 bytes once the intra-byte shift is applied. */
+        unsigned long long acc =
+              (unsigned long long)r[byte]
+            | ((unsigned long long)r[byte + 1] << 8)
+            | ((unsigned long long)r[byte + 2] << 16)
+            | ((unsigned long long)r[byte + 3] << 24);
+        s[i] = (long long)((acc >> shift) & 0x1FFFFFull);
+    }
+    /* Top limb (s23) keeps all remaining high bits, not just 21. */
+    {
+        unsigned bit = (unsigned)(21 * 23);   /* 483 */
+        unsigned byte = bit >> 3;             /* 60 */
+        unsigned shift = bit & 7;             /* 3  */
+        unsigned long long acc =
+              (unsigned long long)r[byte]
+            | ((unsigned long long)r[byte + 1] << 8)
+            | ((unsigned long long)r[byte + 2] << 16)
+            | ((unsigned long long)r[byte + 3] << 24);
+        s[23] = (long long)(acc >> shift);
+    }
+    long long s0=s[0],s1=s[1],s2=s[2],s3=s[3],s4=s[4],s5=s[5],s6=s[6],s7=s[7];
+    long long s8=s[8],s9=s[9],s10=s[10],s11=s[11],s12=s[12],s13=s[13],s14=s[14];
+    long long s15=s[15],s16=s[16],s17=s[17],s18=s[18],s19=s[19],s20=s[20];
+    long long s21=s[21],s22=s[22],s23=s[23];
+    long long carry0,carry1,carry2,carry3,carry4,carry5,carry6,carry7,carry8;
+    long long carry9,carry10,carry11,carry12,carry13,carry14,carry15,carry16;
 
-    for (int i = 0; i < 64; i++) x[i] = (long long)(uint8_t)r[i];
+    s11 += s23 * 666643; s12 += s23 * 470296; s13 += s23 * 654183;
+    s14 -= s23 * 997805; s15 += s23 * 136657; s16 -= s23 * 683901; s23 = 0;
+    s10 += s22 * 666643; s11 += s22 * 470296; s12 += s22 * 654183;
+    s13 -= s22 * 997805; s14 += s22 * 136657; s15 -= s22 * 683901; s22 = 0;
+    s9  += s21 * 666643; s10 += s21 * 470296; s11 += s21 * 654183;
+    s12 -= s21 * 997805; s13 += s21 * 136657; s14 -= s21 * 683901; s21 = 0;
+    s8  += s20 * 666643; s9  += s20 * 470296; s10 += s20 * 654183;
+    s11 -= s20 * 997805; s12 += s20 * 136657; s13 -= s20 * 683901; s20 = 0;
+    s7  += s19 * 666643; s8  += s19 * 470296; s9  += s19 * 654183;
+    s10 -= s19 * 997805; s11 += s19 * 136657; s12 -= s19 * 683901; s19 = 0;
+    s6  += s18 * 666643; s7  += s18 * 470296; s8  += s18 * 654183;
+    s9  -= s18 * 997805; s10 += s18 * 136657; s11 -= s18 * 683901; s18 = 0;
+
+    carry6  = (s6  + (1<<20)) >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry8  = (s8  + (1<<20)) >> 21; s9  += carry8;  s8  -= carry8  << 21;
+    carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+    carry12 = (s12 + (1<<20)) >> 21; s13 += carry12; s12 -= carry12 << 21;
+    carry14 = (s14 + (1<<20)) >> 21; s15 += carry14; s14 -= carry14 << 21;
+    carry16 = (s16 + (1<<20)) >> 21; s17 += carry16; s16 -= carry16 << 21;
+    carry7  = (s7  + (1<<20)) >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry9  = (s9  + (1<<20)) >> 21; s10 += carry9;  s9  -= carry9  << 21;
+    carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
+    carry13 = (s13 + (1<<20)) >> 21; s14 += carry13; s13 -= carry13 << 21;
+    carry15 = (s15 + (1<<20)) >> 21; s16 += carry15; s15 -= carry15 << 21;
+
+    s5  += s17 * 666643; s6  += s17 * 470296; s7  += s17 * 654183;
+    s8  -= s17 * 997805; s9  += s17 * 136657; s10 -= s17 * 683901; s17 = 0;
+    s4  += s16 * 666643; s5  += s16 * 470296; s6  += s16 * 654183;
+    s7  -= s16 * 997805; s8  += s16 * 136657; s9  -= s16 * 683901; s16 = 0;
+    s3  += s15 * 666643; s4  += s15 * 470296; s5  += s15 * 654183;
+    s6  -= s15 * 997805; s7  += s15 * 136657; s8  -= s15 * 683901; s15 = 0;
+    s2  += s14 * 666643; s3  += s14 * 470296; s4  += s14 * 654183;
+    s5  -= s14 * 997805; s6  += s14 * 136657; s7  -= s14 * 683901; s14 = 0;
+    s1  += s13 * 666643; s2  += s13 * 470296; s3  += s13 * 654183;
+    s4  -= s13 * 997805; s5  += s13 * 136657; s6  -= s13 * 683901; s13 = 0;
+    s0  += s12 * 666643; s1  += s12 * 470296; s2  += s12 * 654183;
+    s3  -= s12 * 997805; s4  += s12 * 136657; s5  -= s12 * 683901; s12 = 0;
+
+    carry0  = (s0  + (1<<20)) >> 21; s1  += carry0;  s0  -= carry0  << 21;
+    carry2  = (s2  + (1<<20)) >> 21; s3  += carry2;  s2  -= carry2  << 21;
+    carry4  = (s4  + (1<<20)) >> 21; s5  += carry4;  s4  -= carry4  << 21;
+    carry6  = (s6  + (1<<20)) >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry8  = (s8  + (1<<20)) >> 21; s9  += carry8;  s8  -= carry8  << 21;
+    carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+    carry1  = (s1  + (1<<20)) >> 21; s2  += carry1;  s1  -= carry1  << 21;
+    carry3  = (s3  + (1<<20)) >> 21; s4  += carry3;  s3  -= carry3  << 21;
+    carry5  = (s5  + (1<<20)) >> 21; s6  += carry5;  s5  -= carry5  << 21;
+    carry7  = (s7  + (1<<20)) >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry9  = (s9  + (1<<20)) >> 21; s10 += carry9;  s9  -= carry9  << 21;
+    carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
+
+    s0  += s12 * 666643; s1  += s12 * 470296; s2  += s12 * 654183;
+    s3  -= s12 * 997805; s4  += s12 * 136657; s5  -= s12 * 683901; s12 = 0;
+
+    carry0  = s0  >> 21; s1  += carry0;  s0  -= carry0  << 21;
+    carry1  = s1  >> 21; s2  += carry1;  s1  -= carry1  << 21;
+    carry2  = s2  >> 21; s3  += carry2;  s2  -= carry2  << 21;
+    carry3  = s3  >> 21; s4  += carry3;  s3  -= carry3  << 21;
+    carry4  = s4  >> 21; s5  += carry4;  s4  -= carry4  << 21;
+    carry5  = s5  >> 21; s6  += carry5;  s5  -= carry5  << 21;
+    carry6  = s6  >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry7  = s7  >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry8  = s8  >> 21; s9  += carry8;  s8  -= carry8  << 21;
+    carry9  = s9  >> 21; s10 += carry9;  s9  -= carry9  << 21;
+    carry10 = s10 >> 21; s11 += carry10; s10 -= carry10 << 21;
+    carry11 = s11 >> 21; s12 += carry11; s11 -= carry11 << 21;
+
+    s0  += s12 * 666643; s1  += s12 * 470296; s2  += s12 * 654183;
+    s3  -= s12 * 997805; s4  += s12 * 136657; s5  -= s12 * 683901; s12 = 0;
+
+    carry0  = s0  >> 21; s1  += carry0;  s0  -= carry0  << 21;
+    carry1  = s1  >> 21; s2  += carry1;  s1  -= carry1  << 21;
+    carry2  = s2  >> 21; s3  += carry2;  s2  -= carry2  << 21;
+    carry3  = s3  >> 21; s4  += carry3;  s3  -= carry3  << 21;
+    carry4  = s4  >> 21; s5  += carry4;  s4  -= carry4  << 21;
+    carry5  = s5  >> 21; s6  += carry5;  s5  -= carry5  << 21;
+    carry6  = s6  >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry7  = s7  >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry8  = s8  >> 21; s9  += carry8;  s8  -= carry8  << 21;
+    carry9  = s9  >> 21; s10 += carry9;  s9  -= carry9  << 21;
+    carry10 = s10 >> 21; s11 += carry10; s10 -= carry10 << 21;
+
     for (int i = 0; i < 64; i++) r[i] = 0;
-
-    x[23] += x[63] * 666643; x[24] += x[63] * 470296;
-    x[25] += x[63] * 654183; x[26] -= x[63] * 997805;
-    x[27] += x[63] * 136657; x[28] -= x[63] * 683901; x[63] = 0;
-
-    x[22] += x[62] * 666643; x[23] += x[62] * 470296;
-    x[24] += x[62] * 654183; x[25] -= x[62] * 997805;
-    x[26] += x[62] * 136657; x[27] -= x[62] * 683901; x[62] = 0;
-
-    x[21] += x[61] * 666643; x[22] += x[61] * 470296;
-    x[23] += x[61] * 654183; x[24] -= x[61] * 997805;
-    x[25] += x[61] * 136657; x[26] -= x[61] * 683901; x[61] = 0;
-
-    x[20] += x[60] * 666643; x[21] += x[60] * 470296;
-    x[22] += x[60] * 654183; x[23] -= x[60] * 997805;
-    x[24] += x[60] * 136657; x[25] -= x[60] * 683901; x[60] = 0;
-
-    x[19] += x[59] * 666643; x[20] += x[59] * 470296;
-    x[21] += x[59] * 654183; x[22] -= x[59] * 997805;
-    x[23] += x[59] * 136657; x[24] -= x[59] * 683901; x[59] = 0;
-
-    x[18] += x[58] * 666643; x[19] += x[58] * 470296;
-    x[20] += x[58] * 654183; x[21] -= x[58] * 997805;
-    x[22] += x[58] * 136657; x[23] -= x[58] * 683901; x[58] = 0;
-
-    x[17] += x[57] * 666643; x[18] += x[57] * 470296;
-    x[19] += x[57] * 654183; x[20] -= x[57] * 997805;
-    x[21] += x[57] * 136657; x[22] -= x[57] * 683901; x[57] = 0;
-
-    x[16] += x[56] * 666643; x[17] += x[56] * 470296;
-    x[18] += x[56] * 654183; x[19] -= x[56] * 997805;
-    x[20] += x[56] * 136657; x[21] -= x[56] * 683901; x[56] = 0;
-
-    x[15] += x[55] * 666643; x[16] += x[55] * 470296;
-    x[17] += x[55] * 654183; x[18] -= x[55] * 997805;
-    x[19] += x[55] * 136657; x[20] -= x[55] * 683901; x[55] = 0;
-
-    x[14] += x[54] * 666643; x[15] += x[54] * 470296;
-    x[16] += x[54] * 654183; x[17] -= x[54] * 997805;
-    x[18] += x[54] * 136657; x[19] -= x[54] * 683901; x[54] = 0;
-
-    x[13] += x[53] * 666643; x[14] += x[53] * 470296;
-    x[15] += x[53] * 654183; x[16] -= x[53] * 997805;
-    x[17] += x[53] * 136657; x[18] -= x[53] * 683901; x[53] = 0;
-
-    x[12] += x[52] * 666643; x[13] += x[52] * 470296;
-    x[14] += x[52] * 654183; x[15] -= x[52] * 997805;
-    x[16] += x[52] * 136657; x[17] -= x[52] * 683901; x[52] = 0;
-
-    carry = x[12] >> 21; x[13] += carry; x[12] -= carry << 21;
-    carry = x[13] >> 21; x[14] += carry; x[13] -= carry << 21;
-    carry = x[14] >> 21; x[15] += carry; x[14] -= carry << 21;
-    carry = x[15] >> 21; x[16] += carry; x[15] -= carry << 21;
-    carry = x[16] >> 21; x[17] += carry; x[16] -= carry << 21;
-    carry = x[17] >> 21; x[18] += carry; x[17] -= carry << 21;
-    carry = x[18] >> 21; x[19] += carry; x[18] -= carry << 21;
-    carry = x[19] >> 21; x[20] += carry; x[19] -= carry << 21;
-    carry = x[20] >> 21; x[21] += carry; x[20] -= carry << 21;
-    carry = x[21] >> 21; x[22] += carry; x[21] -= carry << 21;
-    carry = x[22] >> 21; x[23] += carry; x[22] -= carry << 21;
-
-    x[11] += x[23] * 666643; x[12] += x[23] * 470296;
-    x[13] += x[23] * 654183; x[14] -= x[23] * 997805;
-    x[15] += x[23] * 136657; x[16] -= x[23] * 683901; x[23] = 0;
-
-    x[10] += x[22] * 666643; x[11] += x[22] * 470296;
-    x[12] += x[22] * 654183; x[13] -= x[22] * 997805;
-    x[14] += x[22] * 136657; x[15] -= x[22] * 683901; x[22] = 0;
-
-    x[ 9] += x[21] * 666643; x[10] += x[21] * 470296;
-    x[11] += x[21] * 654183; x[12] -= x[21] * 997805;
-    x[13] += x[21] * 136657; x[14] -= x[21] * 683901; x[21] = 0;
-
-    x[ 8] += x[20] * 666643; x[ 9] += x[20] * 470296;
-    x[10] += x[20] * 654183; x[11] -= x[20] * 997805;
-    x[12] += x[20] * 136657; x[13] -= x[20] * 683901; x[20] = 0;
-
-    x[ 7] += x[19] * 666643; x[ 8] += x[19] * 470296;
-    x[ 9] += x[19] * 654183; x[10] -= x[19] * 997805;
-    x[11] += x[19] * 136657; x[12] -= x[19] * 683901; x[19] = 0;
-
-    x[ 6] += x[18] * 666643; x[ 7] += x[18] * 470296;
-    x[ 8] += x[18] * 654183; x[ 9] -= x[18] * 997805;
-    x[10] += x[18] * 136657; x[11] -= x[18] * 683901; x[18] = 0;
-
-    carry = x[ 6] >> 21; x[ 7] += carry; x[ 6] -= carry << 21;
-    carry = x[ 7] >> 21; x[ 8] += carry; x[ 7] -= carry << 21;
-    carry = x[ 8] >> 21; x[ 9] += carry; x[ 8] -= carry << 21;
-    carry = x[ 9] >> 21; x[10] += carry; x[ 9] -= carry << 21;
-    carry = x[10] >> 21; x[11] += carry; x[10] -= carry << 21;
-    carry = x[11] >> 21; x[12] += carry; x[11] -= carry << 21;
-    carry = x[12] >> 21; x[13] += carry; x[12] -= carry << 21;
-    carry = x[13] >> 21; x[14] += carry; x[13] -= carry << 21;
-    carry = x[14] >> 21; x[15] += carry; x[14] -= carry << 21;
-    carry = x[15] >> 21; x[16] += carry; x[15] -= carry << 21;
-    carry = x[16] >> 21; x[17] += carry; x[16] -= carry << 21;
-    carry = x[17] >> 21; x[17] -= carry << 21;
-
-    r[ 0] = (uint8_t)( x[ 0]        );
-    r[ 1] = (uint8_t)( x[ 0] >>  8  );
-    r[ 2] = (uint8_t)((x[ 0] >> 16) | (x[ 1] << 5));
-    r[ 3] = (uint8_t)( x[ 1] >>  3  );
-    r[ 4] = (uint8_t)( x[ 1] >> 11  );
-    r[ 5] = (uint8_t)((x[ 1] >> 19) | (x[ 2] << 2));
-    r[ 6] = (uint8_t)( x[ 2] >>  6  );
-    r[ 7] = (uint8_t)((x[ 2] >> 14) | (x[ 3] << 7));
-    r[ 8] = (uint8_t)( x[ 3] >>  1  );
-    r[ 9] = (uint8_t)( x[ 3] >>  9  );
-    r[10] = (uint8_t)((x[ 3] >> 17) | (x[ 4] << 4));
-    r[11] = (uint8_t)( x[ 4] >>  4  );
-    r[12] = (uint8_t)( x[ 4] >> 12  );
-    r[13] = (uint8_t)((x[ 4] >> 20) | (x[ 5] << 1));
-    r[14] = (uint8_t)( x[ 5] >>  7  );
-    r[15] = (uint8_t)((x[ 5] >> 15) | (x[ 6] << 6));
-    r[16] = (uint8_t)( x[ 6] >>  2  );
-    r[17] = (uint8_t)( x[ 6] >> 10  );
-    r[18] = (uint8_t)((x[ 6] >> 18) | (x[ 7] << 3));
-    r[19] = (uint8_t)( x[ 7] >>  5  );
-    r[20] = (uint8_t)( x[ 7] >> 13  );
-    r[21] = (uint8_t)( x[ 8]        );
-    r[22] = (uint8_t)( x[ 8] >>  8  );
-    r[23] = (uint8_t)((x[ 8] >> 16) | (x[ 9] << 5));
-    r[24] = (uint8_t)( x[ 9] >>  3  );
-    r[25] = (uint8_t)( x[ 9] >> 11  );
-    r[26] = (uint8_t)((x[ 9] >> 19) | (x[10] << 2));
-    r[27] = (uint8_t)( x[10] >>  6  );
-    r[28] = (uint8_t)((x[10] >> 14) | (x[11] << 7));
-    r[29] = (uint8_t)( x[11] >>  1  );
-    r[30] = (uint8_t)( x[11] >>  9  );
-    r[31] = (uint8_t)( x[11] >> 17  );
+    r[ 0] = (uint8_t)(s0  >>  0); r[ 1] = (uint8_t)(s0  >>  8);
+    r[ 2] = (uint8_t)((s0  >> 16) | (s1 << 5)); r[ 3] = (uint8_t)(s1  >>  3);
+    r[ 4] = (uint8_t)(s1  >> 11); r[ 5] = (uint8_t)((s1 >> 19) | (s2 << 2));
+    r[ 6] = (uint8_t)(s2  >>  6); r[ 7] = (uint8_t)((s2 >> 14) | (s3 << 7));
+    r[ 8] = (uint8_t)(s3  >>  1); r[ 9] = (uint8_t)(s3  >>  9);
+    r[10] = (uint8_t)((s3  >> 17) | (s4 << 4)); r[11] = (uint8_t)(s4  >>  4);
+    r[12] = (uint8_t)(s4  >> 12); r[13] = (uint8_t)((s4 >> 20) | (s5 << 1));
+    r[14] = (uint8_t)(s5  >>  7); r[15] = (uint8_t)((s5 >> 15) | (s6 << 6));
+    r[16] = (uint8_t)(s6  >>  2); r[17] = (uint8_t)(s6  >> 10);
+    r[18] = (uint8_t)((s6  >> 18) | (s7 << 3)); r[19] = (uint8_t)(s7  >>  5);
+    r[20] = (uint8_t)(s7  >> 13); r[21] = (uint8_t)(s8  >>  0);
+    r[22] = (uint8_t)(s8  >>  8); r[23] = (uint8_t)((s8 >> 16) | (s9 << 5));
+    r[24] = (uint8_t)(s9  >>  3); r[25] = (uint8_t)(s9  >> 11);
+    r[26] = (uint8_t)((s9  >> 19) | (s10 << 2)); r[27] = (uint8_t)(s10 >>  6);
+    r[28] = (uint8_t)((s10 >> 14) | (s11 << 7)); r[29] = (uint8_t)(s11 >>  1);
+    r[30] = (uint8_t)(s11 >>  9); r[31] = (uint8_t)(s11 >> 17);
 }
 
 /*
@@ -687,45 +712,45 @@ static void sc_reduce(uint8_t r[64])
 static void sc_muladd(uint8_t *s,
                       const uint8_t *a, const uint8_t *b, const uint8_t *c)
 {
-    /* Load a, b, c as 21-bit limbs */
-    long long a0  = 2097151 & ((long long)a[ 0] | ((long long)a[ 1]<<8) | ((long long)a[ 2]<<16));
-    long long a1  = 2097151 & (((long long)a[ 2]>>5) | ((long long)a[ 3]<<3) | ((long long)a[ 4]<<11) | ((long long)a[ 5]<<19));
-    long long a2  = 2097151 & (((long long)a[ 5]>>2) | ((long long)a[ 6]<<6) | ((long long)a[ 7]<<14));
-    long long a3  = 2097151 & (((long long)a[ 7]>>7) | ((long long)a[ 8]<<1) | ((long long)a[ 9]<<9) | ((long long)a[10]<<17));
-    long long a4  = 2097151 & (((long long)a[10]>>4) | ((long long)a[11]<<4) | ((long long)a[12]<<12));
-    long long a5  = 2097151 & (((long long)a[12]>>1) | ((long long)a[13]<<7) | ((long long)a[14]<<15));
-    long long a6  = 2097151 & (((long long)a[14]>>6) | ((long long)a[15]<<2) | ((long long)a[16]<<10) | ((long long)a[17]<<18));
-    long long a7  = 2097151 & (((long long)a[17]>>3) | ((long long)a[18]<<5) | ((long long)a[19]<<13));
-    long long a8  = 2097151 & ((long long)a[20] | ((long long)a[21]<<8) | ((long long)a[22]<<16));
-    long long a9  = 2097151 & (((long long)a[22]>>5) | ((long long)a[23]<<3) | ((long long)a[24]<<11) | ((long long)a[25]<<19));
-    long long a10 = 2097151 & (((long long)a[25]>>2) | ((long long)a[26]<<6) | ((long long)a[27]<<14));
-    long long a11 = (((long long)a[27]>>7) | ((long long)a[28]<<1) | ((long long)a[29]<<9) | ((long long)a[30]<<17) | ((long long)a[31]<<25));
-
-    long long b0  = 2097151 & ((long long)b[ 0] | ((long long)b[ 1]<<8) | ((long long)b[ 2]<<16));
-    long long b1  = 2097151 & (((long long)b[ 2]>>5) | ((long long)b[ 3]<<3) | ((long long)b[ 4]<<11) | ((long long)b[ 5]<<19));
-    long long b2  = 2097151 & (((long long)b[ 5]>>2) | ((long long)b[ 6]<<6) | ((long long)b[ 7]<<14));
-    long long b3  = 2097151 & (((long long)b[ 7]>>7) | ((long long)b[ 8]<<1) | ((long long)b[ 9]<<9) | ((long long)b[10]<<17));
-    long long b4  = 2097151 & (((long long)b[10]>>4) | ((long long)b[11]<<4) | ((long long)b[12]<<12));
-    long long b5  = 2097151 & (((long long)b[12]>>1) | ((long long)b[13]<<7) | ((long long)b[14]<<15));
-    long long b6  = 2097151 & (((long long)b[14]>>6) | ((long long)b[15]<<2) | ((long long)b[16]<<10) | ((long long)b[17]<<18));
-    long long b7  = 2097151 & (((long long)b[17]>>3) | ((long long)b[18]<<5) | ((long long)b[19]<<13));
-    long long b8  = 2097151 & ((long long)b[20] | ((long long)b[21]<<8) | ((long long)b[22]<<16));
-    long long b9  = 2097151 & (((long long)b[22]>>5) | ((long long)b[23]<<3) | ((long long)b[24]<<11) | ((long long)b[25]<<19));
-    long long b10 = 2097151 & (((long long)b[25]>>2) | ((long long)b[26]<<6) | ((long long)b[27]<<14));
-    long long b11 = (((long long)b[27]>>7) | ((long long)b[28]<<1) | ((long long)b[29]<<9) | ((long long)b[30]<<17) | ((long long)b[31]<<25));
-
-    long long c0  = 2097151 & ((long long)c[ 0] | ((long long)c[ 1]<<8) | ((long long)c[ 2]<<16));
-    long long c1  = 2097151 & (((long long)c[ 2]>>5) | ((long long)c[ 3]<<3) | ((long long)c[ 4]<<11) | ((long long)c[ 5]<<19));
-    long long c2  = 2097151 & (((long long)c[ 5]>>2) | ((long long)c[ 6]<<6) | ((long long)c[ 7]<<14));
-    long long c3  = 2097151 & (((long long)c[ 7]>>7) | ((long long)c[ 8]<<1) | ((long long)c[ 9]<<9) | ((long long)c[10]<<17));
-    long long c4  = 2097151 & (((long long)c[10]>>4) | ((long long)c[11]<<4) | ((long long)c[12]<<12));
-    long long c5  = 2097151 & (((long long)c[12]>>1) | ((long long)c[13]<<7) | ((long long)c[14]<<15));
-    long long c6  = 2097151 & (((long long)c[14]>>6) | ((long long)c[15]<<2) | ((long long)c[16]<<10) | ((long long)c[17]<<18));
-    long long c7  = 2097151 & (((long long)c[17]>>3) | ((long long)c[18]<<5) | ((long long)c[19]<<13));
-    long long c8  = 2097151 & ((long long)c[20] | ((long long)c[21]<<8) | ((long long)c[22]<<16));
-    long long c9  = 2097151 & (((long long)c[22]>>5) | ((long long)c[23]<<3) | ((long long)c[24]<<11) | ((long long)c[25]<<19));
-    long long c10 = 2097151 & (((long long)c[25]>>2) | ((long long)c[26]<<6) | ((long long)c[27]<<14));
-    long long c11 = (((long long)c[27]>>7) | ((long long)c[28]<<1) | ((long long)c[29]<<9) | ((long long)c[30]<<17) | ((long long)c[31]<<25));
+    /*
+     * Load a, b, c as 12 signed 21-bit limbs each from their 32-byte
+     * little-endian encodings.  We read each limb generically by bit offset
+     * (limb i starts at bit 21*i) so the alignment is exact; the top limb (11)
+     * keeps the remaining high bits.
+     *
+     * (The previous hand-unrolled extraction drifted by a byte from limb 4
+     * onward — losing/duplicating bits — which corrupted the computed S value
+     * even though R was correct.  See agentos-c7i.)
+     */
+    long long al[12], bl[12], cl[12];
+    {
+        const uint8_t *src[3] = { a, b, c };
+        long long *dst[3] = { al, bl, cl };
+        for (int k = 0; k < 3; k++) {
+            const uint8_t *p = src[k];
+            long long *d = dst[k];
+            for (int i = 0; i < 12; i++) {
+                unsigned bit = (unsigned)(21 * i);
+                unsigned byte = bit >> 3;
+                unsigned shift = bit & 7;
+                unsigned long long acc =
+                      (unsigned long long)p[byte]
+                    | ((unsigned long long)p[byte + 1] << 8)
+                    | ((unsigned long long)p[byte + 2] << 16)
+                    | ((unsigned long long)((byte + 3 < 32) ? p[byte + 3] : 0) << 24);
+                if (i == 11)
+                    d[i] = (long long)(acc >> shift);          /* top: keep all */
+                else
+                    d[i] = (long long)((acc >> shift) & 0x1FFFFFull);
+            }
+        }
+    }
+    long long a0=al[0],a1=al[1],a2=al[2],a3=al[3],a4=al[4],a5=al[5];
+    long long a6=al[6],a7=al[7],a8=al[8],a9=al[9],a10=al[10],a11=al[11];
+    long long b0=bl[0],b1=bl[1],b2=bl[2],b3=bl[3],b4=bl[4],b5=bl[5];
+    long long b6=bl[6],b7=bl[7],b8=bl[8],b9=bl[9],b10=bl[10],b11=bl[11];
+    long long c0=cl[0],c1=cl[1],c2=cl[2],c3=cl[3],c4=cl[4],c5=cl[5];
+    long long c6=cl[6],c7=cl[7],c8=cl[8],c9=cl[9],c10=cl[10],c11=cl[11];
 
     long long s0,s1,s2,s3,s4,s5,s6,s7,s8,s9,s10,s11,s12,s13,s14,s15,s16,s17,s18,s19,s20,s21,s22,s23;
     long long carry0,carry1,carry2,carry3,carry4,carry5,carry6,carry7,carry8,carry9,carry10,carry11;
@@ -756,11 +781,17 @@ static void sc_muladd(uint8_t *s,
     s22 =       a11*b11;
     s23 = 0;
 
-    carry0  = (s0  + (1<<20)) >> 21; s1  += carry0; s0  -= carry0 << 21;
-    carry2  = (s2  + (1<<20)) >> 21; s3  += carry2; s2  -= carry2 << 21;
-    carry4  = (s4  + (1<<20)) >> 21; s5  += carry4; s4  -= carry4 << 21;
-    carry6  = (s6  + (1<<20)) >> 21; s7  += carry6; s6  -= carry6 << 21;
-    carry8  = (s8  + (1<<20)) >> 21; s9  += carry8; s8  -= carry8 << 21;
+    /*
+     * Canonical ref10 reduction of the 24-limb product modulo l, identical to
+     * the published ed25519 reference.  (The previous carry/fold ordering was
+     * not the reference even/odd schedule and left a few limbs un-normalised,
+     * corrupting the low-order bytes of S — see agentos-c7i.)
+     */
+    carry0  = (s0  + (1<<20)) >> 21; s1  += carry0;  s0  -= carry0  << 21;
+    carry2  = (s2  + (1<<20)) >> 21; s3  += carry2;  s2  -= carry2  << 21;
+    carry4  = (s4  + (1<<20)) >> 21; s5  += carry4;  s4  -= carry4  << 21;
+    carry6  = (s6  + (1<<20)) >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry8  = (s8  + (1<<20)) >> 21; s9  += carry8;  s8  -= carry8  << 21;
     carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
     carry12 = (s12 + (1<<20)) >> 21; s13 += carry12; s12 -= carry12 << 21;
     carry14 = (s14 + (1<<20)) >> 21; s15 += carry14; s14 -= carry14 << 21;
@@ -781,77 +812,89 @@ static void sc_muladd(uint8_t *s,
     carry19 = (s19 + (1<<20)) >> 21; s20 += carry19; s19 -= carry19 << 21;
     carry21 = (s21 + (1<<20)) >> 21; s22 += carry21; s21 -= carry21 << 21;
 
-    /* Reduce s12..s23 back into s0..s11 using l */
     s11 += s23 * 666643; s12 += s23 * 470296; s13 += s23 * 654183;
     s14 -= s23 * 997805; s15 += s23 * 136657; s16 -= s23 * 683901; s23 = 0;
-
     s10 += s22 * 666643; s11 += s22 * 470296; s12 += s22 * 654183;
     s13 -= s22 * 997805; s14 += s22 * 136657; s15 -= s22 * 683901; s22 = 0;
-
     s9  += s21 * 666643; s10 += s21 * 470296; s11 += s21 * 654183;
     s12 -= s21 * 997805; s13 += s21 * 136657; s14 -= s21 * 683901; s21 = 0;
-
     s8  += s20 * 666643; s9  += s20 * 470296; s10 += s20 * 654183;
     s11 -= s20 * 997805; s12 += s20 * 136657; s13 -= s20 * 683901; s20 = 0;
-
     s7  += s19 * 666643; s8  += s19 * 470296; s9  += s19 * 654183;
     s10 -= s19 * 997805; s11 += s19 * 136657; s12 -= s19 * 683901; s19 = 0;
-
     s6  += s18 * 666643; s7  += s18 * 470296; s8  += s18 * 654183;
     s9  -= s18 * 997805; s10 += s18 * 136657; s11 -= s18 * 683901; s18 = 0;
 
     carry6  = (s6  + (1<<20)) >> 21; s7  += carry6;  s6  -= carry6  << 21;
-    carry7  = (s7  + (1<<20)) >> 21; s8  += carry7;  s7  -= carry7  << 21;
     carry8  = (s8  + (1<<20)) >> 21; s9  += carry8;  s8  -= carry8  << 21;
-    carry9  = (s9  + (1<<20)) >> 21; s10 += carry9;  s9  -= carry9  << 21;
     carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+    carry12 = (s12 + (1<<20)) >> 21; s13 += carry12; s12 -= carry12 << 21;
+    carry14 = (s14 + (1<<20)) >> 21; s15 += carry14; s14 -= carry14 << 21;
+    carry16 = (s16 + (1<<20)) >> 21; s17 += carry16; s16 -= carry16 << 21;
+
+    carry7  = (s7  + (1<<20)) >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry9  = (s9  + (1<<20)) >> 21; s10 += carry9;  s9  -= carry9  << 21;
     carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
+    carry13 = (s13 + (1<<20)) >> 21; s14 += carry13; s13 -= carry13 << 21;
+    carry15 = (s15 + (1<<20)) >> 21; s16 += carry15; s15 -= carry15 << 21;
 
     s5  += s17 * 666643; s6  += s17 * 470296; s7  += s17 * 654183;
     s8  -= s17 * 997805; s9  += s17 * 136657; s10 -= s17 * 683901; s17 = 0;
-
     s4  += s16 * 666643; s5  += s16 * 470296; s6  += s16 * 654183;
     s7  -= s16 * 997805; s8  += s16 * 136657; s9  -= s16 * 683901; s16 = 0;
-
     s3  += s15 * 666643; s4  += s15 * 470296; s5  += s15 * 654183;
     s6  -= s15 * 997805; s7  += s15 * 136657; s8  -= s15 * 683901; s15 = 0;
-
     s2  += s14 * 666643; s3  += s14 * 470296; s4  += s14 * 654183;
     s5  -= s14 * 997805; s6  += s14 * 136657; s7  -= s14 * 683901; s14 = 0;
-
     s1  += s13 * 666643; s2  += s13 * 470296; s3  += s13 * 654183;
     s4  -= s13 * 997805; s5  += s13 * 136657; s6  -= s13 * 683901; s13 = 0;
-
     s0  += s12 * 666643; s1  += s12 * 470296; s2  += s12 * 654183;
     s3  -= s12 * 997805; s4  += s12 * 136657; s5  -= s12 * 683901; s12 = 0;
 
     carry0  = (s0  + (1<<20)) >> 21; s1  += carry0;  s0  -= carry0  << 21;
-    carry1  = (s1  + (1<<20)) >> 21; s2  += carry1;  s1  -= carry1  << 21;
     carry2  = (s2  + (1<<20)) >> 21; s3  += carry2;  s2  -= carry2  << 21;
-    carry3  = (s3  + (1<<20)) >> 21; s4  += carry3;  s3  -= carry3  << 21;
     carry4  = (s4  + (1<<20)) >> 21; s5  += carry4;  s4  -= carry4  << 21;
-    carry5  = (s5  + (1<<20)) >> 21; s6  += carry5;  s5  -= carry5  << 21;
     carry6  = (s6  + (1<<20)) >> 21; s7  += carry6;  s6  -= carry6  << 21;
-    carry7  = (s7  + (1<<20)) >> 21; s8  += carry7;  s7  -= carry7  << 21;
     carry8  = (s8  + (1<<20)) >> 21; s9  += carry8;  s8  -= carry8  << 21;
-    carry9  = (s9  + (1<<20)) >> 21; s10 += carry9;  s9  -= carry9  << 21;
     carry10 = (s10 + (1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+
+    carry1  = (s1  + (1<<20)) >> 21; s2  += carry1;  s1  -= carry1  << 21;
+    carry3  = (s3  + (1<<20)) >> 21; s4  += carry3;  s3  -= carry3  << 21;
+    carry5  = (s5  + (1<<20)) >> 21; s6  += carry5;  s5  -= carry5  << 21;
+    carry7  = (s7  + (1<<20)) >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry9  = (s9  + (1<<20)) >> 21; s10 += carry9;  s9  -= carry9  << 21;
     carry11 = (s11 + (1<<20)) >> 21; s12 += carry11; s11 -= carry11 << 21;
 
     s0  += s12 * 666643; s1  += s12 * 470296; s2  += s12 * 654183;
     s3  -= s12 * 997805; s4  += s12 * 136657; s5  -= s12 * 683901; s12 = 0;
 
-    carry0 = (s0 + (1<<20)) >> 21; s1  += carry0; s0  -= carry0 << 21;
-    carry1 = (s1 + (1<<20)) >> 21; s2  += carry1; s1  -= carry1 << 21;
-    carry2 = (s2 + (1<<20)) >> 21; s3  += carry2; s2  -= carry2 << 21;
-    carry3 = (s3 + (1<<20)) >> 21; s4  += carry3; s3  -= carry3 << 21;
-    carry4 = (s4 + (1<<20)) >> 21; s5  += carry4; s4  -= carry4 << 21;
-    carry5 = (s5 + (1<<20)) >> 21; s6  += carry5; s5  -= carry5 << 21;
-    carry6 = (s6 + (1<<20)) >> 21; s7  += carry6; s6  -= carry6 << 21;
-    carry7 = (s7 + (1<<20)) >> 21; s8  += carry7; s7  -= carry7 << 21;
-    carry8 = (s8 + (1<<20)) >> 21; s9  += carry8; s8  -= carry8 << 21;
-    carry9 = (s9 + (1<<20)) >> 21; s10 += carry9; s9  -= carry9 << 21;
-    carry10 = (s10+(1<<20)) >> 21; s11 += carry10; s10 -= carry10 << 21;
+    carry0  = s0  >> 21; s1  += carry0;  s0  -= carry0  << 21;
+    carry1  = s1  >> 21; s2  += carry1;  s1  -= carry1  << 21;
+    carry2  = s2  >> 21; s3  += carry2;  s2  -= carry2  << 21;
+    carry3  = s3  >> 21; s4  += carry3;  s3  -= carry3  << 21;
+    carry4  = s4  >> 21; s5  += carry4;  s4  -= carry4  << 21;
+    carry5  = s5  >> 21; s6  += carry5;  s5  -= carry5  << 21;
+    carry6  = s6  >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry7  = s7  >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry8  = s8  >> 21; s9  += carry8;  s8  -= carry8  << 21;
+    carry9  = s9  >> 21; s10 += carry9;  s9  -= carry9  << 21;
+    carry10 = s10 >> 21; s11 += carry10; s10 -= carry10 << 21;
+    carry11 = s11 >> 21; s12 += carry11; s11 -= carry11 << 21;
+
+    s0  += s12 * 666643; s1  += s12 * 470296; s2  += s12 * 654183;
+    s3  -= s12 * 997805; s4  += s12 * 136657; s5  -= s12 * 683901; s12 = 0;
+
+    carry0  = s0  >> 21; s1  += carry0;  s0  -= carry0  << 21;
+    carry1  = s1  >> 21; s2  += carry1;  s1  -= carry1  << 21;
+    carry2  = s2  >> 21; s3  += carry2;  s2  -= carry2  << 21;
+    carry3  = s3  >> 21; s4  += carry3;  s3  -= carry3  << 21;
+    carry4  = s4  >> 21; s5  += carry4;  s4  -= carry4  << 21;
+    carry5  = s5  >> 21; s6  += carry5;  s5  -= carry5  << 21;
+    carry6  = s6  >> 21; s7  += carry6;  s6  -= carry6  << 21;
+    carry7  = s7  >> 21; s8  += carry7;  s7  -= carry7  << 21;
+    carry8  = s8  >> 21; s9  += carry8;  s8  -= carry8  << 21;
+    carry9  = s9  >> 21; s10 += carry9;  s9  -= carry9  << 21;
+    carry10 = s10 >> 21; s11 += carry10; s10 -= carry10 << 21;
 
     s[ 0] = (uint8_t)( s0 >> 0);
     s[ 1] = (uint8_t)( s0 >> 8);

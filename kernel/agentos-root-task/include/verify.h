@@ -32,3 +32,30 @@ int ed25519_verify(const uint8_t sig[64], const uint8_t *msg, size_t msg_len,
  *         -2  hash mismatch — manifest has been tampered.
  */
 int verify_capabilities_manifest(const uint8_t *wasm, size_t wasm_len);
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * FATAL cryptographic selftest gate.
+ *
+ * crypto_selftest() runs the Ed25519 verifier against pinned RFC 8032
+ * known-answer vectors AND a known-BAD vector.  It is a HARD boot/test gate:
+ * the controller MUST refuse to continue booting if it returns nonzero (see
+ * the FATAL selftest gate in monitor.c::controller_main, which halts on
+ * failure).  It is NOT a soft warning.
+ *
+ * Returns 0 iff:
+ *   • the known-GOOD RFC 8032 signature verifies, AND
+ *   • the known-BAD (corrupted) signature is correctly REJECTED, AND
+ *   • the local sign + public-key-derivation round-trips reproduce the
+ *     pinned RFC 8032 outputs.
+ * Returns nonzero on ANY discrepancy — meaning the crypto stack is broken and
+ * the boot/test gate must abort.
+ */
+int crypto_selftest(void);
+
+/* Test-only hook: run the gate's known-good + known-bad logic against
+ * caller-supplied vectors so a host test can force a failure path.
+ * The supplied vectors are treated as the "known-good" pair; the function
+ * additionally derives a corrupted copy and requires it to be rejected.
+ * Returns 0 iff the supplied pair verifies AND its corrupted form is rejected. */
+int crypto_selftest_with_vectors(const uint8_t sig[64], const uint8_t *msg,
+                                 size_t msg_len, const uint8_t pk[32]);

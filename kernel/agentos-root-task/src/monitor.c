@@ -95,6 +95,10 @@ typedef struct { uint32_t agent_id; uint8_t cap_class; uint8_t rights; } cap_gra
 
 /* Stub verify */
 static inline int verify_capabilities_manifest(const uint8_t *b, uint32_t l) { (void)b; (void)l; return -1; }
+/* Host stub for the fatal crypto selftest gate (real impl in verify.c, which
+ * is exercised by tests/test_crypto_selftest.c).  In the host build of
+ * monitor.c no real crypto runs, so the gate reports success. */
+static inline int crypto_selftest(void) { return 0; }
 
 /* Stub monocypher */
 static inline void crypto_ed25519_public_key(uint8_t *pk, const uint8_t *sk) { (void)pk; (void)sk; }
@@ -1081,22 +1085,28 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     agent_pool_init();
     boot_integrity_init();
 
-    /* ── 4. Ed25519 selftest ────────────────────────────────────────────────── */
-    {
-        static const uint8_t test_sk[32] = {
-            0x9d, 0x61, 0xb1, 0x9d, 0xef, 0xfd, 0x5a, 0x60,
-            0xba, 0x84, 0x4a, 0xf4, 0x92, 0xec, 0x2c, 0x44,
-            0xda, 0x4d, 0xa0, 0x5d, 0xe7, 0xe8, 0xc8, 0x6b,
-            0xef, 0x64, 0x77, 0x64, 0xb4, 0x24, 0x09, 0x57
-        };
-        static const uint8_t test_msg[1] = {0};
-        uint8_t pk[32], sig[64];
-        crypto_ed25519_public_key(pk, test_sk);
-        crypto_ed25519_sign(sig, test_sk, pk, test_msg, 0);
-        bool ok = crypto_ed25519_check(sig, test_msg, 0, pk) == 0;
-        ctrl_puts(ok ? "[verify] Ed25519 selftest PASS\n"
-                     : "[verify] Ed25519 selftest FAIL\n");
+    /* ── 4. FATAL cryptographic selftest gate ───────────────────────────────────
+     *
+     * crypto_selftest() (verify.c) runs the production Ed25519 verify path
+     * against pinned RFC 8032 known-answer vectors AND requires a corrupted
+     * signature to be REJECTED.  This is a HARD boot gate: if the crypto stack
+     * is broken, signature verification cannot be trusted, so an attacker could
+     * load unsigned/tampered modules.  We therefore REFUSE to continue booting.
+     * This is intentionally NOT a soft warning — boot HALTS on failure. */
+    if (crypto_selftest() != 0) {
+        ctrl_puts("[verify] FATAL: Ed25519 cryptographic selftest FAILED — "
+                  "halting boot\n");
+#ifndef AGENTOS_TEST_HOST
+        /* Wedge the controller: a failed crypto integrity check must never let
+         * the system reach a state where it can load modules. */
+        for (;;) { /* spin forever — boot does not continue */ }
+#else
+        /* Host test builds: surface the failure to the harness instead of
+         * spinning, so the fatal-gate behaviour can be asserted. */
+        return;
+#endif
     }
+    ctrl_puts("[verify] Ed25519 cryptographic selftest PASS\n");
 
     /* ── 5. Connect to upstream services ────────────────────────────────────── */
     sel4_client_connect(&g_client, NS_SVC_EVENTBUS,   &g_ep_eventbus);
