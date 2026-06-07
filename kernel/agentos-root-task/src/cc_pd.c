@@ -124,6 +124,7 @@ static void cc_dbg_hex(uint64_t v)
 #define VIRTIO_MAGIC      0x74726976u
 #define VIRTIO_ID_CONSOLE 3u
 #define VQ_DEPTH          4u
+#define CC_VIRTIO_WAIT_LIMIT 1000000u
 
 typedef struct { uint64_t addr; uint32_t len; uint16_t flags; uint16_t next; }
     __attribute__((packed)) vq_desc_t;
@@ -258,7 +259,7 @@ static void virtio_serial_init(void)
     cc_dbg_puts("[cc_pd] VirtIO serial ready\n");
 }
 
-static void vio_serial_write(const void *buf, uint32_t n)
+static bool vio_serial_write(const void *buf, uint32_t n)
 {
     const uint8_t *p = (const uint8_t *)buf;
     while (n > 0u) {
@@ -290,9 +291,15 @@ static void vio_serial_write(const void *buf, uint32_t n)
 #ifdef CC_PD_TRACE_TX
         uint32_t spin = 0u;
 #endif
+        uint32_t wait = 0u;
         while (TX_USED->idx == old_used) {
             VQ_MB();
             seL4_Yield();
+            wait++;
+            if (wait >= CC_VIRTIO_WAIT_LIMIT) {
+                cc_dbg_puts("[cc_pd] TX timeout waiting for used ring\n");
+                return false;
+            }
 #ifdef CC_PD_TRACE_TX
             spin++;
             if (spin <= 3u || (spin & 0xFFFFu) == 0u) {
@@ -308,18 +315,25 @@ static void vio_serial_write(const void *buf, uint32_t n)
         p += chunk;
         n -= chunk;
     }
+    return true;
 }
 
-static void vio_serial_read(void *buf, uint32_t n)
+static bool vio_serial_read(void *buf, uint32_t n)
 {
     uint8_t *p = (uint8_t *)buf;
     while (n > 0u) {
         uint16_t cur;
+        uint32_t wait = 0u;
         for (;;) {
             VQ_MB();
             cur = RX_USED->idx;
             if (cur != g_rx_used_last) { break; }
             seL4_Yield();
+            wait++;
+            if (wait >= CC_VIRTIO_WAIT_LIMIT) {
+                cc_dbg_puts("[cc_pd] RX timeout waiting for used ring\n");
+                return false;
+            }
         }
         uint32_t got  = RX_USED->ring[g_rx_used_last & (uint16_t)(VQ_DEPTH - 1u)].len;
         VQ_MB();
@@ -340,6 +354,7 @@ static void vio_serial_read(void *buf, uint32_t n)
         VQ_MB();
         vio_wr(VMMIO_QUEUE_NOTIFY, 0u);
     }
+    return true;
 }
 
 /* ─── Wire frame types ───────────────────────────────────────────────────── */
@@ -1545,10 +1560,12 @@ void cc_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     static cc_reply_wire_t g_rep;
 
     while (1) {
-        vio_serial_read(&g_req, sizeof(g_req));
+        if (!vio_serial_read(&g_req, sizeof(g_req))) {
+            continue;
+        }
         __builtin_memset(&g_rep, 0, sizeof(g_rep));
         cc_dispatch(&g_req, &g_rep);
-        vio_serial_write(&g_rep, sizeof(g_rep));
+        (void)vio_serial_write(&g_rep, sizeof(g_rep));
     }
 }
 

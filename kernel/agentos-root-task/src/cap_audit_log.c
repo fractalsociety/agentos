@@ -327,3 +327,5 @@ void cap_audit_log_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, SEL4_SERVER_OPCODE_ANY, cap_audit_log_h_dispatch, (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { cap_audit_log_main(my_ep, ns_ep); }

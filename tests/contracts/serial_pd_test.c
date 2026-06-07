@@ -30,10 +30,10 @@ void run_serial_pd_tests(microkit_channel ch)
     uint64_t client_slot = microkit_mr_get(1);
     {
         if (open_rc == AOS_OK || open_rc == AOS_ERR_BUSY ||
-            open_rc == AOS_ERR_NOT_FOUND || open_rc == AOS_ERR_UNIMPL) {
-            _tf_ok("serial_pd: OPEN port 0 returns ok, busy, not-found, or unimpl");
+            open_rc == AOS_ERR_NOT_FOUND) {
+            _tf_ok("serial_pd: OPEN port 0 returns ok, busy, or not-found");
         } else {
-            _tf_fail_point("serial_pd: OPEN port 0 returns ok, busy, not-found, or unimpl",
+            _tf_fail_point("serial_pd: OPEN port 0 returns ok, busy, or not-found",
                            "unexpected error code");
         }
     }
@@ -70,10 +70,10 @@ void run_serial_pd_tests(microkit_channel ch)
     (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_SERIAL_CONFIGURE, 4));
     {
         uint64_t rc = microkit_mr_get(0);
-        if (rc == AOS_OK || rc == AOS_ERR_INVAL || rc == AOS_ERR_UNIMPL) {
-            _tf_ok("serial_pd: CONFIGURE returns ok, inval, or unimpl");
+        if (rc == AOS_OK || rc == AOS_ERR_INVAL) {
+            _tf_ok("serial_pd: CONFIGURE returns ok or inval");
         } else {
-            _tf_fail_point("serial_pd: CONFIGURE returns ok, inval, or unimpl",
+            _tf_fail_point("serial_pd: CONFIGURE returns ok or inval",
                            "unexpected error code");
         }
     }
@@ -86,10 +86,10 @@ void run_serial_pd_tests(microkit_channel ch)
     {
         uint64_t rc = microkit_mr_get(0);
         /* ok (0 bytes written) or inval (len=0 rejected) are both valid. */
-        if (rc == AOS_OK || rc == AOS_ERR_INVAL || rc == AOS_ERR_UNIMPL) {
-            _tf_ok("serial_pd: WRITE len=0 returns ok, inval, or unimpl");
+        if (rc == AOS_OK || rc == AOS_ERR_INVAL) {
+            _tf_ok("serial_pd: WRITE len=0 returns ok or inval");
         } else {
-            _tf_fail_point("serial_pd: WRITE len=0 returns ok, inval, or unimpl",
+            _tf_fail_point("serial_pd: WRITE len=0 returns ok or inval",
                            "unexpected error code");
         }
     }
@@ -101,10 +101,10 @@ void run_serial_pd_tests(microkit_channel ch)
     (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_SERIAL_READ, 3));
     {
         uint64_t rc = microkit_mr_get(0);
-        if (rc == AOS_OK || rc == AOS_ERR_INVAL || rc == AOS_ERR_UNIMPL) {
-            _tf_ok("serial_pd: READ max=0 returns ok, inval, or unimpl");
+        if (rc == AOS_OK || rc == AOS_ERR_INVAL) {
+            _tf_ok("serial_pd: READ max=0 returns ok or inval");
         } else {
-            _tf_fail_point("serial_pd: READ max=0 returns ok, inval, or unimpl",
+            _tf_fail_point("serial_pd: READ max=0 returns ok or inval",
                            "unexpected error code");
         }
     }
@@ -115,10 +115,10 @@ void run_serial_pd_tests(microkit_channel ch)
     (void)microkit_ppcall(ch, microkit_msginfo_new(MSG_SERIAL_STATUS, 2));
     {
         uint64_t rc = microkit_mr_get(0);
-        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND || rc == AOS_ERR_UNIMPL) {
-            _tf_ok("serial_pd: STATUS returns ok, not-found, or unimpl");
+        if (rc == AOS_OK || rc == AOS_ERR_NOT_FOUND) {
+            _tf_ok("serial_pd: STATUS returns ok or not-found");
         } else {
-            _tf_fail_point("serial_pd: STATUS returns ok, not-found, or unimpl",
+            _tf_fail_point("serial_pd: STATUS returns ok or not-found",
                            "unexpected error code");
         }
     }

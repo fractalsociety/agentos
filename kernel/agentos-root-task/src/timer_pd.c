@@ -238,3 +238,5 @@ void timer_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, TIMER_OP_GET_RTC,   h_get_rtc,   (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { timer_pd_main(my_ep, ns_ep); }

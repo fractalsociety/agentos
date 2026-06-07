@@ -260,3 +260,18 @@ static uint32_t proc_server_pd_dispatch(sel4_badge_t b, const sel4_msg_t *req, s
         return SEL4_ERR_OK;
     }
 }
+
+#ifndef AGENTOS_TEST_HOST
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    (void)ns_ep;
+
+    proc_server_pd_init();
+
+    static sel4_server_t srv;
+    sel4_server_init(&srv, my_ep);
+    sel4_server_register(&srv, SEL4_SERVER_OPCODE_ANY,
+                         proc_server_pd_dispatch, (void *)0);
+    sel4_server_run(&srv);
+}
+#endif

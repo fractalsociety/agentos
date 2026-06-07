@@ -129,6 +129,11 @@ void linux_vmm_main(seL4_CPtr ep, seL4_CPtr ns_ep)
     while (1) seL4_Wait(ep, &badge);
 }
 
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    linux_vmm_main(my_ep, ns_ep);
+}
+
 #endif /* ARCH_X86_64 */
 
 /* ─── RISC-V 64 process-in-PD VMM ──────────────────────────────────────────

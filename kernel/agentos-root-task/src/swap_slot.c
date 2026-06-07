@@ -510,4 +510,13 @@ void swap_slot_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     ss_dbg_puts("[swap_slot] *** SwapSlot ALIVE — waiting for controller ***\n");
     sel4_server_run(&g_srv);  /* NEVER RETURNS */
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    /* The current descriptor exposes one generic swap_slot image.  Until the
+     * root task passes per-slot startup records, use slot 0 and no direct
+     * controller notification cap; controller interactions still arrive over
+     * this PD's server endpoint. */
+    swap_slot_main(my_ep, ns_ep, 0u, 0u);
+}
 #endif /* !AGENTOS_TEST_HOST */

@@ -219,3 +219,5 @@ void perf_counters_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, OP_PERF_EXPORT, handle_export, (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { perf_counters_main(my_ep, ns_ep); }

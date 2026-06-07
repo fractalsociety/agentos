@@ -222,6 +222,8 @@ void auth_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_run(&srv);
 }
 
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { auth_server_main(my_ep, ns_ep); }
+
 /* suppress tick_counter unused warning */
 static void _tick(void) { tick_counter++; }
 static void (*_tick_fn)(void) __attribute__((unused)) = _tick;

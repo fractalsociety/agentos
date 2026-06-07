@@ -878,4 +878,6 @@ void spawn_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     /* Enter server loop — never returns */
     sel4_server_run(&g_srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { spawn_server_main(my_ep, ns_ep); }
 #endif /* !AGENTOS_TEST_HOST */

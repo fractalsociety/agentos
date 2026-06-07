@@ -20,7 +20,11 @@
 
 #include <stdint.h>
 
-__attribute__((noreturn)) void pd_main(void)
+typedef unsigned long seL4_CPtr;
+
+__attribute__((noreturn)) void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
+    (void)my_ep;
+    (void)ns_ep;
     for (;;) { __asm__ volatile (""); }
 }

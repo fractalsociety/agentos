@@ -2,68 +2,47 @@
 
 **Author**: Jordan Hubbard  
 **Status**: Active  
-**Last updated**: 2026-04-27
+**Last updated**: 2026-06-07
 
 ---
 
-## Current Work — cc_pd / VirtIO Socket Bridge (Phase 4 milestone)
+## Current Work — Priority Architecture Hardening
 
-**Objective:** Get `cc_pd` fully online so `agentos_gui` can connect to `build/cc_pd.sock`,
-exchange `cc_req_wire_t` / `cc_reply_wire_t` frames (4112 bytes each), and receive valid
-replies. This is the gate into Phase 5 (inter-PD endpoint wiring).
+**Tracking issue:** `agentos-5rj`
 
-### Boot status (2026-04-27)
+**Objective:** close the highest-risk gaps surfaced by the design review before adding
+new feature surface. The immediate goal is not to finish every large subsystem; it is
+to make failures explicit, bounded, and test-visible.
 
-- agentOS boots to `[controller] EventBus: READY` and `agentOS boot complete` on QEMU AArch64
-- cc_pd starts (`[@]` canary confirms `cc_pd_main` runs), VirtIO initialises (VERSION=2 with
-  `-global virtio-mmio.force-legacy=off`), and prints `VirtIO serial ready`
-- **BLOCKING**: cc_pd is stuck in `vio_serial_write` waiting for the VirtIO TX used ring to
-  update — the `!` probe byte is never delivered to the socket
+### Priority Rules
 
-### Open bugs (priority order)
+1. README/DESIGN claims must not outrun bootable, tested behavior.
+2. A missing PD entrypoint is a build failure, never a silent runtime spin.
+3. External control paths must be bounded: no infinite device waits in `cc_pd`.
+4. Contract tests must not count `UNIMPL` as success for required opcodes.
+5. Host-only mocks may stay, but they cannot be used as proof of production IPC behavior.
 
-| # | Severity | Title | File | Notes |
-|---|----------|-------|------|-------|
-| B1 | BLOCKING | VirtIO TX queue never completes — cc_pd stuck in `vio_serial_write` | `cc_pd.c:267` | `vio_wr(VMMIO_QUEUE_NOTIFY, 1u)` is called but `TX_USED->idx` never changes. Diagnostic prints added to `vio_serial_write` (not yet built/tested). Likely a QEMU virtio-serial port-open handshake issue or queue ring address bug. |
-| B2 | REQUIRED | `-global virtio-mmio.force-legacy=off` missing from Makefile | `Makefile` | Without it VirtIO reports VERSION=1 (legacy), queue registers are silently ignored, cc_pd hangs. Must be added permanently to `QEMU_RUN_FLAGS` and any `qemu-launch` helper. |
-| B3 | REQUIRED | Build stale bundle — `make build` doesn't always regenerate `agentos_pd_bundle.bin` | `kernel/agentos-root-task/Makefile` | After editing a PD source file, the bundle stays stale if the kernel Makefile was previously invoked with a relative `BUILD_DIR` (creates a parallel build tree `kernel/agentos-root-task/build/…` that `gen-image` never reads). Workaround: `rm build/qemu_virt_aarch64/agentos_pd_bundle.{bin,o}`. Root fix: enforce absolute `BUILD_DIR` or add force-rules. |
-| B4 | PRE-EXISTING | Ed25519 selftest FAIL | `monitor.c`, `monocypher.c` | `[verify] Ed25519 selftest FAIL` every boot. Sign/verify mismatch on RFC 8032 test vector 1 (seed=9d61b19d…). SHA-512 and group ops look correct; likely in monocypher's Ed25519 sign or verify path. |
-| B5 | PRE-EXISTING | `linux_vmm.elf` and `fault_handler.elf` not found at boot | `Makefile`, build system | `[rt] pd elf linux_vmm.elf NOT FOUND` every boot. These PDs are listed in `agentos.toml` but not built by default. No fault handler = silent hang on any PD fault. |
-| B6 | CLEANUP | Diagnostic code in `cc_pd.c` must be removed before merge | `cc_pd.c` | `[@]` canary at top of `cc_pd_main`, verbose TX spin prints in `vio_serial_write`. Intentional to keep: `cc_dbg_putc` TXFF-bypass comment. |
+### Execution Plan
 
-### Session history — cc_pd work
+| Step | Status | Work |
+|------|--------|------|
+| 1 | complete | Make missing `pd_main(seL4_CPtr, seL4_CPtr)` entrypoints fail at link time and normalize stub service signatures. |
+| 2 | complete | Add bounded CC-PD VirtIO RX/TX waits so a dead used ring cannot hang the control PD forever. |
+| 3 | complete | Tighten at least one permissive contract test by removing `AOS_ERR_UNIMPL` as an accepted result for required serial opcodes. |
+| 4 | complete | Run the fast host integration suite and a target build smoke check. |
+| 5 | complete | File follow-up Beads for larger work that cannot be completed in this pass. |
 
-**Session 1 (2026-04-27 earlier)**
-- Found `cc_dbg_putc` had a `while (CC_UART_FR & CC_FR_TXFF)` spin that exhausted seL4 MCS
-  10 ms budget before the UART FIFO drained → removed; writes go directly to DR.
-- Added `[@]\n` canary at start of `cc_pd_main` to detect whether PD is executing.
-- Fixed unchecked return from second `pd_vspace_map_device_frame` for startup record page.
-- Disassembled `cc_pd.elf`: canary instructions confirmed at 0x400060–0x400080; `.got[0]` =
-  0x401364 (non-null, correct `pd_main` address).
-- **Found stale bundle**: boot log showed `sz=0x2bb28` (178,984 bytes) but compiled
-  `cc_pd.elf` is 176,216 bytes — the image was embedding an old binary without the canary.
+### Follow-Up Backlog
 
-**Session 2 (2026-04-27 this session)**
-- Fixed stale bundle: deleted `agentos_pd_bundle.{bin,o}`, ran `make build` → gen-pd-bundle
-  regenerated with current cc_pd.elf (0x2b058). Verified `[@]` canary in boot log.
-- Found VirtIO VERSION=1 (legacy): QEMU's virt machine defaults to legacy virtio-mmio.
-  `QUEUE_READY`, `Q_DESC_LO/HI`, `Q_AVAIL_LO/HI`, `Q_USED_LO/HI` are silently ignored.
-  cc_pd's `vio_serial_write` posts a TX descriptor and waits, but QEMU never completes it.
-- Added `-global virtio-mmio.force-legacy=off` to QEMU → VERSION=2, STATUS=0x0b (FEAT_OK
-  confirmed), `VirtIO serial ready` printed. But TX queue still does not complete.
-- Added diagnostic prints to `vio_serial_write` to trace TX_USED->idx before/after NOTIFY
-  and during the yield loop. Build/boot with diagnostics is the immediate next step.
-
-### Immediate next steps
-
-1. Build and boot with TX diagnostics; read serial log for `[cc_pd] TX notify` output.
-2. Fix whatever the diagnostics reveal (likely port-open handshake or ring address bug).
-3. Add `-global virtio-mmio.force-legacy=off` permanently to `QEMU_RUN_FLAGS` in Makefile.
-4. Fix bundle staleness in the kernel Makefile.
-5. Verify socket round-trip: send `MSG_CC_CONNECT` (opcode 0x2601), get 4112-byte reply.
-6. Remove diagnostic code (`[@]` canary, TX spin prints) from `cc_pd.c`.
-7. Fix Ed25519 selftest (B4).
-8. Build `linux_vmm.elf` and `fault_handler.elf` (B5).
+| Priority | Work |
+|----------|------|
+| P0 | `agentos-46q`: Make `make test TARGET_ARCH=aarch64 GUEST_OS=none` and `make test TARGET_ARCH=x86_64 GUEST_OS=none` mandatory before claiming OS-level behavior. |
+| P0 | `agentos-685`: Convert `agentos.h` from a mixed opcode/channel registry into generated per-PD ABI tables with collision checks. |
+| P0 | `agentos-0h4`: Replace host-only mock contract proof with seL4-target TAP coverage for EventBus, CC-PD, serial, log_drain, and guest lifecycle. |
+| P1 | `agentos-72f`: Update README/DESIGN to label each subsystem as boot-proven, host-tested, stubbed, or planned. |
+| P1 | `agentos-3ev`: Add startup records for parameterized PD entrypoints instead of hard-coded slot defaults. |
+| P1 | `agentos-45b`: Prove CC-PD VirtIO timeout behavior under QEMU or target execution. |
+| P1 | `agentos-c7i`: Audit cryptographic selftests and make Ed25519 failure a hard boot/test failure once the current implementation is corrected. |
 
 ---
 

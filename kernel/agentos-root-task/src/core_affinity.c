@@ -357,3 +357,5 @@ void core_affinity_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, SEL4_SERVER_OPCODE_ANY, core_affinity_h_dispatch, (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { core_affinity_main(my_ep, ns_ep); }

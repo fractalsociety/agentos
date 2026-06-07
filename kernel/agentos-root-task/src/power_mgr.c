@@ -306,3 +306,5 @@ void power_mgr_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 }
 
 #endif /* AGENTOS_POWER_MGR */
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { power_mgr_main(my_ep, ns_ep); }

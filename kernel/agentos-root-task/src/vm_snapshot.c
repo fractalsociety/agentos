@@ -248,3 +248,16 @@ static void vm_snapshot_pd_notified(uint32_t ch)
     /* vm_snapshot receives no async notifications in the current design */
     (void)ch;
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    (void)ns_ep;
+
+    vm_snapshot_pd_init();
+
+    static sel4_server_t srv;
+    sel4_server_init(&srv, my_ep);
+    sel4_server_register(&srv, SEL4_SERVER_OPCODE_ANY,
+                         vm_snapshot_pd_dispatch, (void *)0);
+    sel4_server_run(&srv);
+}

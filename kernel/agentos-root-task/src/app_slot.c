@@ -484,4 +484,9 @@ void app_slot_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr spawn_ep)
     /* Enter server loop — never returns */
     sel4_server_run(&g_srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    app_slot_main(my_ep, ns_ep, 0u);
+}
 #endif /* !AGENTOS_TEST_HOST */

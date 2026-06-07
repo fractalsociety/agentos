@@ -37,11 +37,11 @@ extern seL4_IPCBuffer *__sel4_ipc_buffer;
 
 /*
  * Every service PD must define pd_main(seL4_CPtr ep, seL4_CPtr ns_ep).
- * Declared weak so that a missing pd_main produces a link-time NULL rather
- * than a linker error; _start guards against the NULL before calling it.
+ * This declaration is intentionally strong: a missing PD entrypoint must fail
+ * the link instead of producing a bootable ELF that silently spins.
  */
 typedef unsigned long seL4_CPtr;
-extern __attribute__((weak)) void pd_main(seL4_CPtr ep, seL4_CPtr ns_ep);
+extern void pd_main(seL4_CPtr ep, seL4_CPtr ns_ep);
 
 /*
  * _start — ELF entry point for service PDs.
@@ -55,10 +55,7 @@ void _start(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     /* Redirect __sel4_ipc_buffer to the seL4-mapped page. */
     __sel4_ipc_buffer = (seL4_IPCBuffer *)(uintptr_t)PD_IPC_BUF_VA;
 
-    /* Call the PD's entry function if defined. */
-    if (pd_main) {
-        pd_main(my_ep, ns_ep);
-    }
+    pd_main(my_ep, ns_ep);
 
     /* Should never reach here; spin to prevent undefined behaviour. */
     for (;;) {

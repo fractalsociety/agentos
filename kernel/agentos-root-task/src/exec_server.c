@@ -367,3 +367,5 @@ void exec_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, SEL4_SERVER_OPCODE_ANY, exec_server_h_dispatch, (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { exec_server_main(my_ep, ns_ep); }

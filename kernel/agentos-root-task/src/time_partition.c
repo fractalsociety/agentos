@@ -231,3 +231,5 @@ void time_partition_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, OP_TP_RESET,      h_reset,      (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { time_partition_main(my_ep, ns_ep); }

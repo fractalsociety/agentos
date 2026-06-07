@@ -407,3 +407,16 @@ static uint32_t pflocal_server_pd_dispatch(sel4_badge_t b, const sel4_msg_t *req
         return SEL4_ERR_OK;
     }
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    (void)ns_ep;
+
+    pflocal_server_pd_init();
+
+    static sel4_server_t srv;
+    sel4_server_init(&srv, my_ep);
+    sel4_server_register(&srv, SEL4_SERVER_OPCODE_ANY,
+                         pflocal_server_pd_dispatch, (void *)0);
+    sel4_server_run(&srv);
+}

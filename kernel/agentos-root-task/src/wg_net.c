@@ -938,4 +938,9 @@ void wg_net_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     g_srv.ep = my_ep;
     sel4_server_run(&g_srv);   /* NEVER RETURNS */
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    wg_net_main(my_ep, ns_ep, 0u);
+}
 #endif /* !AGENTOS_TEST_HOST */

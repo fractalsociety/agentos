@@ -229,3 +229,5 @@ void quota_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, OP_QUOTA_SET,      h_set,      (void *)0);
     sel4_server_run(&srv);
 }
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { quota_pd_main(my_ep, ns_ep); }
