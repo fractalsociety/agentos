@@ -245,15 +245,19 @@ main() {
 
     update_changelog "$CHANGELOG_ENTRY"
 
-    # Run boot test
-    info "Running boot test (make test)..."
+    # Run the MANDATORY dual-arch OS-claim gate (agentos-46q).
+    # A release is an OS-level completion claim, so it must pass the
+    # target/QEMU-backed boot tests on BOTH supported architectures
+    # (aarch64 + x86_64, GUEST_OS=none).  The host-only suite is run first as a
+    # fast pre-filter but is NOT accepted as proof of production OS behavior.
+    info "Running dual-arch OS-claim gate (make gate)..."
     local test_output_file=$(mktemp)
-    if ! make test > "$test_output_file" 2>&1; then
+    if ! make gate > "$test_output_file" 2>&1; then
         cat "$test_output_file"
         rm -f "$test_output_file"
-        error "Boot test failed. Fix before releasing."
+        error "Dual-arch gate failed (aarch64/x86_64 QEMU boot test). Fix before releasing."
     fi
-    success "Boot test passed"
+    success "Dual-arch OS-claim gate passed (aarch64 + x86_64)"
     local test_status=$(tail -1 "$test_output_file" | tr -d '\n' || echo "passed")
     rm -f "$test_output_file"
 

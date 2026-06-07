@@ -36,13 +36,45 @@ to make failures explicit, bounded, and test-visible.
 
 | Priority | Work |
 |----------|------|
-| P0 | `agentos-46q`: Make `make test TARGET_ARCH=aarch64 GUEST_OS=none` and `make test TARGET_ARCH=x86_64 GUEST_OS=none` mandatory before claiming OS-level behavior. |
+| P0 | `agentos-46q` (DONE): The dual-arch target/QEMU gate is now mandatory before any OS-level claim. See "Release / OS-Claim Gate" below. |
 | P0 | `agentos-685`: Convert `agentos.h` from a mixed opcode/channel registry into generated per-PD ABI tables with collision checks. |
 | P0 | `agentos-0h4`: Replace host-only mock contract proof with seL4-target TAP coverage for EventBus, CC-PD, serial, log_drain, and guest lifecycle. |
 | P1 | `agentos-72f`: Update README/DESIGN to label each subsystem as boot-proven, host-tested, stubbed, or planned. |
 | P1 | `agentos-3ev`: Add startup records for parameterized PD entrypoints instead of hard-coded slot defaults. |
 | P1 | `agentos-45b`: Prove CC-PD VirtIO timeout behavior under QEMU or target execution. |
 | P1 | `agentos-c7i`: Audit cryptographic selftests and make Ed25519 failure a hard boot/test failure once the current implementation is corrected. |
+
+---
+
+## Release / OS-Claim Gate (agentos-46q)
+
+**Binding rule:** No subsystem may be described as "complete", "boot-proven", or
+production-ready — in README, DESIGN, PLAN, a release, or a Beads closure — unless
+the **dual-arch target/QEMU gate** below has passed for the relevant commit.
+
+### Two tiers of tests — they are not interchangeable
+
+| Tier | Command | What it proves | Counts as OS-level proof? |
+|------|---------|----------------|---------------------------|
+| **Host-only** | `make test-host` (alias of `make test-integration`) | C logic compiled with `-DAGENTOS_TEST_HOST`; seL4 IPC is **stubbed**. Fast pre-filter. | **No.** Per priority rule 5, host-only mocks are never proof of production IPC/OS behavior. |
+| **Target / QEMU** | `make test TARGET_ARCH=aarch64 GUEST_OS=none` and `make test TARGET_ARCH=x86_64 GUEST_OS=none` | Real seL4 image built for the board and booted under QEMU. | **Yes** — and only this tier. |
+
+### The gate
+
+```sh
+make gate           # runs: host pre-filter, then BOTH target arches:
+                    #   make test TARGET_ARCH=aarch64 GUEST_OS=none
+                    #   make test TARGET_ARCH=x86_64  GUEST_OS=none
+```
+
+- **CI:** the `os-claim-gate` job in `.github/workflows/ci.yml` runs **both** target-arch
+  commands. If either arch fails, the gate fails and OS-level completion claims are blocked.
+  (The `build-and-test` matrix also covers both boards; `os-claim-gate` is the single
+  named check intended for branch protection.)
+- **Releases:** `scripts/release.sh` runs `make gate` (not a single-arch `make test`)
+  before tagging. A failing gate aborts the release.
+- **Host-only tests alone are explicitly insufficient** as production proof; they may run
+  as a fast pre-filter but never substitute for the two target-arch commands above.
 
 ---
 
@@ -685,7 +717,11 @@ All test output goes through MSG_LOG_WRITE to the log drain. The test runner
 6. Exit 0 if all tests pass, non-zero otherwise.
 7. Print a human-readable summary to stdout.
 
-CI runs `make test` on both `TARGET_ARCH=aarch64` and `TARGET_ARCH=x86_64`.
+CI runs the target/QEMU boot test on both arches via the mandatory dual-arch
+gate (`make gate`, job `os-claim-gate`):
+`make test TARGET_ARCH=aarch64 GUEST_OS=none` **and**
+`make test TARGET_ARCH=x86_64 GUEST_OS=none`. Host-only tests
+(`make test-host`) are a fast pre-filter only and do not satisfy this gate.
 
 ### 5.4 — Test coverage requirements
 
@@ -695,10 +731,12 @@ A pull request may not be merged if it:
 - Reduces the number of passing tests.
 
 **Acceptance criteria for Phase 5**:
-- `make test TARGET_ARCH=aarch64` exits 0 with all tests passing.
-- `make test TARGET_ARCH=x86_64` exits 0 with all tests passing.
+- `make test TARGET_ARCH=aarch64 GUEST_OS=none` exits 0 with all tests passing (target/QEMU).
+- `make test TARGET_ARCH=x86_64 GUEST_OS=none` exits 0 with all tests passing (target/QEMU).
+- `make gate` exits 0 (host pre-filter + both target arches above).
 - Every opcode in `agentos_msg_tag_t` is exercised by at least one test.
 - A PR that adds an untested opcode fails CI.
+- Host-only suites passing while either target arch fails does **not** satisfy this phase.
 
 ---
 

@@ -13,7 +13,7 @@
 #   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
 #   make clean        — remove build artifacts for current board
 
-.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
+.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -142,6 +142,17 @@ ifeq ($(UNAME_S),Darwin)
     # HVF on Apple Silicon has irrecoverable assertion failures with seL4's
     # aarch64 memory access patterns (hvf_vcpu_exec isv assertion, hvf.c).
     # Use TCG (software emulation) until this is resolved upstream in QEMU.
+    #
+    # Quarterly retest tracker — agentos-3jn.
+    # Last reviewed: 2026-06-07
+    #   Host:  Apple M-series, macOS 26.5.1 (Darwin 25.5.0)
+    #   QEMU:  11.0.1 (Homebrew)
+    # Status: workaround RETAINED. The upstream hvf_vcpu_exec "isv" assertion
+    #   has no fix landed in QEMU 11.0.x, so -accel hvf stays disabled for
+    #   aarch64 on Darwin. NOTE: an actual end-to-end seL4+HVF boot was NOT
+    #   re-run on this date (full seL4 build/boot was out of scope for the
+    #   config pass); a fresh boot test under HVF is still PENDING before this
+    #   workaround can be removed. Next retest: ~2026-09.
     QEMU_ACCEL_NATIVE :=
   else
     QEMU_ACCEL_NATIVE := -accel hvf
@@ -382,6 +393,11 @@ _UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,
               -device virtio-blk-device,drive=ubuntu_hd,bus=virtio-mmio-bus.1
 _FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=freebsd_hd,readonly=on,file.locking=off \
                -device virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31
+# Outer QEMU block devices, selected by GUEST_OS.  Note: GUEST_OS=buildroot (and
+# GUEST_OS=none) intentionally attach NO outer disk — the buildroot Linux kernel
+# + initrd are packaged inside linux_vmm.elf by vmm.mk (BUILDROOT_LINUX_IMAGE /
+# BUILDROOT_INITRD_IMAGE), so the guest boots entirely from the inner libvmm
+# image with no host-provided ISO.  Only ubuntu/freebsd need an outer virtio-blk.
 _QEMU_BLK_FLAGS = $(if $(filter both,$(GUEST_OS)),$(_UBUNTU_BLK) $(_FREEBSD_BLK),$(if $(filter ubuntu,$(GUEST_OS)),$(_UBUNTU_BLK),$(if $(filter freebsd,$(GUEST_OS)),$(_FREEBSD_BLK),)))
 QEMU_RUN_MEM ?= $(if $(filter both,$(GUEST_OS)),3G,2G)
 QEMU_RUN_SMP ?= $(if $(filter smp-% smp,$(SEL4_PROFILE)),4,1)
@@ -425,6 +441,7 @@ run:
 	@echo "Guest SSH: ssh -p 2222 ubuntu@localhost    (Ubuntu)"
 	@echo "           ssh -p 2223 root@localhost      (FreeBSD)"
 	@echo "           ssh -p 2224 root@localhost      (NixOS)"
+	@echo "Buildroot: no outer ISO; Linux runs inside linux_vmm.elf → '#' shell on serial"
 	@echo "Exit QEMU: Ctrl-A X"
 	@echo "──────────────────────────────────────────────"
 	@$(NATIVE_QEMU) $(QEMU_RUN_FLAGS)
@@ -442,6 +459,50 @@ run-fast:
 # =============================================================================
 test: build
 	@AGENTOS_FREEBSD_IMAGE="$(FREEBSD_IMAGE)" cargo xtask qemu-test --board $(BOARD) --guest-os $(QEMU_TEST_GUEST_OS) --timeout-secs $(QEMU_TEST_TIMEOUT)
+
+# =============================================================================
+# gate: MANDATORY dual-arch target/QEMU quality gate.
+#
+# This is the gate that MUST pass before any OS-level behavior may be claimed
+# "complete" / "boot-proven" in README, DESIGN, PLAN, or a release.  It runs the
+# real seL4 target build + QEMU boot test on BOTH supported architectures with
+# GUEST_OS=none, exactly as required by agentos-46q.
+#
+#   HOST-ONLY tests (test-integration / test-host): compile C suites with
+#     -DAGENTOS_TEST_HOST and run them on the build host.  They exercise logic
+#     but stub out seL4 IPC, so per the PLAN priority rules they are NOT proof
+#     of production OS behavior — they are a fast pre-filter only.
+#
+#   TARGET / QEMU-BACKED tests (gate-aarch64 / gate-x86_64): build the real
+#     seL4 image for the board and boot it under QEMU via `make test`.  These,
+#     and only these, may back an OS-level completion claim.
+#
+# Usage:
+#   make gate                  # run BOTH target arches (the release gate)
+#   make gate-aarch64          # single arch, target/QEMU-backed
+#   make gate-x86_64           # single arch, target/QEMU-backed
+gate-aarch64:
+	@echo ""
+	@echo "── [GATE] TARGET/QEMU test: aarch64 (GUEST_OS=none) ──────────"
+	@$(MAKE) test TARGET_ARCH=aarch64 GUEST_OS=none
+
+gate-x86_64:
+	@echo ""
+	@echo "── [GATE] TARGET/QEMU test: x86_64 (GUEST_OS=none) ───────────"
+	@$(MAKE) test TARGET_ARCH=x86_64 GUEST_OS=none
+
+gate: test-host gate-aarch64 gate-x86_64
+	@echo ""
+	@echo "╔══════════════════════════════════════════════════════════╗"
+	@echo "║  ✅ DUAL-ARCH GATE PASSED                                 ║"
+	@echo "║  Host-only suite + aarch64 + x86_64 QEMU boot tests OK.   ║"
+	@echo "║  OS-level completion claims are now permitted.           ║"
+	@echo "╚══════════════════════════════════════════════════════════╝"
+	@echo ""
+
+# test-host: alias for the host-only integration suite.  Named explicitly so
+# callers and CI cannot mistake host-only coverage for target/QEMU proof.
+test-host: test-integration
 
 sel4-test-image:
 	@$(MAKE) build \
@@ -687,7 +748,7 @@ help:
 	@echo "agentOS - top-level make targets"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=ubuntu|freebsd|both|none]"
+	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=buildroot|ubuntu|freebsd|both|none]"
 	@echo ""
 	@echo "Current defaults:"
 	@echo "  TARGET_ARCH     $(TARGET_ARCH)"
@@ -704,9 +765,16 @@ help:
 	@echo "  make build            Fetch the selected guest image and build agentOS"
 	@echo "  make run              Build native agentOS and boot QEMU with CC-PD socket"
 	@echo "                        Uses QEMU_RUN_MEM=3G automatically for GUEST_OS=both"
+	@echo "  make run GUEST_OS=buildroot"
+	@echo "                        Boot linux_vmm hosting buildroot Linux to a '#' prompt"
+	@echo "                        (no outer ISO; guest is packaged inside linux_vmm.elf)"
 	@echo "  make run-fast         Same as run, plus TCG perf knobs (cpu max + multi-thread)"
 	@echo "                        No-op on Linux/KVM hosts where HW accel is already on"
+	@echo "                        Recommended dev loop on Apple Silicon:"
+	@echo "                        make run-fast GUEST_OS=buildroot"
 	@echo "  make test             Build and run the QEMU boot/API smoke test"
+	@echo "  make gate             MANDATORY dual-arch QEMU gate before OS-level claims"
+	@echo "                        (host suite + aarch64 + x86_64 GUEST_OS=none boot tests)"
 	@echo "  make test-guest-login Boot Ubuntu and FreeBSD to an interactive serial prompt"
 	@echo ""
 	@echo "Guest images:"
@@ -717,8 +785,12 @@ help:
 	@echo "                                      names: ubuntu-amd64 ubuntu-arm64 nixos freebsd15"
 	@echo ""
 	@echo "Test targets:"
+	@echo "  make gate             MANDATORY dual-arch gate (target/QEMU, both arches)"
+	@echo "  make gate-aarch64     Target/QEMU boot test: aarch64 GUEST_OS=none"
+	@echo "  make gate-x86_64      Target/QEMU boot test: x86_64 GUEST_OS=none"
 	@echo "  make sel4-test-image  Build the seL4-target TAP test image"
 	@echo "  make run-tests        Run the seL4-target TAP test image in QEMU"
+	@echo "  make test-host        Host-only suite (alias of test-integration; NOT OS proof)"
 	@echo "  make test-integration Run host-side contract/integration tests"
 	@echo "  make e2e              Run the default QEMU/guest/CC end-to-end suite"
 	@echo "  make e2e-dual-os      Run Ubuntu and FreeBSD guest E2E coverage"
@@ -737,6 +809,8 @@ help:
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu"
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=both"
 	@echo "  make run GUEST_OS=freebsd"
+	@echo "  make run-fast GUEST_OS=buildroot   # fast dev loop on Apple Silicon"
+	@echo "  make gate                          # full release gate, both arches"
 	@echo "  make test-guest-login QEMU_TEST_TIMEOUT=420"
 	@echo "  cd ../agentos_gui && make run"
 	@echo ""
