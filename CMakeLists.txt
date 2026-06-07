@@ -21,6 +21,51 @@ cmake_minimum_required(VERSION 3.18)
 project(agentOS C ASM)
 
 # =============================================================================
+# Generated per-PD ABI tables (agentos-685)
+# =============================================================================
+#
+# tools/gen-abi reads the source-of-truth tools/abi_spec.toml and emits the
+# per-PD ABI table header kernel/agentos-root-task/include/agentos_abi.h.
+#
+# The generator HARD-FAILS (nonzero exit) on a duplicate opcode within a PD, a
+# duplicate channel id, or a contract reference with no contracts/<dir>/. We
+# bind it to the build via a custom command whose OUTPUT every PD that includes
+# agentos.h depends on; if gen-abi fails, no build artifacts are produced.
+#
+# We run gen-abi in --check mode at configure time so a bad spec aborts cmake
+# before any compilation begins, and as a build-time custom command so the
+# header is regenerated whenever the spec changes.
+
+set(AGENTOS_ABI_SPEC   ${CMAKE_CURRENT_SOURCE_DIR}/tools/abi_spec.toml)
+set(AGENTOS_ABI_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/kernel/agentos-root-task/include/agentos_abi.h)
+
+find_program(CARGO_EXECUTABLE cargo)
+if(CARGO_EXECUTABLE)
+    # Configure-time gate: fail cmake immediately on a collision/coverage error.
+    execute_process(
+        COMMAND ${CARGO_EXECUTABLE} run -q -p gen-abi -- ${AGENTOS_ABI_SPEC} --check
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        RESULT_VARIABLE AGENTOS_ABI_CHECK_RESULT
+    )
+    if(NOT AGENTOS_ABI_CHECK_RESULT EQUAL 0)
+        message(FATAL_ERROR "gen-abi: ABI spec ${AGENTOS_ABI_SPEC} failed validation; refusing to build")
+    endif()
+
+    # Build-time regeneration: re-emit the header when the spec changes.
+    add_custom_command(
+        OUTPUT ${AGENTOS_ABI_HEADER}
+        COMMAND ${CARGO_EXECUTABLE} run -q -p gen-abi -- ${AGENTOS_ABI_SPEC} -o ${AGENTOS_ABI_HEADER}
+        DEPENDS ${AGENTOS_ABI_SPEC}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating per-PD ABI tables (agentos_abi.h) from abi_spec.toml"
+        VERBATIM
+    )
+    add_custom_target(gen-abi DEPENDS ${AGENTOS_ABI_HEADER})
+else()
+    message(WARNING "cargo not found; using checked-in ${AGENTOS_ABI_HEADER} without regeneration")
+endif()
+
+# =============================================================================
 # seL4 Kernel Configuration
 # =============================================================================
 

@@ -1,9 +1,10 @@
 use clap::{Parser, Subcommand};
 use xtask::{
-    cmd_ci_matrix, cmd_fault_inject, cmd_fetch_guest, cmd_gen_caps, cmd_gen_image,
+    cmd_ci_matrix, cmd_fault_inject, cmd_fetch_guest, cmd_gen_abi, cmd_gen_caps, cmd_gen_image,
     cmd_gen_pd_bundle, cmd_host_test, cmd_release, cmd_run_tests, cmd_setup, cmd_test,
-    cmd_test_api, CiMatrixArgs, FaultInjectArgs, FetchGuestArgs, GenCapsArgs, GenImageArgs,
-    GenPdBundleArgs, HostTestArgs, ReleaseArgs, RunTestsArgs, SetupArgs, TestApiArgs, TestArgs,
+    cmd_test_api, CiMatrixArgs, FaultInjectArgs, FetchGuestArgs, GenAbiArgs, GenCapsArgs,
+    GenImageArgs, GenPdBundleArgs, HostTestArgs, ReleaseArgs, RunTestsArgs, SetupArgs, TestApiArgs,
+    TestArgs,
 };
 
 #[derive(Parser)]
@@ -35,6 +36,9 @@ enum Cmd {
     /// Build and run the seL4-target TAP test image in QEMU
     #[command(name = "run-tests")]
     RunTests(RunTestsArgs),
+    /// Generate (or validate) per-PD ABI tables; fails on opcode/channel collisions
+    #[command(name = "gen-abi")]
+    GenAbi(GenAbiArgs),
     /// Generate deterministic root-task capability slot layout constants
     #[command(name = "gen-caps")]
     GenCaps(GenCapsArgs),
@@ -57,6 +61,7 @@ fn main() -> anyhow::Result<()> {
         Cmd::CiMatrix(a) => cmd_ci_matrix::run(&a),
         Cmd::TestApi(a) => cmd_test_api::run(&a),
         Cmd::RunTests(a) => cmd_run_tests::run(&a),
+        Cmd::GenAbi(a) => cmd_gen_abi::run(&a),
         Cmd::GenCaps(a) => cmd_gen_caps::run(&a),
         Cmd::GenImage(a) => cmd_gen_image::run(&a),
         Cmd::GenPdBundle(a) => cmd_gen_pd_bundle::run(&a),

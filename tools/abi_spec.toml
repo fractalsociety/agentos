@@ -1,0 +1,373 @@
+# agentOS per-PD ABI spec — machine-readable source of truth.
+#
+# This file is the authoritative registry of IPC opcodes and channel IDs,
+# grouped per protection domain (PD). `tools/gen-abi` consumes it and emits
+# kernel/agentos-root-task/include/agentos_abi.h.
+#
+# The generator HARD-FAILS the build (nonzero exit) on:
+#   - a duplicate opcode value within a single PD's opcode table
+#   - a duplicate channel id within a single PD's channel scope
+#   - a `contract = "<dir>"` reference whose contracts/<dir>/ directory is
+#     missing (missing contract coverage)
+#   - a constant whose `legacy` name and value drift from agentos.h (caught at
+#     C-compile time via the _Static_assert block this header emits)
+#
+# After editing, regenerate with:
+#   cargo run -p gen-abi -- tools/abi_spec.toml \
+#       -o kernel/agentos-root-task/include/agentos_abi.h
+# (or `cargo xtask gen-abi`, which writes the same path).
+#
+# `legacy` is the existing #define / enum name in agentos.h that this entry
+# mirrors; the generated header emits a _Static_assert tying the two together
+# so a stale agentos.h constant fails the build.
+
+version = "1"
+
+# ── EventBus PD ───────────────────────────────────────────────────────── #
+[[pd]]
+name = "event_bus"
+contract = "event-bus"
+trace_pd = 1
+
+  [[pd.opcode]]
+  name = "INIT"
+  value = 0x0001
+  legacy = "MSG_EVENTBUS_INIT"
+  [[pd.opcode]]
+  name = "SUBSCRIBE"
+  value = 0x0002
+  legacy = "MSG_EVENTBUS_SUBSCRIBE"
+  [[pd.opcode]]
+  name = "UNSUBSCRIBE"
+  value = 0x0003
+  legacy = "MSG_EVENTBUS_UNSUBSCRIBE"
+  [[pd.opcode]]
+  name = "STATUS"
+  value = 0x0004
+  legacy = "MSG_EVENTBUS_STATUS"
+  [[pd.opcode]]
+  name = "PUBLISH_BATCH"
+  value = 0x0005
+  legacy = "MSG_EVENTBUS_PUBLISH_BATCH"
+  [[pd.opcode]]
+  name = "QUERY_SUBSCRIBERS"
+  value = 0x2701
+  legacy = "MSG_EVENTBUS_QUERY_SUBSCRIBERS"
+
+  [[pd.channel]]
+  name = "MONITOR"
+  id = 1
+  legacy = "EVENTBUS_CH_MONITOR"
+  [[pd.channel]]
+  name = "INITAGENT"
+  id = 2
+  legacy = "EVENTBUS_CH_INITAGENT"
+
+# ── Watchdog PD ───────────────────────────────────────────────────────── #
+[[pd]]
+name = "watchdog_pd"
+trace_pd = 24
+
+  [[pd.opcode]]
+  name = "REGISTER"
+  value = 0x50
+  legacy = "OP_WD_REGISTER"
+  [[pd.opcode]]
+  name = "HEARTBEAT"
+  value = 0x51
+  legacy = "OP_WD_HEARTBEAT"
+  [[pd.opcode]]
+  name = "STATUS"
+  value = 0x52
+  legacy = "OP_WD_STATUS"
+  [[pd.opcode]]
+  name = "UNREGISTER"
+  value = 0x53
+  legacy = "OP_WD_UNREGISTER"
+  [[pd.opcode]]
+  name = "FREEZE"
+  value = 0x54
+  legacy = "OP_WD_FREEZE"
+  [[pd.opcode]]
+  name = "RESUME"
+  value = 0x55
+  legacy = "OP_WD_RESUME"
+
+  [[pd.channel]]
+  name = "CTRL"
+  id = 56
+  legacy = "CH_WATCHDOG_CTRL"
+  [[pd.channel]]
+  name = "NOTIFY"
+  id = 54
+  legacy = "CH_WATCHDOG_NOTIFY"
+
+# ── trace_recorder PD ─────────────────────────────────────────────────── #
+[[pd]]
+name = "trace_recorder"
+trace_pd = 25
+
+  [[pd.opcode]]
+  name = "START"
+  value = 0x80
+  legacy = "OP_TRACE_START"
+  [[pd.opcode]]
+  name = "STOP"
+  value = 0x81
+  legacy = "OP_TRACE_STOP"
+  [[pd.opcode]]
+  name = "QUERY"
+  value = 0x82
+  legacy = "OP_TRACE_QUERY"
+  [[pd.opcode]]
+  name = "DUMP"
+  value = 0x83
+  legacy = "OP_TRACE_DUMP"
+
+  [[pd.channel]]
+  name = "CTRL"
+  id = 6
+  legacy = "CH_TRACE_CTRL"
+  [[pd.channel]]
+  name = "NOTIFY"
+  id = 7
+  legacy = "CH_TRACE_NOTIFY"
+
+# ── vm_manager PD ─────────────────────────────────────────────────────── #
+[[pd]]
+name = "vm_manager"
+
+  [[pd.opcode]]
+  name = "CREATE"
+  value = 0x10
+  legacy = "OP_VM_CREATE"
+  [[pd.opcode]]
+  name = "DESTROY"
+  value = 0x11
+  legacy = "OP_VM_DESTROY"
+  [[pd.opcode]]
+  name = "START"
+  value = 0x12
+  legacy = "OP_VM_START"
+  [[pd.opcode]]
+  name = "STOP"
+  value = 0x13
+  legacy = "OP_VM_STOP"
+  [[pd.opcode]]
+  name = "PAUSE"
+  value = 0x14
+  legacy = "OP_VM_PAUSE"
+  [[pd.opcode]]
+  name = "RESUME"
+  value = 0x15
+  legacy = "OP_VM_RESUME"
+  [[pd.opcode]]
+  name = "CONSOLE"
+  value = 0x16
+  legacy = "OP_VM_CONSOLE"
+  [[pd.opcode]]
+  name = "INFO"
+  value = 0x17
+  legacy = "OP_VM_INFO"
+  [[pd.opcode]]
+  name = "LIST"
+  value = 0x18
+  legacy = "OP_VM_LIST"
+  [[pd.opcode]]
+  name = "SNAPSHOT"
+  value = 0x19
+  legacy = "OP_VM_SNAPSHOT"
+  [[pd.opcode]]
+  name = "RESTORE"
+  value = 0x1A
+  legacy = "OP_VM_RESTORE"
+  [[pd.opcode]]
+  name = "CONFIGURE"
+  value = 0x1B
+  legacy = "OP_VM_CONFIGURE"
+  [[pd.opcode]]
+  name = "SEND_INPUT"
+  value = 0x1F
+  legacy = "OP_VM_SEND_INPUT"
+  [[pd.opcode]]
+  name = "CONSOLE_DRAIN"
+  value = 0x20
+  legacy = "OP_VM_CONSOLE_DRAIN"
+
+  [[pd.channel]]
+  name = "MANAGER"
+  id = 45
+  legacy = "CH_VM_MANAGER"
+
+# ── cc_pd (Command-and-Control) PD ────────────────────────────────────── #
+[[pd]]
+name = "cc_pd"
+trace_pd = 43
+
+  [[pd.opcode]]
+  name = "CONNECT"
+  value = 0x2601
+  legacy = "MSG_CC_CONNECT"
+  [[pd.opcode]]
+  name = "DISCONNECT"
+  value = 0x2602
+  legacy = "MSG_CC_DISCONNECT"
+  [[pd.opcode]]
+  name = "SEND"
+  value = 0x2603
+  legacy = "MSG_CC_SEND"
+  [[pd.opcode]]
+  name = "RECV"
+  value = 0x2604
+  legacy = "MSG_CC_RECV"
+  [[pd.opcode]]
+  name = "STATUS"
+  value = 0x2605
+  legacy = "MSG_CC_STATUS"
+  [[pd.opcode]]
+  name = "LIST"
+  value = 0x2606
+  legacy = "MSG_CC_LIST"
+
+  [[pd.channel]]
+  name = "PD"
+  id = 72
+  legacy = "CH_CC_PD"
+
+# ── VibeOS lifecycle (vibe_engine PD) ─────────────────────────────────── #
+[[pd]]
+name = "vibe_engine"
+contract = "vibeos"
+trace_pd = 12
+
+  [[pd.opcode]]
+  name = "CREATE"
+  value = 0x2401
+  legacy = "MSG_VIBEOS_CREATE"
+  [[pd.opcode]]
+  name = "DESTROY"
+  value = 0x2402
+  legacy = "MSG_VIBEOS_DESTROY"
+  [[pd.opcode]]
+  name = "STATUS"
+  value = 0x2403
+  legacy = "MSG_VIBEOS_STATUS"
+  [[pd.opcode]]
+  name = "LIST"
+  value = 0x2404
+  legacy = "MSG_VIBEOS_LIST"
+  [[pd.opcode]]
+  name = "BIND_DEVICE"
+  value = 0x2405
+  legacy = "MSG_VIBEOS_BIND_DEVICE"
+  [[pd.opcode]]
+  name = "UNBIND_DEVICE"
+  value = 0x2406
+  legacy = "MSG_VIBEOS_UNBIND_DEVICE"
+  [[pd.opcode]]
+  name = "SNAPSHOT"
+  value = 0x2407
+  legacy = "MSG_VIBEOS_SNAPSHOT"
+  [[pd.opcode]]
+  name = "RESTORE"
+  value = 0x2408
+  legacy = "MSG_VIBEOS_RESTORE"
+  [[pd.opcode]]
+  name = "MIGRATE"
+  value = 0x2409
+  legacy = "MSG_VIBEOS_MIGRATE"
+  [[pd.opcode]]
+  name = "SUSPEND"
+  value = 0x2410
+  legacy = "MSG_VIBEOS_SUSPEND"
+  [[pd.opcode]]
+  name = "RESUME"
+  value = 0x2411
+  legacy = "MSG_VIBEOS_RESUME"
+
+  [[pd.channel]]
+  name = "ENGINE"
+  id = 40
+  legacy = "CH_VIBEENGINE"
+
+# ── Block device PD ───────────────────────────────────────────────────── #
+[[pd]]
+name = "block_pd"
+contract = "block-service"
+
+  [[pd.opcode]]
+  name = "OPEN"
+  value = 0x2201
+  legacy = "MSG_BLOCK_OPEN"
+  [[pd.opcode]]
+  name = "CLOSE"
+  value = 0x2202
+  legacy = "MSG_BLOCK_CLOSE"
+  [[pd.opcode]]
+  name = "READ"
+  value = 0x2203
+  legacy = "MSG_BLOCK_READ"
+  [[pd.opcode]]
+  name = "WRITE"
+  value = 0x2204
+  legacy = "MSG_BLOCK_WRITE"
+  [[pd.opcode]]
+  name = "FLUSH"
+  value = 0x2205
+  legacy = "MSG_BLOCK_FLUSH"
+  [[pd.opcode]]
+  name = "STATUS"
+  value = 0x2206
+  legacy = "MSG_BLOCK_STATUS"
+  [[pd.opcode]]
+  name = "TRIM"
+  value = 0x2207
+  legacy = "MSG_BLOCK_TRIM"
+
+  [[pd.channel]]
+  name = "PD"
+  id = 49
+  legacy = "CH_BLOCK_PD"
+
+# ── USB device PD ─────────────────────────────────────────────────────── #
+[[pd]]
+name = "usb_pd"
+contract = "usb-service"
+
+  [[pd.opcode]]
+  name = "ENUMERATE"
+  value = 0x2301
+  legacy = "MSG_USB_ENUMERATE"
+  [[pd.opcode]]
+  name = "LIST"
+  value = 0x2302
+  legacy = "MSG_USB_LIST"
+  [[pd.opcode]]
+  name = "OPEN"
+  value = 0x2303
+  legacy = "MSG_USB_OPEN"
+  [[pd.opcode]]
+  name = "CLOSE"
+  value = 0x2304
+  legacy = "MSG_USB_CLOSE"
+  [[pd.opcode]]
+  name = "CONTROL"
+  value = 0x2305
+  legacy = "MSG_USB_CONTROL"
+  [[pd.opcode]]
+  name = "BULK_IN"
+  value = 0x2306
+  legacy = "MSG_USB_BULK_IN"
+  [[pd.opcode]]
+  name = "BULK_OUT"
+  value = 0x2307
+  legacy = "MSG_USB_BULK_OUT"
+  [[pd.opcode]]
+  name = "STATUS"
+  value = 0x2308
+  legacy = "MSG_USB_STATUS"
+
+  [[pd.channel]]
+  name = "PD"
+  id = 50
+  legacy = "CH_USB_PD"

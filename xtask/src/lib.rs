@@ -4,6 +4,7 @@
 pub mod cmd_ci_matrix;
 pub mod cmd_fault_inject;
 pub mod cmd_fetch_guest;
+pub mod cmd_gen_abi;
 pub mod cmd_gen_caps;
 pub mod cmd_gen_image;
 pub mod cmd_gen_pd_bundle;
@@ -41,6 +42,19 @@ pub struct FaultInjectArgs {
     pub board: String,
     #[arg(long, default_value_t = 60)]
     pub timeout_secs: u64,
+}
+
+#[derive(clap::Args)]
+pub struct GenAbiArgs {
+    /// TOML ABI spec (source of truth) consumed by gen-abi.
+    #[arg(long, default_value = "tools/abi_spec.toml")]
+    pub spec: std::path::PathBuf,
+    /// Output header path.
+    #[arg(long, default_value = "kernel/agentos-root-task/include/agentos_abi.h")]
+    pub out: std::path::PathBuf,
+    /// Validate the spec and exit without writing the header.
+    #[arg(long)]
+    pub check: bool,
 }
 
 #[derive(clap::Args)]

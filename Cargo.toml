@@ -23,6 +23,8 @@ members = [
     "tools/attest-verify",
     "tools/make-swap-image",
     "tools/trace-replay",
+    # Per-PD ABI table generator
+    "tools/gen-abi",
     # Workspace task runner
     "xtask",
 ]
