@@ -5,6 +5,53 @@
 **Date:** 2026-03-28
 **Status:** DESIGN PHASE
 
+> **Read this first — design vs. proof.** This document describes the *intended*
+> architecture. Much of it is aspirational. The implementation status of each
+> subsystem is tracked by **proof level** in the table below; do not read prose
+> in this document as a claim that something is finished on a booted target.
+
+---
+
+## 0. Implementation Status (Proof Levels)
+
+agentOS is **alpha**. Per the project proof policy (`PLAN.md`), host-only mocks
+may exist but **cannot** be cited as proof of production IPC or bare-metal
+behavior. Each subsystem below is labeled by how strongly it is actually proven,
+not by whether code exists. When a level is uncertain, the more conservative
+label is chosen.
+
+| Level | Meaning |
+|-------|---------|
+| **boot-proven** | Run on a booted seL4 target under QEMU (or hardware) and asserted by an automated E2E/boot test. |
+| **target-tested** | Built into the seL4 target image and validated against the target, short of full end-to-end boot of the feature. |
+| **host-tested** | Validated only by host-compiled tests (`-DAGENTOS_TEST_HOST`) with seL4/Microkit IPC stubbed. Proves contract/logic shape, not IPC or hardware. |
+| **stubbed** | Links and returns a defined value, but the behavior is a placeholder / `not implemented` / no-op. |
+| **planned** | Described here; little or no implementation. |
+
+| Subsystem | Proof level | Evidence / notes |
+|-----------|-------------|------------------|
+| seL4/Microkit boot (AArch64, x86_64) | boot-proven | `xtask qemu-test`, `tests/end_to_end_boot_test.sh` wait for boot markers; RISC-V builds but is not regularly boot-asserted |
+| Linux/Ubuntu guest boot | boot-proven | `tests/e2e/run_dual_os_e2e.sh` boots + SSHes in; `make test-guest-login` |
+| FreeBSD 15.0 guest boot | boot-proven | Dual-OS E2E (`3f5365a` "prove dual linux freebsd lifecycle") |
+| Guest VMM slot mux (create/switch/list/status) | target-tested | Per-guest VMM slots (`470679f`); contract exercised |
+| Guest snapshot / restore | stubbed | `vm_manager.c`: "SNAPSHOT/RESTORE: not implemented (Phase 1)"; `cc_pd.c` returns `CC_ERR_RELAY_FAULT` |
+| Guest live-migrate (`MSG_VIBEOS_MIGRATE`) | planned | Contract defined; no target-validated implementation |
+| Guest virtual IRQ injection | stubbed | `vm_manager.c` `vmm_inject_irq` logs `(stub)` |
+| Dynamic guest CREATE/LIST/DESTROY via vibe_engine | host-tested | AArch64 links `vmm_mux_stub.c`; vibe_engine surfaces "phantom" `RUNNING` guests (`e70d955`) — lifecycle UX works against stubbed VM backing only |
+| serial-mux / serial PD | boot-proven | Guest console login over the serial path |
+| net-service / net_isolator | host-tested | `tests/contracts/net_*`; not boot-asserted |
+| block-service / block PD | host-tested | `tests/contracts/block_*`; VirtIO-blk path not independently boot-asserted |
+| usb-service | stubbed | `usb_pd.c` "stub mode" unless built with `AGENTOS_USB_PD` and real MMIO |
+| timer-service | host-tested | `tests/contracts/timer_test.c` |
+| entropy-service | host-tested | `services/entropy-service/`; not target-validated |
+| CC-PD host API (list/status/console) | boot-proven | `build/cc_pd.sock`; proven by guest-login E2E |
+| CC-PD snapshot relay | stubbed | Returns `CC_ERR_RELAY_FAULT` for the boot guest |
+| VibeOS lifecycle API (`VOS_*`) | host-tested | `make test-vibeos-contract`, `tests/api/test_vibeos*.c` (`-DAGENTOS_TEST_HOST`) |
+| vibe-engine WASM hot-swap | host-tested | `tests/integration/vibe_hotswap_test.c` exercises read/probe paths only |
+| Tracing (trace_recorder PD) | host-tested | 512-entry ring (START/STOP/QUERY/DUMP); host contract tests |
+| Agent-facing services (CapStore, MsgBus, MemFS, ToolSvc, ModelSvc, NetStack, BlobSvc, LogSvc) | host-tested | Contracts in `contracts/`; host tests; not boot-proven as live PDs |
+| Vibe-coded service swap (`aos_service_propose`/`aos_service_swap`) | host-tested → planned | Read/probe proven on host; real propose+validate+swap not proven on target |
+
 ---
 
 ## 1. Vision
@@ -152,7 +199,10 @@ typedef struct agent_msg {
 
 ### 3.5 Pluggable Services (The "Vibe-Code" Layer)
 
-This is the key innovation: **agents design and hot-swap their own system services**.
+This is the key design idea: **agents design and hot-swap their own system
+services**. (Proof level: **host-tested** — the hot-swap pipeline's read/probe
+paths are validated; a real propose+validate+swap on a booted target is not yet
+proven. See Section 0.)
 
 Each system service is a CAmkES component with a well-defined interface. The agentOS SDK provides:
 
@@ -173,6 +223,11 @@ Example: An agent decides the default flat filesystem sucks for its retrieval pa
 ---
 
 ## 4. System Services (Reference Implementations)
+
+> Proof level for this entire section: **host-tested** unless Section 0 says
+> otherwise. These describe intended reference behavior; the implementations are
+> validated by host-compiled contract tests, not proven as live PDs on a booted
+> target.
 
 ### 4.1 CapStore — Capability Database
 
@@ -412,13 +467,13 @@ agentos/
 
 Every "agent OS" today is a userland framework. A nice abstraction over Linux/macOS/Windows. The agents share a kernel with browsers, games, and desktop apps. There's no real isolation, no formal guarantees, no capability security.
 
-agentOS is different because:
+agentOS aims to be different because:
 
-1. **Agents own the machine.** There's no human desktop environment taking up resources.
-2. **Capabilities are hardware-enforced.** An agent literally cannot access memory it doesn't have a capability for. The MMU enforces it. seL4 proves it.
-3. **Agents can redesign their own environment.** The vibe-coding layer means agents aren't stuck with human-designed abstractions. They can create their own filesystems, their own communication protocols, their own tool interfaces.
-4. **Formally verified foundation.** The kernel has a mathematical proof of correctness. You can build trust from first principles.
-5. **It actually boots.** It's not a pip package. It's an operating system.
+1. **Agents own the machine.** There's no human desktop environment taking up resources. *(Design goal.)*
+2. **Capabilities are hardware-enforced.** seL4's model means an agent cannot access memory it doesn't have a capability for — the MMU enforces it, seL4 proves it. *(This is the seL4 foundation; the agentOS-level capability services on top are still host-tested — see Section 0.)*
+3. **Agents can redesign their own environment.** The vibe-coding layer is intended to free agents from human-designed abstractions. *(Proof level: host-tested; not yet proven on target.)*
+4. **Formally verified foundation.** The seL4 kernel has a mathematical proof of correctness. You can build trust from first principles.
+5. **It actually boots.** It's not a pip package — the seL4 boot path and Linux/FreeBSD guest boot are boot-proven under QEMU. The agent-facing layers above are still maturing (see Section 0).
 
 ---
 
@@ -429,9 +484,13 @@ agentOS is different because:
 ## GPU Shared Memory Channel (gpu_shmem)
 
 ### Overview
+> Proof level: **planned / host-tested.** The ring layout and notify protocol
+> are defined and exercised on the host; the end-to-end GPU dispatch on Sparky's
+> GB10 is not boot-proven here.
+
 `gpu_tensor_buf` is a 64MB seL4 Memory Region mapped into both the
-`controller` PD (producer) and `linux_vmm` PD (consumer).  It provides a
-zero-copy path for tensor exchange between agentOS WASM agents and
+`controller` PD (producer) and `linux_vmm` PD (consumer).  It is intended to
+provide a zero-copy path for tensor exchange between agentOS WASM agents and
 CUDA/PyTorch workloads running in the Linux guest on sparky's GB10 GPU.
 
 ### Physical layout
