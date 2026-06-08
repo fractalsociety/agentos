@@ -1144,10 +1144,11 @@ static void handle_list_devices(const cc_req_wire_t *req, cc_reply_wire_t *rep)
  * with no relay there is no observed load, and the moment wiring lands the
  * live busy count flows through unchanged.
  */
-/* TODO(agentos-685): replace with a real PD_CNODE_SLOT_CONTROLLER_EP once the
- * root task distributes a controller endpoint cap into cc_pd's CNode.  Slot 9
- * is the MCS reply object (see system_desc.h); pick the next free PD-specific
- * slot when wiring lands. */
+/* agentos-7j5: PD_CNODE_SLOT_CONTROLLER_EP is defined in system_desc.h (slot
+ * 13) and the root task mints the controller's inbound server endpoint there
+ * for cc_pd (see system_desc_aarch64.c: cc_pd init_eps + controller
+ * self_svc_id = SVC_ID_CONTROLLER).  The #ifndef fallback below keeps the
+ * relay compiling (and inert) on builds/arches that do not wire the slot. */
 #ifndef PD_CNODE_SLOT_CONTROLLER_EP
 #define PD_CNODE_SLOT_CONTROLLER_EP 0xFFFFFFFFu  /* unwired placeholder */
 #endif

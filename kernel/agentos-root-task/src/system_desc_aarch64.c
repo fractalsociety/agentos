@@ -39,18 +39,19 @@
 
 #include "system_desc.h"
 
+/* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
 #define AOS_AARCH64_PD_COUNT 21u
-#define AOS_CC_INIT_EP_COUNT 6u
+#define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
 #define AOS_AARCH64_PD_COUNT 20u
-#define AOS_CC_INIT_EP_COUNT 6u
+#define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
 #define AOS_AARCH64_PD_COUNT 20u
-#define AOS_CC_INIT_EP_COUNT 5u
+#define AOS_CC_INIT_EP_COUNT 6u
 #else
 #define AOS_AARCH64_PD_COUNT 19u
-#define AOS_CC_INIT_EP_COUNT 5u
+#define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
 #if defined(AGENTOS_GUEST_BOTH)
@@ -143,7 +144,11 @@ const system_desc_t system_desc_aarch64 = {
             .stack_size     = 0x10000u,  /* 64 KB — larger stack for policy work */
             .cnode_size_bits = 10u,
             .priority       = 50u,
-            .self_svc_id    = 0u,
+            /* agentos-7j5: expose the controller's inbound server endpoint so
+             * peer PDs (cc_pd) can relay MSG_AGENTPOOL_STATUS to it.  The root
+             * task mints this EP at PD_CNODE_SLOT_SELF_EP and passes it as the
+             * controller's my_ep (arg0), which sel4_server_run() listens on. */
+            .self_svc_id    = SVC_ID_CONTROLLER,
             .init_ep_count  = 3u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
@@ -480,6 +485,8 @@ const system_desc_t system_desc_aarch64 = {
 #endif
                 { SVC_ID_VIBE_ENGINE, PD_CNODE_SLOT_VIBE_ENGINE_EP },
                 { SVC_ID_VM_MANAGER,  PD_CNODE_SLOT_VM_MANAGER_EP  },
+                /* agentos-7j5: controller EP for live MSG_AGENTPOOL_STATUS. */
+                { SVC_ID_CONTROLLER,  PD_CNODE_SLOT_CONTROLLER_EP },
 #if defined(AGENTOS_FAULT_INJECT)
                 { SVC_ID_FAULT_INJECT, PD_CNODE_SLOT_FAULT_INJECT_EP },
 #endif

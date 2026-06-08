@@ -20,6 +20,7 @@
 #include "nameserver.h"
 #include "cap_policy.h"
 #include "contracts/vmm_contract.h"
+#include "contracts/agent_pool_contract.h"  /* agent_pool_occupancy (agentos-7j5) */
 #include "boot_integrity.h"
 #include "app_manager.h"
 #include "verify.h"
@@ -854,6 +855,39 @@ static uint32_t handle_worker_retrieve(sel4_badge_t badge,
     }
 }
 
+/*
+ * handle_agentpool_status (agentos-7j5 / agentos-681)
+ *
+ * Inbound handler for MSG_AGENTPOOL_STATUS, relayed by cc_pd to back
+ * MSG_CC_LIST_POLECATS.  agent_pool.c is linked into this controller PD, so
+ * we can read live occupancy directly via agent_pool_occupancy() and return
+ * it.  Reply layout (little-endian u32, matching cc_pd's cc_wire_rd32):
+ *   data[0..3]  = total
+ *   data[4..7]  = busy
+ *   data[8..11] = idle
+ *   data[12..15]= faulted
+ */
+static uint32_t handle_agentpool_status(sel4_badge_t badge,
+                                        const sel4_msg_t *req,
+                                        sel4_msg_t *rep,
+                                        void *ctx)
+{
+    (void)badge; (void)req; (void)ctx;
+    uint32_t total = 0u, busy = 0u, idle = 0u, faulted = 0u;
+    agent_pool_occupancy(&total, &busy, &idle, &faulted);
+
+    const uint32_t vals[4] = { total, busy, idle, faulted };
+    for (uint32_t v = 0u; v < 4u; v++) {
+        uint32_t off = v * 4u;
+        rep->data[off + 0u] = (uint8_t)(vals[v] & 0xffu);
+        rep->data[off + 1u] = (uint8_t)((vals[v] >> 8u) & 0xffu);
+        rep->data[off + 2u] = (uint8_t)((vals[v] >> 16u) & 0xffu);
+        rep->data[off + 3u] = (uint8_t)((vals[v] >> 24u) & 0xffu);
+    }
+    rep->length = 16u;
+    return SEL4_ERR_OK;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Worker-pool notification handler (called from notification loop)
  * ─────────────────────────────────────────────────────────────────────────── */
@@ -1173,6 +1207,7 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&g_srv, (uint32_t)MSG_VMM_VCPU_SET_REGS, handle_vmm_vcpu_set_regs, (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_VMM_REGISTER,      handle_vmm_register,      (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_WORKER_RETRIEVE,   handle_worker_retrieve,    (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENTPOOL_STATUS,  handle_agentpool_status,   (void *)0);
 
 #ifndef AGENTOS_TEST_HOST
     /* Enter the never-returning server dispatch loop */
