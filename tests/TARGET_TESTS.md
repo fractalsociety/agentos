@@ -74,36 +74,42 @@ Gate (in `mk/target-tests.mk`):
 make test-cc-virtio-timeout BOARD=qemu_virt_aarch64
 ```
 
-## Required wiring (owned by other files — see OUT-OF-SCOPE in the bead)
+## How the runner is wired (agentos-8f5, DONE)
 
-`mk/target-tests.mk` is self-contained except for one include line. The Makefile
-owner must add to the root `Makefile`:
+The root `Makefile` includes the gates (`-include mk/target-tests.mk`), and on
+aarch64 a dedicated `test_runner` PD runs the contract suites against real seL4
+IPC. The pieces:
 
-```make
-include mk/target-tests.mk
-```
+1. **Runner PD** — `tests/harness/target_contract_runner.c` unity-`#include`s the
+   `eventbus`, `serial_pd`, and `log_drain` suites (test_framework's `static`
+   counters require a single translation unit), defines a libmicrokit shim
+   (`microkit_dbg_*`, `microkit_name`, `microkit_pps`) that routes output to the
+   PL011 UART — the release kernel disables `CONFIG_PRINTING` — and provides
+   `pd_main`, which calls `target_contract_runner_main()` then emits `TAP_DONE`.
+2. **Build** — `kernel/agentos-root-task/Makefile` compiles `target_contract_runner.o`
+   (with `-Itests -Itests/harness`), links `test_runner.elf`, adds it to `IMAGES`,
+   and appends a `test_runner` entry to a generated `agentos-test.toml` so
+   `gen-pd-bundle` embeds it — all under `SEL4_TEST_IMAGE` only.
+3. **Spawn + caps** — `system_desc_aarch64.c` appends the `test_runner` PD
+   (`AGENTOS_SEL4_TEST_IMAGE` only) with the EventBus/serial_pd/log_drain
+   endpoints minted at CNode slots `74 + ch` (`microkit_ppcall(ch)` =
+   `seL4_Call(BASE_ENDPOINT_CAP + ch)`), priority 250 so a busy-polling PD can't
+   starve it. `main.c` maps UART0 into the runner's vspace and, on aarch64,
+   defers `TAP_DONE` to the runner (emitting it from the root task would make
+   run-tests tear down QEMU before any PD runs).
 
-For the target *contract* runner (agentos-0h4) to actually execute the five
-suites instead of the current one-line stub TAP, the root-task build owner must
-also:
+Result: `make test-target TARGET_ARCH=aarch64 GUEST_OS=none` boots the image and
+the runner emits real-IPC TAP (`ok 1..14`, `TAP_DONE:0`). On x86_64 (reduced
+smoke, no runner) the root task still emits the boot-proof stub TAP.
 
-1. **Compile** `tests/harness/target_contract_runner.c` and the five suites
-   `tests/contracts/{eventbus,cc,serial_pd,log_drain,guest}_test.c` into the
-   root task **when `SEL4_TEST_IMAGE=1`** (add them to the test-image object
-   list in `kernel/agentos-root-task/Makefile`, with include paths
-   `-I tests/harness -I tests -I kernel/agentos-root-task/include`).
-2. **Call** `target_contract_runner_main()` from
-   `kernel/agentos-root-task/src/main.c`, replacing the current stub under
-   `#ifdef AGENTOS_SEL4_TEST_IMAGE` (lines ~1825-1830):
+### Not yet covered (tracked in agentos-yni)
 
-   ```c
-   #ifdef AGENTOS_SEL4_TEST_IMAGE
-       void target_contract_runner_main(void);
-       target_contract_runner_main();   /* emits TAP + TAP_DONE */
-   #endif
-   ```
+- **cc_pd** — speaks its protocol over virtio-serial, not a seL4 endpoint, so a
+  `microkit_ppcall` would block; needs a virtio-serial test driver.
+- **guest lifecycle** — no guest VMM PD exists under `GUEST_OS=none`; needs a
+  guest-enabled test image.
 
-Until step 1+2 land, `make test-target` still builds and boots the image and
-reports the stub TAP (`ok 1 - root task booted ...`); the five real-IPC suites
-are present and compile but are not yet invoked on target. This is called out as
-UNVERIFIED in the bead handoff.
+Also: EventBus STATUS/INIT return `AOS_ERR_INVAL` on target because its ring is
+never mapped there (`eventbus_ring_vaddr` is only set by the host unit test) —
+defect **agentos-gom**. The eventbus assertions accept that and tighten to strict
+`OK` once the ring is wired.
