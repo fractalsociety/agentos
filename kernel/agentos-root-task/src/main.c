@@ -1785,6 +1785,29 @@ void root_task_main(const seL4_BootInfo *bi)
             }
         }
 
+#ifdef AGENTOS_SEL4_TEST_IMAGE
+        /* agentos-8f5: map UART0 into the contract-runner PD so it can emit TAP
+         * (release kernel has CONFIG_PRINTING disabled).  VA must match
+         * TEST_RUNNER_UART_VA in tests/harness/target_contract_runner.c. */
+        if (name_eq(pd->name, "test_runner") && g_uart_frame_cap != seL4_CapNull) {
+            seL4_Word tr_uart_copy = ut_alloc_slot();
+            if (tr_uart_copy != seL4_CapNull) {
+                seL4_Error ce = seL4_CNode_Copy(
+                    seL4_CapInitThreadCNode, tr_uart_copy,     64u,
+                    seL4_CapInitThreadCNode, g_uart_frame_cap, 64u,
+                    seL4_AllRights);
+                if (ce == seL4_NoError) {
+                    ce = pd_vspace_map_device_frame(vspace,
+                                                    (seL4_CPtr)tr_uart_copy,
+                                                    0x10006000UL /* TEST_RUNNER_UART_VA */);
+                }
+                dbg_puts("[rt] test_runner UART map err=");
+                dbg_hex((seL4_Word)ce);
+                dbg_puts("\n");
+            }
+        }
+#endif
+
         /* ── 4g.4.8: Startup record for parameterized PDs (agentos-3ev) ────── */
         /*
          * swap_slot, app_slot, wg_net, and (standalone) vibe_swap each read a
@@ -1951,7 +1974,15 @@ void root_task_main(const seL4_BootInfo *bi)
 
     cap_tree_verify_all_pds();
 
-#ifdef AGENTOS_SEL4_TEST_IMAGE
+#if defined(AGENTOS_SEL4_TEST_IMAGE) && defined(__aarch64__)
+    /* agentos-8f5: on aarch64 the contract-runner PD (test_runner.elf) emits the
+     * authoritative TAP stream + TAP_DONE sentinel once the service PDs are in
+     * their server loops.  The root task must NOT emit TAP_DONE here — doing so
+     * makes run-tests tear down QEMU before any PD (incl. the runner) executes. */
+    dbg_puts("[rt] test image: contract-runner PD will emit TAP after PD bringup\n");
+#elif defined(AGENTOS_SEL4_TEST_IMAGE)
+    /* Other arches (e.g. x86_64 reduced smoke) have no contract-runner PD wired
+     * yet, so the root task emits the boot-proof TAP itself. */
     dbg_puts("TAP version 14\n");
     dbg_puts("ok 1 - root task booted current board topology\n");
     dbg_puts("1..1\n");

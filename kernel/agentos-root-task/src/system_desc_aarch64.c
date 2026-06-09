@@ -39,18 +39,25 @@
 
 #include "system_desc.h"
 
+/* agentos-8f5: a target contract-runner PD is appended only in test images. */
+#ifdef AGENTOS_SEL4_TEST_IMAGE
+#define AOS_TEST_PD_EXTRA 1u
+#else
+#define AOS_TEST_PD_EXTRA 0u
+#endif
+
 /* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT 21u
+#define AOS_AARCH64_PD_COUNT (21u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
-#define AOS_AARCH64_PD_COUNT 20u
+#define AOS_AARCH64_PD_COUNT (20u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT 20u
+#define AOS_AARCH64_PD_COUNT (20u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #else
-#define AOS_AARCH64_PD_COUNT 19u
+#define AOS_AARCH64_PD_COUNT (19u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
@@ -527,5 +534,38 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
             },
         },
+
+#ifdef AGENTOS_SEL4_TEST_IMAGE
+        /* agentos-8f5 / agentos-0h4: on-target contract TAP runner.  Test image
+         * only.  Pure client PD: it issues microkit_ppcall(ch) — i.e.
+         * seL4_Call(BASE_ENDPOINT_CAP[74] + ch) — to the live service PDs, so it
+         * must hold each service's listen endpoint at CNode slot 74+ch:
+         *   EventBus   ch=MONITOR_CH_EVENTBUS(1)  -> slot 75
+         *   serial_pd  ch=CH_SERIAL_PD(44)        -> slot 118
+         *   log_drain  ch=CH_LOG_DRAIN(55)        -> slot 129
+         * cnode_size_bits=9 (512 slots) covers those high slot indices. */
+        {
+            .name           = "test_runner",
+            .elf_path       = "test_runner.elf",
+            .stack_size     = 0x4000u,
+            .cnode_size_bits = 9u,
+            /* High priority (just below fault_handler at 255) so a service that
+             * busy-polls — e.g. cc_pd at 160 spinning on its virtio-serial ring
+             * when no virtio device is attached in the test QEMU — cannot starve
+             * the runner.  Each runner PPC blocks on the target service's Recv,
+             * letting the lower-priority services run to answer; ordering vs the
+             * controller does not matter since the eventbus assertions tolerate
+             * the ring-unmapped state (agentos-gom). */
+            .priority       = 250u,
+            .self_svc_id    = 0u,
+            .init_ep_count  = 4u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_EVENTBUS,   75u  },   /* 74 + MONITOR_CH_EVENTBUS(1) */
+                { SVC_ID_SERIAL,     118u },   /* 74 + CH_SERIAL_PD(44)       */
+                { SVC_ID_LOG_DRAIN,  129u },   /* 74 + CH_LOG_DRAIN(55)       */
+            },
+        },
+#endif
     },
 };

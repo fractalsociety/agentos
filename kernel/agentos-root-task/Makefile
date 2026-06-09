@@ -332,6 +332,8 @@ endif
 
 ifdef SEL4_TEST_IMAGE
   CFLAGS_ROOT_TASK += -DAGENTOS_SEL4_TEST_IMAGE=1
+  # agentos-8f5: on-target contract TAP runner PD (test image only).
+  IMAGES += test_runner.elf
 endif
 
 # Guest OS selection: none (default) | linux/ubuntu | freebsd | both
@@ -538,6 +540,16 @@ $(BUILD_DIR)/log_drain.elf: $(LOG_DRAIN_OBJS)
 
 $(BUILD_DIR)/serial_pd.elf: $(SERIAL_PD_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+# agentos-8f5: on-target contract TAP runner PD (test image only).  The runner
+# unity-#includes the tests/contracts/*_test.c suites, so a single object holds
+# all suite logic; -Itests/-Itests/harness let its relative includes resolve.
+$(BUILD_DIR)/target_contract_runner.o: $(REPO_ROOT)/tests/harness/target_contract_runner.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) -I$(REPO_ROOT)/tests -I$(REPO_ROOT)/tests/harness $< -o $@
+
+$(BUILD_DIR)/test_runner.elf: $(BUILD_DIR)/target_contract_runner.o
+	$(LD) $(LDFLAGS) $^ $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(LIBS) -o $@
 
 $(BUILD_DIR)/swap_slot.elf: $(SWAPSLOT_OBJS) $(WASM3_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
@@ -769,7 +781,14 @@ endif
 # memory-region / channel details (handled by the root task at runtime).
 # A minimal fallback TOML is provided; board-specific overrides live in boards/.
 SYSTEM_TOML_DEFAULT := $(abspath $(CURDIR)/agentos.toml)
-ifdef FAULT_INJECT
+ifdef SEL4_TEST_IMAGE
+# agentos-8f5: test images (always GUEST_OS=none) append the contract-runner PD
+# so gen-pd-bundle embeds test_runner.elf and the root task can spawn it.
+SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-test.toml)
+$(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
+	@mkdir -p $(BUILD_DIR)
+	{ cat $<; printf '\n[[pd]]\nname = "test_runner"\npriority = 250\n'; } > $@
+else ifdef FAULT_INJECT
 ifeq ($(GUEST_OS),both)
 SYSTEM_TOML_DEFAULT := $(abspath $(BUILD_DIR)/agentos-both-fault-inject.toml)
 $(SYSTEM_TOML_DEFAULT): $(abspath $(CURDIR)/agentos.toml)
