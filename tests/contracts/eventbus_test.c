@@ -20,18 +20,9 @@ void run_eventbus_tests(microkit_channel ch)
 {
     TEST_SECTION("eventbus");
 
-    /*
-     * On-target reality (surfaced by the contract runner, agentos-8f5):
-     * eventbus_ring_vaddr is only assigned by the host unit test
-     * (tests/api/test_event_bus.c).  On real hardware the ring is never mapped,
-     * so handle_status/handle_init return AOS_ERR_INVAL (SEL4_ERR_BAD_ARG, 0x4).
-     * That is a separate eventbus defect (agentos-gom).  These assertions accept
-     * OK *or* the ring-unmapped code: they prove the real seL4 IPC round trip
-     * succeeds and returns a valid contract status, and tighten to strict OK
-     * automatically once the ring is wired on target.
-     */
-    ASSERT_IPC_OK_OR_ERR(ch, MSG_EVENTBUS_STATUS, AOS_ERR_INVAL,
-                         "eventbus: STATUS returns ok or ring-unmapped");
+    /* STATUS — must succeed; the root task maps the ring on target (agentos-gom)
+     * and event_bus_main initialises it before entering its server loop. */
+    ASSERT_IPC_OK(ch, MSG_EVENTBUS_STATUS, "eventbus: STATUS returns ok");
 
     /* SUBSCRIBE — subscribe the monitor channel (badge 0 = self). */
     microkit_mr_set(0, (uint64_t)MSG_EVENTBUS_SUBSCRIBE);
@@ -61,12 +52,10 @@ void run_eventbus_tests(microkit_channel ch)
         }
     }
 
-    /* INIT — initialises the ring when mapped; AOS_ERR_INVAL when unmapped
-     * (see agentos-gom).  Accept OK or ring-unmapped. */
-    ASSERT_IPC_OK_OR_ERR(ch, MSG_EVENTBUS_INIT, AOS_ERR_INVAL,
-                         "eventbus: INIT returns ok or ring-unmapped");
+    /* INIT — reinitialise (idempotent on a running system). */
+    ASSERT_IPC_OK_OR_ERR(ch, MSG_EVENTBUS_INIT, AOS_ERR_BUSY,
+                         "eventbus: INIT returns ok or busy");
 
-    /* STATUS again — bus still responsive after subscribe/unsubscribe. */
-    ASSERT_IPC_OK_OR_ERR(ch, MSG_EVENTBUS_STATUS, AOS_ERR_INVAL,
-                         "eventbus: STATUS ok or ring-unmapped after ops");
+    /* STATUS again — confirm bus is still responsive after subscribe/unsubscribe. */
+    ASSERT_IPC_OK(ch, MSG_EVENTBUS_STATUS, "eventbus: STATUS still ok after ops");
 }

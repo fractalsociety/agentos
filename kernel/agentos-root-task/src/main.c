@@ -1808,6 +1808,22 @@ void root_task_main(const seL4_BootInfo *bi)
         }
 #endif
 
+        /* ── 4g.4.9: EventBus ring RAM region (agentos-gom) ─────────────────
+         * Map a private 2 MB RAM region at EVENTBUS_RING_VA into the event_bus
+         * PD's vspace so its ring is backed on target.  Without this,
+         * eventbus_ring_vaddr stays 0 (only the host unit test set it) and
+         * STATUS/INIT/PUBLISH return BAD_ARG.  VA must match EVENTBUS_RING_VA in
+         * services/event-bus/event_bus.c. */
+        if (name_eq(pd->name, "event_bus")) {
+            seL4_Error re = pd_vspace_map_region(vspace,
+                                                 0x30000000UL /* EVENTBUS_RING_VA */,
+                                                 0x200000u    /* 2 MB (ring uses first 256 KB) */,
+                                                 1            /* writable */);
+            dbg_puts("[rt] event_bus ring map err=");
+            dbg_hex((seL4_Word)re);
+            dbg_puts("\n");
+        }
+
         /* ── 4g.4.8: Startup record for parameterized PDs (agentos-3ev) ────── */
         /*
          * swap_slot, app_slot, wg_net, and (standalone) vibe_swap each read a

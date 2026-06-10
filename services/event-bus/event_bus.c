@@ -172,6 +172,10 @@ static inline void seL4_DebugPutChar(char c) { (void)c; }
 
 #define AGENTOS_RING_MAGIC          0xA6E70B05u
 #define EVENTBUS_RING_SIZE          0x40000u    /* 256 KB */
+/* agentos-gom: VA at which the root task maps this PD's ring RAM region (a 2 MB
+ * page; the ring uses the first 256 KB).  MUST match the mapping in
+ * kernel/agentos-root-task/src/main.c. */
+#define EVENTBUS_RING_VA            0x30000000UL
 #define EVENTBUS_BATCH_STAGING_SIZE 768u
 #define EVENTBUS_BATCH_STAGING_OFFSET (EVENTBUS_RING_SIZE - EVENTBUS_BATCH_STAGING_SIZE)
 
@@ -713,6 +717,13 @@ void event_bus_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     }
 
     dbg_puts("[event_bus] starting\n");
+
+    /* agentos-gom: point the ring at the RAM region the root task mapped into
+     * this PD's vspace at EVENTBUS_RING_VA.  Previously eventbus_ring_vaddr was
+     * only set by the host unit test, so on target the ring was never mapped and
+     * STATUS/INIT returned BAD_ARG.  Setting it here makes the bus functional. */
+    if (!eventbus_ring_vaddr)
+        eventbus_ring_vaddr = EVENTBUS_RING_VA;
 
     /* Initialise ring if the shared memory region is already mapped */
     if (eventbus_ring_vaddr)
