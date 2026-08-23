@@ -106,7 +106,7 @@ proven against a booted seL4 target.
 | `MsgBus` | Inter-agent communication — channels, pub/sub, direct messaging, RPC | host-tested |
 | `MemFS` | Virtual filesystem — per-agent namespaces, capability-gated access | host-tested |
 | `ToolSvc` | Tool registry — agents register and invoke tools (MCP-compatible) | host-tested |
-| `ModelSvc` | Inference proxy — capability-gated LLM access, pluggable backends | host-tested |
+| `ModelSvc` | Native inference PD — badge-isolated compact IPC, shared arena, pooling, streaming, cancellation, and caching | target-tested |
 | `NetStack` | TCP/IP networking — lwIP-based, capability-gated per-endpoint | host-tested |
 | `BlobSvc` | Object storage — large binary objects, S3-compatible API | host-tested |
 | `LogSvc` | Audit logging — structured, queryable, every cap op recorded | host-tested |
@@ -271,6 +271,7 @@ below is labeled by **proof level**, not by "done / not done".
 | Dynamic guest CREATE/LIST/DESTROY via vibe_engine | host-tested | On AArch64 the build links `vmm_mux_stub.c`; vibe_engine surfaces dynamic guests as "phantom" `RUNNING` because no real VM boots (`e70d955`). Lifecycle UX works end-to-end through CC-PD against stubbed VM backing only. |
 | serial-mux / serial PD | boot-proven | Guest console login flows through CC-PD over the serial path (`make test-guest-login`) |
 | net-service / net_isolator | host-tested | Contract + isolator logic covered by host tests (`tests/contracts/net_*`); not boot-asserted |
+| Headscale private mesh | boot-proven | A clean FreeBSD 15 first boot installs and starts the pinned controller (`make e2e-mesh-freebsd`); two real Tailscale clients and an agent endpoint are exercised by `AGENTOS_TAILSCALE_E2E=1 make validate-headscale-role`; see `docs/mesh-network.md` |
 | block-service / block PD | host-tested | Host contract tests (`tests/contracts/block_*`); VirtIO-blk path not independently boot-asserted |
 | usb-service | stubbed | `usb_pd.c` runs in "stub mode" (simulated HID device) unless built with `AGENTOS_USB_PD` and real MMIO is wired |
 | timer-service | host-tested | Host contract tests (`tests/contracts/timer_test.c`) |

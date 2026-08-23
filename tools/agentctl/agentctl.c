@@ -16,6 +16,10 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#ifndef AGENTCTL_MESH_HELPER_PATH
+#define AGENTCTL_MESH_HELPER_PATH "/usr/local/libexec/agentctl-mesh"
+#endif
+
 #include "contracts/cc_contract.h"
 #include "contracts/guest_contract.h"
 
@@ -60,6 +64,7 @@ static void usage(FILE *out)
             "  trace-stop\n"
             "  trace-query\n"
             "  trace-dump [MAX_EVENTS]\n"
+            "  mesh [--url URL] status|nodes|users|enroll-key|expire-node ...\n"
             "  connect\n"
             "  status SESSION_ID\n"
             "  raw OPCODE [MR1 [MR2 [MR3]]]\n\n"
@@ -299,6 +304,32 @@ static int cmd_trace_dump(int argc, char **argv)
     return r.mr[0] == CC_OK ? 0 : 1;
 }
 
+static int cmd_mesh(int argc, char **argv)
+{
+    const char *helper = getenv("AGENTCTL_MESH_HELPER");
+    if (!helper || !*helper) {
+        if (access(AGENTCTL_MESH_HELPER_PATH, X_OK) == 0) {
+            helper = AGENTCTL_MESH_HELPER_PATH;
+        } else if (access("tools/agentctl/agentctl-mesh", X_OK) == 0) {
+            helper = "tools/agentctl/agentctl-mesh";
+        } else {
+            helper = "agentctl-mesh";
+        }
+    }
+    char **child_argv = calloc((size_t)argc + 2u, sizeof(char *));
+    if (!child_argv) {
+        fprintf(stderr, "agentctl: cannot allocate mesh command arguments\n");
+        return 1;
+    }
+    child_argv[0] = (char *)helper;
+    for (int j = 0; j < argc; j++) child_argv[j + 1] = argv[j];
+    execvp(helper, child_argv);
+    fprintf(stderr, "agentctl: cannot execute mesh helper %s: %s\n",
+            helper, strerror(errno));
+    free(child_argv);
+    return 1;
+}
+
 int main(int argc, char **argv)
 {
     const char *env_sock = getenv("CC_PD_SOCK");
@@ -391,6 +422,7 @@ int main(int argc, char **argv)
         return cmd_simple(MSG_CC_TRACE_QUERY, 0, 0, 0);
     }
     if (strcmp(cmd, "trace-dump") == 0) return cmd_trace_dump(n, args);
+    if (strcmp(cmd, "mesh") == 0) return cmd_mesh(n, args);
     if (strcmp(cmd, "raw") == 0 && n >= 1) {
         return cmd_simple(parse_u32(args[0], "opcode"),
                           n > 1 ? parse_u32(args[1], "mr1") : 0,

@@ -74,7 +74,11 @@ Guest image staging:
 make fetch-guest GUEST_OS=ubuntu      # Ubuntu 26.04 AArch64
 make fetch-guest GUEST_OS=freebsd     # FreeBSD 15.0 AArch64
 make bootstrap-guest OS=ubuntu-arm64  # build image from ISO cache
+make bootstrap-guest OS=freebsd15     # includes the Headscale controller role
 ```
+
+See [Private agent mesh](mesh-network.md) for controller validation, TLS trust,
+device enrollment, and the two-client end-to-end test.
 
 To run the QEMU smoke test:
 

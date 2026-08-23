@@ -18,6 +18,7 @@ __pycache__/
 # Generated files
 settings.cmake
 *.generated.*
+tools/agentctl/agentctl
 
 # IDE
 .vscode/

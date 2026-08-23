@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Structured Headscale management client for `agentctl mesh`."""
+
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import ssl
+import stat
+import sys
+import urllib.error
+import urllib.request
+
+
+def emit(ok, **fields):
+    fields = {"ok": ok, **fields}
+    print(json.dumps(fields, separators=(",", ":"), sort_keys=True))
+
+
+class MeshClient:
+    def __init__(self, base_url, token_file, ca_file=None):
+        self.base = base_url.rstrip("/")
+        token_path = pathlib.Path(token_file)
+        if token_path.exists() and stat.S_IMODE(token_path.stat().st_mode) & 0o077:
+            raise RuntimeError("Headscale API token file must not be group/world accessible")
+        self.token = token_path.read_text(encoding="utf-8").strip() if token_path.exists() else ""
+        self.context = ssl.create_default_context(cafile=ca_file) if ca_file else ssl.create_default_context()
+
+    def request(self, method, path, body=None, auth=True):
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        headers = {"Accept": "application/json"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        if auth:
+            if not self.token:
+                raise RuntimeError("Headscale API token file is missing or empty")
+            headers["Authorization"] = f"Bearer {self.token}"
+        request = urllib.request.Request(self.base + path, data=data, headers=headers, method=method)
+        with urllib.request.urlopen(request, context=self.context, timeout=10) as response:
+            raw = response.read()
+            return {} if not raw else json.loads(raw)
+
+    def resolve_user(self, value):
+        """Resolve a user name to the uint64 string required by Headscale."""
+        if value.isdecimal():
+            return value
+        response = self.request("GET", "/api/v1/user")
+        matches = [user for user in response.get("users", []) if user.get("name") == value]
+        if len(matches) != 1:
+            raise RuntimeError(f"Headscale user {value!r} was not found uniquely")
+        return str(matches[0]["id"])
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="agentctl mesh")
+    parser.add_argument("--url", default=os.environ.get(
+        "AGENTOS_HEADSCALE_URL", "https://mesh.agentos.internal:8080"))
+    parser.add_argument("--token-file", default=os.environ.get(
+        "AGENTOS_HEADSCALE_TOKEN_FILE", "/var/db/agentos-secrets/headscale/api.token"))
+    parser.add_argument("--ca-file", default=os.environ.get("AGENTOS_HEADSCALE_CA_FILE"))
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("status")
+    commands.add_parser("nodes")
+    commands.add_parser("users")
+    enroll = commands.add_parser("enroll-key")
+    enroll.add_argument("--user", default="agents")
+    enroll.add_argument("--ttl-seconds", type=int, default=600)
+    enroll.add_argument("--reusable", action="store_true")
+    enroll.add_argument("--ephemeral", action="store_true")
+    enroll.add_argument("--tag", action="append", default=["tag:agent"])
+    expire = commands.add_parser("expire-node")
+    expire.add_argument("node_id", type=int)
+    args = parser.parse_args()
+    try:
+        client = MeshClient(args.url, args.token_file, args.ca_file)
+        if args.command == "status":
+            result = client.request("GET", "/health", auth=False)
+        elif args.command == "nodes":
+            result = client.request("GET", "/api/v1/node")
+        elif args.command == "users":
+            result = client.request("GET", "/api/v1/user")
+        elif args.command == "expire-node":
+            result = client.request("POST", f"/api/v1/node/{args.node_id}/expire", {})
+        else:
+            if args.ttl_seconds < 60 or args.ttl_seconds > 86400:
+                raise RuntimeError("enrollment TTL must be between 60 and 86400 seconds")
+            expiration = dt.datetime.now(dt.timezone.utc) + dt.timedelta(seconds=args.ttl_seconds)
+            result = client.request("POST", "/api/v1/preauthkey", {
+                "user": client.resolve_user(args.user),
+                "reusable": args.reusable,
+                "ephemeral": args.ephemeral,
+                "expiration": expiration.isoformat().replace("+00:00", "Z"),
+                "aclTags": args.tag,
+            })
+        emit(True, command=args.command, result=result)
+        return 0
+    except (OSError, RuntimeError, ValueError, urllib.error.HTTPError) as error:
+        detail = error.read().decode("utf-8", "replace") if isinstance(error, urllib.error.HTTPError) else str(error)
+        emit(False, command=args.command, error=detail)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

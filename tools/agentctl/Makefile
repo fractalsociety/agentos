@@ -12,6 +12,7 @@ PREFIX ?= /usr/local
 
 CC      ?= cc
 CFLAGS  := -O2 -Wall -Wextra -std=c11 -DAGENTOS_TEST_HOST \
+           -DAGENTCTL_MESH_HELPER_PATH='"$(PREFIX)/libexec/agentctl-mesh"' \
            -I../../kernel/agentos-root-task/include
 LDFLAGS :=
 
@@ -37,11 +38,16 @@ test: $(TARGET)
 	@echo "[test] --batch requires socket (exits non-zero without agentOS)"
 	CC_PD_SOCK=/tmp/agentctl_no_such_socket ./$(TARGET) --batch list-guests >/dev/null 2>&1; \
 	  if [ $$? -ne 0 ]; then echo "[PASS] no-socket exits 1"; else echo "[FAIL] no-socket should exit 1"; exit 1; fi
+	@echo "[test] mesh dispatch reaches structured helper"
+	AGENTCTL_MESH_HELPER=./agentctl-mesh ./$(TARGET) mesh --help >/dev/null 2>&1; \
+	  if [ $$? -eq 0 ]; then echo "[PASS] mesh dispatch"; else echo "[FAIL] mesh dispatch"; exit 1; fi
 	@echo "[test] all passed"
 
 install: $(TARGET)
 	install -d $(DESTDIR)$(PREFIX)/bin
 	install -m 755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
+	install -d $(DESTDIR)$(PREFIX)/libexec
+	install -m 755 agentctl-mesh $(DESTDIR)$(PREFIX)/libexec/agentctl-mesh
 	@echo "Installed: $(DESTDIR)$(PREFIX)/bin/$(TARGET)"
 
 clean:

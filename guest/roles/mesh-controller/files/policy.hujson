@@ -1,0 +1,27 @@
+{
+  // Identities and tags are reconciled by policy-sync.py. The bootstrap
+  // policy is deliberately deny-by-default except for agent API traffic.
+  "groups": {
+    "group:agent-admins": ["agent-admin@"]
+  },
+  "tagOwners": {
+    "tag:agent": ["group:agent-admins"],
+    "tag:mesh-controller": ["group:agent-admins"]
+  },
+  // Avoid a fixed WireGuard UDP port on heterogeneous edge networks. In
+  // Headscale 0.29 this is a policy capability, not a server YAML option.
+  "randomizeClientPort": true,
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["group:agent-admins"],
+      "dst": ["tag:mesh-controller:443,8080,8443"]
+    },
+    {
+      "action": "accept",
+      "src": ["tag:agent"],
+      "dst": ["tag:agent:8443"]
+    }
+  ],
+  "ssh": []
+}

@@ -13,7 +13,7 @@
 #   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
 #   make clean        — remove build artifacts for current board
 
-.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools perf-gate perf-gate-aarch64 perf-gate-x86_64
+.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-mesh-controller-role test-agentctl-mesh validate-headscale-role test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-mesh e2e-mesh-freebsd e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools perf-gate perf-gate-aarch64 perf-gate-x86_64
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -505,7 +505,17 @@ gate: test-host gate-aarch64 gate-x86_64
 
 # test-host: alias for the host-only integration suite.  Named explicitly so
 # callers and CI cannot mistake host-only coverage for target/QEMU proof.
-test-host: test-integration
+test-host: test-integration test-agentctl-mesh
+
+test-agentctl-mesh: test-mesh-controller-role
+	@$(MAKE) -C tools/agentctl test
+	@python3 tests/test_agentctl_mesh.py
+
+test-mesh-controller-role:
+	@python3 tests/test_mesh_controller_role.py
+
+validate-headscale-role:
+	@bash tools/validate-headscale-role.sh
 
 sel4-test-image:
 	@$(MAKE) build \
@@ -649,6 +659,12 @@ e2e-guest:
 e2e-contract:
 	@chmod +x tests/e2e/test_cc_contract.sh
 	@BRIDGE_AVAILABLE=1 bash tests/e2e/test_cc_contract.sh
+
+e2e-mesh:
+	@bash tests/e2e/test_headscale_mesh.sh
+
+e2e-mesh-freebsd:
+	@bash tests/e2e/test_freebsd_mesh_role.sh
 
 e2e-dual-os:
 	@cargo xtask qemu-test --board $(BOARD) --guest-os both --timeout-secs $(DUAL_OS_TEST_TIMEOUT)
@@ -797,7 +813,10 @@ help:
 	@echo "  make perf-gate        Run target benchmarks and enforce regression thresholds"
 	@echo "  make test-host        Host-only suite (alias of test-integration; NOT OS proof)"
 	@echo "  make test-integration Run host-side contract/integration tests"
+	@echo "  make validate-headscale-role  Run pinned Headscale config/API validation"
 	@echo "  make e2e              Run the default QEMU/guest/CC end-to-end suite"
+	@echo "  make e2e-mesh         Enroll two Tailscale nodes and invoke an agent endpoint"
+	@echo "  make e2e-mesh-freebsd Boot and prove the FreeBSD Headscale controller role"
 	@echo "  make e2e-dual-os      Run Ubuntu and FreeBSD guest E2E coverage"
 	@echo "  make e2e-all          Run E2E suites for every staged guest image"
 	@echo ""

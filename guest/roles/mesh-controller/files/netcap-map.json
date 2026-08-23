@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "default": { "netcap": "deny", "agent_endpoint_ports": [] },
+  "tags": {
+    "tag:agent": { "netcap": "mesh-agent", "agent_endpoint_ports": [8443] },
+    "tag:mesh-controller": { "netcap": "mesh-control", "agent_endpoint_ports": [443, 8080, 8443] }
+  }
+}

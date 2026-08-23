@@ -55,6 +55,14 @@ ok()    { printf "${GREEN}[ok]${RESET} %s\n" "$*"; }
 warn()  { printf "${YELLOW}[warn]${RESET} %s\n" "$*"; }
 die()   { printf "${RED}[error]${RESET} %s\n" "$*" >&2; exit 1; }
 
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -101,6 +109,7 @@ make_cidata_iso() {
         # macOS
         hdiutil makehybrid \
             -o "${out_iso}" \
+            -ov \
             -joliet \
             -iso \
             -default-volume-name CIDATA \
@@ -124,21 +133,34 @@ make_cidata_iso() {
 ensure_iso() {
     local iso_name="$1"
     local url="$2"
+    local expected_sha="${3:-}"
     local cached="${ISO_DIR}/${iso_name}"
 
     mkdir -p "${ISO_DIR}"
     if [ -s "${cached}" ]; then
+        if [ -n "$expected_sha" ] && [ "$(sha256_file "$cached")" != "$expected_sha" ]; then
+            die "Cached ISO checksum mismatch: ${cached}"
+        fi
         printf '%s\n' "${cached}"
         return 0
     fi
 
-    info "Downloading ${url}"
-    info "  -> ${cached}"
+    info "Downloading ${url}" >&2
+    info "  -> ${cached}" >&2
     local tmp="${cached}.part"
-    rm -f "${tmp}"
-    curl --fail --location --progress-bar -o "${tmp}" "${url}" \
-        || die "Download failed: ${url}"
+    if command -v aria2c >/dev/null 2>&1; then
+        aria2c --continue=true --max-connection-per-server=8 --split=8 \
+            --min-split-size=4M --file-allocation=none \
+            --dir "${ISO_DIR}" --out "${iso_name}.part" "${url}" \
+            || die "Download failed: ${url}"
+    else
+        curl --fail --location --continue-at - --progress-bar \
+            -o "${tmp}" "${url}" || die "Download failed: ${url}"
+    fi
     [ -s "${tmp}" ] || die "Downloaded ISO is empty: ${url}"
+    if [ -n "$expected_sha" ] && [ "$(sha256_file "$tmp")" != "$expected_sha" ]; then
+        die "Downloaded ISO checksum mismatch: ${url}"
+    fi
     mv "${tmp}" "${cached}"
     printf '%s\n' "${cached}"
 }
@@ -167,7 +189,7 @@ download_nixos_cloud_image() {
 download_freebsd15_vm_image() {
     local out="$1"
     local base="https://download.freebsd.org/releases/VM-IMAGES/15.0-RELEASE/amd64/Latest"
-    local fname="FreeBSD-15.0-RELEASE-amd64.raw.xz"
+    local fname="FreeBSD-15.0-RELEASE-amd64-ufs.raw.xz"
     info "Fetching FreeBSD 15.0 VM image from freebsd.org..."
     local tmp="${out}.raw.xz"
     curl -L --progress-bar -o "${tmp}" "${base}/${fname}" || die "Download failed"
@@ -508,15 +530,27 @@ bootstrap_freebsd15() {
     local iso
     iso="$(ensure_iso \
         "FreeBSD-15.0-RELEASE-amd64-disc1.iso" \
-        "https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/15.0/FreeBSD-15.0-RELEASE-amd64-disc1.iso")"
+        "https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/15.0/FreeBSD-15.0-RELEASE-amd64-disc1.iso" \
+        "cc73a14d4b1cfada880b78deb0b94ae0f439167418c32a6708f68f79563cb50c")"
 
     command -v "${qemu}" >/dev/null 2>&1 || die "qemu-system-x86_64 not found"
     find_expect || die "expect not found — install it or set E2E_SKIP_ISO_INSTALL=1 to download instead"
+    local firmware=""
+    for candidate in \
+        /opt/homebrew/share/qemu/edk2-x86_64-code.fd \
+        /usr/local/share/qemu/edk2-x86_64-code.fd \
+        /usr/share/qemu/edk2-x86_64-code.fd; do
+        if [ -f "$candidate" ]; then firmware="$candidate"; break; fi
+    done
+    [ -n "$firmware" ] || die "x86_64 EDK2 firmware not found"
 
     ensure_ssh_key
 
     info "Bootstrapping FreeBSD 15.0 amd64 → ${out}"
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
+
+    local role_iso="${TMP_ROOT}/agentos-mesh-controller-role.iso"
+    make_cidata_iso "${REPO_ROOT}/guest/roles/mesh-controller" "${role_iso}"
 
     local expect_script
     expect_script="$(mktemp "${TMP_ROOT}/freebsd-install-XXXXXX.exp")"
@@ -526,13 +560,19 @@ bootstrap_freebsd15() {
 set timeout 600
 set out  [lindex \$argv 0]
 set iso  [lindex \$argv 1]
-set key  [lindex \$argv 2]
+set role [lindex \$argv 2]
+set key  [lindex \$argv 3]
+set firmware [lindex \$argv 4]
 
 spawn qemu-system-x86_64 \\
     -machine q35 -m ${QEMU_MEM_MB} \\
+    -drive "if=pflash,format=raw,unit=0,readonly=on,file=\$firmware" \\
     -drive "file=\$iso,readonly=on,media=cdrom,format=raw" \\
+    -drive "file=\$role,readonly=on,media=cdrom,format=raw,index=1" \\
     -drive "file=\$out,if=virtio,format=raw" \\
-    -nographic
+    -netdev user,id=net0 \\
+    -device virtio-net-pci,netdev=net0 \\
+    -display none -monitor none -serial stdio
 
 # Wait for the FreeBSD boot menu
 expect {
@@ -543,26 +583,33 @@ expect {
 # Let autoboot timer expire (10s) or press Enter to boot immediately
 sleep 12
 
+# The serial installer asks for a terminal type before launching bsdinstall.
+expect {
+    timeout                     { puts "ERROR: console type prompt did not appear"; exit 1 }
+    "Console type"              { send "\r" }
+}
+
 # Wait for bsdinstall main menu
 expect {
     timeout                     { puts "ERROR: bsdinstall did not appear"; exit 1 }
-    "Install"                   { }
-    "Shell"                     { }
+    eof                         { puts "ERROR: FreeBSD exited before bsdinstall appeared"; exit 1 }
+    -re {\x1b\[6n}              { send "\033\[24;80R"; exp_continue }
+    "ive System"                { }
 }
 
-# Select "Shell" to drive installation programmatically
-send "\033\[B"   ;# Down arrow
-sleep 0.5
-# Navigate to Shell option and select it
-# The exact menu position varies — use keyboard shortcut
+# Select the underlined Shell hotkey to drive installation programmatically.
+sleep 1
 send "s"
 expect {
     "# "    { }
+    eof     { puts "ERROR: FreeBSD exited before the installer shell opened"; exit 1 }
     timeout { puts "ERROR: Shell prompt not reached"; exit 1 }
 }
 
 # Run bsdinstall in scripted mode
 send "set -x\r"
+expect "# "
+send "stty -echo\r"
 expect "# "
 
 # Partition with gpart
@@ -585,15 +632,19 @@ expect "# "
 send "mkdir -p /mnt/boot/efi && mount_msdosfs /dev/vtbd0p1 /mnt/boot/efi\r"
 expect "# "
 
-# Extract distributions
-puts "Extracting FreeBSD base and kernel..."
-send "BSDINSTALL_DISTDIR=/usr/freebsd-dist DISTRIBUTIONS='base.txz kernel.txz' bsdinstall distextract\r"
+# FreeBSD 15 release media ships pkgbase packages instead of base.txz/kernel.txz.
+# Install from the disc's signed, offline repository into the mounted target.
+puts "Installing FreeBSD pkgbase system..."
+send "pkg --rootdir /mnt --repo-conf-dir /usr/freebsd-packages/repos -o IGNORE_OSVERSION=yes update && pkg --rootdir /mnt --repo-conf-dir /usr/freebsd-packages/repos -o IGNORE_OSVERSION=yes install -U -y -r FreeBSD-base FreeBSD-set-minimal FreeBSD-set-base pkg FreeBSD-kernel-generic && echo __AGENTOS_PKGBASE_OK__\r"
 set timeout 1200
 expect {
-    timeout { puts "ERROR: distextract timed out"; exit 1 }
-    "# "    { }
+    timeout                         { puts "ERROR: pkgbase installation timed out"; exit 1 }
+    "__AGENTOS_PKGBASE_OK__"        { expect "# " }
+    "# "                            { puts "ERROR: pkgbase installation failed"; exit 1 }
 }
 set timeout 600
+send "mkdir -p /mnt/usr/local/etc/pkg/repos && echo 'FreeBSD-base: { enabled: yes }' > /mnt/usr/local/etc/pkg/repos/FreeBSD.conf\r"
+expect "# "
 
 # Configure the installed system
 send "echo 'hostname=\"freebsd-guest\"' > /mnt/etc/rc.conf\r"
@@ -601,6 +652,8 @@ expect "# "
 send "echo 'sshd_enable=\"YES\"' >> /mnt/etc/rc.conf\r"
 expect "# "
 send "echo 'ifconfig_vtnet0=\"DHCP\"' >> /mnt/etc/rc.conf\r"
+expect "# "
+send "echo 'agentos_mesh_firstboot_enable=\"YES\"' >> /mnt/etc/rc.conf\r"
 expect "# "
 
 # SSH configuration
@@ -615,13 +668,25 @@ expect "# "
 send "echo '\$key' > /mnt/root/.ssh/authorized_keys && chmod 600 /mnt/root/.ssh/authorized_keys\r"
 expect "# "
 
-# Install bootloader
-send "bsdinstall bootconfig\r"
+# Stage the role now; its network-dependent installer runs once on first boot.
+# The release medium is read-only, so use its memory-backed /tmp as mountpoint.
+send "mkdir -p /tmp/agentos-role /mnt/usr/local/share/agentos/roles/mesh-controller /mnt/usr/local/etc/rc.d && mount_cd9660 /dev/cd1 /tmp/agentos-role && cp -R /tmp/agentos-role/. /mnt/usr/local/share/agentos/roles/mesh-controller/ && install -m 0555 /tmp/agentos-role/files/agentos_mesh_firstboot.rc /mnt/usr/local/etc/rc.d/agentos_mesh_firstboot && chmod 0555 /mnt/usr/local/share/agentos/roles/mesh-controller/install.sh && umount /tmp/agentos-role && echo __AGENTOS_ROLE_STAGED_OK__\r"
+expect {
+    timeout                         { puts "ERROR: mesh-controller role staging timed out"; exit 1 }
+    "__AGENTOS_ROLE_STAGED_OK__"    { expect "# " }
+    "# "                            { puts "ERROR: mesh-controller role staging failed"; exit 1 }
+}
+
+# Install the UEFI loader at both the FreeBSD and architecture fallback paths.
+# The fallback path boots even when firmware NVRAM cannot be persisted by QEMU.
+send "mkdir -p /mnt/boot/efi/efi/freebsd /mnt/boot/efi/efi/boot\r"
 expect "# "
-send "mount -t devfs devfs /mnt/dev\r"
-expect "# "
-send "chroot /mnt efibootmgr --verbose 2>/dev/null || true\r"
-expect "# "
+send "cp /mnt/boot/loader.efi /mnt/boot/efi/efi/freebsd/loader.efi && cp /mnt/boot/loader.efi /mnt/boot/efi/efi/boot/bootx64.efi && echo __AGENTOS_BOOTLOADER_OK__\r"
+expect {
+    timeout                         { puts "ERROR: UEFI bootloader installation timed out"; exit 1 }
+    "__AGENTOS_BOOTLOADER_OK__"     { expect "# " }
+    "# "                            { puts "ERROR: UEFI bootloader installation failed"; exit 1 }
+}
 
 # fstab
 send "echo '/dev/vtbd0p3 / ufs rw 1 1' > /mnt/etc/fstab\r"
@@ -631,7 +696,7 @@ expect "# "
 send "echo 'proc /proc procfs rw 0 0' >> /mnt/etc/fstab\r"
 expect "# "
 
-send "sync && umount /mnt/dev /mnt/boot/efi /mnt\r"
+send "sync && umount /mnt/boot/efi /mnt\r"
 expect "# "
 
 send "poweroff\r"
@@ -642,10 +707,16 @@ EXPECT_SCRIPT
     chmod +x "${expect_script}"
 
     info "Running FreeBSD automated install via expect (10-20 min)..."
-    "${EXPECT_BIN}" "${expect_script}" "${out}" "${iso}" "${SSH_PUBKEY_CONTENT}" || {
-        rm -f "${expect_script}"
-        die "FreeBSD installation failed"
-    }
+    local install_attempt=1
+    while ! "${EXPECT_BIN}" "${expect_script}" "${out}" "${iso}" "${role_iso}" "${SSH_PUBKEY_CONTENT}" "${firmware}"; do
+        if [ "${install_attempt}" -ge 3 ]; then
+            rm -f "${expect_script}"
+            die "FreeBSD installation failed after ${install_attempt} attempts"
+        fi
+        install_attempt=$((install_attempt + 1))
+        warn "FreeBSD installer attempt failed before completion; retrying (${install_attempt}/3)"
+        qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
+    done
     rm -f "${expect_script}"
 
     ok "FreeBSD 15 image ready: ${out}"

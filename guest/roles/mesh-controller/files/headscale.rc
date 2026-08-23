@@ -1,0 +1,30 @@
+#!/bin/sh
+# PROVIDE: headscale
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="headscale"
+rcvar="headscale_enable"
+pidfile="/var/run/headscale/headscale.pid"
+procname="/usr/local/sbin/headscale"
+required_files="/usr/local/etc/headscale/config.yaml"
+start_precmd="headscale_precmd"
+start_cmd="headscale_start"
+
+headscale_precmd()
+{
+    install -d -o headscale -g headscale -m 0750 /var/run/headscale /var/db/headscale
+    install -d -o headscale -g headscale -m 0700 /var/db/agentos-secrets/headscale
+}
+
+headscale_start()
+{
+    /usr/sbin/daemon -f -S -T headscale -u headscale -p "${pidfile}" \
+        "${procname}" -c /usr/local/etc/headscale/config.yaml serve
+}
+
+load_rc_config "$name"
+: ${headscale_enable:="NO"}
+run_rc_command "$1"
