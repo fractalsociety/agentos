@@ -48,16 +48,16 @@
 
 /* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (21u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (22u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
-#define AOS_AARCH64_PD_COUNT (20u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (21u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (20u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (21u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #else
-#define AOS_AARCH64_PD_COUNT (19u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (20u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
@@ -156,11 +156,12 @@ const system_desc_t system_desc_aarch64 = {
              * task mints this EP at PD_CNODE_SLOT_SELF_EP and passes it as the
              * controller's my_ep (arg0), which sel4_server_run() listens on. */
             .self_svc_id    = SVC_ID_CONTROLLER,
-            .init_ep_count  = 3u,
+            .init_ep_count  = 4u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_EVENTBUS,   PD_CNODE_SLOT_EVENTBUS_EP   },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_MODELSVC,   PD_CNODE_SLOT_MODELSVC_EP   },
             },
         },
 
@@ -175,11 +176,12 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 110u,
             .self_svc_id    = SVC_ID_INIT_AGENT,
-            .init_ep_count  = 3u,
+            .init_ep_count  = 4u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_EVENTBUS,   PD_CNODE_SLOT_EVENTBUS_EP   },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_MODELSVC,   PD_CNODE_SLOT_MODELSVC_EP   },
             },
         },
 
@@ -251,6 +253,23 @@ const system_desc_t system_desc_aarch64 = {
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+            },
+        },
+
+        /* Native inference infrastructure. NetServer owns network hardware
+         * and runs above this proxy, while agents only receive ModelSvc. */
+        {
+            .name           = "model_svc",
+            .elf_path       = "model_svc.elf",
+            .stack_size     = 0x10000u,
+            .cnode_size_bits = 10u,
+            .priority       = 190u,
+            .self_svc_id    = SVC_ID_MODELSVC,
+            .init_ep_count  = 3u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP },
             },
         },
 
@@ -558,12 +577,13 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 4u,
+            .init_ep_count  = 5u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_EVENTBUS,   75u  },   /* 74 + MONITOR_CH_EVENTBUS(1) */
                 { SVC_ID_SERIAL,     118u },   /* 74 + CH_SERIAL_PD(44)       */
                 { SVC_ID_LOG_DRAIN,  129u },   /* 74 + CH_LOG_DRAIN(55)       */
+                { SVC_ID_MODELSVC,   130u },   /* raw seL4 contract cap        */
             },
         },
 #endif

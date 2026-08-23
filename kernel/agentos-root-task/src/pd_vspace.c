@@ -281,6 +281,43 @@ seL4_Error pd_vspace_map_region(seL4_CPtr vspace,
     return seL4_NoError;
 }
 
+seL4_Error pd_vspace_map_shared_region(seL4_CPtr  vspace,
+                                        seL4_Word va_start,
+                                        size_t    size,
+                                        int       writable,
+                                        seL4_CPtr *backing_frames,
+                                        size_t    backing_frame_count)
+{
+    const seL4_Word large_page = (1UL << seL4_ARCH_LargePageBits);
+    if (backing_frames == (seL4_CPtr *)0 || size == 0u
+        || (va_start & (large_page - 1u)) != 0u
+        || (size & (size_t)(large_page - 1u)) != 0u
+        || backing_frame_count != size / (size_t)large_page)
+        return seL4_InvalidArgument;
+
+    seL4_CapRights_t rights = writable ? seL4_AllRights : seL4_CanRead;
+    for (size_t i = 0u; i < backing_frame_count; i++) {
+        if (backing_frames[i] == seL4_CapNull) {
+            seL4_Error err = ut_alloc_cap((uint32_t)seL4_ARCH_LargePageObject,
+                                          0u, &backing_frames[i]);
+            if (err != seL4_NoError) return err;
+        }
+
+        seL4_Word copy_slot = ut_alloc_slot();
+        if (copy_slot == seL4_CapNull) return seL4_NotEnoughMemory;
+        seL4_Error err = seL4_CNode_Copy(
+            seL4_CapInitThreadCNode, copy_slot, 64u,
+            seL4_CapInitThreadCNode, backing_frames[i], 64u,
+            rights);
+        if (err != seL4_NoError) return err;
+        err = map_page((seL4_CPtr)copy_slot, vspace,
+                       va_start + (seL4_Word)i * large_page,
+                       rights, seL4_ARM_Default_VMAttributes);
+        if (err != seL4_NoError) return err;
+    }
+    return seL4_NoError;
+}
+
 /* ── Zero + write one page via scratch VA, then map into PD VSpace ────────── */
 
 /*
@@ -605,6 +642,27 @@ pd_vspace_result_t pd_vspace_load_elf(seL4_CPtr    vspace_cap,
         .ipc_buf_cap = seL4_CapNull,
         .error       = (int)seL4_IllegalOperation,
     };
+}
+
+seL4_Error pd_vspace_map_region(seL4_CPtr vspace,
+                                 seL4_Word va_start,
+                                 size_t size,
+                                 int writable)
+{
+    (void)vspace; (void)va_start; (void)size; (void)writable;
+    return seL4_IllegalOperation;
+}
+
+seL4_Error pd_vspace_map_shared_region(seL4_CPtr vspace,
+                                        seL4_Word va_start,
+                                        size_t size,
+                                        int writable,
+                                        seL4_CPtr *backing_frames,
+                                        size_t backing_frame_count)
+{
+    (void)vspace; (void)va_start; (void)size; (void)writable;
+    (void)backing_frames; (void)backing_frame_count;
+    return seL4_IllegalOperation;
 }
 
 seL4_Error pd_vspace_map_device_frame(seL4_CPtr vspace,

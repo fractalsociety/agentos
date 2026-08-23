@@ -95,6 +95,10 @@ name = "net_server"
 priority = 160
 
 [[pd]]
+name = "model_svc"
+priority = 190
+
+[[pd]]
 name = "net_pd"
 priority = 160
 

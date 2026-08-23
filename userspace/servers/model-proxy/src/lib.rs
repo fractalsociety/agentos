@@ -550,6 +550,9 @@ pub struct ModelProxy {
     /// Global statistics
     pub total_requests: u64,
     pub total_tokens: TokenCount,
+    /// Long-lived client whose per-host pool is shared by every inference.
+    #[cfg(feature = "std")]
+    http_client: reqwest::Client,
 }
 
 impl ModelProxy {
@@ -560,6 +563,12 @@ impl ModelProxy {
             cache: PromptCache::new(1024),
             total_requests: 0,
             total_tokens: 0,
+            #[cfg(feature = "std")]
+            http_client: reqwest::Client::builder()
+                .pool_max_idle_per_host(16)
+                .tcp_keepalive(core::time::Duration::from_secs(30))
+                .build()
+                .expect("valid ModelProxy HTTP client configuration"),
         }
     }
     
@@ -743,7 +752,8 @@ impl ModelProxy {
                     }
                     messages.push(serde_json::json!({"role": "user", "content": request.prompt}));
 
-                    match http_backend::call_model_api(
+                    match http_backend::call_model_api_with_client(
+                        &self.http_client,
                         endpoint_url,
                         &api_key,
                         &messages,
@@ -810,6 +820,153 @@ impl ModelProxy {
         }
 
         response
+    }
+
+    /// Process a bounded micro-batch through the shared connection pool while
+    /// serializing budget/cache mutations for capability-accounting safety.
+    pub async fn infer_batch_async(
+        &mut self,
+        requests: &[InferenceRequest],
+    ) -> Vec<InferenceResponse> {
+        use alloc::format;
+
+        let mut responses: Vec<Option<InferenceResponse>> =
+            alloc::vec![None; requests.len()];
+        let mut reservations: BTreeMap<u64, TokenCount> = BTreeMap::new();
+        let mut jobs = Vec::new();
+
+        for (index, request) in requests.iter().enumerate() {
+            self.total_requests += 1;
+            let budget = match self.budgets.get(&request.cap_badge) {
+                Some(budget) => budget,
+                None => {
+                    responses[index] = Some(InferenceResponse {
+                        status: InferenceStatus::AccessDenied,
+                        content: String::new(), model_used: String::new(),
+                        from_cache: false, tokens_in: 0, tokens_out: 0,
+                        latency_us: 0, request_id: request.metadata.request_id,
+                    });
+                    continue;
+                }
+            };
+            if let Some(cached) = self.cache.get(request) {
+                responses[index] = Some(InferenceResponse {
+                    status: InferenceStatus::Ok,
+                    content: cached.content.clone(),
+                    model_used: cached.model_used.clone(), from_cache: true,
+                    tokens_in: 0, tokens_out: cached.tokens_out, latency_us: 0,
+                    request_id: request.metadata.request_id,
+                });
+                continue;
+            }
+            let model_id = match self.router.route(request, budget) {
+                Some(id) => id,
+                None => {
+                    responses[index] = Some(InferenceResponse {
+                        status: InferenceStatus::BudgetExhausted,
+                        content: String::new(), model_used: String::new(),
+                        from_cache: false, tokens_in: 0, tokens_out: 0,
+                        latency_us: 0, request_id: request.metadata.request_id,
+                    });
+                    continue;
+                }
+            };
+
+            /* Reserve the worst-case request cost before launching anything,
+             * preventing one micro-batch from oversubscribing a capability. */
+            let reserve = estimate_tokens(&request.prompt) + request.params.max_tokens;
+            let already = *reservations.get(&request.cap_badge).unwrap_or(&0);
+            if budget.tokens_used + already + reserve > budget.tokens_per_period {
+                responses[index] = Some(InferenceResponse {
+                    status: InferenceStatus::BudgetExhausted,
+                    content: String::new(), model_used: model_id,
+                    from_cache: false, tokens_in: 0, tokens_out: 0,
+                    latency_us: 0, request_id: request.metadata.request_id,
+                });
+                continue;
+            }
+            reservations.insert(request.cap_badge, already + reserve);
+
+            let endpoint = self.router.endpoints.get(&model_id).cloned();
+            let request_owned = request.clone();
+            let client = self.http_client.clone();
+            let model_for_task = model_id.clone();
+            let handle = tokio::spawn(async move {
+                match endpoint {
+                    Some(ModelEndpoint { backend: BackendType::HttpApi {
+                        endpoint_url, api_key_env, model_name, ..
+                    }, .. }) => {
+                        let api_key = std::env::var(&api_key_env).unwrap_or_default();
+                        let mut messages = alloc::vec::Vec::new();
+                        if let Some(ref system) = request_owned.system {
+                            messages.push(serde_json::json!({"role":"system","content":system}));
+                        }
+                        for message in &request_owned.messages {
+                            let role = match message.role {
+                                MessageRole::System => "system",
+                                MessageRole::User => "user",
+                                MessageRole::Assistant => "assistant",
+                                MessageRole::Tool => "tool",
+                            };
+                            messages.push(serde_json::json!({"role":role,"content":message.content}));
+                        }
+                        messages.push(serde_json::json!({"role":"user","content":request_owned.prompt}));
+                        match http_backend::call_model_api_with_client(
+                            &client, &endpoint_url, &api_key, &messages,
+                            &model_name, request_owned.params.max_tokens as u32,
+                        ).await {
+                            Ok((content, tokens_in, tokens_out)) => InferenceResponse {
+                                status: InferenceStatus::Ok, content,
+                                model_used: model_for_task, from_cache: false,
+                                tokens_in, tokens_out, latency_us: 0,
+                                request_id: request_owned.metadata.request_id,
+                            },
+                            Err(error) => InferenceResponse {
+                                status: InferenceStatus::Error(format!("HTTP backend error: {}", error)),
+                                content: String::new(), model_used: model_for_task,
+                                from_cache: false, tokens_in: 0, tokens_out: 0,
+                                latency_us: 0, request_id: request_owned.metadata.request_id,
+                            },
+                        }
+                    }
+                    Some(_) => InferenceResponse {
+                        status: InferenceStatus::Ok,
+                        content: String::from("[ModelProxy: non-HTTP backend dispatch pending]"),
+                        model_used: model_for_task, from_cache: false,
+                        tokens_in: estimate_tokens(&request_owned.prompt), tokens_out: 20,
+                        latency_us: 0, request_id: request_owned.metadata.request_id,
+                    },
+                    None => InferenceResponse {
+                        status: InferenceStatus::AllBackendsFailed,
+                        content: String::new(), model_used: model_for_task,
+                        from_cache: false, tokens_in: 0, tokens_out: 0,
+                        latency_us: 0, request_id: request_owned.metadata.request_id,
+                    },
+                }
+            });
+            jobs.push((index, request.clone(), handle));
+        }
+
+        /* Tasks were all spawned before awaiting: HTTP backends run
+         * concurrently and share `http_client`'s per-host connection pool. */
+        for (index, request, handle) in jobs {
+            let response = handle.await.unwrap_or_else(|error| InferenceResponse {
+                status: InferenceStatus::Error(format!("batch worker failed: {}", error)),
+                content: String::new(), model_used: String::new(),
+                from_cache: false, tokens_in: 0, tokens_out: 0,
+                latency_us: 0, request_id: request.metadata.request_id,
+            });
+            if let Some(budget) = self.budgets.get_mut(&request.cap_badge) {
+                budget.consume(response.tokens_in + response.tokens_out);
+            }
+            self.total_tokens += response.tokens_in + response.tokens_out;
+            if response.status == InferenceStatus::Ok {
+                self.cache.put(&request, &response);
+            }
+            responses[index] = Some(response);
+        }
+
+        responses.into_iter().map(|response| response.expect("batch slot filled")).collect()
     }
 }
 
@@ -1111,7 +1268,21 @@ pub mod http_backend {
         model: &str,
         max_tokens: u32,
     ) -> Result<(String, u64, u64), String> {
-        use reqwest::Client;
+        let client = reqwest::Client::new();
+        call_model_api_with_client(
+            &client, endpoint, api_key, messages, model, max_tokens,
+        ).await
+    }
+
+    /// Perform a completion with a caller-owned persistent HTTP client.
+    pub async fn call_model_api_with_client(
+        client: &reqwest::Client,
+        endpoint: &str,
+        api_key: &str,
+        messages: &[serde_json::Value],
+        model: &str,
+        max_tokens: u32,
+    ) -> Result<(String, u64, u64), String> {
         use serde_json::{json, Value};
 
         let url = format!(
@@ -1126,7 +1297,7 @@ pub mod http_backend {
             "stream": false,
         });
 
-        let mut builder = Client::new()
+        let mut builder = client
             .post(&url)
             .json(&body);
 
@@ -1596,6 +1767,29 @@ mod tests {
         assert!(resp2.from_cache);
         
         assert_eq!(proxy.cache.hits, 1);
+    }
+
+    #[cfg(feature = "std")]
+    #[tokio::test]
+    async fn test_batched_inference_preserves_budget_and_order() {
+        let mut proxy = ModelProxy::new();
+        proxy.register_model(make_endpoint("batch-model", 1));
+        proxy.set_budget(make_budget(42));
+        let mut requests = vec![
+            make_request("batch-a", 42),
+            make_request("batch-b", 42),
+            make_request("batch-c", 42),
+        ];
+        for (index, request) in requests.iter_mut().enumerate() {
+            request.metadata.request_id = index as u64 + 10u64;
+        }
+
+        let responses = proxy.infer_batch_async(&requests).await;
+        assert_eq!(responses.len(), 3);
+        assert_eq!(responses[0].request_id, 10);
+        assert_eq!(responses[2].request_id, 12);
+        assert!(responses.iter().all(|r| r.status == InferenceStatus::Ok));
+        assert!(proxy.budgets.get(&42).unwrap().tokens_used > 0);
     }
     
     #[test]

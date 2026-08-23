@@ -8,6 +8,13 @@
         "p95_max": 6000000,
         "p99_max": 6000000,
         "max_max": 8000000
+      },
+      "modelsvc_cached_query": {
+        "min_samples": 9,
+        "p50_max": 10000000,
+        "p95_max": 15000000,
+        "p99_max": 15000000,
+        "max_max": 20000000
       }
     },
     "x86_64_generic": {

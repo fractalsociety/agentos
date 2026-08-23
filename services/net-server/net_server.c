@@ -936,7 +936,7 @@ static uint32_t handle_net_http_post(sel4_badge_t badge __attribute__((unused)),
     HL("Content-Type: application/json\r\n");
     HL("Content-Length: ");
     HD(body_len);
-    HL("\r\nConnection: close\r\n\r\n");
+    HL("\r\nConnection: keep-alive\r\n\r\n");
 
 #undef HL
 #undef HS
@@ -945,25 +945,28 @@ static uint32_t handle_net_http_post(sel4_badge_t badge __attribute__((unused)),
     (void)body;   /* body used in actual lwIP send below */
 
 #ifndef AGENTOS_TEST_HOST
-    if (g_conns[HTTP_CONN_ID].tcp) {
-        tcp_close(g_conns[HTTP_CONN_ID].tcp);
-        g_conns[HTTP_CONN_ID].tcp = NULL;
-    }
-    g_conns[HTTP_CONN_ID].state      = 0u;
     g_conns[HTTP_CONN_ID].rx_buf_len = 0u;
 
-    int err = lwip_net_connect(HTTP_CONN_ID, BRIDGE_IP_BE, BRIDGE_PORT);
-    if (err != 0) {
-        log_drain_write(16, 16, "[net_server] HTTP_POST: connect error\n");
-        data_wr32(rep->data, 0, 0); data_wr32(rep->data, 4, 0); data_wr32(rep->data, 8, 0);
-        rep->length = 12;
-        return SEL4_ERR_OK;
-    }
-
-    for (uint32_t i = 0; i < 500u; i++) {
-        lwip_tick(); sys_check_timeouts(); lwip_virtio_rx_poll();
-        if (g_conns[HTTP_CONN_ID].state == 2u) break;
-        if (g_conns[HTTP_CONN_ID].state == 3u) break;
+    /* Reuse an established bridge connection.  lwIP's pcb retains congestion
+     * window/TCP state, avoiding a handshake for every agent inference. */
+    if (!g_conns[HTTP_CONN_ID].tcp || g_conns[HTTP_CONN_ID].state != 2u) {
+        if (g_conns[HTTP_CONN_ID].tcp) {
+            tcp_close(g_conns[HTTP_CONN_ID].tcp);
+            g_conns[HTTP_CONN_ID].tcp = NULL;
+        }
+        g_conns[HTTP_CONN_ID].state = 0u;
+        int err = lwip_net_connect(HTTP_CONN_ID, BRIDGE_IP_BE, BRIDGE_PORT);
+        if (err != 0) {
+            log_drain_write(16, 16, "[net_server] HTTP_POST: connect error\n");
+            data_wr32(rep->data, 0, 0); data_wr32(rep->data, 4, 0); data_wr32(rep->data, 8, 0);
+            rep->length = 12;
+            return SEL4_ERR_OK;
+        }
+        for (uint32_t i = 0; i < 500u; i++) {
+            lwip_tick(); sys_check_timeouts(); lwip_virtio_rx_poll();
+            if (g_conns[HTTP_CONN_ID].state == 2u) break;
+            if (g_conns[HTTP_CONN_ID].state == 3u) break;
+        }
     }
 
     if (g_conns[HTTP_CONN_ID].state != 2u) {
@@ -984,9 +987,43 @@ static uint32_t handle_net_http_post(sel4_badge_t badge __attribute__((unused)),
         lwip_net_send(HTTP_CONN_ID, (const uint8_t *)body, blen16);
     }
 
+    uint32_t expected_total = 0u;
     for (uint32_t i = 0; i < 3000u; i++) {
         lwip_tick(); sys_check_timeouts(); lwip_virtio_rx_poll();
-        if (g_conns[HTTP_CONN_ID].rx_buf_len > 0u) break;
+        uint32_t have = g_conns[HTTP_CONN_ID].rx_buf_len;
+        const char *partial = (const char *)g_conns[HTTP_CONN_ID].rx_buf;
+        if (expected_total == 0u && have >= 16u) {
+            uint32_t header_end = 0u, content_length = 0u;
+            for (uint32_t j = 0u; j + 3u < have; j++) {
+                if (partial[j] == '\r' && partial[j + 1u] == '\n'
+                    && partial[j + 2u] == '\r' && partial[j + 3u] == '\n') {
+                    header_end = j + 4u;
+                    break;
+                }
+            }
+            static const char key[] = "Content-Length:";
+            for (uint32_t j = 0u; j + sizeof(key) - 1u < have; j++) {
+                bool match = true;
+                for (uint32_t k = 0u; k < sizeof(key) - 1u; k++) {
+                    char a = partial[j + k], b = key[k];
+                    if (a >= 'A' && a <= 'Z') a = (char)(a + ('a' - 'A'));
+                    if (b >= 'A' && b <= 'Z') b = (char)(b + ('a' - 'A'));
+                    if (a != b) { match = false; break; }
+                }
+                if (match) {
+                    uint32_t p = j + (uint32_t)(sizeof(key) - 1u);
+                    while (p < have && (partial[p] == ' ' || partial[p] == '\t')) p++;
+                    while (p < have && partial[p] >= '0' && partial[p] <= '9') {
+                        content_length = content_length * 10u
+                                       + (uint32_t)(partial[p++] - '0');
+                    }
+                    break;
+                }
+            }
+            if (header_end != 0u && content_length != 0u)
+                expected_total = header_end + content_length;
+        }
+        if (expected_total != 0u && have >= expected_total) break;
         if (g_conns[HTTP_CONN_ID].state == 3u) break;
     }
 
@@ -1022,10 +1059,13 @@ static uint32_t handle_net_http_post(sel4_badge_t badge __attribute__((unused)),
 
     uint32_t resp_body_len = (hdr_end < rx_len) ? (rx_len - hdr_end) : 0u;
 
-    if (resp_body_len > 0u) {
+    if (resp_body_len > 0u && body_offset <= (4u * 1024u * 1024u)
+        && resp_body_len <= (4u * 1024u * 1024u) - body_offset) {
         uint8_t       *dst = (uint8_t *)(vibe_staging_vaddr + body_offset);
         const uint8_t *src = (const uint8_t *)(resp + hdr_end);
         for (uint32_t i = 0u; i < resp_body_len; i++) dst[i] = src[i];
+    } else if (resp_body_len > 0u) {
+        resp_body_len = 0u;
     }
 
     log_drain_write(16, 16, "[net_server] HTTP_POST: status=");
@@ -1126,6 +1166,9 @@ static uint32_t net_server_dispatch_one(sel4_badge_t badge,
 void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
                      seL4_CPtr timer_ntfn_cap __attribute__((unused)))
 {
+    /* Root maps the same arena into ModelSvc and NetServer.  The historical
+     * variable name is retained because OP_NET_HTTP_POST already uses it. */
+    vibe_staging_vaddr = (uintptr_t)0x60000000u;
     agentos_log_boot("net_server");
     log_drain_write(16, 16, "[net_server] Initialising NetServer PD (raw seL4 IPC)\n");
     log_drain_write(16, 16, "[net_server] priority ordering constraint ELIMINATED\n");

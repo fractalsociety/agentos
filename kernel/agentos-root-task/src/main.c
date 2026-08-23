@@ -45,6 +45,7 @@
 #include "system_desc.h"     /* system_desc_t, pd_desc_t, SVC_ID_*, PD_IRQHANDLER_SLOT_BASE */
 #include "agentos.h"         /* sel4_dbg_puts                                    */
 #include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
+#include "../../../contracts/modelsvc/interface.h"
 #include <stdint.h>
 
 /*
@@ -590,6 +591,10 @@ static seL4_CPtr g_uart_frame_cap = seL4_CapNull;
 static seL4_CPtr g_virtio_mmio_frame_cap = seL4_CapNull;
 static seL4_CPtr g_freebsd_virtio31_frame_cap = seL4_CapNull;
 static seL4_CPtr g_gic_vcpu_frame_cap = seL4_CapNull;
+
+#define MODELSVC_SHMEM_LARGE_PAGES \
+    (MODELSVC_SHMEM_SIZE / (1u << seL4_ARCH_LargePageBits))
+static seL4_CPtr g_modelsvc_shmem_frames[MODELSVC_SHMEM_LARGE_PAGES];
 
 static volatile uint32_t *g_uart_dr;  /* PL011 UARTDR (offset 0x00) */
 static volatile uint32_t *g_uart_fr;  /* PL011 UARTFR (offset 0x18) */
@@ -1821,6 +1826,25 @@ void root_task_main(const seL4_BootInfo *bi)
                                                  1            /* writable */);
             dbg_puts("[rt] event_bus ring map err=");
             dbg_hex((seL4_Word)re);
+            dbg_puts("\n");
+        }
+
+        /* One physical 4 MiB inference arena is mapped into the model proxy,
+         * its network transport, and the target contract runner.  Endpoint
+         * badges still isolate callers; offsets are validated by ModelSvc. */
+        if (name_eq(pd->name, "model_svc") || name_eq(pd->name, "net_server")
+#ifdef AGENTOS_SEL4_TEST_IMAGE
+            || name_eq(pd->name, "test_runner")
+#endif
+        ) {
+            seL4_Error me = pd_vspace_map_shared_region(
+                vspace, (seL4_Word)MODELSVC_SHMEM_VADDR,
+                MODELSVC_SHMEM_SIZE, 1,
+                g_modelsvc_shmem_frames, MODELSVC_SHMEM_LARGE_PAGES);
+            dbg_puts("[rt] ModelSvc shared arena map pd=");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)me);
             dbg_puts("\n");
         }
 

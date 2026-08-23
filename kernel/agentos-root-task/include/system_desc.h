@@ -221,6 +221,7 @@ typedef struct {
 #define SVC_ID_USB_PD         22u   /* USB device service PD                  */
 #define SVC_ID_FAULT_INJECT   23u   /* fault-injection test PD                */
 #define SVC_ID_CONTROLLER     24u   /* controller (monitor) inbound server EP  */
+#define SVC_ID_MODELSVC       25u   /* capability-gated model inference proxy  */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -252,3 +253,5 @@ typedef struct {
 #define PD_CNODE_SLOT_FREEBSD_VMM_EP  12u
 /* agentos-7j5: cc_pd → controller (monitor) endpoint for MSG_AGENTPOOL_STATUS. */
 #define PD_CNODE_SLOT_CONTROLLER_EP   13u
+#define PD_CNODE_SLOT_NET_SERVER_EP   14u
+#define PD_CNODE_SLOT_MODELSVC_EP     15u

@@ -11,11 +11,14 @@ inference requests from agents flow through this service, which:
   so agents never hold network capabilities directly
 - Collects per-model usage statistics (requests, tokens in/out, latency)
 - Supports OpenAI-compatible chat completions endpoints by default
+- Streams bounded response chunks, supports cancellation, and caches exact
+  results on the native fast path
 
 Default models registered at boot:
 - `default` — NVIDIA inference API (`NVIDIA_API_KEY`)
 - `code-gen` — NVIDIA inference API, higher token limit
 - `fast` — OpenAI API (`OPENAI_API_KEY`), smaller context window
+- `agentos-echo` — dependency-free native diagnostic backend
 
 The implementation is intentionally vibe-swappable: an agent can register
 a replacement that performs local inference, quantization, model routing,
@@ -23,16 +26,19 @@ or ensemble voting.
 
 ## Protection Domain
 
-ModelSvc is a library linked into the controller PD.  HTTP transport is
-delegated to the `net_server` PD (see `net-server` contract) via
-`OP_NET_HTTP_POST`.
+ModelSvc is a dedicated native protection domain (`model_svc.elf`). The root
+task maps a 4 MiB large-page arena at `MODELSVC_SHMEM_VADDR` into ModelSvc and
+NetServer, while agents receive only a badged ModelSvc endpoint capability.
+HTTP transport is delegated to NetServer via `OP_NET_HTTP_POST`; its bridge
+connection is persistent and reused across inference requests.
 
 The Rust userspace model proxy is at `userspace/servers/model-proxy/`.
 
 ## IPC Endpoint
 
-Agents call into the controller PD, which dispatches opcodes 0x500–0x505 to
-the ModelSvc library.
+Controller, InitAgent, and authorized agent PDs call the dedicated ModelSvc
+endpoint. Caller identity comes from the root-minted badge, never shared data.
+Compact 48-byte wire records carry validated offsets into the shared arena.
 
 ## Operations
 
@@ -44,6 +50,9 @@ the ModelSvc library.
 | `MODELSVC_OP_LIST`       | 0x503 | Enumerate registered models |
 | `MODELSVC_OP_STATS`      | 0x504 | Per-model usage statistics |
 | `MODELSVC_OP_HEALTH`     | 0x505 | Liveness probe |
+| `MODELSVC_OP_STREAM_BEGIN` | 0x506 | Begin streaming inference |
+| `MODELSVC_OP_STREAM_POLL` | 0x507 | Copy the next bounded chunk |
+| `MODELSVC_OP_CANCEL` | 0x508 | Cancel an owned request |
 
 ## Error Codes
 
@@ -70,13 +79,14 @@ integer: `temperature_milli = (uint32_t)(temperature * 1000)`.  For example:
 
 ## Security Notes
 
-API keys are never exposed over IPC.  The `api_key_env` field in
-`MODELSVC_OP_REGISTER` names the environment variable that the controller
-reads at boot.  The key is stored in ModelSvc's BSS; it never appears in
-any IPC message register or shared memory region accessible to agents.
+API-key names are registry metadata; secret values remain in the trusted host
+bridge and are never put in message registers or the shared arena. Registry
+mutation is limited to Controller/InitAgent badges. Stream ownership is also
+checked against the caller badge, and every offset/length pair is validated
+without overflow before dereference.
 
 ## Source Files
 
-- `services/modelsvc/modelsvc.c` — C implementation
+- `services/modelsvc/model_svc.c` — native C protection-domain implementation
 - `userspace/servers/model-proxy/src/lib.rs` — Rust userspace proxy
 - `kernel/agentos-root-task/include/net_server.h` — OP_NET_HTTP_POST

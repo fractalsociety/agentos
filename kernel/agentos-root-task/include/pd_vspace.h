@@ -99,6 +99,21 @@ seL4_Error pd_vspace_map_region(seL4_CPtr vspace,
                                  int        writable);
 
 /*
+ * pd_vspace_map_shared_region — map common large-page backing into a VSpace.
+ *
+ * backing_frames is persistent root-task storage with one capability per
+ * large page.  Null entries are allocated on first use; every mapping uses a
+ * fresh CNode copy so the same physical pages can be mapped independently in
+ * several PD VSpaces.  This is the primitive used for bounded bulk IPC arenas.
+ */
+seL4_Error pd_vspace_map_shared_region(seL4_CPtr  vspace,
+                                        seL4_Word va_start,
+                                        size_t    size,
+                                        int       writable,
+                                        seL4_CPtr *backing_frames,
+                                        size_t    backing_frame_count);
+
+/*
  * pd_vspace_map_device_frame — map a device MMIO frame into a VSpace.
  *
  * Maps frame_cap (a 4 KB device frame capability in the root task's CNode) at

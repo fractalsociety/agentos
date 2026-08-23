@@ -40,6 +40,8 @@
 
 #include "test_framework.h"
 #include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/agentos-root-task/include/sel4_ipc.h"
+#include "../../contracts/modelsvc/interface.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
  *
@@ -81,14 +83,15 @@
  * Each batch contains enough real seL4 calls to amortize serial/scheduling
  * noise, while repeated batches still produce useful percentile gates.
  */
-static void target_emit_batch_marker(const char *kind, uint32_t errors)
+static void target_emit_batch_marker(const char *kind, const char *metric,
+                                     uint32_t calls, uint32_t errors)
 {
     _tf_puts("PERF_BATCH_");
     _tf_puts(kind);
     _tf_puts(":");
-    _tf_puts(TARGET_PERF_METRIC);
+    _tf_puts(metric);
     _tf_puts(":");
-    _tf_put_uint(TARGET_PERF_BATCH_CALLS);
+    _tf_put_uint(calls);
     if (kind[0] == 'E') {
         _tf_puts(":");
         _tf_put_uint(errors);
@@ -109,14 +112,16 @@ static void target_benchmark_eventbus_ipc(void)
 
     for (uint32_t batch = 0u; batch < TARGET_PERF_BATCHES; batch++) {
         uint32_t batch_errors = 0u;
-        target_emit_batch_marker("BEGIN", 0u);
+        target_emit_batch_marker("BEGIN", TARGET_PERF_METRIC,
+                                 TARGET_PERF_BATCH_CALLS, 0u);
         for (uint32_t i = 0u; i < TARGET_PERF_BATCH_CALLS; i++) {
             microkit_mr_set(0, (uint64_t)MSG_EVENTBUS_STATUS);
             (void)microkit_ppcall((microkit_channel)MONITOR_CH_EVENTBUS,
                                  microkit_msginfo_new(MSG_EVENTBUS_STATUS, 1));
             if (microkit_mr_get(0) != AOS_OK) batch_errors++;
         }
-        target_emit_batch_marker("END", batch_errors);
+        target_emit_batch_marker("END", TARGET_PERF_METRIC,
+                                 TARGET_PERF_BATCH_CALLS, batch_errors);
         errors += batch_errors;
     }
     _tf_puts("# perf: EventBus sample window complete\n");
@@ -127,6 +132,167 @@ static void target_benchmark_eventbus_ipc(void)
         _tf_fail_point("target perf: real EventBus IPC batches completed",
                        "one or more calls returned an error");
     }
+}
+
+/* ── ModelSvc real-IPC + shared-arena proof (agentos-gz0.2) ──────── */
+#define TARGET_MODELSVC_CAP 130u
+
+static uint32_t tr_rd32(const uint8_t *p, uint32_t off)
+{
+    return (uint32_t)p[off] | ((uint32_t)p[off + 1u] << 8u)
+         | ((uint32_t)p[off + 2u] << 16u) | ((uint32_t)p[off + 3u] << 24u);
+}
+
+static void tr_copy(void *dst_ptr, const void *src_ptr, uint32_t len)
+{
+    uint8_t *dst = (uint8_t *)dst_ptr;
+    const uint8_t *src = (const uint8_t *)src_ptr;
+    for (uint32_t i = 0u; i < len; i++) dst[i] = src[i];
+}
+
+static void tr_zero(volatile void *ptr, uint32_t len)
+{
+    volatile uint8_t *dst = (volatile uint8_t *)ptr;
+    for (uint32_t i = 0u; i < len; i++) dst[i] = 0u;
+}
+
+static bool tr_equal(const char *a, const char *b, uint32_t len)
+{
+    for (uint32_t i = 0u; i < len; i++) if (a[i] != b[i]) return false;
+    return true;
+}
+
+static void target_modelsvc_contract(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)MODELSVC_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] = "hello";
+    static const char expected[] = "agentos:hello";
+    const uint32_t model_off = 0x100u, prompt_off = 0x200u, response_off = 0x400u;
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+
+    static sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    tr_zero(&rep, sizeof(rep));
+    req.opcode = MODELSVC_OP_HEALTH;
+    sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+    if (rep.opcode == MODELSVC_ERR_OK && tr_rd32(rep.data, 4u) == 4u)
+        _tf_ok("ModelSvc target health over real seL4 IPC");
+    else
+        _tf_fail_point("ModelSvc target health over real seL4 IPC",
+                       "unexpected status/model registry count");
+
+    static modelsvc_query_wire_t wire;
+    tr_zero(&wire, sizeof(wire));
+    wire.max_tokens = 64u;
+    wire.user_prompt_offset = prompt_off;
+    wire.user_prompt_len = sizeof(prompt) - 1u;
+    wire.response_offset = response_off;
+    wire.response_buf_len = 128u;
+    wire.model_id_offset = model_off;
+    wire.model_id_len = sizeof(model) - 1u;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MODELSVC_OP_QUERY;
+    req.length = sizeof(wire);
+    tr_copy(req.data, &wire, sizeof(wire));
+    sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+    if (rep.opcode == MODELSVC_ERR_OK
+        && tr_rd32(rep.data, 4u) == sizeof(expected) - 1u
+        && tr_equal((const char *)(uintptr_t)(MODELSVC_SHMEM_VADDR + response_off),
+                    expected, sizeof(expected) - 1u))
+        _tf_ok("ModelSvc target native query uses shared arena");
+    else
+        _tf_fail_point("ModelSvc target native query uses shared arena",
+                       "query failed or response mismatch");
+
+    sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+    if (rep.opcode == MODELSVC_ERR_OK && tr_rd32(rep.data, 24u) == 1u)
+        _tf_ok("ModelSvc target repeated query hits result cache");
+    else
+        _tf_fail_point("ModelSvc target repeated query hits result cache",
+                       "second query did not report a cache hit");
+
+    req.opcode = MODELSVC_OP_STREAM_BEGIN;
+    sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+    uint32_t request_id = tr_rd32(rep.data, 4u);
+    static char streamed[sizeof(expected)];
+    tr_zero(streamed, sizeof(streamed));
+    uint32_t cursor = 0u, state = 0u;
+    for (uint32_t polls = 0u; polls < 8u && request_id != 0u; polls++) {
+        modelsvc_stream_poll_wire_t poll;
+        poll.request_id = request_id;
+        poll.max_bytes = 4u;
+        tr_zero(&req, sizeof(req));
+        req.opcode = MODELSVC_OP_STREAM_POLL;
+        req.length = sizeof(poll);
+        tr_copy(req.data, &poll, sizeof(poll));
+        sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+        uint32_t chunk = tr_rd32(rep.data, 8u);
+        state = tr_rd32(rep.data, 4u);
+        if (rep.opcode != MODELSVC_ERR_OK || cursor + chunk >= sizeof(streamed)) break;
+        tr_copy(streamed + cursor,
+                (const void *)(uintptr_t)(MODELSVC_SHMEM_VADDR + response_off),
+                chunk);
+        cursor += chunk;
+        if (state == MODELSVC_STREAM_COMPLETE) break;
+    }
+    if (state == MODELSVC_STREAM_COMPLETE && cursor == sizeof(expected) - 1u
+        && tr_equal(streamed, expected, sizeof(expected) - 1u))
+        _tf_ok("ModelSvc target streams bounded response chunks");
+    else
+        _tf_fail_point("ModelSvc target streams bounded response chunks",
+                       "stream did not complete with expected chunks");
+}
+
+#define MODELSVC_PERF_METRIC "modelsvc_cached_query"
+#define MODELSVC_PERF_CALLS 256u
+
+static void target_benchmark_modelsvc_cache(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)MODELSVC_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] = "benchmark-cache";
+    const uint32_t model_off = 0x100u, prompt_off = 0x200u, response_off = 0x400u;
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+
+    modelsvc_query_wire_t wire;
+    tr_zero(&wire, sizeof(wire));
+    wire.max_tokens = 64u;
+    wire.user_prompt_offset = prompt_off;
+    wire.user_prompt_len = sizeof(prompt) - 1u;
+    wire.response_offset = response_off;
+    wire.response_buf_len = 128u;
+    wire.model_id_offset = model_off;
+    wire.model_id_len = sizeof(model) - 1u;
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MODELSVC_OP_QUERY;
+    req.length = sizeof(wire);
+    tr_copy(req.data, &wire, sizeof(wire));
+    /* Prime the exact-result cache outside the measured sample window. */
+    sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+
+    uint32_t errors = 0u;
+    for (uint32_t batch = 0u; batch < TARGET_PERF_BATCHES; batch++) {
+        uint32_t batch_errors = 0u;
+        target_emit_batch_marker("BEGIN", MODELSVC_PERF_METRIC,
+                                 MODELSVC_PERF_CALLS, 0u);
+        for (uint32_t i = 0u; i < MODELSVC_PERF_CALLS; i++) {
+            sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
+            if (rep.opcode != MODELSVC_ERR_OK || tr_rd32(rep.data, 24u) != 1u)
+                batch_errors++;
+        }
+        target_emit_batch_marker("END", MODELSVC_PERF_METRIC,
+                                 MODELSVC_PERF_CALLS, batch_errors);
+        errors += batch_errors;
+    }
+    if (errors == 0u)
+        _tf_ok("target perf: ModelSvc cached query batches completed");
+    else
+        _tf_fail_point("target perf: ModelSvc cached query batches completed",
+                       "one or more cached queries failed");
 }
 
 /* ── libmicrokit symbol shim (agentos-8f5) ───────────────────────────────────
@@ -189,9 +355,11 @@ void target_contract_runner_main(void)
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_log_drain_tests((microkit_channel)CH_LOG_DRAIN);
+    target_modelsvc_contract();
     _tf_puts("# skip: cc_pd (virtio-serial protocol) + guest (no VMM under GUEST_OS=none)\n");
 
     target_benchmark_eventbus_ipc();
+    target_benchmark_modelsvc_cache();
 
     tf_tap_finish();
     target_tap_done();

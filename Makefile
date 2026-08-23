@@ -612,6 +612,7 @@ test-integration:
 	    tests/test_framebuffer_pd.c \
 	    tests/test_guest_contract.c \
 	    tests/test_vm_multi_guest.c \
+	    tests/test_model_svc.c \
 	    tests/test_e13_agent_boot.c \
 	    tests/vibe/test_vibeos_contract.c; do \
 	    if gcc -I tests \

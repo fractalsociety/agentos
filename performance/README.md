@@ -28,6 +28,11 @@ and can interleave an early boundary marker. AArch64 PDs cannot read `CNTVCT_EL0
 under seL4, so timing at serial batch boundaries preserves kernel isolation and
 avoids a privileged counter dependency.
 
+`modelsvc_cached_query` measures the complete target fast path: a badged seL4
+call, compact request decoding, model routing, exact-result cache lookup, shared
+arena response write, and reply. It collects 12 batches of 256 calls after an
+unmeasured cache-prime request and fails if any reply is not a cache hit.
+
 The reduced x86_64 topology does not launch service PDs yet. Its
 `sel4_yield` metric measures kernel scheduling/yield throughput from the live
 root task, proving that the same JSON and threshold pipeline works on both
