@@ -62,6 +62,73 @@
 #include "../contracts/serial_pd_test.c"
 #include "../contracts/log_drain_test.c"
 
+/* ── Target performance probe (agentos-gz0.1) ──────────────────────────────
+ *
+ * Keep the benchmark in the same PD as the real-IPC contract suite.  This
+ * guarantees the sample measures a genuine seL4 call into the live EventBus,
+ * not the AGENTOS_TEST_HOST transport shim.  The serial record is deliberately
+ * machine-readable so xtask can apply regression thresholds and archive it.
+ */
+#define TARGET_PERF_BATCHES      12u
+#define TARGET_PERF_BATCH_CALLS   1024u
+#define TARGET_PERF_WARMUP          64u
+#define TARGET_PERF_METRIC "sel4_ipc_eventbus_status"
+
+/*
+ * seL4 intentionally does not expose CNTVCT_EL0 to ordinary AArch64 PDs.
+ * Reading it here faults instead of measuring anything.  Emit batch boundary
+ * records and let xtask timestamp their arrival with the host monotonic clock.
+ * Each batch contains enough real seL4 calls to amortize serial/scheduling
+ * noise, while repeated batches still produce useful percentile gates.
+ */
+static void target_emit_batch_marker(const char *kind, uint32_t errors)
+{
+    _tf_puts("PERF_BATCH_");
+    _tf_puts(kind);
+    _tf_puts(":");
+    _tf_puts(TARGET_PERF_METRIC);
+    _tf_puts(":");
+    _tf_put_uint(TARGET_PERF_BATCH_CALLS);
+    if (kind[0] == 'E') {
+        _tf_puts(":");
+        _tf_put_uint(errors);
+    }
+    _tf_puts("\n");
+}
+
+static void target_benchmark_eventbus_ipc(void)
+{
+    uint32_t errors = 0u;
+
+    for (uint32_t i = 0u; i < TARGET_PERF_WARMUP; i++) {
+        microkit_mr_set(0, (uint64_t)MSG_EVENTBUS_STATUS);
+        (void)microkit_ppcall((microkit_channel)MONITOR_CH_EVENTBUS,
+                             microkit_msginfo_new(MSG_EVENTBUS_STATUS, 1));
+    }
+    _tf_puts("# perf: EventBus warmup complete\n");
+
+    for (uint32_t batch = 0u; batch < TARGET_PERF_BATCHES; batch++) {
+        uint32_t batch_errors = 0u;
+        target_emit_batch_marker("BEGIN", 0u);
+        for (uint32_t i = 0u; i < TARGET_PERF_BATCH_CALLS; i++) {
+            microkit_mr_set(0, (uint64_t)MSG_EVENTBUS_STATUS);
+            (void)microkit_ppcall((microkit_channel)MONITOR_CH_EVENTBUS,
+                                 microkit_msginfo_new(MSG_EVENTBUS_STATUS, 1));
+            if (microkit_mr_get(0) != AOS_OK) batch_errors++;
+        }
+        target_emit_batch_marker("END", batch_errors);
+        errors += batch_errors;
+    }
+    _tf_puts("# perf: EventBus sample window complete\n");
+
+    if (errors == 0u) {
+        _tf_ok("target perf: real EventBus IPC batches completed");
+    } else {
+        _tf_fail_point("target perf: real EventBus IPC batches completed",
+                       "one or more calls returned an error");
+    }
+}
+
 /* ── libmicrokit symbol shim (agentos-8f5) ───────────────────────────────────
  *
  * agentOS PDs do not link libmicrokit, and the release kernel disables
@@ -123,6 +190,8 @@ void target_contract_runner_main(void)
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_log_drain_tests((microkit_channel)CH_LOG_DRAIN);
     _tf_puts("# skip: cc_pd (virtio-serial protocol) + guest (no VMM under GUEST_OS=none)\n");
+
+    target_benchmark_eventbus_ipc();
 
     tf_tap_finish();
     target_tap_done();

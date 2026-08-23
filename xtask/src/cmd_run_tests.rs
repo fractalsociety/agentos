@@ -1,8 +1,13 @@
 use crate::RunTestsArgs;
 use anyhow::{Context, Result};
-use std::io::Read;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::mpsc::{self, Receiver};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,11 +16,87 @@ pub enum TapStatus {
     Fail(i32),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct TargetPerfRecord {
+    pub schema: u32,
+    pub metric: String,
+    pub unit: String,
+    pub samples: u64,
+    pub counter_hz: u64,
+    pub min: u64,
+    pub p50: u64,
+    pub p95: u64,
+    pub p99: u64,
+    pub max: u64,
+    pub errors: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct TargetPerfReport<'a> {
+    schema: u32,
+    board: &'a str,
+    source: &'static str,
+    metrics: &'a [TargetPerfRecord],
+}
+
+#[derive(Debug, Deserialize)]
+struct PerfThresholds {
+    schema: u32,
+    boards: BTreeMap<String, BTreeMap<String, MetricThreshold>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MetricThreshold {
+    #[serde(default)]
+    min_samples: Option<u64>,
+    #[serde(default)]
+    p50_max: Option<u64>,
+    #[serde(default)]
+    p95_max: Option<u64>,
+    #[serde(default)]
+    p99_max: Option<u64>,
+    #[serde(default)]
+    max_max: Option<u64>,
+}
+
+#[derive(Debug)]
+struct SerialEvent {
+    line: String,
+    received_at: Instant,
+}
+
+struct QemuTestProcess {
+    child: std::process::Child,
+    serial_events: Receiver<SerialEvent>,
+    serial_reader: JoinHandle<()>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PerfBatchMarker {
+    Begin {
+        metric: String,
+        calls: u64,
+    },
+    End {
+        metric: String,
+        calls: u64,
+        errors: u64,
+    },
+}
+
+#[derive(Default)]
+struct PerfBatchTracker {
+    active: BTreeMap<String, (Instant, u64)>,
+    samples: BTreeMap<String, Vec<u64>>,
+    errors: BTreeMap<String, u64>,
+}
+
 pub fn run(args: &RunTestsArgs) -> Result<()> {
     if let Some(input_log) = &args.input_log {
         let text = std::fs::read_to_string(input_log)
             .with_context(|| format!("failed to read {}", input_log.display()))?;
-        return report_tap_result(&text, &args.board);
+        report_tap_result(&text, &args.board)?;
+        return process_perf_records(&text, args, Vec::new());
     }
 
     let repo_root = repo_root()?;
@@ -33,18 +114,229 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     let mut qemu = spawn_qemu_test_image(&args.board, &repo_root, &log_path)
         .with_context(|| format!("failed to launch seL4-target TAP image for {}", args.board))?;
 
-    let wait = wait_for_tap_done(&log_path, Duration::from_secs(args.timeout_secs), &mut qemu);
+    let wait = wait_for_tap_done(
+        Duration::from_secs(args.timeout_secs),
+        &mut qemu.child,
+        &qemu.serial_events,
+    );
 
-    let _ = qemu.kill();
-    let _ = qemu.wait();
+    let _ = qemu.child.kill();
+    let _ = qemu.child.wait();
+    let _ = qemu.serial_reader.join();
 
     let text = std::fs::read_to_string(&log_path).unwrap_or_default();
     println!("\n=== Serial output ===");
     print!("{}", text);
     println!("=====================\n");
 
-    wait?;
-    report_tap_result(&text, &args.board)
+    let measured_records = wait?;
+    report_tap_result(&text, &args.board)?;
+    process_perf_records(&text, args, measured_records)
+}
+
+pub fn parse_perf_records(output: &str) -> Result<Vec<TargetPerfRecord>> {
+    output
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("PERF_JSON:"))
+        .map(|json| serde_json::from_str(json).context("invalid PERF_JSON record"))
+        .collect()
+}
+
+fn process_perf_records(
+    output: &str,
+    args: &RunTestsArgs,
+    mut measured_records: Vec<TargetPerfRecord>,
+) -> Result<()> {
+    let mut records = parse_perf_records(output)?;
+    records.append(&mut measured_records);
+    if args.require_perf {
+        anyhow::ensure!(!records.is_empty(), "target emitted no PERF_JSON records");
+    }
+    for record in &records {
+        anyhow::ensure!(
+            record.schema == 1,
+            "unsupported PERF_JSON schema {}",
+            record.schema
+        );
+        anyhow::ensure!(
+            record.errors == 0,
+            "{} reported {} errors",
+            record.metric,
+            record.errors
+        );
+    }
+
+    if let Some(path) = &args.perf_thresholds {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read performance thresholds {}", path.display()))?;
+        let thresholds: PerfThresholds = serde_json::from_str(&text)
+            .with_context(|| format!("invalid performance thresholds {}", path.display()))?;
+        apply_thresholds(&records, &args.board, &thresholds)?;
+    }
+
+    if let Some(path) = &args.perf_output {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        let report = TargetPerfReport {
+            schema: 1,
+            board: &args.board,
+            source: "sel4-target-qemu",
+            metrics: &records,
+        };
+        std::fs::write(path, serde_json::to_vec_pretty(&report)?)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        println!(
+            "[xtask:run-tests] wrote target performance report: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+fn apply_thresholds(
+    records: &[TargetPerfRecord],
+    board: &str,
+    thresholds: &PerfThresholds,
+) -> Result<()> {
+    anyhow::ensure!(
+        thresholds.schema == 1,
+        "unsupported threshold schema {}",
+        thresholds.schema
+    );
+    let board_thresholds = thresholds
+        .boards
+        .get(board)
+        .with_context(|| format!("no performance thresholds configured for board {board}"))?;
+    for (metric, threshold) in board_thresholds {
+        let record = records
+            .iter()
+            .find(|record| &record.metric == metric)
+            .with_context(|| format!("target did not emit required metric {metric}"))?;
+        if let Some(minimum) = threshold.min_samples {
+            anyhow::ensure!(
+                record.samples >= minimum,
+                "{metric} samples {} below minimum {minimum}",
+                record.samples
+            );
+        }
+        for (name, actual, limit) in [
+            ("p50", record.p50, threshold.p50_max),
+            ("p95", record.p95, threshold.p95_max),
+            ("p99", record.p99, threshold.p99_max),
+            ("max", record.max, threshold.max_max),
+        ] {
+            if let Some(limit) = limit {
+                anyhow::ensure!(
+                    actual <= limit,
+                    "{metric} {name} regression: {actual} {} exceeds {limit}",
+                    record.unit
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_perf_batch_marker(line: &str) -> Result<Option<PerfBatchMarker>> {
+    let line = line.trim();
+    if let Some(rest) = line.strip_prefix("PERF_BATCH_BEGIN:") {
+        let Some((metric, calls)) = rest.rsplit_once(':') else {
+            return Ok(None);
+        };
+        anyhow::ensure!(!metric.is_empty(), "empty performance metric name");
+        let Ok(calls) = calls.parse() else {
+            return Ok(None);
+        };
+        return Ok(Some(PerfBatchMarker::Begin {
+            metric: metric.to_string(),
+            calls,
+        }));
+    }
+    if let Some(rest) = line.strip_prefix("PERF_BATCH_END:") {
+        let mut fields = rest.rsplitn(3, ':');
+        let (Some(errors), Some(calls), Some(metric)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            return Ok(None);
+        };
+        anyhow::ensure!(!metric.is_empty(), "empty performance metric name");
+        let (Ok(calls), Ok(errors)) = (calls.parse(), errors.parse()) else {
+            return Ok(None);
+        };
+        return Ok(Some(PerfBatchMarker::End {
+            metric: metric.to_string(),
+            calls,
+            errors,
+        }));
+    }
+    Ok(None)
+}
+
+impl PerfBatchTracker {
+    fn observe(&mut self, marker: PerfBatchMarker, at: Instant) -> Result<()> {
+        match marker {
+            PerfBatchMarker::Begin { metric, calls } => {
+                anyhow::ensure!(calls > 0, "{metric} performance batch has zero calls");
+                // A shared debug UART can splice another PD's output into a
+                // marker. A new intact BEGIN supersedes any partial batch.
+                self.active.insert(metric, (at, calls));
+            }
+            PerfBatchMarker::End {
+                metric,
+                calls,
+                errors,
+            } => {
+                let Some((started_at, started_calls)) = self.active.remove(&metric) else {
+                    // Its BEGIN marker was interleaved. The minimum-sample
+                    // threshold still prevents a noisy run from passing.
+                    return Ok(());
+                };
+                anyhow::ensure!(
+                    calls == started_calls,
+                    "{metric} batch call count changed from {started_calls} to {calls}"
+                );
+                let elapsed_ns = at.saturating_duration_since(started_at).as_nanos();
+                anyhow::ensure!(elapsed_ns > 0, "{metric} batch duration was zero");
+                let ns_per_call = u64::try_from(elapsed_ns / u128::from(calls))
+                    .context("performance batch duration overflow")?;
+                self.samples
+                    .entry(metric.clone())
+                    .or_default()
+                    .push(ns_per_call);
+                *self.errors.entry(metric).or_default() += errors;
+            }
+        }
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<Vec<TargetPerfRecord>> {
+        // A final partial marker is treated like any other UART-corrupted
+        // batch; per-board min_samples determines whether evidence suffices.
+        let mut records = Vec::with_capacity(self.samples.len());
+        for (metric, values) in &mut self.samples {
+            values.sort_unstable();
+            let percentile = |percent: usize| {
+                let rank = (values.len() * percent).div_ceil(100).max(1);
+                values[rank - 1]
+            };
+            records.push(TargetPerfRecord {
+                schema: 1,
+                metric: metric.clone(),
+                unit: "ns/op".to_string(),
+                samples: values.len() as u64,
+                counter_hz: 1_000_000_000,
+                min: values[0],
+                p50: percentile(50),
+                p95: percentile(95),
+                p99: percentile(99),
+                max: *values.last().expect("non-empty performance samples"),
+                errors: self.errors.get(metric).copied().unwrap_or_default(),
+            });
+        }
+        Ok(records)
+    }
 }
 
 fn repo_root() -> Result<PathBuf> {
@@ -64,7 +356,7 @@ fn spawn_qemu_test_image(
     board: &str,
     repo_root: &Path,
     log_path: &Path,
-) -> Result<std::process::Child> {
+) -> Result<QemuTestProcess> {
     let log_file = std::fs::File::create(log_path).context("failed to create QEMU log file")?;
     let build_dir = repo_root.join("build").join(format!("{board}-test"));
 
@@ -125,23 +417,56 @@ fn spawn_qemu_test_image(
         ),
     };
 
-    let child = cmd
-        .stdout(log_file.try_clone()?)
+    let mut child = cmd
+        .stdout(Stdio::piped())
         .stderr(log_file)
         .process_group(0)
         .spawn()
         .context("failed to spawn QEMU")?;
     println!("[xtask:run-tests] QEMU pid={}", child.id());
-    Ok(child)
+    let stdout = child
+        .stdout
+        .take()
+        .context("QEMU stdout pipe unavailable")?;
+    let mut serial_log = std::fs::OpenOptions::new()
+        .append(true)
+        .open(log_path)
+        .context("failed to open QEMU serial log")?;
+    let (sender, serial_events) = mpsc::channel();
+    let serial_reader = std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut bytes = Vec::new();
+        loop {
+            bytes.clear();
+            match reader.read_until(b'\n', &mut bytes) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    let received_at = Instant::now();
+                    if serial_log.write_all(&bytes).is_err() {
+                        break;
+                    }
+                    let line = String::from_utf8_lossy(&bytes).into_owned();
+                    if sender.send(SerialEvent { line, received_at }).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+    Ok(QemuTestProcess {
+        child,
+        serial_events,
+        serial_reader,
+    })
 }
 
 fn wait_for_tap_done(
-    log_path: &Path,
     timeout: Duration,
     qemu: &mut std::process::Child,
-) -> Result<()> {
+    serial_events: &Receiver<SerialEvent>,
+) -> Result<Vec<TargetPerfRecord>> {
     let start = Instant::now();
-    let mut buf = String::new();
+    let mut perf = PerfBatchTracker::default();
 
     loop {
         if start.elapsed() >= timeout {
@@ -151,14 +476,21 @@ fn wait_for_tap_done(
             anyhow::bail!("QEMU exited with status {status} before TAP_DONE");
         }
 
-        buf.clear();
-        if let Ok(mut f) = std::fs::File::open(log_path) {
-            let _ = f.read_to_string(&mut buf);
-            if parse_tap_done(&buf).is_some() {
-                return Ok(());
+        let remaining = timeout.saturating_sub(start.elapsed());
+        match serial_events.recv_timeout(remaining.min(Duration::from_millis(100))) {
+            Ok(event) => {
+                if let Some(marker) = parse_perf_batch_marker(&event.line)? {
+                    perf.observe(marker, event.received_at)?;
+                }
+                if parse_tap_done(&event.line).is_some() {
+                    return perf.finish();
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                anyhow::bail!("QEMU serial stream closed before TAP_DONE")
             }
         }
-        std::thread::sleep(Duration::from_millis(200));
     }
 }
 
@@ -216,5 +548,106 @@ mod tests {
             parse_tap_done("TAP version 14\nok 1 - still running\n"),
             None
         );
+    }
+
+    #[test]
+    fn parser_accepts_target_perf_json() {
+        let records = parse_perf_records(concat!(
+            "noise\n",
+            "PERF_JSON:{\"schema\":1,\"metric\":\"ipc\",\"unit\":\"cycles\",",
+            "\"samples\":256,\"counter_hz\":62500000,\"min\":10,\"p50\":20,",
+            "\"p95\":30,\"p99\":40,\"max\":50,\"errors\":0}\n",
+        ))
+        .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].metric, "ipc");
+        assert_eq!(records[0].p99, 40);
+    }
+
+    #[test]
+    fn parser_rejects_malformed_target_perf_json() {
+        assert!(parse_perf_records("PERF_JSON:{bad}\n").is_err());
+    }
+
+    #[test]
+    fn parser_accepts_perf_batch_markers() {
+        assert_eq!(
+            parse_perf_batch_marker("PERF_BATCH_BEGIN:ipc:1024\r\n").unwrap(),
+            Some(PerfBatchMarker::Begin {
+                metric: "ipc".to_string(),
+                calls: 1024,
+            })
+        );
+        assert_eq!(
+            parse_perf_batch_marker("PERF_BATCH_END:ipc:1024:3\n").unwrap(),
+            Some(PerfBatchMarker::End {
+                metric: "ipc".to_string(),
+                calls: 1024,
+                errors: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn batch_tracker_builds_ns_per_operation_record() {
+        let start = Instant::now();
+        let mut tracker = PerfBatchTracker::default();
+        tracker
+            .observe(
+                PerfBatchMarker::Begin {
+                    metric: "ipc".to_string(),
+                    calls: 100,
+                },
+                start,
+            )
+            .unwrap();
+        tracker
+            .observe(
+                PerfBatchMarker::End {
+                    metric: "ipc".to_string(),
+                    calls: 100,
+                    errors: 0,
+                },
+                start + Duration::from_micros(250),
+            )
+            .unwrap();
+        let records = tracker.finish().unwrap();
+        assert_eq!(records[0].samples, 1);
+        assert_eq!(records[0].unit, "ns/op");
+        assert_eq!(records[0].p50, 2500);
+    }
+
+    fn sample_record() -> TargetPerfRecord {
+        TargetPerfRecord {
+            schema: 1,
+            metric: "ipc".to_string(),
+            unit: "cycles".to_string(),
+            samples: 256,
+            counter_hz: 62_500_000,
+            min: 10,
+            p50: 20,
+            p95: 30,
+            p99: 40,
+            max: 50,
+            errors: 0,
+        }
+    }
+
+    #[test]
+    fn thresholds_accept_record_within_limits() {
+        let thresholds: PerfThresholds = serde_json::from_str(
+            r#"{"schema":1,"boards":{"qemu":{"ipc":{"min_samples":256,"p99_max":40}}}}"#,
+        )
+        .unwrap();
+        apply_thresholds(&[sample_record()], "qemu", &thresholds).unwrap();
+    }
+
+    #[test]
+    fn thresholds_reject_regression() {
+        let thresholds: PerfThresholds =
+            serde_json::from_str(r#"{"schema":1,"boards":{"qemu":{"ipc":{"p99_max":39}}}}"#)
+                .unwrap();
+        let error = apply_thresholds(&[sample_record()], "qemu", &thresholds).unwrap_err();
+        assert!(error.to_string().contains("p99 regression"));
     }
 }

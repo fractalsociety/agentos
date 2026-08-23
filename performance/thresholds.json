@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "boards": {
+    "qemu_virt_aarch64": {
+      "sel4_ipc_eventbus_status": {
+        "min_samples": 9,
+        "p50_max": 4000000,
+        "p95_max": 6000000,
+        "p99_max": 6000000,
+        "max_max": 8000000
+      }
+    },
+    "x86_64_generic": {
+      "sel4_yield": {
+        "min_samples": 9,
+        "p50_max": 20000,
+        "p95_max": 30000,
+        "p99_max": 30000,
+        "max_max": 50000
+      }
+    }
+  }
+}

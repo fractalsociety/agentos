@@ -313,10 +313,32 @@ jobs:
         timeout-minutes: 10
         run: make test TARGET_ARCH=aarch64 GUEST_OS=none
 
+      - name: Target performance regression gate — aarch64
+        timeout-minutes: 10
+        run: make perf-gate-aarch64
+
+      - name: Upload target performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: target-performance-qemu-aarch64
+          path: build/perf/qemu_virt_aarch64.json
+          if-no-files-found: error
+
       # TARGET/QEMU test #2 — x86_64.  Required for any OS-level claim.
       - name: GATE — make test TARGET_ARCH=x86_64 GUEST_OS=none
         timeout-minutes: 10
         run: make test TARGET_ARCH=x86_64 GUEST_OS=none
+
+      - name: Target performance regression gate — x86_64
+        timeout-minutes: 10
+        run: make perf-gate-x86_64
+
+      - name: Upload x86_64 target performance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: target-performance-qemu-x86_64
+          path: build/perf/x86_64_generic.json
+          if-no-files-found: error
 
       - name: GATE summary
         run: |

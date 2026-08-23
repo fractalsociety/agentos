@@ -16,6 +16,7 @@
 #   test-target-aarch64      — same, pinned to TARGET_ARCH=aarch64 GUEST_OS=none.
 #   test-target-x86_64       — same, pinned to TARGET_ARCH=x86_64  GUEST_OS=none.
 #   test-target-all          — both arches.
+#   perf-gate                — real target performance gates on both arches.
 #   test-cc-virtio-timeout   — QEMU proof of the CC-PD VirtIO bounded-wait
 #                              timeout error path (agentos-45b).
 #
@@ -25,7 +26,7 @@
 # =============================================================================
 
 .PHONY: test-target test-target-aarch64 test-target-x86_64 test-target-all \
-        test-cc-virtio-timeout
+        test-cc-virtio-timeout perf-gate perf-gate-aarch64 perf-gate-x86_64
 
 # Run the on-target contract TAP suite for the current BOARD.
 # `run-tests` builds build/$(BOARD)-test/agentos.img via `sel4-test-image`,
@@ -48,6 +49,28 @@ test-target-x86_64:
 
 test-target-all: test-target-aarch64 test-target-x86_64
 	@echo "[target-tests] both target arches reported"
+
+# Run the real-IPC benchmark embedded in the target contract runner, require
+# its machine-readable record, apply board-specific regression thresholds,
+# and retain a normalized JSON result for CI or release artifacts.
+perf-gate-aarch64:
+	@cargo xtask run-tests \
+		--board qemu_virt_aarch64 \
+		--timeout-secs $(QEMU_TEST_TIMEOUT) \
+		--require-perf \
+		--perf-thresholds performance/thresholds.json \
+		--perf-output build/perf/qemu_virt_aarch64.json
+
+perf-gate-x86_64:
+	@cargo xtask run-tests \
+		--board x86_64_generic \
+		--timeout-secs $(QEMU_TEST_TIMEOUT) \
+		--require-perf \
+		--perf-thresholds performance/thresholds.json \
+		--perf-output build/perf/x86_64_generic.json
+
+perf-gate: perf-gate-aarch64 perf-gate-x86_64
+	@echo "[target-perf] configured target performance gates passed"
 
 # agentos-45b: QEMU proof of the CC-PD VirtIO used-ring bounded-wait timeout.
 # Builds the seL4 test image for BOARD (idempotent), then drives the wedge

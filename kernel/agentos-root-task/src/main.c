@@ -1998,10 +1998,20 @@ void root_task_main(const seL4_BootInfo *bi)
     dbg_puts("[rt] test image: contract-runner PD will emit TAP after PD bringup\n");
 #elif defined(AGENTOS_SEL4_TEST_IMAGE)
     /* Other arches (e.g. x86_64 reduced smoke) have no contract-runner PD wired
-     * yet, so the root task emits the boot-proof TAP itself. */
+     * yet, so the root task emits the boot proof and a kernel scheduling
+     * baseline itself. Batch boundaries are timed by xtask just like the
+     * AArch64 contract-runner benchmark. */
     dbg_puts("TAP version 14\n");
     dbg_puts("ok 1 - root task booted current board topology\n");
-    dbg_puts("1..1\n");
+    for (uint32_t batch = 0u; batch < 12u; batch++) {
+        dbg_puts("PERF_BATCH_BEGIN:sel4_yield:8192\n");
+        for (uint32_t i = 0u; i < 8192u; i++) {
+            seL4_Yield();
+        }
+        dbg_puts("PERF_BATCH_END:sel4_yield:8192:0\n");
+    }
+    dbg_puts("ok 2 - target perf: seL4 yield batches completed\n");
+    dbg_puts("1..2\n");
     dbg_puts("TAP_DONE:0\n");
 #endif
 

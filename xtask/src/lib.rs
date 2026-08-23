@@ -81,6 +81,15 @@ pub struct RunTestsArgs {
     /// Parse an existing serial log instead of launching QEMU.
     #[arg(long)]
     pub input_log: Option<std::path::PathBuf>,
+    /// Write normalized target performance records to this JSON file.
+    #[arg(long)]
+    pub perf_output: Option<std::path::PathBuf>,
+    /// Fail when the target emits no complete performance records.
+    #[arg(long)]
+    pub require_perf: bool,
+    /// Optional JSON thresholds applied to target performance records.
+    #[arg(long)]
+    pub perf_thresholds: Option<std::path::PathBuf>,
 }
 
 #[derive(clap::Args)]
