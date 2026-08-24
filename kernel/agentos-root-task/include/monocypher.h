@@ -96,6 +96,28 @@ int  crypto_aead_unlock(uint8_t       *plain_text,
                         const uint8_t *ad,        size_t ad_size,
                         const uint8_t *cipher_text, size_t cipher_size);
 
+/*
+ * RFC 8439 ChaCha20-Poly1305 AEAD with a 96-bit nonce.  WireGuard transport
+ * and handshake fields use this construction, not the XChaCha20 API above.
+ * The caller must never reuse a nonce with the same key.
+ */
+void crypto_chacha20_poly1305_lock(
+    uint8_t *cipher_text,
+    uint8_t mac[16],
+    const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *ad, size_t ad_size,
+    const uint8_t *plain_text, size_t plain_size);
+
+/* Returns 0 after authenticating and decrypting, or -1 after wiping output. */
+int crypto_chacha20_poly1305_unlock(
+    uint8_t *plain_text,
+    const uint8_t mac[16],
+    const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *ad, size_t ad_size,
+    const uint8_t *cipher_text, size_t cipher_size);
+
 #ifdef __cplusplus
 }
 #endif

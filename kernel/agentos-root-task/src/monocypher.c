@@ -1282,6 +1282,49 @@ static void xchacha20_xor(uint8_t *dst, const uint8_t *src, size_t len,
     }
 }
 
+/* RFC 8439 ChaCha20: 32-bit block counter followed by a 96-bit nonce. */
+static void chacha20_ietf_xor(uint8_t *dst, const uint8_t *src, size_t len,
+                              const uint8_t key[32],
+                              const uint8_t nonce[12], uint32_t ctr)
+{
+    uint32_t state[16];
+    state[0]  = chacha20_magic[0];
+    state[1]  = chacha20_magic[1];
+    state[2]  = chacha20_magic[2];
+    state[3]  = chacha20_magic[3];
+    state[4]  = load32_le(key);
+    state[5]  = load32_le(key + 4);
+    state[6]  = load32_le(key + 8);
+    state[7]  = load32_le(key + 12);
+    state[8]  = load32_le(key + 16);
+    state[9]  = load32_le(key + 20);
+    state[10] = load32_le(key + 24);
+    state[11] = load32_le(key + 28);
+    state[12] = ctr;
+    state[13] = load32_le(nonce);
+    state[14] = load32_le(nonce + 4);
+    state[15] = load32_le(nonce + 8);
+
+    size_t off = 0;
+    while (off < len) {
+        uint32_t block[16];
+        uint8_t keystream[64];
+        chacha20_block(block, state);
+        state[12]++;
+        for (int i = 0; i < 16; i++)
+            store32_le(keystream + i * 4, block[i]);
+
+        size_t chunk = len - off;
+        if (chunk > sizeof(keystream)) chunk = sizeof(keystream);
+        for (size_t i = 0; i < chunk; i++)
+            dst[off + i] = (src ? src[off + i] : 0u) ^ keystream[i];
+        off += chunk;
+        mc_memset(block, 0, sizeof(block));
+        mc_memset(keystream, 0, sizeof(keystream));
+    }
+    mc_memset(state, 0, sizeof(state));
+}
+
 /* ── Poly1305 MAC ────────────────────────────────────────────────────────── */
 
 typedef struct {
@@ -1427,10 +1470,16 @@ static void poly1305_final(poly1305_ctx *ctx, uint8_t mac[16])
     h4 = (h4 & mask) | g4;
 
     /* Convert from 26-bit limbs to 32-bit words */
-    uint64_t f0 = ((uint64_t)h0 | ((uint64_t)h1 << 26)) + ctx->pad[0];
-    uint64_t f1 = ((uint64_t)(h1 >>  6) | ((uint64_t)h2 << 20)) + ctx->pad[1] + (f0 >> 32);
-    uint64_t f2 = ((uint64_t)(h2 >> 12) | ((uint64_t)h3 << 14)) + ctx->pad[2] + (f1 >> 32);
-    uint64_t f3 = ((uint64_t)(h3 >> 18) | ((uint64_t)h4 <<  8)) + ctx->pad[3] + (f2 >> 32);
+    /* Each reconstructed limb is a 32-bit word.  Truncate before adding the
+     * pad so bits already carried into the next word are not counted twice. */
+    uint64_t f0 = (uint32_t)(h0 | (h1 << 26));
+    uint64_t f1 = (uint32_t)((h1 >> 6) | (h2 << 20));
+    uint64_t f2 = (uint32_t)((h2 >> 12) | (h3 << 14));
+    uint64_t f3 = (uint32_t)((h3 >> 18) | (h4 << 8));
+    f0 += ctx->pad[0];
+    f1 += ctx->pad[1] + (f0 >> 32);
+    f2 += ctx->pad[2] + (f1 >> 32);
+    f3 += ctx->pad[3] + (f2 >> 32);
 
     store32_le(mac,      (uint32_t)f0);
     store32_le(mac +  4, (uint32_t)f1);
@@ -1543,5 +1592,49 @@ int crypto_aead_unlock(uint8_t       *plain_text,
 
     mc_memset(subkey,   0, sizeof(subkey));
     mc_memset(poly_key, 0, sizeof(poly_key));
+    return 0;
+}
+
+void crypto_chacha20_poly1305_lock(
+    uint8_t *cipher_text,
+    uint8_t mac[16],
+    const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *ad, size_t ad_size,
+    const uint8_t *plain_text, size_t plain_size)
+{
+    uint8_t poly_key[32];
+    chacha20_ietf_xor(poly_key, NULL, sizeof(poly_key), key, nonce, 0u);
+    chacha20_ietf_xor(cipher_text, plain_text, plain_size, key, nonce, 1u);
+    poly1305_mac_aead(mac, poly_key, ad, ad_size,
+                      cipher_text, plain_size);
+    mc_memset(poly_key, 0, sizeof(poly_key));
+}
+
+int crypto_chacha20_poly1305_unlock(
+    uint8_t *plain_text,
+    const uint8_t mac[16],
+    const uint8_t key[32],
+    const uint8_t nonce[12],
+    const uint8_t *ad, size_t ad_size,
+    const uint8_t *cipher_text, size_t cipher_size)
+{
+    uint8_t poly_key[32];
+    uint8_t computed_mac[16];
+    chacha20_ietf_xor(poly_key, NULL, sizeof(poly_key), key, nonce, 0u);
+    poly1305_mac_aead(computed_mac, poly_key, ad, ad_size,
+                      cipher_text, cipher_size);
+
+    uint8_t diff = 0u;
+    for (int i = 0; i < 16; i++) diff |= computed_mac[i] ^ mac[i];
+    mc_memset(computed_mac, 0, sizeof(computed_mac));
+    mc_memset(poly_key, 0, sizeof(poly_key));
+    if (diff != 0u) {
+        mc_memset(plain_text, 0, cipher_size);
+        return -1;
+    }
+
+    chacha20_ietf_xor(plain_text, cipher_text, cipher_size,
+                      key, nonce, 1u);
     return 0;
 }

@@ -127,6 +127,15 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
+        // agentos-gz0.5: WireGuard's RFC 8439 transport AEAD primitive.
+        name: "test_wireguard_crypto",
+        sources: &[
+            "tests/test_wireguard_crypto.c",
+            "kernel/agentos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
         // agentos-681 / agentos-vsi: CC-PD polecat occupancy + log-slot model.
         // agent_pool.c pulls in the Microkit IPC layer, so force-include the
         // host shim that stubs microkit_mr_get/set.

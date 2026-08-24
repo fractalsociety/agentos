@@ -22,11 +22,11 @@
  *     [0x002000 .. 0x00FFFF]  TX packet staging  (OP_WG_SEND plaintext input)
  *     [0x010000 .. 0x01FFFF]  RX packet staging  (OP_WG_RECV decrypted output)
  *
- * Crypto integration:
- *   Curve25519 and ChaCha20-Poly1305 stubs are tagged:
- *     CRYPTO_INTEGRATION_POINT
- *   Wire up Monocypher by calling crypto_x25519() for ECDH and
- *   crypto_aead_lock() / crypto_aead_unlock() for AEAD at those sites.
+ * Crypto status:
+ *   Curve25519 key derivation and RFC 8439 ChaCha20-Poly1305 are implemented
+ *   in the freestanding crypto library. Noise_IKpsk2 transcript/KDF/session
+ *   state remains an integration point; no interoperability claim is valid
+ *   until handshake, replay, rekey, and roaming tests pass.
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause

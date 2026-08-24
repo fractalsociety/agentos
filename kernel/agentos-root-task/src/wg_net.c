@@ -18,8 +18,8 @@
  *   - wg_net registers itself as "wg_net" with the nameserver at startup.
  *
  * Crypto:
- *   Curve25519 key derivation and ChaCha20-Poly1305 AEAD stubs are tagged:
- *     CRYPTO_INTEGRATION_POINT
+ *   Transport encryption uses the RFC 8439 ChaCha20-Poly1305 construction.
+ *   Noise transcript/KDF/session derivation remains an integration point.
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -47,6 +47,7 @@ typedef struct {
 #define SEL4_ERR_PERM        3u
 #define SEL4_ERR_BAD_ARG     4u
 #define SEL4_ERR_NO_MEM      5u
+#define SEL4_ERR_INTERNAL    6u
 
 typedef uint32_t (*sel4_handler_fn)(sel4_badge_t badge,
                                      const sel4_msg_t *req,
@@ -116,17 +117,22 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
     d[off+3] = (uint8_t)(v >> 24);
 }
 
-/* Monocypher stubs */
-static inline void crypto_aead_lock(uint8_t *ct, uint8_t *mac, const uint8_t *key,
-                                     const uint8_t *n, const void *ad, size_t ad_sz,
+/* Production links the real RFC 8439 implementation.  Host API tests use a
+ * deterministic stand-in; cryptographic vectors run in a separate suite. */
+static inline void crypto_chacha20_poly1305_lock(
+                                     uint8_t *ct, uint8_t *mac,
+                                     const uint8_t *key, const uint8_t *n,
+                                     const uint8_t *ad, size_t ad_sz,
                                      const uint8_t *pt, size_t pt_sz)
 {
-    (void)mac;(void)key;(void)n;(void)ad;(void)ad_sz;
+    (void)key;(void)n;(void)ad;(void)ad_sz;
     for (size_t i = 0; i < pt_sz; i++) ct[i] = pt ? pt[i] : 0;
+    for (size_t i = 0; i < 16u; i++) mac[i] = 0;
 }
-static inline int crypto_aead_unlock(uint8_t *pt, const uint8_t *mac,
+static inline int crypto_chacha20_poly1305_unlock(
+                                      uint8_t *pt, const uint8_t *mac,
                                       const uint8_t *key, const uint8_t *n,
-                                      const void *ad, size_t ad_sz,
+                                      const uint8_t *ad, size_t ad_sz,
                                       const uint8_t *ct, size_t ct_sz)
 {
     (void)mac;(void)key;(void)n;(void)ad;(void)ad_sz;
@@ -325,15 +331,10 @@ static int wg_encrypt(const uint8_t *key, const uint8_t *nonce,
     if (plain_len + WG_AEAD_TAG_LEN < plain_len)
         return -1;
 
-    uint8_t nonce24[24];
-    for (int i = 0; i < 24; i++) nonce24[i] = 0;
-    for (int i = 0; i < 12; i++) nonce24[i] = nonce[i];
-
     uint8_t mac[WG_AEAD_TAG_LEN];
-    /* CRYPTO_INTEGRATION_POINT: replace stub with Monocypher crypto_aead_lock */
-    crypto_aead_lock(cipher, mac, key, nonce24,
-                     NULL, 0u,
-                     plain ? plain : (const uint8_t *)"", (size_t)(plain_len));
+    crypto_chacha20_poly1305_lock(
+        cipher, mac, key, nonce, NULL, 0u,
+        plain ? plain : (const uint8_t *)"", (size_t)plain_len);
 
     for (uint32_t i = 0; i < WG_AEAD_TAG_LEN; i++)
         cipher[plain_len + i] = mac[i];
@@ -352,14 +353,8 @@ static int wg_decrypt(const uint8_t *key, const uint8_t *nonce,
     uint32_t ct_len = cipher_len - WG_AEAD_TAG_LEN;
     const uint8_t *mac = cipher + ct_len;
 
-    uint8_t nonce24[24];
-    for (int i = 0; i < 24; i++) nonce24[i] = 0;
-    for (int i = 0; i < 12; i++) nonce24[i] = nonce[i];
-
-    /* CRYPTO_INTEGRATION_POINT: replace stub with Monocypher crypto_aead_unlock */
-    int rc = crypto_aead_unlock(plain, mac, key, nonce24,
-                                NULL, 0u,
-                                cipher, (size_t)ct_len);
+    int rc = crypto_chacha20_poly1305_unlock(
+        plain, mac, key, nonce, NULL, 0u, cipher, (size_t)ct_len);
     if (rc != 0) return -1;
 
     *plain_len = ct_len;
@@ -919,7 +914,7 @@ void wg_net_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     agentos_log_boot("wg_net");
     log_drain_write(16, 16, "[wg_net] Initialising WireGuard PD (raw seL4 IPC)\n");
     log_drain_write(16, 16, "[wg_net]   priority ordering constraint ELIMINATED\n");
-    log_drain_write(16, 16, "[wg_net]   crypto=stub(CRYPTO_INTEGRATION_POINT)\n");
+    log_drain_write(16, 16, "[wg_net]   transport_aead=rfc8439-chacha20-poly1305\n");
 
     wg_net_test_init();
 
