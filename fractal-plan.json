@@ -1651,8 +1651,6 @@
         ],
         "expected_artifact": "Pushed evidence-linked commits, synchronized Beads state, an up-to-date branch, and only truthfully closed issues",
         "files_or_systems_affected": [
-          ".git",
-          ".beads",
           "build/evidence"
         ],
         "verification_plan": "Run bd preflight, git log with issue references, git status --short --branch, git rev-parse HEAD, and remote tracking comparison; require pushed commits, synchronized Beads, evidence links on each closure, no tracked secret or prohibited UI file, and an open precisely evidenced blocker whenever the final live gate did not pass.",
