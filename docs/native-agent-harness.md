@@ -48,6 +48,14 @@ native worker budget or duplicate shared ModelSvc/ToolSvc/AgentFS/ExecServer
 state. Runtime credential delivery and authenticated in-guest inference remain
 unimplemented.
 
+The external official-Codex E2E was re-run against a live seL4 CC-PD on
+2026-08-24. Codex queried the allowlisted pool-status MCP tool exactly once,
+repaired only the permitted C source in an isolated repository, and passed the
+previously failing test. The run took 31,180 ms and the Codex process peaked at
+179,077,120 bytes RSS. This is genuine model-backed edit/test evidence for V0,
+but it is not evidence that the native V2 worker has completed a live-model
+task or met the 150 MiB ceiling.
+
 ## Implementation status
 
 The native C bootstrap harness now builds as its own protection domain, boots

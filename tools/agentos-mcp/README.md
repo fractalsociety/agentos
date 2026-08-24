@@ -62,7 +62,11 @@ edit only one C file, and requires the test to pass afterward.
 
 This is the production-capable path available now: official Codex runs on a
 supported host and treats the seL4 system as a capability-limited external
-control plane. Codex does **not** yet run inside an AgentOS Linux guest. That
-next stage requires a genuine Linux userspace/root filesystem, working guest
-networking and certificates, the official Codex binary, and a secret broker;
-the current deterministic guest fixture is only a small boot-test initramfs.
+control plane.
+
+The pinned official AArch64 CLI also boots inside an AgentOS-managed Linux
+compatibility guest and passes its own version preflight via `cargo xtask
+qemu-test --guest-os codex --timeout-secs 300`. That image is credential-free.
+Authenticated work inside the guest still requires capability-gated guest
+networking and a runtime secret broker, so the external MCP path remains the
+only production-capable live-model path today.
