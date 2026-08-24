@@ -11,6 +11,14 @@ path = "src/main.rs"
 name = "xtask"
 path = "src/lib.rs"
 
+[[test]]
+name = "fractal_mesh_frames"
+path = "../tests/test_fractal_mesh_frames.rs"
+
+[[test]]
+name = "health_adapter_contract"
+path = "../tests/contract/test_health_adapter.rs"
+
 [dependencies]
 clap       = { version = "4", features = ["derive", "env"] }
 anyhow     = "1"

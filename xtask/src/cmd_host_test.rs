@@ -50,6 +50,18 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
+        // agentos-gz0.14.11: FractalOS capabilities v1 contract boundary.
+        name: "test_agent_task_contract",
+        sources: &["tests/contracts/agent_task_test.c"],
+        extra_args: &[],
+    },
+    Suite {
+        // agentos-gz0.14.5: canonical append-only Agent event stream.
+        name: "test_agent_event_stream",
+        sources: &["tests/test_agent_event_stream.c"],
+        extra_args: &[],
+    },
+    Suite {
         name: "test_controller",
         sources: &[
             "tests/api/test_controller.c",
@@ -195,6 +207,12 @@ const SUITES: &[Suite] = &[
             "kernel/agentos-root-task/src/wireguard_noise.c",
             "kernel/agentos-root-task/src/monocypher.c",
         ],
+        extra_args: &[],
+    },
+    Suite {
+        // agentos-gz0.5: packet-only mapping and immutable NetServer WG right.
+        name: "test_net_wg_handoff",
+        sources: &["tests/test_net_wg_handoff.c"],
         extra_args: &[],
     },
     Suite {

@@ -15,6 +15,13 @@
 
 #include "../harness/test_framework.h"
 #include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
+
+#define ASSERT_EVENT_CONTRACT(condition, name)                         \
+    do {                                                               \
+        if (condition) _tf_ok(name);                                   \
+        else _tf_fail_point(name, "canonical event contract assertion"); \
+    } while (0)
 
 void run_eventbus_tests(microkit_channel ch)
 {
@@ -58,4 +65,26 @@ void run_eventbus_tests(microkit_channel ch)
 
     /* STATUS again — confirm bus is still responsive after subscribe/unsubscribe. */
     ASSERT_IPC_OK(ch, MSG_EVENTBUS_STATUS, "eventbus: STATUS still ok after ops");
+
+    /* Canonical Agent event schema checks.  EventBus transports these records;
+     * the durable stream contract authenticates and replays them above it. */
+    ASSERT_EVENT_CONTRACT(EVENTBUS_AGENT_EVENT_SCHEMA_VERSION == 2u,
+                          "eventbus: canonical event schema is version 2");
+    ASSERT_EVENT_CONTRACT(EVENTBUS_EVENT_TASK < EVENTBUS_EVENT_RECONNECT
+                              && EVENTBUS_EVENT_TASK_VERIFY
+                                  != EVENTBUS_EVENT_COMMIT,
+                          "eventbus: lifecycle and TASK_VERIFY event types are distinct");
+    ASSERT_EVENT_CONTRACT(EVENTBUS_EVENT_FLAG_KNOWN_MASK
+                    == (EVENTBUS_EVENT_FLAG_TASK_VERIFY_SUCCESS
+                        | EVENTBUS_EVENT_FLAG_EXTERNAL_EFFECT
+                        | EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE
+                        | EVENTBUS_EVENT_FLAG_PROMOTION_INTERNAL),
+                          "eventbus: event flags fail closed");
+    ASSERT_EVENT_CONTRACT(EVENTBUS_AGENT_EVENT_ERR_TAMPER
+                    != EVENTBUS_AGENT_EVENT_ERR_TRUNCATED
+                    && EVENTBUS_AGENT_EVENT_ERR_REORDERED
+                        != EVENTBUS_AGENT_EVENT_ERR_SCOPE
+                    && EVENTBUS_AGENT_EVENT_ERR_COMMIT_EVIDENCE
+                        != EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN,
+                          "eventbus: replay failures are distinguishable");
 }

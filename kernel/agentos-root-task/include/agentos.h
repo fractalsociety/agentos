@@ -138,6 +138,16 @@ typedef enum {
     MSG_INITAGENT_COMPOSE_VALIDATE = 0x2D01,
     MSG_INITAGENT_COMPOSE_PROFILE  = 0x2D02,
 
+    /* FractalOS capabilities v1 asynchronous task boundary (0x2E00). */
+    MSG_FRACTAL_PROGRAM_OPEN       = 0x2E01,
+    MSG_FRACTAL_PROGRAM_POLL       = 0x2E02,
+    MSG_FRACTAL_TASK_SUBMIT        = 0x2E03,
+    MSG_FRACTAL_TASK_POLL          = 0x2E04,
+    MSG_FRACTAL_TASK_CANCEL        = 0x2E05,
+    MSG_FRACTAL_TASK_BUDGET        = 0x2E06,
+    MSG_FRACTAL_TASK_VERIFY        = 0x2E07,
+    MSG_FRACTAL_TASK_RESULT        = 0x2E08,
+
     /* VibeEngine module registry opcodes (in OP_ space, not MSG_) */
     OP_VIBE_REPLAY             = 0x46,   /* Boot replay: seed registry from AgentFS */
     OP_VIBE_HOTRELOAD          = 0x47,   /* Zero-downtime slot update (was REGISTRY_QUERY) */
@@ -153,6 +163,27 @@ typedef enum {
     MSG_REMOTE_SPAWN_REPLY     = 0x0A06,  /* Reply: node_id + ticket_id, or local fallback */
     MSG_MESH_HEARTBEAT         = 0x0A07,  /* Periodic liveness ping from peer */
     MSG_MESH_PEER_DOWN         = 0x0A08,  /* EventBus: peer went offline */
+
+    /* Fractal Mesh remote-session and authority contract.  The semantic
+     * frame format is transport-neutral; these are only local PD IPC entry
+     * points for the MeshAgent contract. */
+    MSG_MESH_SESSION_OPEN      = 0x0A09,
+    MSG_MESH_SESSION_OPEN_REPLY= 0x0A0A,
+    MSG_MESH_SESSION_RESUME    = 0x0A0B,
+    MSG_MESH_SESSION_RESUME_REPLY = 0x0A0C,
+    MSG_MESH_SESSION_CANCEL    = 0x0A0D,
+    MSG_MESH_SESSION_CANCEL_REPLY = 0x0A0E,
+    MSG_MESH_SERVICE_ADVERTISE = 0x0A0F,
+    MSG_MESH_SERVICE_ADVERTISE_REPLY = 0x0A10,
+    MSG_MESH_SERVICE_WITHDRAW  = 0x0A11,
+    MSG_MESH_LEASE_ACQUIRE     = 0x0A12,
+    MSG_MESH_LEASE_ACQUIRE_REPLY = 0x0A13,
+    MSG_MESH_LEASE_RENEW       = 0x0A14,
+    MSG_MESH_LEASE_RENEW_REPLY = 0x0A15,
+    MSG_MESH_LEASE_RELEASE     = 0x0A16,
+    MSG_MESH_LEASE_RELEASE_REPLY = 0x0A17,
+    MSG_MESH_REVOCATION_EPOCH = 0x0A18,
+    MSG_MESH_FRAME_ACK         = 0x0A19,
 
     /* GPU Scheduler PD (agents -> gpu_sched) */
     MSG_GPU_SUBMIT             = 0x0901,  /* Submit GPU task: hash_lo, hash_hi, priority, flags */
@@ -786,6 +817,16 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_AGENT_TASK_RESULT             0x2C04
 #define MSG_AGENT_TASK_METRICS            0x2C05
 #define MSG_AGENT_TASK_RESOURCES          0x2C06
+
+/* Descriptive aliases used by the versioned Fractal contract. */
+#define MSG_AGENT_TASK_PROGRAM_OPEN       MSG_FRACTAL_PROGRAM_OPEN
+#define MSG_AGENT_TASK_PROGRAM_POLL       MSG_FRACTAL_PROGRAM_POLL
+#define MSG_AGENT_TASK_SUBMIT             MSG_FRACTAL_TASK_SUBMIT
+#define MSG_AGENT_TASK_POLL               MSG_FRACTAL_TASK_POLL
+#define MSG_AGENT_TASK_CANCEL             MSG_FRACTAL_TASK_CANCEL
+#define MSG_AGENT_TASK_BUDGET             MSG_FRACTAL_TASK_BUDGET
+#define MSG_AGENT_TASK_VERIFY             MSG_FRACTAL_TASK_VERIFY
+#define MSG_AGENT_TASK_TERMINAL_RESULT    MSG_FRACTAL_TASK_RESULT
 
 /* ─── AgentFS contract opcodes (0x1000) ─────────────────────────────────── */
 #define MSG_AGENTFS_READ                0x1001  /* MR1=inode MR2=offset MR3=len → actual in shmem */

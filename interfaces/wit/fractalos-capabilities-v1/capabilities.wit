@@ -1,0 +1,287 @@
+package fractalos:capabilities@1.0.0;
+
+/// Provider-neutral values shared by every semantic capability seam.
+interface common-types {
+    /// Every digest in this package is exactly 32 bytes at the C boundary.
+    type digest = list<u8>
+    record object-id { word0: u32, word1: u32, word2: u32, word3: u32 }
+    record agent-handle { id: u64, authority-epoch: u32 }
+    /// An opaque immutable program identity; it contains no provider locator.
+    record program-handle { id: u64, authority-epoch: u32 }
+    record task-handle { id: u64, authority-epoch: u32 }
+    record subscription-handle { id: u64, authority-epoch: u32 }
+
+    enum scope-class { task, session, agent, global }
+    enum effect-class {
+        object-read, object-write, inference, action, task-verification,
+        event-read, event-write, actor-control, budget-read, budget-write,
+        state-read, state-write,
+    }
+    enum error-code {
+        invalid, denied, not-found, conflict, exhausted, incompatible,
+        cancelled, backend,
+    }
+    record constraints {
+        budget-units: u32,
+        deadline-ticks: u64,
+        allowed-effects: list<effect-class>,
+    }
+    variant object-result { ready(object-id), pending(task-handle) }
+    variant task-state {
+        pending,
+        complete(object-id),
+        failed(object-id),
+        cancelled,
+    }
+}
+
+/// The versioned asynchronous Fractal control-plane boundary. All operations
+/// return promptly; poll and terminal-result calls never wait for a worker.
+interface task-control-plane {
+    use common-types.{program-handle, task-handle, digest};
+
+    enum worker-kind {
+        native,
+        agentlang,
+        wasm,
+        guest,
+    }
+
+    record worker-identity {
+        kind: worker-kind,
+        slot: u32,
+        generation: u32,
+    }
+
+    record program-ref {
+        digest: digest,
+        program-version: u32,
+        interface-version: u32,
+    }
+
+    record budget {
+        cpu-quanta: u64,
+        memory-bytes: u64,
+        max-steps: u32,
+        max-result-bytes: u32,
+    }
+
+    enum state {
+        accepted,
+        running,
+        complete,
+        failed,
+        cancelled,
+        revoked,
+        budget-exhausted,
+    }
+
+    enum program-state {
+        loading,
+        ready,
+        rejected,
+    }
+
+    enum verify-status {
+        unverified,
+        accepted,
+        rejected,
+    }
+
+    enum proof-level {
+        none,
+        host-contract,
+        target-contract,
+    }
+
+    record verify-evidence {
+        evidence-version: u32,
+        proof-level: proof-level,
+        test-count: u32,
+        commit-digest: digest,
+        test-digest: digest,
+        evidence-digest: digest,
+    }
+
+    enum task-error {
+        invalid,
+        version,
+        denied,
+        not-found,
+        stale-handle,
+        revoked,
+        cancelled,
+        budget-exhausted,
+        not-ready,
+        would-block,
+        terminal,
+        authority,
+        verify-required,
+        evidence-mismatch,
+        promotion-forbidden,
+    }
+
+    record submission {
+        program: program-handle,
+        task: task-handle,
+        state: state,
+        authority-epoch: u32,
+        worker: worker-identity,
+    }
+
+    record terminal-result {
+        state: state,
+        result-kind: u32,
+        terminal-code: u32,
+        result-bytes: u32,
+        verify-status: verify-status,
+        worker: worker-identity,
+        result-digest: digest,
+    }
+
+    /// Opens an immutable digest reference and returns a typed handle.
+    open-program: func(
+        reference: program-ref,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<program-handle, task-error>;
+
+    /// Returns loading/ready/rejected state without waiting for a worker.
+    poll-program: func(
+        program: program-handle,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<program-state, task-error>;
+
+    /// Submits bounded semantic work and returns before completion.
+    submit: func(
+        program: program-handle,
+        budget: budget,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<submission, task-error>;
+
+    /// Poll is strictly nonblocking; pending is represented by state/error.
+    poll: func(
+        task: task-handle,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<state, task-error>;
+
+    cancel: func(
+        task: task-handle,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<state, task-error>;
+
+    set-budget: func(
+        task: task-handle,
+        budget: budget,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<budget, task-error>;
+
+    /// Attaches digest-only commit/test evidence to a terminal task.
+    task-verify: func(
+        task: task-handle,
+        evidence: verify-evidence,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<verify-status, task-error>;
+
+    get-terminal-result: func(
+        task: task-handle,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<terminal-result, task-error>;
+}
+
+interface object-store {
+    use common-types.{object-id, object-result, task-handle, constraints, error-code};
+    /// @effect object-read
+    get: func(id: object-id, limits: constraints) -> result<object-result, error-code>;
+    /// @effect object-write
+    put: func(value: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect object-read
+    query: func(query: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface workspace {
+    use common-types.{object-id, task-handle, constraints, error-code};
+    /// @effect object-read
+    inspect: func(root: object-id, query: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect object-write
+    apply: func(root: object-id, change: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface model {
+    use common-types.{object-id, task-handle, constraints, error-code};
+    /// @effect inference
+    infer: func(request: object-id, profile: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface action {
+    use common-types.{object-id, task-handle, constraints, error-code};
+    /// @effect action
+    act: func(request: object-id, policy: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface task-verifier {
+    use common-types.{object-id, task-handle, constraints, error-code};
+    /// @effect task-verification
+    /// v1 `verify` is retained only by the lower compatibility adapter.  The
+    /// v2 model-facing operation is unambiguously named `task-verify`.
+    task-verify: func(candidate: object-id, verifier: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface events {
+    use common-types.{object-id, subscription-handle, task-handle, constraints, error-code};
+    /// @effect event-write
+    emit: func(event: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect event-read
+    subscribe: func(selector: object-id, limits: constraints) -> result<subscription-handle, error-code>;
+}
+
+interface actors {
+    use common-types.{object-id, agent-handle, task-handle, constraints, error-code};
+    /// @effect actor-control
+    spawn: func(specification: object-id, limits: constraints) -> result<agent-handle, error-code>;
+    /// @effect actor-control
+    delegate: func(agent: agent-handle, objective: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface budget {
+    use common-types.{object-id, task-handle, constraints, error-code};
+    /// @effect budget-read
+    status: func(scope: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect budget-write
+    reserve: func(scope: object-id, units: u32, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect budget-write
+    release: func(reservation: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+interface state {
+    use common-types.{object-id, scope-class, task-handle, constraints, error-code};
+    /// @effect state-read
+    checkpoint: func(scope: scope-class, current: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect state-write
+    restore: func(scope: scope-class, checkpoint: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect state-write; evidence must be a successful TASK_VERIFY root.
+    commit: func(expected: object-id, candidate: object-id, evidence: object-id, limits: constraints) -> result<task-handle, error-code>;
+}
+
+world agent-runtime-v1 {
+    export task-control-plane;
+    import object-store;
+    import workspace;
+    import model;
+    import action;
+    import task-verifier;
+    import events;
+    import actors;
+    import budget;
+    import state;
+}
+
+world object-backend-a { export object-store; }
+world object-backend-b { export object-store; }

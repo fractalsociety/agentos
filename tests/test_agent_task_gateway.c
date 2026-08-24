@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../kernel/agentos-root-task/include/agentos.h"
 #include "../kernel/agentos-root-task/include/agent_task_gateway.h"
 
 static uint8_t arena[HARNESS_SHMEM_SIZE];
@@ -175,6 +176,15 @@ int main(void)
     assert(begin_task(HARNESS_CAP_MODEL, sizeof(prompt) - 1u, &next_begin)
            == AGENT_TASK_OK);
     assert(next_begin.task_id != denied_begin.task_id);
+
+    /* The legacy adapter and Fractal v1 boundary have separate opcodes and
+     * preserve the stale/revoked/nonblocking contract taxonomy. */
+    assert(MSG_FRACTAL_PROGRAM_OPEN != MSG_FRACTAL_TASK_SUBMIT);
+    assert(MSG_FRACTAL_TASK_POLL != MSG_FRACTAL_TASK_RESULT);
+    assert(AGENT_TASK_ERR_STALE_HANDLE != AGENT_TASK_ERR_REVOKED);
+    assert(AGENT_TASK_ERR_REVOKED != AGENT_TASK_ERR_AUTHORITY);
+    assert(AGENT_TASK_NONBLOCKING == 1u);
+    assert(sizeof(ProgramHandle) == sizeof(TaskHandle));
 
     puts("agent task gateway tests: ok");
     return 0;

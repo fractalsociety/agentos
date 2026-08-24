@@ -29,7 +29,7 @@
  * this runner emits it explicitly after the summary.
  *
  * Wiring (owned by the root-task build, see tests/TARGET_TESTS.md):
- *   Build this file plus the five tests/contracts/_test.c suites into the
+ *   Build this file plus the listed tests/contracts/_test.c suites into the
  *   root task when SEL4_TEST_IMAGE=1, and call target_contract_runner_main()
  *   from main.c under #ifdef AGENTOS_SEL4_TEST_IMAGE in place of the current
  *   one-line stub TAP.
@@ -51,6 +51,7 @@
 #include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
 #include "../../kernel/agentos-root-task/include/cap_authority.h"
 #include "../../kernel/agentos-root-task/include/wg_net.h"
+#include "../../kernel/agentos-root-task/include/net_server.h"
 #include "../../kernel/agentos-root-task/include/contracts/net_device_contract.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
@@ -64,6 +65,8 @@
  *
  * Scope: only PDs that actually speak seL4 IPC on their listen endpoint and
  * are present in a GUEST_OS=none test image — EventBus, serial_pd, log_drain.
+ * The Fractal task suite is also included as a target-compiled ABI contract
+ * check; its runtime endpoint is intentionally deferred to the implementation.
  * Excluded for now (tracked in agentos-8f5 / agentos-0h4):
  *   - cc_pd: its protocol runs over virtio-serial, not a seL4 endpoint, so a
  *     microkit_ppcall() to it would block; needs a virtio-serial test driver.
@@ -73,6 +76,7 @@
 #include "../contracts/eventbus_test.c"
 #include "../contracts/serial_pd_test.c"
 #include "../contracts/log_drain_test.c"
+#include "../contracts/agent_task_test.c"
 
 /* ── Target performance probe (agentos-gz0.1) ──────────────────────────────
  *
@@ -153,6 +157,8 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_WG_NET_CAP 135u
 #define TARGET_NET_FASTPATH_CAP 136u
 #define TARGET_NET_UNPRIV_CAP 137u
+#define TARGET_NET_WG_CAP 138u
+#define TARGET_NET_WG_UNPRIV_CAP 139u
 #define TARGET_INIT_AGENT_CAP 140u
 #define TARGET_READ_ONLY_HARNESS_CAP 141u
 #define TARGET_EXECSVC_CAP 200u
@@ -390,6 +396,61 @@ static void target_wg_net_contract(void)
         _tf_fail_point(
             "WireGuard transport fails closed without authenticated Noise session",
             "peer registration or no-session enforcement failed");
+}
+
+static void target_wg_packet_handoff_contract(void)
+{
+    volatile uint8_t *packet = (volatile uint8_t *)(uintptr_t)
+        (TARGET_WG_STAGING_VA + WG_STAGING_TX_OFF);
+    static const uint8_t encrypted_fixture[] = {
+        4u, 0u, 0u, 0u, 0x78u, 0x56u, 0x34u, 0x12u,
+        0u, 0u, 0u, 0u, 0u, 0u, 0u, 0u,
+        0x8du, 0x71u, 0x29u, 0x42u,
+    };
+    for (uint32_t i = 0u; i < sizeof(encrypted_fixture); i++)
+        packet[i] = encrypted_fixture[i];
+
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = OP_NET_WG_UDP_SEND;
+    req.length = 16u;
+    tr_wr32(req.data, 0u, WG_STAGING_TX_OFF);
+    tr_wr32(req.data, 4u, sizeof(encrypted_fixture));
+    tr_wr32(req.data, 8u, 0x0A000202u);
+    tr_wr32(req.data, 12u, 51820u);
+    sel4_call((seL4_CPtr)TARGET_NET_WG_UNPRIV_CAP, &req, &rep);
+    bool denied = rep.opcode == SEL4_ERR_PERM
+        && tr_rd32(rep.data, 0u) == NET_ERR_PERM;
+
+    sel4_msg_t cross_req;
+    tr_zero(&cross_req, sizeof(cross_req));
+    tr_zero(&rep, sizeof(rep));
+    cross_req.opcode = OP_NET_HTTP_POST;
+    cross_req.length = 16u;
+    sel4_call((seL4_CPtr)TARGET_NET_WG_CAP, &cross_req, &rep);
+    bool model_denied = rep.opcode == SEL4_ERR_PERM
+        && tr_rd32(rep.data, 0u) == NET_ERR_PERM;
+    tr_zero(&cross_req, sizeof(cross_req));
+    tr_zero(&rep, sizeof(rep));
+    cross_req.opcode = OP_NET_VNIC_CREATE;
+    cross_req.length = 12u;
+    tr_wr32(cross_req.data, 0u, 0xffu);
+    tr_wr32(cross_req.data, 4u, CAP_CLASS_NET);
+    sel4_call((seL4_CPtr)TARGET_NET_WG_CAP, &cross_req, &rep);
+    bool vnic_denied = rep.opcode == SEL4_ERR_PERM
+        && tr_rd32(rep.data, 0u) == NET_ERR_PERM;
+
+    tr_zero(&rep, sizeof(rep));
+    sel4_call((seL4_CPtr)TARGET_NET_WG_CAP, &req, &rep);
+    bool sent = rep.opcode == SEL4_ERR_OK
+        && tr_rd32(rep.data, 0u) == NET_OK
+        && tr_rd32(rep.data, 4u) == sizeof(encrypted_fixture);
+    if (denied && model_denied && vnic_denied && sent)
+        _tf_ok("WireGuard packet handoff requires its immutable NetServer right");
+    else
+        _tf_fail_point(
+            "WireGuard packet handoff requires its immutable NetServer right",
+            "unbadged call succeeded or badged UDP frame did not reach net_pd");
 }
 
 static void target_net_fastpath_contract(void)
@@ -1728,6 +1789,7 @@ void target_contract_runner_main(void)
     target_agent_harness_contract();
     target_harness_composition_contract();
     target_harness_profile_footprints();
+    run_agent_task_contract_tests((microkit_channel)TARGET_CONTROLLER_CAP);
     target_agent_task_gateway_denial();
     target_toolsvc_contract();
     target_agentfs_workspace_contract();
@@ -1746,6 +1808,7 @@ void target_contract_runner_main(void)
     target_net_fastpath_contract();
     target_benchmark_net_fastpath();
     target_wg_net_contract();
+    target_wg_packet_handoff_contract();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_log_drain_tests((microkit_channel)CH_LOG_DRAIN);
