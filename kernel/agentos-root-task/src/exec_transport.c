@@ -297,7 +297,7 @@ static uint32_t handle_run(sel4_badge_t badge, const sel4_msg_t *req,
     }
     __builtin_memcpy(&wire, req->data, sizeof(wire));
     reply.request_tag = wire.request_tag;
-    if (wire.profile_id != EXECSVC_PROFILE_C11_COMPILE) {
+    if (EXECSVC_PROFILE_RIGHT(wire.profile_id) == 0u) {
         reply.status = EXECSVC_ERR_UNSUPPORTED;
         goto out;
     }

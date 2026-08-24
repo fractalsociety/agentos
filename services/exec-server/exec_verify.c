@@ -34,6 +34,11 @@ static uint16_t badge_client(uint64_t badge)
     return (uint16_t)(badge >> 32u);
 }
 
+static uint32_t badge_rights(uint64_t badge)
+{
+    return (uint32_t)badge;
+}
+
 static bool client_range(uint16_t client, uint32_t offset, uint32_t len)
 {
     if (exec_arena == NULL || client >= EXECSVC_CLIENT_SLOT_COUNT)
@@ -76,7 +81,8 @@ uint32_t execsvc_verify_dispatch(uint64_t badge,
         .checked_bytes = 0u,
         .mismatch_offset = UINT32_MAX,
     };
-    if (badge_service(badge) != SVC_ID_EXEC_SERVER) {
+    if (badge_service(badge) != SVC_ID_EXEC_SERVER
+        || (badge_rights(badge) & EXECSVC_RIGHT_VERIFY_EXACT) == 0u) {
         reply->status = EXECSVC_ERR_DENIED;
     } else if (wire != NULL) {
         uint16_t client = badge_client(badge);
@@ -126,8 +132,13 @@ uint32_t execsvc_run_profile_dispatch(
         || wire->output_capacity > EXECSVC_OUTPUT_MAX) {
         return reply->status;
     }
-    if (wire->profile_id != EXECSVC_PROFILE_C11_COMPILE) {
+    uint32_t required_right = EXECSVC_PROFILE_RIGHT(wire->profile_id);
+    if (required_right == 0u) {
         reply->status = EXECSVC_ERR_UNSUPPORTED;
+        return reply->status;
+    }
+    if ((badge_rights(badge) & required_right) == 0u) {
+        reply->status = EXECSVC_ERR_DENIED;
         return reply->status;
     }
     uint16_t client = badge_client(badge);

@@ -15,6 +15,13 @@ SPEC.loader.exec_module(PROXY)
 
 
 class ExecTransportProxyTests(unittest.TestCase):
+    @staticmethod
+    def repo_bundle(path: bytes, content: bytes) -> bytes:
+        return PROXY.REPO_BUNDLE_HEADER.pack(
+            PROXY.REPO_BUNDLE_MAGIC, PROXY.REPO_BUNDLE_VERSION,
+            len(path), len(content),
+        ) + path + content
+
     def test_wire_round_trip_preserves_profile_and_tag(self):
         left, right = socket.socketpair()
         seen = []
@@ -75,6 +82,32 @@ class ExecTransportProxyTests(unittest.TestCase):
                        b'_Pragma("GCC dependency /etc/passwd")\n'):
             blocked, _ = PROXY.run_c11_compile(bypass, compiler, 5.0)
             self.assertEqual(blocked, 2)
+
+    def test_repository_bundle_is_bounded_and_cannot_escape_workspace(self):
+        content = b"int agentos_repo_answer(void) { return 42; }\n"
+        path, decoded = PROXY.parse_repo_bundle(self.repo_bundle(
+            b"tests/fixtures/repo_agent/answer.c", content
+        ))
+        self.assertEqual(str(path), "tests/fixtures/repo_agent/answer.c")
+        self.assertEqual(decoded, content)
+        for unsafe in (b"/etc/passwd", b"../escape", b"src/../../escape",
+                       b".git/config", b"bad\x00path"):
+            with self.assertRaises(ValueError):
+                PROXY.parse_repo_bundle(self.repo_bundle(unsafe, content))
+
+    @unittest.skipUnless(shutil.which("clang"), "toolchain unavailable")
+    def test_repository_profile_fails_closed_without_admin_root(self):
+        runner = PROXY.make_runner(
+            shutil.which("clang"), 5.0, None, "/nonexistent/xtask", 5.0
+        )
+        status, exit_code, output = runner(
+            PROXY.PROFILE_AGENTOS_REPO_TEST,
+            self.repo_bundle(b"src/answer.c", b"int answer(void){return 42;}\n"),
+            1024,
+        )
+        self.assertEqual(status, 0)
+        self.assertEqual(exit_code, 2)
+        self.assertIn(b"root is not configured", output)
 
 
 if __name__ == "__main__":

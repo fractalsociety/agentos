@@ -33,7 +33,8 @@ static const char harness_system_prompt[] =
     "markdown. Actions: {\"action\":\"memory_write\",\"path\":\"relative/path\","
     "\"content\":\"text\"}; {\"action\":\"memory_read\",\"path\":\"relative/path\"}; "
     "{\"action\":\"verify\",\"path\":\"relative/path\",\"expected\":\"text\"}; "
-    "{\"action\":\"test\",\"path\":\"relative/path\",\"profile\":\"c11_compile\"}; "
+    "{\"action\":\"test\",\"path\":\"relative/path\",\"profile\":"
+    "\"c11_compile|agentos_repo_tests\"}; "
     "{\"action\":\"tool\",\"tool\":\"name\",\"input\":\"text\"}; or "
     "{\"action\":\"final\",\"summary\":\"result\"}. Never return final before "
     "required verification succeeds.";
@@ -65,7 +66,8 @@ typedef uint32_t (*harness_exec_backend_fn)(
     void *ctx);
 
 typedef uint32_t (*harness_test_backend_fn)(
-    uint32_t profile_id, const char *source, uint32_t source_len,
+    uint32_t profile_id, const char *path, uint32_t path_len,
+    const char *source, uint32_t source_len,
     int32_t *exit_code,
     char *output, uint32_t output_capacity, uint32_t *output_len,
     void *ctx);
@@ -642,9 +644,16 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                                     path, path_len, &decoded_path_len)
                 || !decode_json_string(decoded_profile,
                                        sizeof(decoded_profile), profile,
-                                       profile_len, &decoded_profile_len)
-                || !bytes_equal(decoded_profile, decoded_profile_len,
-                                "c11_compile", 11u))
+                                       profile_len, &decoded_profile_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            uint32_t profile_id = 0u;
+            if (bytes_equal(decoded_profile, decoded_profile_len,
+                            "c11_compile", 11u))
+                profile_id = EXECSVC_PROFILE_C11_COMPILE;
+            else if (bytes_equal(decoded_profile, decoded_profile_len,
+                                 "agentos_repo_tests", 18u))
+                profile_id = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+            else
                 return fail_task(HARNESS_ERR_PROTOCOL, rep);
 
             uint32_t source_len = 0u;
@@ -662,7 +671,8 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
             int32_t exit_code = -1;
             current_task.state = HARNESS_STATE_VERIFYING;
             status = runtime_test_backend(
-                EXECSVC_PROFILE_C11_COMPILE, observation, source_len,
+                profile_id, decoded_path, decoded_path_len,
+                observation, source_len,
                 &exit_code, exec_observation, HARNESS_TOOL_SCRATCH_CAP,
                 &test_output_len, runtime_test_ctx);
             current_task.exec_calls++;
@@ -966,7 +976,8 @@ static uint32_t target_exec_backend(
 }
 
 static uint32_t target_test_backend(
-    uint32_t profile_id, const char *source, uint32_t source_len,
+    uint32_t profile_id, const char *path, uint32_t path_len,
+    const char *source, uint32_t source_len,
     int32_t *exit_code,
     char *output, uint32_t output_capacity, uint32_t *output_len,
     void *ctx)
@@ -974,19 +985,39 @@ static uint32_t target_test_backend(
     (void)ctx;
     const uint32_t source_rel = 0x100u;
     const uint32_t output_rel = 0x7000u;
-    if (profile_id != EXECSVC_PROFILE_C11_COMPILE
+    if ((profile_id != EXECSVC_PROFILE_C11_COMPILE
+         && profile_id != EXECSVC_PROFILE_AGENTOS_REPO_TEST)
         || source_len == 0u || source_len > EXECSVC_SOURCE_MAX
         || output_capacity == 0u || output_capacity > EXECSVC_OUTPUT_MAX
         || exit_code == NULL || output_len == NULL)
         return HARNESS_ERR_EXEC;
     uint8_t *exec_arena = (uint8_t *)(uintptr_t)
         EXECSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
-    bytes_copy(exec_arena + source_rel, source, source_len);
+    uint32_t transport_len = source_len;
+    if (profile_id == EXECSVC_PROFILE_AGENTOS_REPO_TEST) {
+        if (path == NULL || path_len == 0u || path_len > EXECSVC_REPO_PATH_MAX
+            || sizeof(execsvc_repo_bundle_header_t) + path_len + source_len
+               > EXECSVC_SOURCE_MAX)
+            return HARNESS_ERR_EXEC;
+        execsvc_repo_bundle_header_t header = {
+            .magic = EXECSVC_REPO_BUNDLE_MAGIC,
+            .version = EXECSVC_REPO_BUNDLE_VERSION,
+            .path_len = path_len,
+            .content_len = source_len,
+        };
+        bytes_copy(exec_arena + source_rel, &header, sizeof(header));
+        bytes_copy(exec_arena + source_rel + sizeof(header), path, path_len);
+        bytes_copy(exec_arena + source_rel + sizeof(header) + path_len,
+                   source, source_len);
+        transport_len = sizeof(header) + path_len + source_len;
+    } else {
+        bytes_copy(exec_arena + source_rel, source, source_len);
+    }
     uint32_t partition = EXECSVC_CLIENT_ARENA_OFFSET(
         AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
     execsvc_run_profile_wire_t wire = {
         .source_offset = partition + source_rel,
-        .source_len = source_len,
+        .source_len = transport_len,
         .output_offset = partition + output_rel,
         .output_capacity = output_capacity - 1u,
         .profile_id = profile_id,

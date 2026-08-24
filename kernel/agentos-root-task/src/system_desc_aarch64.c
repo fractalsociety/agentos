@@ -38,6 +38,7 @@
  */
 
 #include "system_desc.h"
+#include "../../../contracts/execsvc/interface.h"
 
 /* agentos-8f5: a target contract-runner PD is appended only in test images. */
 #ifdef AGENTOS_SEL4_TEST_IMAGE
@@ -290,7 +291,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_MODELSVC,  PD_CNODE_SLOT_MODELSVC_EP  },
                 { SVC_ID_TOOLSVC,   PD_CNODE_SLOT_TOOLSVC_EP   },
                 { SVC_ID_AGENTFS,   PD_CNODE_SLOT_AGENTFS_EP   },
-                { SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP },
+                { SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP,
+                  EXECSVC_RIGHT_ALL },
             },
         },
 
@@ -636,9 +638,10 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 8u,
+            .init_ep_count  = 9u,
             .init_eps = {
-                { SVC_ID_EXEC_SERVER, 200u }, /* raw ExecSvc contract cap       */
+                { SVC_ID_EXEC_SERVER, 200u, EXECSVC_RIGHT_ALL },
+                { SVC_ID_EXEC_SERVER, 201u, EXECSVC_RIGHT_C11_COMPILE },
                 { SVC_ID_EVENTBUS,   75u  },   /* 74 + MONITOR_CH_EVENTBUS(1) */
                 { SVC_ID_SERIAL,     118u },   /* 74 + CH_SERIAL_PD(44)       */
                 { SVC_ID_LOG_DRAIN,  129u },   /* 74 + CH_LOG_DRAIN(55)       */

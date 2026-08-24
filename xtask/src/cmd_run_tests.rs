@@ -532,6 +532,8 @@ fn spawn_qemu_test_image(
             .arg(repo_root.join("tools/exec_transport_proxy.py"))
             .arg("--socket")
             .arg(&exec_socket_path)
+            .arg("--repository-root")
+            .arg(repo_root)
             .stdout(Stdio::null());
         if std::env::var_os("AGENTOS_EXEC_TRANSPORT_TRACE").is_some() {
             command.arg("--trace");

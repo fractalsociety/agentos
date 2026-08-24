@@ -30,9 +30,15 @@ static uint32_t fake_transport(uint32_t profile_id,
     return EXECSVC_OK;
 }
 
+static uint64_t badge_with_rights(uint16_t service, uint16_t client,
+                                  uint32_t rights)
+{
+    return ((uint64_t)service << 48u) | ((uint64_t)client << 32u) | rights;
+}
+
 static uint64_t badge(uint16_t service, uint16_t client)
 {
-    return ((uint64_t)service << 48u) | ((uint64_t)client << 32u);
+    return badge_with_rights(service, client, EXECSVC_RIGHT_ALL);
 }
 
 int main(void)
@@ -67,6 +73,10 @@ int main(void)
                                    &wire, &reply) == EXECSVC_ERR_DENIED);
     assert(execsvc_verify_dispatch(badge(SVC_ID_TOOLSVC, client),
                                    &wire, &reply) == EXECSVC_ERR_DENIED);
+    assert(execsvc_verify_dispatch(
+               badge_with_rights(SVC_ID_EXEC_SERVER, client,
+                                 EXECSVC_RIGHT_C11_COMPILE),
+               &wire, &reply) == EXECSVC_ERR_DENIED);
 
     static const char source[] = "int answer(void){return 42;}";
     memcpy(arena + base + 0x400u, source, sizeof(source) - 1u);
@@ -87,6 +97,18 @@ int main(void)
     assert(run_reply.request_tag == 77u);
     assert(memcmp(arena + run.output_offset, "compile: ok",
                   run_reply.output_len) == 0);
+    assert(transport_calls == 1u);
+
+    assert(execsvc_run_profile_dispatch(
+               badge_with_rights(SVC_ID_EXEC_SERVER, client,
+                                 EXECSVC_RIGHT_VERIFY_EXACT),
+               &run, &run_reply) == EXECSVC_ERR_DENIED);
+    assert(transport_calls == 1u);
+    run.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+    assert(execsvc_run_profile_dispatch(
+               badge_with_rights(SVC_ID_EXEC_SERVER, client,
+                                 EXECSVC_RIGHT_C11_COMPILE),
+               &run, &run_reply) == EXECSVC_ERR_DENIED);
     assert(transport_calls == 1u);
 
     run.profile_id = 0xfeedu;

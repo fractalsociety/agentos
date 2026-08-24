@@ -20,6 +20,7 @@ static char memory_content[HARNESS_TOOL_SCRATCH_CAP];
 static uint32_t exec_calls;
 static uint32_t test_calls;
 static bool test_fail_first;
+static uint32_t expected_test_profile;
 
 static const char *latest_observation(const char *prompt, uint32_t prompt_len,
                                       uint32_t *observation_len)
@@ -144,13 +145,16 @@ static uint32_t fake_exec(const char *actual, uint32_t actual_len,
 }
 
 static uint32_t fake_test(uint32_t profile_id,
+                          const char *path, uint32_t path_len,
                           const char *source, uint32_t source_len,
                           int32_t *exit_code,
                           char *output, uint32_t output_capacity,
                           uint32_t *output_len, void *ctx)
 {
     (void)ctx;
-    assert(profile_id == EXECSVC_PROFILE_C11_COMPILE);
+    assert(profile_id == expected_test_profile);
+    assert(path_len == strlen("src/answer.c"));
+    assert(memcmp(path, "src/answer.c", path_len) == 0);
     static const char expected[] = "int answer(void) { return 42; }\n";
     test_calls++;
     if (test_fail_first && test_calls == 1u) {
@@ -207,6 +211,7 @@ static void reset(uint32_t installed_caps)
     exec_calls = 0u;
     test_calls = 0u;
     test_fail_first = false;
+    expected_test_profile = EXECSVC_PROFILE_C11_COMPILE;
     memory_path[0] = '\0';
     memory_content[0] = '\0';
     harness_runtime_init(arena, sizeof(arena), installed_caps, 7u,
@@ -272,6 +277,26 @@ static void test_failed_compile_is_observed_and_can_be_repaired(void)
     assert(result.memory_ops == 3u);
     assert(result.exec_calls == 2u);
     assert(result.verification_exit_code == 0);
+}
+
+static void test_managed_repository_profile_preserves_path_and_exec_cap(void)
+{
+    struct harness_reply_submit submit;
+    reset(HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    static const char source[] = "int answer(void) { return 42; }\n";
+    memcpy(memory_content, source, sizeof(source));
+    model_reply = "{\"action\":\"test\",\"path\":\"src/answer.c\","
+                  "\"profile\":\"agentos_repo_tests\"}";
+    model_echo_after_first = true;
+    expected_test_profile = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+    harness_runtime_set_memory_backend(fake_memory, NULL);
+    harness_runtime_set_test_backend(fake_test, NULL);
+    struct harness_req_submit req = request(
+        HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    req.task_flags = HARNESS_TASK_REQUIRE_TEST;
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_OK);
+    assert(test_calls == 1u);
+    assert(strcmp(memory_path, "src/answer.c") == 0);
 }
 
 static void test_verify_reads_memory_and_requires_exec_success(void)
@@ -462,6 +487,7 @@ int main(void)
     test_verify_reads_memory_and_requires_exec_success();
     test_compile_action_reads_agentfs_and_uses_profiled_exec();
     test_failed_compile_is_observed_and_can_be_repaired();
+    test_managed_repository_profile_preserves_path_and_exec_cap();
     test_protocol_and_backend_failures_are_reported();
     test_verification_requires_exec_cap();
     test_shared_memory_is_not_charged_per_worker();

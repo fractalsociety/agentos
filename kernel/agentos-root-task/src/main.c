@@ -1571,7 +1571,8 @@ void root_task_main(const seL4_BootInfo *bi)
          * allocate) the service endpoint and mint a badged copy into the
          * PD's CNode slot.
          *
-         * Badge encoding: bits[63:48] = service_id, bits[47:32] = pd_index.
+         * Badge encoding: bits[63:48] = service_id, bits[47:32] = pd_index,
+         * bits[31:0] = immutable service-defined authority.
          * This allows the server to extract the caller's PD identity from
          * the badge on every IPC.
          */
@@ -1582,7 +1583,8 @@ void root_task_main(const seL4_BootInfo *bi)
                 continue;
             }
             seL4_Word badge = ((uint64_t)ep_spec->service_id << 48u) |
-                              ((uint64_t)i                   << 32u);
+                              ((uint64_t)i                   << 32u) |
+                              (uint64_t)ep_spec->badge_data;
             ep_mint_badge(service_ep, badge,
                            pd_cnode, ep_spec->cnode_slot,
                            pd->cnode_size_bits);

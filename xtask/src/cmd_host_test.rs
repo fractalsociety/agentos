@@ -42,6 +42,14 @@ struct Suite {
 /// stable as new test files are added incrementally.
 const SUITES: &[Suite] = &[
     Suite {
+        name: "test_repo_agent_task",
+        sources: &[
+            "tests/test_repo_agent_task.c",
+            "tests/fixtures/repo_agent/answer.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
         name: "test_exec_verify",
         sources: &["tests/test_exec_verify.c"],
         extra_args: &[],

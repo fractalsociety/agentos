@@ -144,6 +144,7 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_TOOLSVC_CAP 132u
 #define TARGET_AGENTFS_CAP 133u
 #define TARGET_EXECSVC_CAP 200u
+#define TARGET_COMPILE_ONLY_EXECSVC_CAP 201u
 #define TARGET_TEST_RUNNER_CLIENT_ID 23u
 #define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
 #define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
@@ -593,6 +594,77 @@ static void target_agent_harness_live_model(void)
         _tf_fail_point("AgentHarness completes live-model edit and profiled C compilation",
                        "live model did not complete the capability-gated protocol");
 }
+
+static void target_agent_harness_live_repository(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "fast";
+    static const char prompt[] =
+        "Repair tests/fixtures/repo_agent/answer.c so agentos_repo_answer takes "
+        "no arguments and returns 42. Use memory_write, then test that path with "
+        "the agentos_repo_tests profile, then return final only after the managed "
+        "repository test suite reports success.";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 5u;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY
+        | HARNESS_CAP_EXEC;
+    submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
+    submit.max_steps = 8u;
+    submit.authority_epoch = 1u;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 2048u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    bool completed = rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE;
+
+    struct harness_req_task result_req = {.task_id = 5u};
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_RESULT;
+    req.length = sizeof(result_req);
+    tr_copy(req.data, &result_req, sizeof(result_req));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (completed && rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 12u) > 0u
+        && tr_rd32(rep.data, 24u) >= 2u
+        && tr_rd32(rep.data, 28u) >= 1u
+        && (int32_t)tr_rd32(rep.data, 40u) == 0)
+        _tf_ok("AgentHarness completes managed repository edit and tests");
+    else
+    {
+        struct harness_req_task status_req = {.task_id = 5u};
+        tr_zero(&req, sizeof(req));
+        req.opcode = MSG_HARNESS_STATUS;
+        req.length = sizeof(status_req);
+        tr_copy(req.data, &status_req, sizeof(status_req));
+        sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+        _tf_puts("# repository harness state=");
+        _tf_put_hex(tr_rd32(rep.data, 8u));
+        _tf_puts(" last_error=");
+        _tf_put_hex(tr_rd32(rep.data, 16u));
+        _tf_puts(" used_caps=");
+        _tf_put_hex(tr_rd32(rep.data, 20u));
+        _tf_puts("\n");
+        _tf_fail_point("AgentHarness completes managed repository edit and tests",
+                       "live model did not pass the managed repository profile");
+    }
+}
 #endif
 
 static void target_agentfs_workspace_contract(void)
@@ -701,6 +773,16 @@ static void target_execsvc_profile_contract(void)
     else
         _tf_fail_point("ExecSvc denies cross-worker profile output offsets on target",
                        "profile output escaped the caller partition");
+
+    wire.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+    wire.output_offset = output_off;
+    tr_copy(req.data, &wire, sizeof(wire));
+    sel4_call((seL4_CPtr)TARGET_COMPILE_ONLY_EXECSVC_CAP, &req, &rep);
+    if (rep.opcode == EXECSVC_ERR_DENIED)
+        _tf_ok("ExecSvc profile rights deny repository tests on target");
+    else
+        _tf_fail_point("ExecSvc profile rights deny repository tests on target",
+                       "compile-only capability authorized repository execution");
 }
 
 static void target_benchmark_agent_harness(void)
@@ -874,6 +956,7 @@ void target_contract_runner_main(void)
     target_agent_harness_memory_loop();
 #ifdef AGENTOS_LIVE_MODEL_TEST
     target_agent_harness_live_model();
+    target_agent_harness_live_repository();
 #endif
     target_benchmark_agent_harness();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);

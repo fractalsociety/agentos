@@ -23,6 +23,14 @@ static int has_service(const pd_desc_t *pd, uint16_t service_id)
     return 0;
 }
 
+static uint32_t service_badge_data(const pd_desc_t *pd, uint16_t service_id)
+{
+    for (uint32_t i = 0u; i < pd->init_ep_count; i++)
+        if (pd->init_eps[i].service_id == service_id)
+            return pd->init_eps[i].badge_data;
+    return 0u;
+}
+
 int main(void)
 {
     const pd_desc_t *harness = find_pd("codex_harness");
@@ -50,6 +58,8 @@ int main(void)
     assert(has_service(harness, SVC_ID_TOOLSVC));
     assert(has_service(harness, SVC_ID_AGENTFS));
     assert(has_service(harness, SVC_ID_EXEC_SERVER));
+    assert(service_badge_data(harness, SVC_ID_EXEC_SERVER)
+           == EXECSVC_RIGHT_ALL);
     assert(!has_service(harness, SVC_ID_EXEC_TRANSPORT));
 
     /* Network belongs to ModelSvc, not to the worker. */

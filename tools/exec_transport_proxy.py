@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import os
 import pathlib
 import resource
@@ -12,6 +13,7 @@ import socket
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 from collections.abc import Callable
@@ -19,8 +21,13 @@ from collections.abc import Callable
 MAGIC = 0x45584741
 VERSION = 1
 PROFILE_C11_COMPILE = 1
+PROFILE_AGENTOS_REPO_TEST = 2
 REQUEST_HEADER = struct.Struct("<IIIIII")
 RESPONSE_HEADER = struct.Struct("<IIiII")
+REPO_BUNDLE_HEADER = struct.Struct("<IIII")
+REPO_BUNDLE_MAGIC = 0x50524741
+REPO_BUNDLE_VERSION = 1
+REPO_PATH_MAX = 256
 SOURCE_MAX = 24 * 1024
 OUTPUT_MAX = 16 * 1024
 
@@ -108,14 +115,151 @@ def run_c11_compile(source: bytes, compiler: str, timeout: float) -> tuple[int, 
     return completed.returncode, completed.stdout[:OUTPUT_MAX]
 
 
+def parse_repo_bundle(payload: bytes) -> tuple[pathlib.PurePosixPath, bytes]:
+    if len(payload) < REPO_BUNDLE_HEADER.size:
+        raise ValueError("repository bundle is truncated")
+    magic, version, path_len, content_len = REPO_BUNDLE_HEADER.unpack_from(payload)
+    if magic != REPO_BUNDLE_MAGIC or version != REPO_BUNDLE_VERSION:
+        raise ValueError("repository bundle header is invalid")
+    if not 0 < path_len <= REPO_PATH_MAX:
+        raise ValueError("repository path length is invalid")
+    if content_len > SOURCE_MAX - REPO_BUNDLE_HEADER.size - path_len:
+        raise ValueError("repository overlay content is too large")
+    if len(payload) != REPO_BUNDLE_HEADER.size + path_len + content_len:
+        raise ValueError("repository bundle length is invalid")
+    raw_path = payload[REPO_BUNDLE_HEADER.size:REPO_BUNDLE_HEADER.size + path_len]
+    if b"\x00" in raw_path:
+        raise ValueError("repository path contains NUL")
+    try:
+        path = pathlib.PurePosixPath(raw_path.decode("utf-8"))
+    except UnicodeDecodeError as exc:
+        raise ValueError("repository path is not UTF-8") from exc
+    if path.is_absolute() or not path.parts or any(
+        part in ("", ".", "..") for part in path.parts
+    ) or path.parts[0] == ".git":
+        raise ValueError("repository path escapes the managed workspace")
+    content = payload[REPO_BUNDLE_HEADER.size + path_len:]
+    return path, content
+
+
+def _extract_git_snapshot(repository_root: pathlib.Path,
+                          destination: pathlib.Path,
+                          timeout: float) -> None:
+    archived = subprocess.run(
+        ["git", "-C", str(repository_root), "archive", "--format=tar", "HEAD"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        check=False,
+    )
+    if archived.returncode != 0:
+        raise ValueError("administrator repository snapshot failed")
+    with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
+        for member in archive.getmembers():
+            path = pathlib.PurePosixPath(member.name)
+            if path.is_absolute() or any(part == ".." for part in path.parts):
+                raise ValueError("repository snapshot contains an unsafe path")
+            target = destination.joinpath(*path.parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError("repository snapshot contains a non-regular file")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError("repository snapshot extraction failed")
+            with target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+            target.chmod(member.mode & 0o777)
+
+
+def _sandboxed_repo_argv(workspace: pathlib.Path,
+                         test_runner: str) -> list[str]:
+    command = [test_runner, "test"]
+    if sys.platform == "darwin":
+        quoted = str(workspace).replace('"', '\\"')
+        policy = (
+            '(version 1) (deny default) (allow process*) (allow file-read*) '
+            f'(allow file-write* (literal "/dev/null") (subpath "{quoted}")) '
+            '(allow sysctl-read) (allow mach-lookup) (deny network*)'
+        )
+        return ["/usr/bin/sandbox-exec", "-p", policy, *command]
+    bwrap = shutil.which("bwrap")
+    if bwrap is None:
+        raise ValueError("managed repository tests require bubblewrap on Linux")
+    return [
+        bwrap, "--die-with-parent", "--new-session", "--unshare-all",
+        "--ro-bind", "/", "/", "--bind", str(workspace), str(workspace),
+        "--tmpfs", "/tmp", "--proc", "/proc", "--dev", "/dev",
+        "--chdir", str(workspace), *command,
+    ]
+
+
+def run_agentos_repo_test(payload: bytes, repository_root: str | None,
+                          test_runner: str, timeout: float) -> tuple[int, bytes]:
+    path, content = parse_repo_bundle(payload)
+    if repository_root is None:
+        raise ValueError("managed repository root is not configured")
+    root = pathlib.Path(repository_root).resolve()
+    if not root.is_dir() or not (root / ".git").exists():
+        raise ValueError("managed repository root is not a Git worktree")
+    with tempfile.TemporaryDirectory(prefix="agentos-repo-") as temporary:
+        workspace = pathlib.Path(temporary).resolve()
+        _extract_git_snapshot(root, workspace, min(timeout, 30.0))
+        initialized = subprocess.run(
+            ["git", "init", "-q", str(workspace)], stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=min(timeout, 10.0), check=False,
+        )
+        if initialized.returncode != 0:
+            raise ValueError("managed workspace initialization failed")
+        overlay = workspace.joinpath(*path.parts)
+        overlay.parent.mkdir(parents=True, exist_ok=True)
+        if overlay.exists() and not overlay.is_file():
+            raise ValueError("repository overlay target is not a regular file")
+        overlay.write_bytes(content)
+        sandbox_tmp = workspace / "tmp"
+        sandbox_tmp.mkdir()
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "LANG": "C", "LC_ALL": "C", "HOME": str(workspace),
+            "TMPDIR": str(sandbox_tmp),
+            "AGENTOS_REPO_AGENT_TASK": "1",
+        }
+        try:
+            completed = subprocess.run(
+                _sandboxed_repo_argv(workspace, test_runner),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cwd=workspace, env=env, timeout=timeout, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return 124, b"managed repository tests timed out\n"
+    if completed.returncode == 0:
+        return 0, b"repository tests: ok\n"
+    output = completed.stdout[-OUTPUT_MAX:]
+    return completed.returncode, output or b"repository tests failed\n"
+
+
 Runner = Callable[[int, bytes, int], tuple[int, int, bytes]]
 
 
-def make_runner(compiler: str, timeout: float) -> Runner:
+def make_runner(compiler: str, timeout: float,
+                repository_root: str | None = None,
+                test_runner: str | None = None,
+                repository_timeout: float = 180.0) -> Runner:
     def run(profile: int, source: bytes, output_capacity: int) -> tuple[int, int, bytes]:
-        if profile != PROFILE_C11_COMPILE:
+        if profile == PROFILE_C11_COMPILE:
+            exit_code, output = run_c11_compile(source, compiler, timeout)
+        elif profile == PROFILE_AGENTOS_REPO_TEST:
+            if test_runner is None:
+                return 3, -1, b""
+            try:
+                exit_code, output = run_agentos_repo_test(
+                    source, repository_root, test_runner, repository_timeout)
+            except ValueError as exc:
+                exit_code, output = 2, (str(exc) + "\n").encode()
+        else:
             return 3, -1, b""
-        exit_code, output = run_c11_compile(source, compiler, timeout)
         if not output and exit_code == 0:
             output = b"compile: ok\n"
         if len(output) > output_capacity:
@@ -158,6 +302,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compiler", default=shutil.which("clang") or "clang")
     parser.add_argument("--connect-timeout", type=float, default=30.0)
     parser.add_argument("--profile-timeout", type=float, default=10.0)
+    parser.add_argument("--repository-root")
+    parser.add_argument("--repository-timeout", type=float, default=180.0)
+    parser.add_argument("--test-runner",
+                        help="administrator-built xtask binary")
     parser.add_argument("--trace", action="store_true")
     return parser.parse_args()
 
@@ -168,11 +316,26 @@ def main() -> int:
     if not os.path.isfile(compiler) or not os.access(compiler, os.X_OK):
         print(f"[exec-transport-proxy] compiler is not executable: {compiler}", file=sys.stderr)
         return 2
+    test_runner_arg = args.test_runner
+    if test_runner_arg is None and args.repository_root is not None:
+        test_runner_arg = str(
+            pathlib.Path(args.repository_root) / "target/debug/xtask"
+        )
+    test_runner = (str(pathlib.Path(test_runner_arg).resolve())
+                   if test_runner_arg is not None else None)
+    if test_runner is not None and (
+        not os.path.isfile(test_runner) or not os.access(test_runner, os.X_OK)
+    ):
+        print(f"[exec-transport-proxy] test runner is not executable: {test_runner}",
+              file=sys.stderr)
+        return 2
     try:
         sock = connect_with_retry(args.socket, args.connect_timeout)
         print(f"[exec-transport-proxy] connected to {args.socket}", file=sys.stderr)
         with sock:
-            serve(sock, make_runner(compiler, args.profile_timeout), args.trace)
+            serve(sock, make_runner(
+                compiler, args.profile_timeout, args.repository_root, test_runner,
+                args.repository_timeout), args.trace)
     except (EOFError, OSError, ValueError) as exc:
         print(f"[exec-transport-proxy] stopped: {exc}", file=sys.stderr)
         return 1
