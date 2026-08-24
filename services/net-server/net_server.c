@@ -20,9 +20,11 @@
  *   netif and DHCP client.  Packet Rx/Tx is handled by lwIP pbuf chains.
  *
  * virtio-net:
- *   net_server_main() probes the MMIO region (net_mmio_vaddr).  If
- *   magic/version/device_id match, net_hw_present is set true and TX is
- *   attempted through the stub.  If not found, stub mode is used throughout.
+ *   net_pd is the sole writable NIC MMIO/DMA/IRQ owner. net_server never maps
+ *   the VirtIO transport page (net_mmio_vaddr stays 0). Link readiness and TX
+ *   go through MSG_NET_FASTPATH_* on a NET_PD_RIGHT_FASTPATH capability.
+ *   WireGuard session datagrams use OP_NET_WG_UDP_SEND with a packet-only
+ *   staging view so Headscale/netmap endpoint bytes stay underlay metadata.
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -194,6 +196,7 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 /* ── Contract header (opcode constants, NET_OK etc.) ─────────────────────── */
 #include "net_server.h"
 #include "contracts/net_device_contract.h"
+#include "net_fastpath.h"
 
 /* ── virtio-MMIO register offsets ───────────────────────────────────────── */
 #define VIRTIO_MMIO_MAGIC_VALUE     0x000u
@@ -302,6 +305,48 @@ static void probe_virtio_net(void) {
     log_drain_write(16, 16, "[net_server] net_pd queues unavailable\n");
 }
 
+#ifdef AGENTOS_TEST_HOST
+/*
+ * Host stand-in for net_pd's MSG_NET_FASTPATH_SEND path. Mirrors the
+ * net_device ownership rules: frames enter DEVICE and stay there until an
+ * IRQ-driven complete/release cycle. Polling is not a reclaim path.
+ */
+static netfp_state_t g_host_netfp;
+static bool          g_host_netfp_ready;
+static uint64_t      g_host_netfp_irqs;
+
+static void net_server_host_net_pd_arm(void)
+{
+    netfp_init(&g_host_netfp, 1u);
+    g_host_netfp_ready = true;
+    g_host_netfp_irqs = 0u;
+}
+
+static uint32_t net_server_host_net_pd_in_flight(void)
+{
+    return g_host_netfp_ready ? g_host_netfp.queues[0].in_flight : 0u;
+}
+
+static uint64_t net_server_host_net_pd_irq_count(void)
+{
+    return g_host_netfp_irqs;
+}
+
+static void net_server_host_net_pd_irq(void)
+{
+    if (!g_host_netfp_ready) return;
+    netfp_record_irq(&g_host_netfp);
+    g_host_netfp_irqs++;
+    for (uint32_t id = 0u; id < NETFP_RING_SIZE; id++) {
+        if (__atomic_load_n(&g_host_netfp.queues[0].slots[id].owner,
+                            __ATOMIC_ACQUIRE) != NETFP_DEVICE)
+            continue;
+        if (netfp_driver_complete(&g_host_netfp, 0u, id, g_host_netfp_irqs) == 0)
+            (void)netfp_client_release(&g_host_netfp, 0u, id);
+    }
+}
+#endif /* AGENTOS_TEST_HOST */
+
 static uint32_t net_pd_submit(uint32_t packet_offset, uint32_t packet_len)
 {
 #ifndef AGENTOS_TEST_HOST
@@ -313,8 +358,29 @@ static uint32_t net_pd_submit(uint32_t packet_offset, uint32_t packet_len)
     return sel4_client_call(g_net_pd_ep, MSG_NET_FASTPATH_SEND,
                             &request, sizeof(request), &rep);
 #else
-    (void)packet_offset;
-    (void)packet_len;
+    /* Same acceptance window net_pd enforces for client and WG scratch frames. */
+    bool client_frame = packet_offset >= NET_SHMEM_HDR_SIZE
+        && packet_offset < NET_DMA_CLIENT_BYTES
+        && packet_len <= NET_DMA_CLIENT_BYTES - packet_offset;
+    bool wg_frame = packet_offset >= NET_DMA_WG_FRAME_OFFSET
+        && packet_offset < NET_DMA_WG_FRAME_OFFSET + NET_DMA_WG_FRAME_BYTES
+        && packet_len <= NET_DMA_WG_FRAME_OFFSET + NET_DMA_WG_FRAME_BYTES
+            - packet_offset;
+    if (!g_host_netfp_ready
+        || packet_len == 0u || packet_len > NET_DMA_MAX_FRAME_BYTES
+        || (!client_frame && !wg_frame))
+        return SEL4_ERR_BAD_ARG;
+
+    uint32_t slot = 0u;
+    if (netfp_client_reserve(&g_host_netfp, 0u, &slot) != 0)
+        return SEL4_ERR_NO_MEM;
+    if (netfp_client_submit(&g_host_netfp, 0u, slot, packet_len, 0u) != 0)
+        return SEL4_ERR_NO_MEM;
+    uint32_t batched = 0u;
+    if (netfp_driver_batch(&g_host_netfp, 0u, 1u, &batched) != 1u
+        || batched != slot)
+        return SEL4_ERR_NO_MEM;
+    /* Leave ownership in DEVICE until net_server_host_net_pd_irq(). */
     return SEL4_ERR_OK;
 #endif
 }
@@ -1277,14 +1343,15 @@ static uint32_t handle_net_http_post(sel4_badge_t badge,
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Timer notification handler — called when seL4 notification arrives on
- * timer_ntfn_cap.  Drives lwIP timers and virtio-net RX poll.
+ * timer_ntfn_cap. Drives lwIP protocol timers only. Native NIC RX/TX
+ * completion is IRQ-owned by net_pd; this tick must not claim a production
+ * packet-poll path.
  *
  * This replaces the Microkit notified(NET_CH_TIMER) path.  No PPC, no
  * priority constraint.
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void net_server_timer_tick(void) {
     lwip_tick();
-    lwip_virtio_rx_poll();
     sys_check_timeouts();
 }
 

@@ -42,27 +42,35 @@ static bool ipv4_checksum_valid(const uint8_t *header)
     return sum == 0xffffu;
 }
 
-static uint32_t invoke(sel4_badge_t badge, uint32_t offset, uint32_t len,
-                       sel4_msg_t *rep)
+static uint32_t invoke_ex(sel4_badge_t badge, uint32_t offset, uint32_t len,
+                          uint32_t endpoint_ip, uint32_t endpoint_port,
+                          sel4_msg_t *rep)
 {
     sel4_msg_t req = {0};
     req.opcode = OP_NET_WG_UDP_SEND;
     req.length = 16u;
     wr32(req.data, offset);
     wr32(req.data + 4u, len);
-    wr32(req.data + 8u, 0x0A000202u);
-    wr32(req.data + 12u, 51820u);
+    wr32(req.data + 8u, endpoint_ip);
+    wr32(req.data + 12u, endpoint_port);
     return net_server_dispatch_one(badge, &req, rep);
+}
+
+static uint32_t invoke(sel4_badge_t badge, uint32_t offset, uint32_t len,
+                       sel4_msg_t *rep)
+{
+    return invoke_ex(badge, offset, len, 0x0A000202u, 51820u, rep);
 }
 
 int main(void)
 {
-    printf("TAP version 13\n1..12\n");
+    printf("TAP version 13\n1..18\n");
     memset(dma_arena, 0, sizeof(dma_arena));
     memset(wg_packet_view, 0, sizeof(wg_packet_view));
     net_packet_shmem_vaddr = (uintptr_t)dma_arena;
     wg_packet_view_vaddr = (uintptr_t)wg_packet_view;
     net_server_test_init();
+    net_server_host_net_pd_arm();
     net_hw_present = true;
 
     static const uint8_t encrypted[] = {
@@ -85,6 +93,8 @@ int main(void)
           "badged WireGuard datagram right authorizes send");
     CHECK(rd32(rep.data + 4u) == sizeof(encrypted),
           "reply reports encrypted payload bytes");
+    CHECK(net_server_host_net_pd_in_flight() == 1u,
+          "net_device ring holds the frame until IRQ reclaim");
 
     const uint8_t *frame = dma_arena + NET_DMA_WG_FRAME_OFFSET;
     CHECK(frame[12] == 0x08u && frame[13] == 0x00u && frame[23] == 17u,
@@ -128,6 +138,42 @@ int main(void)
                                  &cross_req, &rep);
     CHECK(rc == SEL4_ERR_PERM && rd32(rep.data) == NET_ERR_PERM,
           "WireGuard datagram right cannot administer vNICs");
+
+    /* Headscale netmap peers advertise CGNAT endpoints; underlay must keep
+     * the mapped IP/port without inventing authority from the identity. */
+    memset(&rep, 0, sizeof(rep));
+    rc = invoke_ex(NET_SERVER_RIGHT_WG_DATAGRAM, NET_WG_PACKET_BASE_OFF,
+                   (uint32_t)sizeof(encrypted), 0x64400002u /* 100.64.0.2 */,
+                   41641u, &rep);
+    CHECK(rc == SEL4_ERR_OK && rd32(rep.data) == NET_OK,
+          "Headscale-style CGNAT endpoint is accepted on the WG underlay");
+    CHECK(frame[30] == 100u && frame[31] == 64u
+          && frame[32] == 0u && frame[33] == 2u
+          && frame[36] == 0xA2u && frame[37] == 0xA9u,
+          "UDP/IP envelope preserves the Headscale netmap endpoint");
+
+    net_server_host_net_pd_irq();
+    CHECK(net_server_host_net_pd_in_flight() == 0u
+          && net_server_host_net_pd_irq_count() >= 1u,
+          "IRQ-driven reclaim frees net_device ownership");
+
+    /* Fill the bounded TX ownership ring; further submits must backpressure. */
+    net_server_host_net_pd_arm();
+    uint32_t filled = 0u;
+    for (uint32_t i = 0u; i < NETFP_RING_SIZE; i++) {
+        memset(&rep, 0, sizeof(rep));
+        rc = invoke(NET_SERVER_RIGHT_WG_DATAGRAM, NET_WG_PACKET_BASE_OFF,
+                    (uint32_t)sizeof(encrypted), &rep);
+        if (rc == SEL4_ERR_OK && rd32(rep.data) == NET_OK) filled++;
+    }
+    CHECK(filled == NETFP_RING_SIZE
+          && net_server_host_net_pd_in_flight() == NETFP_RING_SIZE,
+          "bounded ring accepts frames while capacity remains");
+    memset(&rep, 0, sizeof(rep));
+    rc = invoke(NET_SERVER_RIGHT_WG_DATAGRAM, NET_WG_PACKET_BASE_OFF,
+                (uint32_t)sizeof(encrypted), &rep);
+    CHECK(rc == SEL4_ERR_NO_MEM && rd32(rep.data) == NET_ERR_BACKPRESSURE,
+          "full net_device ring signals backpressure to WireGuard");
 
     return failures == 0u ? 0 : 1;
 }

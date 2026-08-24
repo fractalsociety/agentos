@@ -749,6 +749,31 @@ static void virtio_reap_tx(void)
 
 static int virtio_submit_tx(const uint8_t *frame, uint32_t frame_len)
 {
+#ifdef AGENTOS_TEST_HOST
+    /* Host softpath: ownership/backpressure without NIC MMIO. Frames remain
+     * DEVICE-owned until handle_net_irq() completes them. */
+    uint32_t slot = 0u;
+    if (netfp_client_reserve(fastpath, 0u, &slot) != 0) return -1;
+    if (net_pd_shmem_vaddr != 0u) {
+        uint8_t *buffer = (uint8_t *)(net_pd_shmem_vaddr
+            + NET_DMA_TX_BUFFER_OFFSET + slot * NET_DMA_BUFFER_STRIDE);
+        for (uint32_t i = 0u; i < NET_DMA_VIRTIO_HDR_BYTES; i++)
+            buffer[i] = 0u;
+        for (uint32_t i = 0u; i < frame_len; i++)
+            buffer[NET_DMA_VIRTIO_HDR_BYTES + i] = frame[i];
+    } else {
+        (void)frame;
+    }
+    if (netfp_client_submit(fastpath, 0u, slot, frame_len, 0u) != 0)
+        return -1;
+    uint32_t batched = 0u;
+    if (netfp_driver_batch(fastpath, 0u, 1u, &batched) != 1u
+        || batched != slot)
+        return -1;
+    return 0;
+#else
+    /* Reap only descriptors the IRQ path already published on the used ring.
+     * Fresh completions arrive via handle_net_irq(), not a poll loop. */
     virtio_reap_tx();
     uint32_t slot = 0u;
     if (netfp_client_reserve(fastpath, 0u, &slot) != 0) return -1;
@@ -778,6 +803,7 @@ static int virtio_submit_tx(const uint8_t *frame, uint32_t frame_len)
     avail[1] = (uint16_t)(avail_idx + 1u);
     mmio_write32(net_pd_mmio_vaddr, VIRTIO_MMIO_QUEUE_NOTIFY, 1u);
     return 0;
+#endif
 }
 
 static bool badge_has_fastpath(sel4_badge_t badge)
@@ -818,8 +844,7 @@ static uint32_t handle_fastpath_status(sel4_badge_t badge,
                                        void *ctx __attribute__((unused)))
 {
     if (!badge_has_fastpath(badge)) return SEL4_ERR_PERM;
-    if (hw_present && fastpath != (netfp_state_t *)0)
-        virtio_reap_tx();
+    /* Do not reclaim TX from status queries — completions are IRQ-driven. */
     data_wr32(rep->data, 0, iface_link_up ? 1u : 0u);
     data_wr32(rep->data, 4, hw_present ? NET_DMA_QUEUE_DEPTH : 0u);
     data_wr32(rep->data, 8,
@@ -841,6 +866,18 @@ static uint32_t handle_fastpath_status(sel4_badge_t badge,
 
 static void handle_net_irq(void)
 {
+#ifdef AGENTOS_TEST_HOST
+    if (hw_present && fastpath != (netfp_state_t *)0) {
+        netfp_record_irq(fastpath);
+        for (uint32_t id = 0u; id < NETFP_RING_SIZE; id++) {
+            if (__atomic_load_n(&fastpath->queues[0].slots[id].owner,
+                                __ATOMIC_ACQUIRE) != NETFP_DEVICE)
+                continue;
+            if (netfp_driver_complete(fastpath, 0u, id, fastpath->irq_count) == 0)
+                (void)netfp_client_release(fastpath, 0u, id);
+        }
+    }
+#else
     if (hw_present) {
         uint32_t status = mmio_read32(net_pd_mmio_vaddr,
                                       VIRTIO_MMIO_INTERRUPT_STATUS);
@@ -851,7 +888,6 @@ static void handle_net_irq(void)
             virtio_reap_tx();
         }
     }
-#ifndef AGENTOS_TEST_HOST
     (void)seL4_IRQHandler_Ack((seL4_CPtr)NET_PD_IRQ_CAP);
 #endif
 }

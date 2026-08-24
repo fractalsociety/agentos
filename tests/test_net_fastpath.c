@@ -69,10 +69,43 @@ static void test_dma_contract_layout(void)
     CHECK(NET_DMA_TX_BUFFER_OFFSET
           + NET_DMA_QUEUE_DEPTH * NET_DMA_BUFFER_STRIDE
           <= NET_DMA_LAYOUT_END);
+    CHECK(NET_DMA_WG_FRAME_OFFSET >= NET_DMA_DRIVER_LAYOUT_END);
     CHECK(NET_DMA_LAYOUT_END <= NET_DMA_ARENA_BYTES);
     CHECK(sizeof(net_fastpath_send_req_t) == 8u);
     CHECK(sizeof(net_fastpath_status_reply_t) == 16u);
     CHECK(NET_PD_RIGHT_FASTPATH != 0u);
+}
+
+/* TX stays DEVICE until an IRQ-driven complete/release cycle; submit alone
+ * must not free the ring (polling is not the production reclaim path). */
+static void test_irq_driven_reclaim(void)
+{
+    netfp_state_t state;
+    uint32_t ids[NETFP_BATCH_MAX];
+    netfp_init(&state, 1u);
+    for (uint32_t i = 0u; i < NETFP_RING_SIZE; i++) {
+        uint32_t id;
+        CHECK(netfp_client_reserve(&state, 0u, &id) == 0);
+        CHECK(netfp_client_submit(&state, 0u, id, 64u, i) == 0);
+    }
+    CHECK(netfp_driver_batch(&state, 0u, NETFP_BATCH_MAX, ids) == NETFP_BATCH_MAX);
+    {
+        uint32_t blocked = 0u;
+        CHECK(netfp_client_reserve(&state, 0u, &blocked) == -2);
+        CHECK(state.backpressure >= 1u);
+    }
+    for (uint32_t i = 0u; i < NETFP_BATCH_MAX; i++) {
+        CHECK(state.queues[0].slots[ids[i]].owner == NETFP_DEVICE);
+        CHECK(netfp_driver_complete(&state, 0u, ids[i], 1000u + i) == 0);
+        CHECK(netfp_client_release(&state, 0u, ids[i]) == 0);
+    }
+    netfp_record_irq(&state);
+    CHECK(state.irq_count == 1u);
+    {
+        uint32_t id = 0u;
+        CHECK(netfp_client_reserve(&state, 0u, &id) == 0);
+        CHECK(netfp_client_submit(&state, 0u, id, 64u, 42u) == 0);
+    }
 }
 
 int main(void)
@@ -81,6 +114,7 @@ int main(void)
     test_backpressure();
     test_multiqueue_and_illegal_transitions();
     test_dma_contract_layout();
+    test_irq_driven_reclaim();
     printf("[net_fastpath] %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

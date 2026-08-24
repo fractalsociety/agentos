@@ -2279,7 +2279,8 @@ void root_task_main(const seL4_BootInfo *bi)
 
         /* NetServer receives only WireGuard packet pages 2..29. Pages 0..1
          * contain static/private/ephemeral material and are deliberately not
-         * present in its VSpace. */
+         * present in its VSpace. Headscale/netmap endpoint bytes travel in the
+         * OP_NET_WG_UDP_SEND IPC; key pages never leave wg_net. */
         if (name_eq(pd->name, "net_server")) {
             seL4_Error we = pd_vspace_map_shared_pages(
                 vspace, (seL4_Word)NET_WG_PACKET_VIEW_VADDR,

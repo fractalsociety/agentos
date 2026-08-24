@@ -742,8 +742,10 @@ const system_desc_t system_desc_aarch64 = {
         },
 
         /* Capability-native WireGuard overlay. The PD receives the packet
-         * service endpoint explicitly; it cannot manufacture a NetCap through
-         * nameserver metadata and has no model/tool/memory/exec authority. */
+         * service endpoint with NET_SERVER_RIGHT_WG_DATAGRAM so session traffic
+         * reaches net_pd through the net_device underlay while Headscale/netmap
+         * endpoints stay connectivity metadata. It cannot manufacture a NetCap
+         * through nameserver metadata and has no model/tool/memory/exec authority. */
         {
             .name           = "wg_net",
             .elf_path       = "wg_net.elf",

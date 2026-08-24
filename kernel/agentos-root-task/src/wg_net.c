@@ -396,7 +396,10 @@ static void wg_derive_pubkey(const uint8_t *privkey, uint8_t *pubkey) {
 
 /*
  * Forward an encrypted WireGuard packet through NetServer's dedicated,
- * capability-scoped UDP path. NetServer maps packet pages, never key pages.
+ * capability-scoped UDP path (OP_NET_WG_UDP_SEND). NetServer maps packet
+ * pages only, wraps the ciphertext in an Ethernet/IPv4/UDP envelope that
+ * preserves Headscale/netmap peer endpoints, and submits via net_pd's
+ * net_device fastpath. Keys never leave this PD.
  *
  * E5-S4: g_net_ep is the nameserver-resolved endpoint for "net".
  */
