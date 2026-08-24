@@ -6,7 +6,7 @@
     "prompt": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
     "visibility": "private"
   },
-  "graph_hash": "sha256:1aa0b94546e5bb4e26503cd3d7bdf673eb488af02ee617572b36238197e4b630",
+  "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c",
   "graph": {
     "compiler_version": "fractal-harnessc/0.1.0",
     "edges": [
@@ -682,9 +682,9 @@
         }
       ]
     },
-    "graph_hash": "sha256:1aa0b94546e5bb4e26503cd3d7bdf673eb488af02ee617572b36238197e4b630",
-    "graph_id": "fg_f3869dc7a4e693c5937f9c77e6b95acc",
-    "harness_hash": "sha256:5c045a941db7978b4a1ed29fe0e62ef6501cb328338ffdc95667f07cd5038f04",
+    "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c",
+    "graph_id": "fg_8e36bdb25735d9e6c28f7d760a549cbf",
+    "harness_hash": "sha256:8d01b0632e52164d10456958d3a2b7d7e44ac835341fbd491eed710b91fc0567",
     "nodes": [
       {
         "artifacts_produced": [],
@@ -3764,8 +3764,6 @@
           "estimated_remaining_tokens": 12000,
           "expected_artifact": "Pushed evidence-linked commits, synchronized Beads state, an up-to-date branch, and only truthfully closed issues",
           "files_or_systems_affected": [
-            ".git",
-            ".beads",
             "build/evidence"
           ],
           "similarity_to_other_active_nodes": {},
@@ -4559,28 +4557,28 @@
         "agent_label": "codex-luna:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:35Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "claude_hermes_compat_contract_tests": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:35Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "companion_export_contract_tests": {
         "agent_id": "codex-luna:3",
         "agent_label": "codex-luna:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:35Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "complete_gpu_pipeline": {
         "agent_id": "cursor:3",
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:35Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4594,7 +4592,7 @@
         "agent_label": "codex-luna:5",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "finish_native_network": {
         "agent_id": "cursor:7",
@@ -4622,105 +4620,105 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_actor_memory_lifecycle": {
         "agent_id": "codex-luna:6",
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_claude_worker": {
         "agent_id": "codex-luna:5",
         "agent_label": "codex-luna:5",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_codex_worker": {
         "agent_id": "codex-luna:9",
         "agent_label": "codex-luna:9",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_companion_gateway": {
         "agent_id": "claude:1",
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_cursor_worker": {
         "agent_id": "cursor:8",
         "agent_label": "cursor:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_daily_root_projection": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_fractal_controlplane": {
         "agent_id": "codex-luna:10",
         "agent_label": "codex-luna:10",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_health_adapter": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:7",
         "agent_label": "hermes:7",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_project_progress_adapter": {
         "agent_id": "cursor:2",
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_remote_authority": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "implement_remote_mesh_sessions": {
         "agent_id": "codex-luna:1",
         "agent_label": "codex-luna:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "lead_plan": {
         "agent_id": "codex",
@@ -4734,7 +4732,7 @@
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:36Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "reconcile_prd_beads": {
         "agent_id": "codex-luna:1",
@@ -4748,17 +4746,17 @@
         "agent_label": "codex-luna:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:37Z"
+        "released_at": "2026-08-24T19:38:21Z"
       },
       "unify_fractal_graph_ui": {
         "agent_id": "codex-luna:3",
         "agent_label": "codex-luna:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:36:37Z"
+        "released_at": "2026-08-24T19:38:21Z"
       }
     },
-    "updated_at": "2026-08-24T19:36:37Z"
+    "updated_at": "2026-08-24T19:38:21Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -4774,12 +4772,12 @@
           "implement_project_progress_adapter",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "canonical_event_verify_contract_tests": {
         "node_id": "canonical_event_verify_contract_tests",
@@ -4789,13 +4787,12 @@
           "fractal_controlplane_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:06Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 1,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 4
+        "reopen_count": 6
       },
       "claude_hermes_compat_contract_tests": {
         "node_id": "claude_hermes_compat_contract_tests",
@@ -4805,13 +4802,12 @@
           "cursor_compat_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:06Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 1,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 4
+        "reopen_count": 6
       },
       "companion_export_contract_tests": {
         "node_id": "companion_export_contract_tests",
@@ -4822,12 +4818,12 @@
           "reconcile_prd_beads",
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 11
       },
       "complete_gpu_pipeline": {
         "node_id": "complete_gpu_pipeline",
@@ -4839,12 +4835,12 @@
           "implement_actor_memory_lifecycle",
           "implement_codex_worker"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 11
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -4880,12 +4876,12 @@
           "project_progress_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 3,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 8
       },
       "finish_native_network": {
         "node_id": "finish_native_network",
@@ -4973,12 +4969,12 @@
           "companion_export_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 1,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 4
+        "reopen_count": 6
       },
       "implement_actor_memory_lifecycle": {
         "node_id": "implement_actor_memory_lifecycle",
@@ -4991,12 +4987,12 @@
           "implement_agentlang_runtime",
           "implement_companion_gateway"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5007,12 +5003,12 @@
           "fractal_controlplane_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5022,12 +5018,12 @@
           "canonical_event_verify_contract_tests",
           "fractal_controlplane_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 2,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 5
+        "reopen_count": 7
       },
       "implement_claude_worker": {
         "node_id": "implement_claude_worker",
@@ -5037,12 +5033,12 @@
           "claude_hermes_compat_contract_tests",
           "implement_cursor_worker"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_codex_worker": {
         "node_id": "implement_codex_worker",
@@ -5051,13 +5047,12 @@
         "depends_on": [
           "fractal_controlplane_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:06Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_companion_gateway": {
         "node_id": "implement_companion_gateway",
@@ -5067,12 +5062,12 @@
           "companion_export_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 9
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5081,13 +5076,12 @@
         "depends_on": [
           "cursor_compat_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:06Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 11
       },
       "implement_daily_root_projection": {
         "node_id": "implement_daily_root_projection",
@@ -5099,12 +5093,12 @@
           "daily_root_contract_tests",
           "implement_fractal_controlplane"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 3,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 8
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
@@ -5115,12 +5109,12 @@
           "fractal_controlplane_contract_tests",
           "implement_canonical_event_verify"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_health_adapter": {
         "node_id": "implement_health_adapter",
@@ -5130,12 +5124,12 @@
           "health_adapter_contract_tests",
           "implement_daily_root_projection"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 11
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5145,12 +5139,12 @@
           "claude_hermes_compat_contract_tests",
           "implement_claude_worker"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 11
       },
       "implement_project_progress_adapter": {
         "node_id": "implement_project_progress_adapter",
@@ -5161,12 +5155,12 @@
           "implement_health_adapter",
           "project_progress_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5178,12 +5172,12 @@
           "implement_remote_mesh_sessions",
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 10
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5192,12 +5186,12 @@
         "depends_on": [
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 9
       },
       "implement_shared_space_replication": {
         "node_id": "implement_shared_space_replication",
@@ -5208,12 +5202,12 @@
           "implement_remote_authority",
           "implement_remote_mesh_sessions"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "lead_closeout": {
         "node_id": "lead_closeout",
@@ -5222,12 +5216,12 @@
         "depends_on": [
           "publish_verified_program"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "lead_plan": {
         "node_id": "lead_plan",
@@ -5258,13 +5252,12 @@
         "depends_on": [
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:06Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 9
       },
       "publish_verified_program": {
         "node_id": "publish_verified_program",
@@ -5273,12 +5266,12 @@
         "depends_on": [
           "run_two_device_vertical_slice"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "reconcile_prd_beads": {
         "node_id": "reconcile_prd_beads",
@@ -5315,13 +5308,12 @@
           "fractal_controlplane_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:07Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 1,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 4
+        "reopen_count": 6
       },
       "run_dual_arch_qemu_gates": {
         "node_id": "run_dual_arch_qemu_gates",
@@ -5338,12 +5330,12 @@
           "implement_remote_mesh_sessions",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "run_host_security_performance_gates": {
         "node_id": "run_host_security_performance_gates",
@@ -5369,12 +5361,12 @@
           "implement_remote_mesh_sessions",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "run_two_device_vertical_slice": {
         "node_id": "run_two_device_vertical_slice",
@@ -5390,12 +5382,12 @@
           "run_dual_arch_qemu_gates",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 1
+        "reopen_count": 2
       },
       "unify_fractal_graph_ui": {
         "node_id": "unify_fractal_graph_ui",
@@ -5404,13 +5396,12 @@
         "depends_on": [
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T18:38:31Z",
-        "ready_at": "2026-08-24T19:32:07Z",
+        "created_at": "2026-08-24T19:38:21Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 11
       }
     },
     "graph_edits": [
@@ -5443,92 +5434,6 @@
         "eventual_effect": {}
       }
     ],
-    "outcome": {
-      "acceptance_criteria": [
-        {
-          "id": "AC-1",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-10",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-11",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-12",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-13",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-14",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-15",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-2",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-3",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-4",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-5",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-6",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-7",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-8",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-9",
-          "passed": false,
-          "evidence_refs": []
-        }
-      ],
-      "maximum_parallelism": 0,
-      "retry_count": 74,
-      "reopened_node_count": 31,
-      "dead_or_unused_node_count": 1,
-      "human_intervention_count": 0,
-      "verification_coverage": 0.0,
-      "verification_coverage_denominator": 34
-    },
     "acceptance_criteria": [
       "AC-1",
       "AC-10",
@@ -5612,6 +5517,53 @@
               "outcome": null
             }
           ]
+        },
+        {
+          "migrated_at": "2026-08-24T19:38:21Z",
+          "new_graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c",
+          "old_graph_hash": "sha256:1aa0b94546e5bb4e26503cd3d7bdf673eb488af02ee617572b36238197e4b630",
+          "preserved": [
+            "cursor_compat_contract_tests",
+            "finish_native_network",
+            "fix_wg_compile_regression",
+            "fractal_controlplane_contract_tests",
+            "lead_plan",
+            "reconcile_prd_beads"
+          ],
+          "removed": [],
+          "reopened": [
+            "build_companion_pages",
+            "canonical_event_verify_contract_tests",
+            "claude_hermes_compat_contract_tests",
+            "companion_export_contract_tests",
+            "complete_gpu_pipeline",
+            "daily_root_contract_tests",
+            "health_adapter_contract_tests",
+            "implement_actor_memory_lifecycle",
+            "implement_agentlang_runtime",
+            "implement_canonical_event_verify",
+            "implement_claude_worker",
+            "implement_codex_worker",
+            "implement_companion_gateway",
+            "implement_cursor_worker",
+            "implement_daily_root_projection",
+            "implement_fractal_controlplane",
+            "implement_health_adapter",
+            "implement_hermes_worker",
+            "implement_project_progress_adapter",
+            "implement_remote_authority",
+            "implement_remote_mesh_sessions",
+            "implement_shared_space_replication",
+            "lead_closeout",
+            "project_progress_contract_tests",
+            "publish_verified_program",
+            "remote_mesh_contract_tests",
+            "run_dual_arch_qemu_gates",
+            "run_host_security_performance_gates",
+            "run_two_device_vertical_slice",
+            "unify_fractal_graph_ui"
+          ],
+          "retired_nodes": []
         }
       ],
       "schema": "fractal.plan_migrations.v1"
@@ -7411,5 +7363,5 @@
     "cross_project_links": {},
     "failure_graph_hash": "sha256:54d4fb5dcfc45dbfef50a9a053cbfe0f67149ea77efa333a9ff59c71ff8947c5"
   },
-  "updated_at": "2026-08-24T19:37:31Z"
+  "updated_at": "2026-08-24T19:38:21Z"
 }
