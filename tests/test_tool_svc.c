@@ -15,11 +15,31 @@ static uint32_t fake_repo(bool read, const uint8_t *input, uint32_t input_len,
                           uint32_t *output_len, void *ctx)
 {
     (void)ctx;
+    (void)input;
     const char *result = read ? "int answer(void) { return 0; }\n"
                               : "src/answer.c:1:int answer(void)\n";
     uint32_t len = (uint32_t)strlen(result);
     assert(input_len > 0u);
     assert(output_capacity > len);
+    memcpy(output, result, len);
+    *output_len = len;
+    return TOOLSVC_ERR_OK;
+}
+
+static uint32_t fake_mcp(bool list, const uint8_t *name, uint32_t name_len,
+                         const uint8_t *input, uint32_t input_len,
+                         uint8_t *output, uint32_t output_capacity,
+                         uint32_t *output_len, void *ctx)
+{
+    (void)ctx;
+    static const char listing[] =
+        "{\"tools\":[{\"name\":\"mcp.fixture_echo\"}]}";
+    assert(name_len >= TOOLSVC_MCP_PREFIX_LEN);
+    const uint8_t *result = list ? (const uint8_t *)listing : input;
+    uint32_t len = list ? (uint32_t)(sizeof(listing) - 1u) : input_len;
+    assert(output_capacity > len);
+    if (!list)
+        assert(memcmp(name, "mcp.fixture_echo", name_len) == 0);
     memcpy(output, result, len);
     *output_len = len;
     return TOOLSVC_ERR_OK;
@@ -44,11 +64,12 @@ int main(void)
 
     toolsvc_runtime_init(arena, sizeof(arena));
     toolsvc_runtime_set_repo_backend(fake_repo, NULL);
+    toolsvc_runtime_set_mcp_backend(fake_mcp, NULL);
     assert(toolsvc_runtime_dispatch(badge, TOOLSVC_OP_HEALTH,
                                     NULL, 0u, reply, &reply_len)
            == TOOLSVC_ERR_OK);
     assert(reply_len == 12u);
-    assert(rd32_test(reply, 4u) == 3u);
+    assert(rd32_test(reply, 4u) == 4u);
     assert(rd32_test(reply, 8u) == TOOLSVC_INTERFACE_VERSION);
     assert(toolsvc_runtime_dispatch(BADGE(SVC_ID_MODELSVC, client, 0u),
                                     TOOLSVC_OP_HEALTH, NULL, 0u,
@@ -104,6 +125,33 @@ int main(void)
            == TOOLSVC_ERR_OK);
     assert(strstr((char *)(arena + output_off), "return 0") != NULL);
 
+    static const char discover_tool[] = TOOLSVC_MCP_DISCOVER_NAME;
+    memcpy(arena + name_off, discover_tool, sizeof(discover_tool) - 1u);
+    invoke.name_len = sizeof(discover_tool) - 1u;
+    invoke.input_len = 0u;
+    assert(toolsvc_runtime_dispatch(echo_badge, TOOLSVC_OP_INVOKE,
+                                    &invoke, sizeof(invoke), reply, &reply_len)
+           == TOOLSVC_ERR_DENIED);
+    assert(toolsvc_runtime_dispatch(badge, TOOLSVC_OP_INVOKE,
+                                    &invoke, sizeof(invoke), reply, &reply_len)
+           == TOOLSVC_ERR_OK);
+    assert(strstr((char *)(arena + output_off), "mcp.fixture_echo") != NULL);
+
+    static const char external_tool[] = "mcp.fixture_echo";
+    static const char external_input[] = "{\"message\":\"external-ok\"}";
+    memcpy(arena + name_off, external_tool, sizeof(external_tool) - 1u);
+    memcpy(arena + input_off, external_input, sizeof(external_input) - 1u);
+    invoke.name_len = sizeof(external_tool) - 1u;
+    invoke.input_len = sizeof(external_input) - 1u;
+    assert(toolsvc_runtime_dispatch(echo_badge, TOOLSVC_OP_INVOKE,
+                                    &invoke, sizeof(invoke), reply, &reply_len)
+           == TOOLSVC_ERR_DENIED);
+    assert(toolsvc_runtime_dispatch(badge, TOOLSVC_OP_INVOKE,
+                                    &invoke, sizeof(invoke), reply, &reply_len)
+           == TOOLSVC_ERR_OK);
+    assert(memcmp(arena + output_off, external_input,
+                  sizeof(external_input) - 1u) == 0);
+
     invoke.output_offset = TOOLSVC_CLIENT_ARENA_OFFSET(client + 1u);
     assert(toolsvc_runtime_dispatch(badge, TOOLSVC_OP_INVOKE,
                                     &invoke, sizeof(invoke), reply, &reply_len)
@@ -119,7 +167,8 @@ int main(void)
     assert(strstr((char *)(arena + list.output_offset), "agent.echo") != NULL);
     assert(strstr((char *)(arena + list.output_offset), "repo.search") != NULL);
     assert(strstr((char *)(arena + list.output_offset), "repo.read") != NULL);
-    assert(rd32_test(reply, 4u) == 3u);
+    assert(strstr((char *)(arena + list.output_offset), "mcp.tools.list") != NULL);
+    assert(rd32_test(reply, 4u) == 4u);
 
     assert(toolsvc_runtime_dispatch(echo_badge, TOOLSVC_OP_LIST,
                                     &list, sizeof(list), reply, &reply_len)

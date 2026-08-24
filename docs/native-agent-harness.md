@@ -132,7 +132,7 @@ compiler profile through ExecCap, observation of compiler success, and
 AgentFS overlay, invoked the capability-scoped managed repository suite, saw
 `repository tests: ok`, and only then returned `final`. It is not yet a
 general-purpose Codex replacement: repository change sets are capped at 24 KiB
-and external MCP providers are not yet wired to ToolSvc. The built-in
+and native networking is not yet available to transport services. The built-in
 `agentos-smoke-coder` remains only the deterministic hermetic-test model.
 
 Runtime authority is now enforced by actual CSpace operations rather than by a
@@ -145,6 +145,34 @@ The harness boots without ToolCap. The target suite mints ToolCap, completes a
 ModelSvc→ToolSvc→ModelSvc turn, deletes ToolCap, proves that a tool-requiring
 task is denied, re-mints ToolCap, and resumes the coding workflow. A failed
 harness synchronization causes the broker to roll back the kernel operation.
+
+## Shared external MCP providers
+
+ToolSvc now routes external tools through a singleton `mcp_transport` PD. That
+PD owns a dedicated bus.16 VirtIO console and maps only ToolSvc's private
+staging pages. A worker has none of the MCP endpoint, MMIO page, provider
+process, provider environment, credential, or socket. Its badged ToolCap must
+contain `TOOLSVC_RIGHT_MCP_EXTERNAL`; without that bit, both discovery and
+invocation fail before reaching the provider.
+
+External names are collision-free under `mcp.*`. The model invokes
+`mcp.tools.list` to receive the bounded, sanitized catalog, then invokes one of
+the returned names. The host adapter speaks current MCP 2026-07-28 stdio with
+`server/discover` and per-request metadata, and has a tested fallback to the
+legacy initialize lifecycle. The administrator supplies an exact JSON argv
+array and an explicit environment map, never a shell command. The default VM
+gate starts a hermetic real MCP stdio server; a deployment can select another:
+
+```sh
+export AGENTOS_MCP_SERVER_COMMAND_JSON='["npx","-y","@example/mcp-server"]'
+export AGENTOS_MCP_SERVER_ENV_JSON='{"SERVICE_TOKEN":"..."}'
+cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180
+```
+
+The 2026-08-24 AArch64 target gate proves `tools/list`, `tools/call`, and a
+complete native ModelSvc→ToolSvc→external MCP→ModelSvc harness loop. The
+credential/environment remains shared service infrastructure and is not
+charged to, mapped into, or copied for each worker.
 
 ## Shared services and worker memory
 
@@ -210,11 +238,13 @@ handle. ToolSvc checks distinct immutable badge rights for `agent.echo`,
 and read profiles. With on-target overlay-export isolation checks, the live VM
 suite passed 41/41; the credential-free hermetic suite passed 39/39. The
 subsequent runtime-authority suite passed 42/42 on real seL4, including kernel
-ToolCap mint/delete/re-mint and epoch enforcement.
+ToolCap mint/delete/re-mint and epoch enforcement. The external MCP suite now
+passes 45/45, adding real provider discovery, invocation, and a complete native
+harness continuation through the provider.
 
-These dedicated model and execution consoles are honest intermediate
+These dedicated model, execution, and MCP consoles are honest intermediate
 transports, not a claim of native TCP, a native compiler, arbitrary repository
-commands, or Headscale support. The current lwIP shim does not provide a real
+commands, or native Headscale support. The current lwIP shim does not provide a real
 packet path, so native Headscale-ready networking and device enrollment remain
 open work. The transports prove the intended authority graph without placing
 the model client, compiler process, credentials, or host sockets in every
@@ -241,11 +271,11 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 ```
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
-AgentFS, ExecSvc, and both transport PDs passed all 42 target assertions.
-The exact detached clean-worktree repository-discovery run measured 445.583 ms
-from QEMU spawn to root-task readiness, a 4.136 ms cold native planner turn,
-and 12 warm turns with 0.160 ms p50 and 0.463 ms p95. ModelSvc cached queries
-measured 0.046 ms p50 and 0.367 ms p95. The worker reported 274,432 bytes of
+AgentFS, ExecSvc, and the model, execution, and MCP transport PDs passed all 45
+target assertions. It measured 463.606 ms from QEMU spawn to root-task
+readiness, a 3.799 ms cold native planner turn, and 12 warm turns with 0.190 ms
+p50 and 0.536 ms p95. ModelSvc cached queries measured 0.043 ms p50 and
+0.367 ms p95. The worker reported 274,432 bytes of
 private committed memory
 and 196,608 bytes of shared client mappings under its 64 MiB private limit;
 its shared-component bitmap now includes the singleton repository index.

@@ -467,7 +467,10 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
          * contract proof. Production model backends still route via transport. */
         static const char prefix[] = "agentos:";
         static const char smoke_model[] = "agentos-smoke-coder";
+        static const char mcp_model[] = "agentos-mcp-coder";
         static const char smoke_task[] = "edit-and-readback-smoke";
+        static const char mcp_task[] = "external-mcp-smoke";
+        static const char mcp_observation[] = "\"echo\":\"mcp-ok\"";
         static const char write_observation[] =
             "{\"observation\":\"memory_write\",\"status\":\"ok\"}";
         static const char verify_observation[] =
@@ -480,6 +483,11 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
             "\"expected\":\"after\\n\"}";
         static const char final_action[] =
             "{\"action\":\"final\",\"summary\":\"edit-readback-verified\"}";
+        static const char mcp_action[] =
+            "{\"action\":\"tool\",\"tool\":\"mcp.fixture_echo\","
+            "\"input\":\"{\\\"message\\\":\\\"mcp-ok\\\"}\"}";
+        static const char mcp_final_action[] =
+            "{\"action\":\"final\",\"summary\":\"external-mcp-verified\"}";
         const char *user = (const char *)modelsvc_shmem
             + wire->user_prompt_offset;
         uint32_t id_len = bounded_strlen(model->info.model_id,
@@ -502,6 +510,20 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
                                       smoke_task, sizeof(smoke_task) - 1u)) {
                 local_response = write_action;
                 local_response_len = sizeof(write_action) - 1u;
+            } else {
+                return MODELSVC_ERR_INVALID_ARG;
+            }
+        } else if (bytes_equal(model->info.model_id, id_len,
+                               mcp_model, sizeof(mcp_model) - 1u)) {
+            if (bytes_contains(user, wire->user_prompt_len,
+                               mcp_observation,
+                               sizeof(mcp_observation) - 1u)) {
+                local_response = mcp_final_action;
+                local_response_len = sizeof(mcp_final_action) - 1u;
+            } else if (bytes_contains(user, wire->user_prompt_len,
+                                      mcp_task, sizeof(mcp_task) - 1u)) {
+                local_response = mcp_action;
+                local_response_len = sizeof(mcp_action) - 1u;
             } else {
                 return MODELSVC_ERR_INVALID_ARG;
             }
@@ -858,6 +880,8 @@ static void modelsvc_init_state(uint8_t *shmem, uint32_t shmem_size)
     register_default("agentos-echo", "builtin://echo", "",
         16000u, 4096u, MODELSVC_FLAG_LOCAL | MODELSVC_FLAG_STREAMING);
     register_default("agentos-smoke-coder", "builtin://smoke-coder", "",
+        16000u, 4096u, MODELSVC_FLAG_LOCAL);
+    register_default("agentos-mcp-coder", "builtin://mcp-coder", "",
         16000u, 4096u, MODELSVC_FLAG_LOCAL);
 
     sel4_server_init(&server, 0u);

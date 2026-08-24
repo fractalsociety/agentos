@@ -605,12 +605,16 @@ static void boot_setup_irqs(const pd_desc_t *pd,
 #define EXEC_TRANSPORT_MMIO_PAGE_PA 0x0A001000UL /* QEMU virtio-mmio bus.8 */
 #define EXEC_TRANSPORT_VIRTIO_VA   0x10009000UL
 #define EXEC_TRANSPORT_STARTUP_VA  0x1000A000UL
+#define MCP_TRANSPORT_MMIO_PAGE_PA 0x0A002000UL /* QEMU virtio-mmio bus.16 */
+#define MCP_TRANSPORT_VIRTIO_VA    0x1000B000UL
+#define MCP_TRANSPORT_STARTUP_VA   0x1000C000UL
 #define RT_VQ_SCRATCH_VA      0x60000000UL  /* Root-task scratch VA to write startup PAs */
 
 /* Frame cap in root task CNode; seL4_CNode_Copy'd per VSpace that needs output. */
 static seL4_CPtr g_uart_frame_cap = seL4_CapNull;
 static seL4_CPtr g_virtio_mmio_frame_cap = seL4_CapNull;
 static seL4_CPtr g_exec_transport_mmio_frame_cap = seL4_CapNull;
+static seL4_CPtr g_mcp_transport_mmio_frame_cap = seL4_CapNull;
 static seL4_CPtr g_freebsd_virtio31_frame_cap = seL4_CapNull;
 static seL4_CPtr g_gic_vcpu_frame_cap = seL4_CapNull;
 
@@ -619,6 +623,7 @@ static seL4_CPtr g_gic_vcpu_frame_cap = seL4_CapNull;
 static seL4_CPtr g_modelsvc_shmem_frames[MODELSVC_SHMEM_PAGES];
 #define TOOLSVC_SHMEM_PAGES (TOOLSVC_SHMEM_SIZE / 4096u)
 #define TOOLSVC_CLIENT_ARENA_PAGES (TOOLSVC_CLIENT_ARENA_SIZE / 4096u)
+#define TOOLSVC_INTERNAL_ARENA_PAGES (TOOLSVC_INTERNAL_ARENA_SIZE / 4096u)
 static seL4_CPtr g_toolsvc_shmem_frames[TOOLSVC_SHMEM_PAGES];
 #define AGENTFS_SHMEM_PAGES (AGENTFS_SHMEM_SIZE / 4096u)
 #define AGENTFS_CLIENT_ARENA_PAGES (AGENTFS_CLIENT_ARENA_SIZE / 4096u)
@@ -1311,6 +1316,16 @@ void root_task_main(const seL4_BootInfo *bi)
     }
 
     {
+        seL4_Error mcp_transport_err = ut_alloc_device_cap(
+            MCP_TRANSPORT_MMIO_PAGE_PA, &g_mcp_transport_mmio_frame_cap);
+        dbg_puts("[rt] mcp transport virtio-mmio frame cap err=");
+        dbg_hex((seL4_Word)mcp_transport_err);
+        dbg_puts(" cap=");
+        dbg_hex((seL4_Word)g_mcp_transport_mmio_frame_cap);
+        dbg_puts("\n");
+    }
+
+    {
         seL4_Error v31_err = ut_alloc_device_cap(FREEBSD_VIRTIO_MMIO_BUS31_PAGE_PA,
                                                  &g_freebsd_virtio31_frame_cap);
         dbg_puts("[rt] freebsd virtio-mmio bus31 cap err=");
@@ -1547,6 +1562,7 @@ void root_task_main(const seL4_BootInfo *bi)
             } else if (name_eq(pd->name, "codex_harness")
                        || name_eq(pd->name, "model_svc")
                        || name_eq(pd->name, "tool_svc")
+                       || name_eq(pd->name, "mcp_transport")
                        || name_eq(pd->name, "agentfs")
                        || name_eq(pd->name, "exec_server")) {
                 sc_budget = AGENT_SC_BUDGET_US;
@@ -2080,6 +2096,72 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts("\n");
         }
 
+        /* External MCP uses bus.16 on its own physical MMIO page. Only the
+         * MCP transport PD receives the page; ToolSvc receives an endpoint
+         * and a service-private staging mapping, while workers receive neither. */
+        if (name_eq(pd->name, "mcp_transport")) {
+            seL4_CPtr mp_virtio_cap = seL4_CapNull;
+            seL4_Error ve = seL4_InvalidCapability;
+            if (g_mcp_transport_mmio_frame_cap != seL4_CapNull) {
+                seL4_Word slot = ut_alloc_slot();
+                if (slot != seL4_CapNull) {
+                    ve = seL4_CNode_Copy(
+                        seL4_CapInitThreadCNode, slot, 64u,
+                        seL4_CapInitThreadCNode,
+                        g_mcp_transport_mmio_frame_cap, 64u,
+                        seL4_AllRights);
+                    if (ve == seL4_NoError) mp_virtio_cap = (seL4_CPtr)slot;
+                } else {
+                    ve = seL4_NotEnoughMemory;
+                }
+            }
+            if (ve == seL4_NoError && mp_virtio_cap != seL4_CapNull) {
+                ve = pd_vspace_map_device_frame(vspace, mp_virtio_cap,
+                                                MCP_TRANSPORT_VIRTIO_VA);
+            }
+            dbg_puts("[rt] mcp_transport VirtIO page err=");
+            dbg_hex((seL4_Word)ve);
+            dbg_puts("\n");
+
+            seL4_Word vq_pas[3] = {0u, 0u, 0u};
+            for (uint32_t page = 0u; page < 3u; page++) {
+                seL4_CPtr cap = seL4_CapNull;
+                ve = ut_alloc_cap(seL4_ARM_SmallPageObject, 0u, &cap);
+                if (ve == seL4_NoError) {
+                    seL4_ARCH_Page_GetAddress_t address =
+                        seL4_ARCH_Page_GetAddress(cap);
+                    vq_pas[page] = address.paddr;
+                    ve = pd_vspace_map_device_frame(vspace, cap, vq_pas[page]);
+                }
+                dbg_puts("[rt] mcp_transport vq pa=");
+                dbg_hex(vq_pas[page]);
+                dbg_puts(" err=");
+                dbg_hex((seL4_Word)ve);
+                dbg_puts("\n");
+            }
+
+            seL4_CPtr startup_cap = seL4_CapNull;
+            ve = ut_alloc_cap(seL4_ARM_SmallPageObject, 0u, &startup_cap);
+            if (ve == seL4_NoError) {
+                ve = pd_vspace_map_device_frame(seL4_CapInitThreadVSpace,
+                                                startup_cap, RT_VQ_SCRATCH_VA);
+                if (ve == seL4_NoError) {
+                    volatile seL4_Word *startup =
+                        (volatile seL4_Word *)RT_VQ_SCRATCH_VA;
+                    startup[0] = vq_pas[0];
+                    startup[1] = vq_pas[1];
+                    startup[2] = vq_pas[2];
+                    AGENTOS_MEMORY_FENCE();
+                    seL4_ARCH_Page_Unmap(startup_cap);
+                    ve = pd_vspace_map_device_frame(vspace, startup_cap,
+                                                    MCP_TRANSPORT_STARTUP_VA);
+                }
+            }
+            dbg_puts("[rt] mcp_transport startup map err=");
+            dbg_hex((seL4_Word)ve);
+            dbg_puts("\n");
+        }
+
 #ifdef AGENTOS_SEL4_TEST_IMAGE
         /* agentos-8f5: map UART0 into the contract-runner PD so it can emit TAP
          * (release kernel has CONFIG_PRINTING disabled).  VA must match
@@ -2161,6 +2243,18 @@ void root_task_main(const seL4_BootInfo *bi)
                 TOOLSVC_SHMEM_SIZE, 1,
                 g_toolsvc_shmem_frames, TOOLSVC_SHMEM_PAGES);
             dbg_puts("[rt] ToolSvc shared arena map err=");
+            dbg_hex((seL4_Word)te);
+            dbg_puts("\n");
+        } else if (name_eq(pd->name, "mcp_transport")) {
+            seL4_Error te = pd_vspace_map_shared_pages(
+                vspace,
+                (seL4_Word)TOOLSVC_SHMEM_VADDR
+                    + TOOLSVC_INTERNAL_ARENA_OFFSET,
+                TOOLSVC_INTERNAL_ARENA_SIZE, 1,
+                &g_toolsvc_shmem_frames[
+                    TOOLSVC_INTERNAL_ARENA_OFFSET / 4096u],
+                TOOLSVC_INTERNAL_ARENA_PAGES);
+            dbg_puts("[rt] ToolSvc private MCP transport arena map err=");
             dbg_hex((seL4_Word)te);
             dbg_puts("\n");
         } else if ((pd_has_init_service(pd, SVC_ID_TOOLSVC)

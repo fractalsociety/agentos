@@ -3,8 +3,9 @@
  *
  * The singleton exposes capability-scoped built-ins. Repository discovery is
  * delegated to a shared administrator-owned index rather than copied into
- * every worker. Dynamic providers remain fail-closed until CapBroker can mint
- * and revoke provider endpoints.
+ * every worker. External MCP providers live behind one administrator-owned
+ * transport capability; workers never receive provider process, credential,
+ * network, or transport handles.
  */
 
 #include <stdbool.h>
@@ -27,21 +28,35 @@ typedef uint32_t (*toolsvc_repo_backend_fn)(
 static toolsvc_repo_backend_fn repo_backend;
 static void *repo_backend_ctx;
 
+typedef uint32_t (*toolsvc_mcp_backend_fn)(
+    bool list, const uint8_t *name, uint32_t name_len,
+    const uint8_t *input, uint32_t input_len,
+    uint8_t *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx);
+static toolsvc_mcp_backend_fn mcp_backend;
+static void *mcp_backend_ctx;
+
 static const char echo_name[] = "agent.echo";
 static const char repo_search_name[] = "repo.search";
 static const char repo_read_name[] = "repo.read";
-static const char tool_list_echo_json[] =
-    "{\"tools\":[{\"name\":\"agent.echo\",\"description\":"
-    "\"Return the supplied JSON unchanged\",\"inputSchema\":{},\"calls\":0}]}";
-static const char tool_list_all_json[] =
-    "{\"tools\":[{\"name\":\"agent.echo\",\"description\":"
-    "\"Return the supplied JSON unchanged\",\"inputSchema\":{}},"
+static const char mcp_discover_name[] = TOOLSVC_MCP_DISCOVER_NAME;
+static const char tool_list_prefix[] = "{\"tools\":[";
+static const char tool_list_suffix[] = "]}";
+static const char tool_list_echo_entry[] =
+    "{\"name\":\"agent.echo\",\"description\":"
+    "\"Return the supplied JSON unchanged\",\"inputSchema\":{}}";
+static const char tool_list_search_entry[] =
     "{\"name\":\"repo.search\",\"description\":"
     "\"Search the shared tracked-code index for a literal string\","
-    "\"inputSchema\":{\"type\":\"string\"}},"
+    "\"inputSchema\":{\"type\":\"string\"}}";
+static const char tool_list_read_entry[] =
     "{\"name\":\"repo.read\",\"description\":"
     "\"Read one tracked file from the shared repository snapshot\","
-    "\"inputSchema\":{\"type\":\"string\"}}]}";
+    "\"inputSchema\":{\"type\":\"string\"}}";
+static const char tool_list_mcp_entry[] =
+    "{\"name\":\"mcp.tools.list\",\"description\":"
+    "\"Discover tools registered by the shared external MCP provider\","
+    "\"inputSchema\":{\"type\":\"object\"}}";
 static const char echo_info_json[] =
     "{\"name\":\"agent.echo\",\"description\":"
     "\"Return the supplied JSON unchanged\",\"system\":true}";
@@ -71,6 +86,15 @@ static bool bytes_equal(const uint8_t *a, uint32_t a_len,
     if (a_len != b_len) return false;
     for (uint32_t i = 0u; i < a_len; i++)
         if (a[i] != (uint8_t)b[i]) return false;
+    return true;
+}
+
+static bool bytes_prefix(const uint8_t *value, uint32_t value_len,
+                         const char *prefix, uint32_t prefix_len)
+{
+    if (value_len < prefix_len) return false;
+    for (uint32_t i = 0u; i < prefix_len; i++)
+        if (value[i] != (uint8_t)prefix[i]) return false;
     return true;
 }
 
@@ -129,6 +153,63 @@ void toolsvc_runtime_init(void *arena, uint32_t arena_size)
     echo_call_count = 0u;
     repo_backend = NULL;
     repo_backend_ctx = NULL;
+    mcp_backend = NULL;
+    mcp_backend_ctx = NULL;
+}
+
+void toolsvc_runtime_set_mcp_backend(toolsvc_mcp_backend_fn backend,
+                                     void *ctx)
+{
+    mcp_backend = backend;
+    mcp_backend_ctx = ctx;
+}
+
+static bool append_json(uint8_t *dst, uint32_t cap, uint32_t *used,
+                        const char *src, uint32_t len)
+{
+    if (*used > cap || len > cap - *used) return false;
+    bytes_copy(dst + *used, src, len);
+    *used += len;
+    return true;
+}
+
+static uint32_t write_tool_list(uint16_t client, uint32_t rights,
+                                uint32_t offset, uint32_t cap,
+                                uint8_t *reply, uint32_t *reply_len)
+{
+    if (!caller_range(client, offset, cap)) return TOOLSVC_ERR_DENIED;
+    uint8_t *out = toolsvc_arena + offset;
+    uint32_t used = 0u, count = 0u;
+    if (!append_json(out, cap, &used, tool_list_prefix,
+                     sizeof(tool_list_prefix) - 1u))
+        return TOOLSVC_ERR_TOO_LARGE;
+    const struct { uint32_t right; const char *json; uint32_t len; } entries[] = {
+        { TOOLSVC_RIGHT_AGENT_ECHO, tool_list_echo_entry,
+          sizeof(tool_list_echo_entry) - 1u },
+        { TOOLSVC_RIGHT_REPO_SEARCH, tool_list_search_entry,
+          sizeof(tool_list_search_entry) - 1u },
+        { TOOLSVC_RIGHT_REPO_READ, tool_list_read_entry,
+          sizeof(tool_list_read_entry) - 1u },
+        { TOOLSVC_RIGHT_MCP_EXTERNAL, tool_list_mcp_entry,
+          sizeof(tool_list_mcp_entry) - 1u },
+    };
+    for (uint32_t i = 0u; i < sizeof(entries) / sizeof(entries[0]); i++) {
+        if ((rights & entries[i].right) == 0u) continue;
+        if (count != 0u && !append_json(out, cap, &used, ",", 1u))
+            return TOOLSVC_ERR_TOO_LARGE;
+        if (!append_json(out, cap, &used, entries[i].json, entries[i].len))
+            return TOOLSVC_ERR_TOO_LARGE;
+        count++;
+    }
+    if (!append_json(out, cap, &used, tool_list_suffix,
+                     sizeof(tool_list_suffix) - 1u)
+        || used >= cap)
+        return TOOLSVC_ERR_TOO_LARGE;
+    out[used] = '\0';
+    wr32(reply, 4u, count);
+    wr32(reply, 8u, used);
+    *reply_len = 12u;
+    return TOOLSVC_ERR_OK;
 }
 
 void toolsvc_runtime_set_repo_backend(toolsvc_repo_backend_fn backend,
@@ -172,7 +253,8 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
         status = TOOLSVC_ERR_OK;
         uint32_t count = ((rights & TOOLSVC_RIGHT_AGENT_ECHO) != 0u ? 1u : 0u)
             + ((rights & TOOLSVC_RIGHT_REPO_SEARCH) != 0u ? 1u : 0u)
-            + ((rights & TOOLSVC_RIGHT_REPO_READ) != 0u ? 1u : 0u);
+            + ((rights & TOOLSVC_RIGHT_REPO_READ) != 0u ? 1u : 0u)
+            + ((rights & TOOLSVC_RIGHT_MCP_EXTERNAL) != 0u ? 1u : 0u);
         wr32(reply, 4u, count);
         wr32(reply, 8u, TOOLSVC_INTERFACE_VERSION);
         *reply_len = 12u;
@@ -212,17 +294,48 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
             bool read = bytes_equal(toolsvc_arena + req.name_offset,
                                     req.name_len, repo_read_name,
                                     sizeof(repo_read_name) - 1u);
+            bool discover = bytes_equal(toolsvc_arena + req.name_offset,
+                                        req.name_len, mcp_discover_name,
+                                        sizeof(mcp_discover_name) - 1u);
+            bool external = bytes_prefix(toolsvc_arena + req.name_offset,
+                                         req.name_len, TOOLSVC_MCP_PREFIX,
+                                         TOOLSVC_MCP_PREFIX_LEN);
             uint32_t required = search ? TOOLSVC_RIGHT_REPO_SEARCH
-                : (read ? TOOLSVC_RIGHT_REPO_READ : 0u);
+                : (read ? TOOLSVC_RIGHT_REPO_READ
+                   : (external ? TOOLSVC_RIGHT_MCP_EXTERNAL : 0u));
             uint32_t input_max = read ? TOOLSVC_REPO_PATH_MAX
-                : TOOLSVC_REPO_QUERY_MAX;
+                : (external ? TOOLSVC_MCP_INPUT_MAX : TOOLSVC_REPO_QUERY_MAX);
             if (required == 0u) {
                 status = TOOLSVC_ERR_NOT_FOUND;
             } else if ((rights & required) == 0u) {
                 status = TOOLSVC_ERR_DENIED;
-            } else if (req.input_len == 0u || req.input_len > input_max
-                       || req.output_buf_len > TOOLSVC_REPO_OUTPUT_MAX) {
+            } else if ((!discover && req.input_len == 0u)
+                       || req.input_len > input_max
+                       || req.output_buf_len > (external
+                            ? TOOLSVC_MCP_OUTPUT_MAX
+                            : TOOLSVC_REPO_OUTPUT_MAX)) {
                 status = TOOLSVC_ERR_TOO_LARGE;
+            } else if (external) {
+                if (mcp_backend == NULL) {
+                    status = TOOLSVC_ERR_PROVIDER_DOWN;
+                } else {
+                    uint32_t output_len = 0u;
+                    status = mcp_backend(
+                        discover,
+                        toolsvc_arena + req.name_offset, req.name_len,
+                        toolsvc_arena + req.input_offset, req.input_len,
+                        toolsvc_arena + req.output_offset,
+                        req.output_buf_len, &output_len, mcp_backend_ctx);
+                    if (status == TOOLSVC_ERR_OK
+                        && output_len < req.output_buf_len) {
+                        toolsvc_arena[req.output_offset + output_len] = '\0';
+                        wr32(reply, 4u, output_len);
+                        wr64(reply, 8u, 0u);
+                        *reply_len = 16u;
+                    } else if (status == TOOLSVC_ERR_OK) {
+                        status = TOOLSVC_ERR_TOO_LARGE;
+                    }
+                }
             } else if (repo_backend == NULL) {
                 status = TOOLSVC_ERR_PROVIDER_DOWN;
             } else {
@@ -247,16 +360,8 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
                && payload_len == sizeof(toolsvc_list_wire_t)) {
         toolsvc_list_wire_t req;
         bytes_copy(&req, payload, sizeof(req));
-        const char *json = rights == TOOLSVC_RIGHT_AGENT_ECHO
-            ? tool_list_echo_json : tool_list_all_json;
-        uint32_t len = rights == TOOLSVC_RIGHT_AGENT_ECHO
-            ? (uint32_t)(sizeof(tool_list_echo_json) - 1u)
-            : (uint32_t)(sizeof(tool_list_all_json) - 1u);
-        uint32_t count = ((rights & TOOLSVC_RIGHT_AGENT_ECHO) != 0u ? 1u : 0u)
-            + ((rights & TOOLSVC_RIGHT_REPO_SEARCH) != 0u ? 1u : 0u)
-            + ((rights & TOOLSVC_RIGHT_REPO_READ) != 0u ? 1u : 0u);
-        status = write_json(client, req.output_offset, req.output_buf_len,
-                            json, len, count, reply, reply_len);
+        status = write_tool_list(client, rights, req.output_offset,
+                                 req.output_buf_len, reply, reply_len);
     } else if (opcode == TOOLSVC_OP_INFO
                && payload != NULL
                && payload_len == sizeof(toolsvc_info_wire_t)) {
@@ -311,6 +416,7 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
 #ifndef AGENTOS_TEST_HOST
 
 #include "../../contracts/execsvc/interface.h"
+#include "../../kernel/agentos-root-task/include/mcp_transport.h"
 #include "../../kernel/agentos-root-task/include/sel4_client.h"
 #include "../../kernel/agentos-root-task/include/sel4_server.h"
 
@@ -358,6 +464,54 @@ static uint32_t target_repo_backend(
     return TOOLSVC_ERR_OK;
 }
 
+static uint32_t target_mcp_backend(
+    bool list, const uint8_t *name, uint32_t name_len,
+    const uint8_t *input, uint32_t input_len,
+    uint8_t *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx)
+{
+    (void)ctx;
+    const uint32_t name_offset = TOOLSVC_INTERNAL_ARENA_OFFSET + 0x100u;
+    const uint32_t input_offset = TOOLSVC_INTERNAL_ARENA_OFFSET + 0x1000u;
+    const uint32_t output_offset = TOOLSVC_INTERNAL_ARENA_OFFSET + 0x6000u;
+    if (output_len == NULL || name_len < TOOLSVC_MCP_PREFIX_LEN
+        || name_len >= TOOLSVC_TOOL_NAME_MAX
+        || input_len > TOOLSVC_MCP_INPUT_MAX
+        || output_capacity == 0u
+        || output_capacity > TOOLSVC_MCP_OUTPUT_MAX)
+        return TOOLSVC_ERR_INVALID_ARG;
+    bytes_copy(toolsvc_arena + name_offset, name, name_len);
+    if (input_len != 0u)
+        bytes_copy(toolsvc_arena + input_offset, input, input_len);
+    mcp_transport_wire_t wire = {
+        .operation = list ? MCP_TRANSPORT_REQUEST_LIST
+                          : MCP_TRANSPORT_REQUEST_INVOKE,
+        .name_offset = name_offset,
+        .name_len = name_len,
+        .input_offset = input_offset,
+        .input_len = input_len,
+        .output_offset = output_offset,
+        .output_capacity = output_capacity,
+        .request_tag = list ? 0x6c697374u : 0x63616c6cu,
+    };
+    sel4_msg_t rep;
+    uint32_t call_status = sel4_client_call(PD_CNODE_SLOT_MCP_TRANSPORT_EP,
+                                             MCP_TRANSPORT_OP_REQUEST,
+                                             &wire, sizeof(wire), &rep);
+    if (call_status != SEL4_ERR_OK || rep.length < sizeof(mcp_transport_reply_t))
+        return TOOLSVC_ERR_PROVIDER_DOWN;
+    mcp_transport_reply_t result;
+    bytes_copy(&result, rep.data, sizeof(result));
+    if (result.request_tag != wire.request_tag
+        || result.output_len >= output_capacity
+        || result.output_len > TOOLSVC_MCP_OUTPUT_MAX)
+        return TOOLSVC_ERR_PROVIDER_DOWN;
+    if (result.status != TOOLSVC_ERR_OK) return result.status;
+    bytes_copy(output, toolsvc_arena + output_offset, result.output_len);
+    *output_len = result.output_len;
+    return TOOLSVC_ERR_OK;
+}
+
 static uint32_t toolsvc_handler(sel4_badge_t badge, const sel4_msg_t *req,
                                 sel4_msg_t *rep, void *ctx)
 {
@@ -374,6 +528,7 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     toolsvc_runtime_init((void *)(uintptr_t)TOOLSVC_SHMEM_VADDR,
                          TOOLSVC_SHMEM_SIZE);
     toolsvc_runtime_set_repo_backend(target_repo_backend, NULL);
+    toolsvc_runtime_set_mcp_backend(target_mcp_backend, NULL);
     static sel4_server_t server;
     sel4_server_init(&server, my_ep);
     (void)sel4_server_register(&server, SEL4_SERVER_OPCODE_ANY,

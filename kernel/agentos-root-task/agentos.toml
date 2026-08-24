@@ -103,6 +103,10 @@ name = "exec_transport"
 priority = 210
 
 [[pd]]
+name = "mcp_transport"
+priority = 210
+
+[[pd]]
 name = "model_svc"
 priority = 190
 

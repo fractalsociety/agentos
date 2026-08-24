@@ -25,7 +25,7 @@
 
 /* ── Version ─────────────────────────────────────────────────────────────── */
 
-#define TOOLSVC_INTERFACE_VERSION  3
+#define TOOLSVC_INTERFACE_VERSION  4
 
 /* ── Limits ──────────────────────────────────────────────────────────────── */
 
@@ -42,15 +42,26 @@
 #define TOOLSVC_RIGHT_AGENT_ECHO    (1u << 0)
 #define TOOLSVC_RIGHT_REPO_SEARCH   (1u << 1)
 #define TOOLSVC_RIGHT_REPO_READ     (1u << 2)
+#define TOOLSVC_RIGHT_MCP_EXTERNAL  (1u << 3)
 #define TOOLSVC_RIGHT_ALL           \
     (TOOLSVC_RIGHT_AGENT_ECHO | TOOLSVC_RIGHT_REPO_SEARCH \
-     | TOOLSVC_RIGHT_REPO_READ)
+     | TOOLSVC_RIGHT_REPO_READ | TOOLSVC_RIGHT_MCP_EXTERNAL)
 
 /* Repository observations are deliberately smaller than a client arena so a
  * model turn cannot use discovery as an unbounded workspace dump. */
 #define TOOLSVC_REPO_QUERY_MAX      512u
 #define TOOLSVC_REPO_PATH_MAX       256u
 #define TOOLSVC_REPO_OUTPUT_MAX     (16u * 1024u)
+#define TOOLSVC_MCP_INPUT_MAX       (16u * 1024u)
+#define TOOLSVC_MCP_OUTPUT_MAX      (16u * 1024u)
+
+/* External tools are registered by the administrator-owned shared MCP
+ * transport and appear below this collision-free namespace. A worker holding
+ * TOOLSVC_RIGHT_MCP_EXTERNAL may discover them with mcp.tools.list and invoke
+ * only names returned by that transport. */
+#define TOOLSVC_MCP_PREFIX           "mcp."
+#define TOOLSVC_MCP_PREFIX_LEN       4u
+#define TOOLSVC_MCP_DISCOVER_NAME    "mcp.tools.list"
 
 /* One singleton arena is owned by ToolSvc. Each ToolCap client maps only the
  * 48 KiB partition selected by its immutable endpoint badge. */

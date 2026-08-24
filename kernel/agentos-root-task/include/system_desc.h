@@ -230,6 +230,7 @@ typedef struct {
 #define SVC_ID_EXEC_SERVER    28u   /* isolated execution service                */
 #define SVC_ID_MODEL_TRANSPORT 29u  /* dedicated host model transport PD          */
 #define SVC_ID_EXEC_TRANSPORT 30u   /* dedicated allowlisted execution transport   */
+#define SVC_ID_MCP_TRANSPORT  31u   /* shared external MCP provider transport       */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -269,3 +270,4 @@ typedef struct {
 #define PD_CNODE_SLOT_AGENT_HARNESS_EP 20u
 #define PD_CNODE_SLOT_MODEL_TRANSPORT_EP 21u
 #define PD_CNODE_SLOT_EXEC_TRANSPORT_EP 22u
+#define PD_CNODE_SLOT_MCP_TRANSPORT_EP  23u

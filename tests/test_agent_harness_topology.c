@@ -39,6 +39,7 @@ int main(void)
     const pd_desc_t *memory = find_pd("agentfs");
     const pd_desc_t *exec = find_pd("exec_verify");
     const pd_desc_t *exec_transport = find_pd("exec_transport");
+    const pd_desc_t *mcp_transport = find_pd("mcp_transport");
     const pd_desc_t *controller = find_pd("controller");
     const pd_desc_t *launcher = find_pd("init_agent");
     assert(harness != NULL);
@@ -47,6 +48,7 @@ int main(void)
     assert(memory != NULL);
     assert(exec != NULL);
     assert(exec_transport != NULL);
+    assert(mcp_transport != NULL);
     assert(controller != NULL);
     assert(launcher != NULL);
 
@@ -65,6 +67,7 @@ int main(void)
     assert(service_badge_data(harness, SVC_ID_EXEC_SERVER)
            == EXECSVC_RIGHT_ALL);
     assert(!has_service(harness, SVC_ID_EXEC_TRANSPORT));
+    assert(!has_service(harness, SVC_ID_MCP_TRANSPORT));
 
     /* Network belongs to ModelSvc, not to the worker. */
     assert(has_service(model, SVC_ID_NET_SERVER));
@@ -73,6 +76,7 @@ int main(void)
     assert(!has_service(tools, SVC_ID_MODELSVC));
     assert(!has_service(tools, SVC_ID_AGENTFS));
     assert(!has_service(tools, SVC_ID_EXEC_TRANSPORT));
+    assert(has_service(tools, SVC_ID_MCP_TRANSPORT));
     assert(has_service(tools, SVC_ID_EXEC_SERVER));
     assert(service_badge_data(tools, SVC_ID_EXEC_SERVER)
            == EXECSVC_RIGHT_AGENTOS_REPOSITORY);
@@ -89,6 +93,12 @@ int main(void)
     assert(!has_service(exec_transport, SVC_ID_AGENTFS));
     assert(!has_service(exec_transport, SVC_ID_EXEC_SERVER));
     assert(!has_service(exec_transport, SVC_ID_NET_SERVER));
+    assert(mcp_transport->self_svc_id == SVC_ID_MCP_TRANSPORT);
+    assert(!has_service(mcp_transport, SVC_ID_MODELSVC));
+    assert(!has_service(mcp_transport, SVC_ID_TOOLSVC));
+    assert(!has_service(mcp_transport, SVC_ID_AGENTFS));
+    assert(!has_service(mcp_transport, SVC_ID_EXEC_SERVER));
+    assert(!has_service(mcp_transport, SVC_ID_NET_SERVER));
     assert(has_service(controller, SVC_ID_AGENT_HARNESS));
     assert(has_service(launcher, SVC_ID_CONTROLLER));
     assert(service_badge_data(launcher, SVC_ID_CONTROLLER)

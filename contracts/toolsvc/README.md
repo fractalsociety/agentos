@@ -5,29 +5,32 @@
 ToolSvc is the central registry and dispatcher for all callable tools in
 agentOS.  It provides:
 
-- Tool registration by any agent (tools are named, described, and schema-typed)
+- Built-in and administrator-configured external tool registration
 - MCP-compatible tool discovery (JSON format matching Model Context Protocol)
 - Capability-gated invocation: callers must hold `CAPSTORE_CAP_TOOL`
-- Routing of invocations to the provider agent via its seL4 badge
+- Routing of external invocations through a private MCP transport capability
 - Per-tool usage statistics (call count, latency)
 
-The registry can hold up to 512 tools simultaneously.  Each tool has:
-an owner AgentID, a JSON input schema, a JSON output schema, and a
-routing badge for the provider PD.
+External tools are namespaced as `mcp.*`. Holding a generic ToolCap does not
+authorize them: the immutable endpoint badge must contain
+`TOOLSVC_RIGHT_MCP_EXTERNAL`. `mcp.tools.list` discovers the bounded catalog
+registered by the administrator-selected provider.
 
 ## Protection Domain
 
-ToolSvc is currently implemented as a library linked into the `controller` PD.
-It surfaces through the `tools.registry` system channel on MsgBus and through
-the userspace `tool-registry` server (`userspace/servers/tool-registry/`).
+ToolSvc is a singleton seL4 protection domain. Each worker maps only its own
+48 KiB request window. The external MCP transport maps only ToolSvc's private
+arena and owns a dedicated VirtIO console; neither mapping nor endpoint is
+installed in a worker CSpace.
 
 The Rust userspace server in `userspace/servers/tool-registry/src/lib.rs`
 mirrors this contract for the higher-level agent runtime.
 
 ## IPC Endpoint
 
-Agents reach ToolSvc via the controller PD.  The controller dispatches
-opcode 0x400–0x406 to the internal ToolSvc library.
+Agents reach ToolSvc through badged, call-only endpoint capabilities. External
+registration is administrator-owned and boot-time; agent-supplied
+`REGISTER`/`UNREGISTER` requests remain denied.
 
 ## Operations
 
@@ -73,9 +76,19 @@ listings:
 ```
 
 Agent LLMs can call `TOOLSVC_OP_LIST` to discover available tools and
-`TOOLSVC_OP_INVOKE` to execute them without any adaptation layer.
+`TOOLSVC_OP_INVOKE` to execute them. A caller with external MCP authority first
+invokes `mcp.tools.list`, then invokes one of the returned `mcp.*` names.
+
+The host adapter uses newline-delimited JSON-RPC over stdio. It implements the
+MCP 2026-07-28 `server/discover` probe and per-request metadata, with a tested
+fallback to the legacy initialize/initialized lifecycle. Server commands are
+exact JSON argv arrays and credentials are supplied through an explicit JSON
+environment map; no shell is involved and ambient host credentials are not
+inherited.
 
 ## Source Files
 
-- `services/toolsvc/toolsvc.c` — C implementation
+- `services/toolsvc/tool_svc.c` — target implementation
+- `kernel/agentos-root-task/src/mcp_transport.c` — isolated native transport
+- `tools/mcp_transport_proxy.py` — shared MCP stdio adapter
 - `userspace/servers/tool-registry/src/lib.rs` — Rust userspace server
