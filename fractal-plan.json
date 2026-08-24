@@ -1,0 +1,1549 @@
+{
+  "prd": {
+    "schema": "fractal.prd.v1",
+    "title": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
+    "summary": "Build and prove a production-quality AgentOS program in which real Codex, Cursor, Claude, and Hermes compatibility workers execute capability-scoped asynchronous work through Fractal across at least two authorized Headscale/Tailscale device environments, share immutable verified workspaces through disconnects, expose honest memory and progress telemetry, and feed a separate local companion application without adding UI code to controlplane.",
+    "architecture": {
+      "approach": "Preserve the existing seL4 Microkit service ABI and implement a contract-first vertical slice above it: AgentLang compiles deterministically through canonical Agent IR to capability-scoped WASM in a trusted no_std Rust host; worker-specific host or Linux-guest adapters speak one typed Fractal worker protocol; a singleton MeshGateway carries typed QUIC frames over the existing Headscale/Tailscale route; CapBroker converts audience-bound remote grants into narrow local capabilities; AgentFS and the canonical hashed event stream own immutable objects, task lineage, CAS roots, and verified merge evidence; read-only typed projections are exported through a local gateway to a sibling companion repository.",
+      "rationale": "This design follows the existing PRD and Beads decisions, keeps seL4 as the only authority boundary, avoids duplicating heavyweight services per worker, keeps tailnet identity strictly separate from AgentOS authority, supports offline-first immutable state and deterministic replay, and isolates all human-facing code outside controlplane while retaining a testable typed boundary.",
+      "components": [
+        {
+          "name": "FractalControlPlane",
+          "responsibility": "Owns asynchronous semantic dispatch, task handles, cancellation, verification evidence, and adapters from AgentLang operations to existing AgentOS PD contracts.",
+          "technology": "Freestanding C Microkit PD adapters plus generated WIT interfaces and no_std Rust SDK bindings"
+        },
+        {
+          "name": "CanonicalState",
+          "responsibility": "Owns append-only hash-chained events, immutable SHA-256 objects, scoped roots, compare-and-swap publication, causal replay, and conflict-preserving verified merge.",
+          "technology": "AgentFS and EventBus C PDs with fixed-layout IPC contracts and deterministic host projections"
+        },
+        {
+          "name": "AgentLangRuntime",
+          "responsibility": "Parses and type-checks AgentLang, emits canonical Agent IR and byte-identical capability-scoped WASM, validates imports and limits, caches AOT artifacts, and executes structured concurrency.",
+          "technology": "no_std Rust trusted host, generated WIT bindings, deterministic WASM validation, and content-addressed artifact cache"
+        },
+        {
+          "name": "CompatibilityWorkers",
+          "responsibility": "Runs official Codex, Cursor, Claude, and Hermes CLIs behind one capability-scoped Fractal session protocol with isolated workspaces, structured results, resource metrics, and credential redaction.",
+          "technology": "Rust host or Linux-guest launch adapters, JSONL protocol parsers, AgentOS CC-PD, and explicit secret handles"
+        },
+        {
+          "name": "TailnetTransport",
+          "responsibility": "Provides the existing device enrollment and encrypted connectivity route without granting application authority.",
+          "technology": "Full Go Headscale server in the FreeBSD mesh-controller guest, standard tailscaled clients and shared-memory bridge, then boot-proven native net_pd and WireGuard path"
+        },
+        {
+          "name": "MeshGateway",
+          "responsibility": "Discovers signed services, multiplexes asynchronous task, event, and object channels, resumes transfers after reconnect, and bounds active-peer memory.",
+          "technology": "Singleton Rust QUIC service using ALPN fractalos-agent/1, generated length-delimited binary frames, and deterministic CBOR manifests"
+        },
+        {
+          "name": "RemoteAuthority",
+          "responsibility": "Validates peer binding, audience, object scope, effect class, budget, lease, authority epoch, and revocation epoch before deriving a local seL4 capability.",
+          "technology": "CapBroker and AuthServer contracts with signed RemoteGrant records and fenced execution leases"
+        },
+        {
+          "name": "CompanionProjectionBoundary",
+          "responsibility": "Exports typed progress, project, daily-root, and health-adapter read models plus narrowly scoped task intents without credentials or personal records.",
+          "technology": "Versioned WIT schemas, Rust projection library, and a local Axum HTTP/3 or HTTP/2 gateway"
+        },
+        {
+          "name": "CompanionApplication",
+          "responsibility": "Renders project, daily, worker-memory, and health pages and submits only explicitly granted typed intents outside the AgentOS repository.",
+          "technology": "Sibling repository with TypeScript, React, Vite, generated typed client, CSP, and local-only deployment"
+        },
+        {
+          "name": "ProofPipeline",
+          "responsibility": "Produces honest host, security, AArch64, x86_64, QEMU, performance, live-worker, and two-device evidence and prevents unsupported proof claims.",
+          "technology": "Cargo xtask, Make, TAP contract runner, QEMU, shell E2E harnesses, and machine-readable JSON evidence"
+        }
+      ]
+    },
+    "acceptance_criteria": [
+      {
+        "id": "AC-1",
+        "criterion": "The Beads graph matches the recovered Fractal PRD and contains bounded, dependency-linked issues for Cursor compatibility, Fractal-controlplane integration, remote Fractal sessions, companion gateway, daily-root, health adapter, project-progress adapter, companion pages, and the two-device gate.",
+        "verification": "Run bd lint and bd preflight, then query bd list --all --json and assert exactly one non-superseded issue matching each required scope has description, design, acceptance criteria, dependency edges, and an evidence field."
+      },
+      {
+        "id": "AC-2",
+        "criterion": "The current test_wg_net_sessions compile regression is fixed without removing or bypassing the in-progress net_pd-to-WireGuard handoff.",
+        "verification": "Run cargo xtask test and require test_wg_net_sessions and test_net_wg_handoff to compile and pass; inspect the diff to confirm the new net_device session and ownership APIs remain exercised."
+      },
+      {
+        "id": "AC-3",
+        "criterion": "AgentOS boots and its contract and performance suites pass on supported AArch64 and x86_64 QEMU targets.",
+        "verification": "Run make gate, make test-target-all, and make perf-gate; require zero exit codes, TAP_DONE from both target runners, boot success markers, and threshold-checked JSON performance reports."
+      },
+      {
+        "id": "AC-4",
+        "criterion": "Real Codex, Cursor, Claude, and Hermes compatibility workers each accept a Fractal task, edit only an isolated fixture workspace, run its native verification, and return the same typed terminal-result envelope with usage and peak-memory metrics.",
+        "verification": "Run make e2e-fractal-workers with all four live opt-in variables and CLI paths configured; require four distinct version records, successful fixture commits, schema-valid JSONL results, zero out-of-scope changes, and no skipped live worker."
+      },
+      {
+        "id": "AC-5",
+        "criterion": "At least two authorized device environments enroll through the existing Headscale/Tailscale route and discover only explicitly advertised Fractal services.",
+        "verification": "Run tests/e2e/test_two_device_fractal.sh against two clean device environments and the FreeBSD mesh-controller role; require distinct NodeIDs, authenticated tailnet peers, signed service advertisements, and successful deny-by-default policy checks."
+      },
+      {
+        "id": "AC-6",
+        "criterion": "Tailnet identity never creates AgentOS authority, and a revoked, expired, wrong-audience, stale-epoch, or fabricated grant is rejected before local PD dispatch.",
+        "verification": "Run tests/security/test_remote_grants and the revocation phase of tests/e2e/test_two_device_fractal.sh; require auditable denial events, unchanged service invocation counters, and immediate rejection after revocation."
+      },
+      {
+        "id": "AC-7",
+        "criterion": "Asynchronous cooperative tasks and mailbox messages survive a forced disconnect and reconnect without duplicate effects, lost terminal state, or a blocked synchronous seL4 call.",
+        "verification": "During tests/e2e/test_two_device_fractal.sh, sever the peer route for 30 seconds, queue work on both sides, restore connectivity, and assert handle continuity, exactly-once committed effects, deterministic event convergence, and bounded resync time in the evidence JSON."
+      },
+      {
+        "id": "AC-8",
+        "criterion": "Capability-scoped immutable shared workspaces synchronize missing objects, publish roots by compare-and-swap, merge only with TASK_VERIFY evidence, and preserve both roots on unresolved conflict.",
+        "verification": "Run tests/integration/test_shared_space_replication and the two-device divergent-edit scenario; verify full SHA-256 identities, resumable chunk hashes, CAS conflict detection, verified merge evidence, and absence of silent last-writer-wins."
+      },
+      {
+        "id": "AC-9",
+        "criterion": "Worker and mesh memory is measured honestly: an active worker remains below the 150 MiB private hard ceiling, dormant actors retain at most 256 KiB each excluding shared immutable cache, and dormant memory is at least 90 percent below the corresponding active harness allocation.",
+        "verification": "Run the active-frontier memory scenario through make perf-gate and tests/e2e/test_two_device_fractal.sh; validate emitted active_private_bytes, dormant_private_bytes, shared_bytes, actor_count, and active_peer_bytes against performance/thresholds.json."
+      },
+      {
+        "id": "AC-10",
+        "criterion": "A separate local companion application receives versioned typed progress, project, daily-root, and health-adapter data and can submit only explicitly granted task intents.",
+        "verification": "Run the sibling companion contract suite and tests/e2e/test_companion_gateway.sh; validate every response against interfaces/wit/fractal-companion-v1/companion.wit, pin each projection to an event range and root, and prove an ungranted mutation returns a typed denial."
+      },
+      {
+        "id": "AC-11",
+        "criterion": "No UI or browser-serving implementation is added to controlplane; all companion pages and assets live in a sibling repository.",
+        "verification": "Run git diff --name-only against the planning baseline and fail if controlplane adds html, css, js, mjs, jsx, tsx, vue, svelte, package.json, node_modules, yarn.lock, or bun.lockb; separately require the companion page tests in ../agentos-companion to pass."
+      },
+      {
+        "id": "AC-12",
+        "criterion": "Credentials and personal records are never persisted, logged, included in canonical events, transferred as workspace objects, or returned by companion projections.",
+        "verification": "Run tests/security/test_secret_redaction.sh with seeded canary credentials and personal-record fixtures, scan structured logs, events, objects, worker outputs, crash paths, and companion responses, and require zero canary matches while live workers authenticate through opaque secret handles."
+      },
+      {
+        "id": "AC-13",
+        "criterion": "Pinned AgentLang source, prelude, compiler, constraints, and provider interfaces produce byte-identical Agent IR and WASM, and every nested operation is independently authorized and bounded.",
+        "verification": "Run the AgentLang determinism and adversarial suites twice from clean caches; compare SHA-256 artifacts and require rejection of undeclared imports, stale interfaces, excess fuel, memory, children, results, deadlines, cancellation violations, and fabricated calls."
+      },
+      {
+        "id": "AC-14",
+        "criterion": "The isolated GPU command and zero-copy tensor path, zero-copy AgentIPC path, AOT cache, warm pools, and topology-aware scheduling remain capability isolated and satisfy checked-in performance thresholds on applicable hardware or QEMU emulation.",
+        "verification": "Run make perf-gate plus focused GPU, AgentIPC, AOT-cache, warm-pool, and scheduler tests; require exclusive device ownership, bounded queues, cache-integrity checks, topology metrics, and threshold-valid machine-readable results, recording unsupported physical-GPU proof separately from emulated contract proof."
+      },
+      {
+        "id": "AC-15",
+        "criterion": "Accepted work is committed and pushed with Beads closed only when concrete evidence supports each claim; unavailable external environments remain open with precise reproducible blocker evidence and do not count as product completion.",
+        "verification": "Run bd preflight, git pull --rebase, bd dolt push, git push, and git status; require the branch to be up to date with origin, evidence paths and commit hashes attached to closed issues, and any live-environment blocker issue to contain the failed command, timestamp, prerequisite, observed output, and next action."
+      }
+    ],
+    "non_goals": [
+      "Replacing seL4, Microkit IPC, or existing per-PD lower contracts",
+      "Granting AgentOS authority from Headscale identity, tailnet IP, MagicDNS, WireGuard keys, device tags, or remote badges",
+      "Adding HTML, CSS, JavaScript, TypeScript, browser assets, dashboards, WebSockets, or interactive UI code to controlplane",
+      "Putting Python, Node.js, or another interpreted runtime in kernel, services, libs, or userspace/servers",
+      "Giving generated AgentLang or worker code ambient filesystem, shell, network, environment, credential, or promotion-verifier access",
+      "Building a globally mutable distributed filesystem, full-mesh canonical gossip log, or automatic last-writer-wins merge",
+      "Porting the full Go Headscale server into a freestanding native PD",
+      "Claiming native hardware, live model, physical GPU, relay, or two-device proof from host stubs or skipped tests"
+    ]
+  },
+  "tasks": [
+    {
+      "id": "reconcile_prd_beads",
+      "title": "Reconcile the recovered PRD and Beads program graph",
+      "capability": "code.edit",
+      "agent": "codex-luna",
+      "instruction": "Run bd prime, capture the initial git status without modifying or discarding any current change, inspect all agentos-gz0 descendants and recover docs/fractal-agent-ir-v0.md plus already-accepted Fractal artifacts from reachable Git history only after diffing them against the worktree. Use bd CLI commands, never direct edits to Beads storage, to deduplicate or supersede stale duplicate nodes and create bounded issues for Cursor compatibility, Fractal-controlplane integration, remote Fractal worker sessions, companion gateway, daily-root model, health adapter boundary, project-progress adapter, companion pages, and the two-device E2E gate. Give every issue design, acceptance criteria, dependencies, proof level, affected paths, and external-environment blocker policy; preserve the active network handoff and record the planning baseline commit and dirty paths in issue notes.",
+      "depends_on": [],
+      "execution": {
+        "mode": "sequential",
+        "wave": 1
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 14000,
+        "dependencies": [],
+        "expected_artifact": "A recovered versioned PRD and a lint-clean non-duplicated Beads DAG with nine bounded missing-scope issues and baseline preservation notes",
+        "files_or_systems_affected": [
+          ".beads",
+          "docs/fractal-agent-ir-v0.md"
+        ],
+        "verification_plan": "Run bd lint, bd preflight, bd orphans, and a JSON query over bd list --all --json that proves one active issue per required missing scope with complete fields and valid dependencies; compare git status to the captured baseline to prove no pre-existing change was lost.",
+        "current_assumptions": [
+          "The authoritative PRD and accepted bootstrap artifacts are reachable in local Git history even though some are absent from the current tree",
+          "The active agentos-gz0 epic remains the parent program",
+          "Beads mutations must be performed only through bd"
+        ],
+        "similarity_to_other_active_nodes": {},
+        "confidence_still_useful": 0.99
+      }
+    },
+    {
+      "id": "fix_wg_compile_regression",
+      "title": "Fix the WireGuard session test compile regression",
+      "capability": "code.edit",
+      "agent": "cursor",
+      "instruction": "Diagnose and fix the compile failure in tests/test_wg_net_sessions.c against the dirty in-progress interfaces in kernel/agentos-root-task/include/wg_net.h, kernel/agentos-root-task/include/net_server.h, kernel/agentos-root-task/include/contracts/net_device_contract.h, services/net-server/net_server.c, services/net-service/net_pd.c, and xtask/src/cmd_host_test.rs. Preserve the intended net_pd ownership and network handoff, update the test before production code when behavior changes, make the smallest coherent compatibility correction, and do not revert or overwrite unrelated dirty edits.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 10000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "A minimal compile-compatible WireGuard session API and passing focused session and handoff host tests",
+        "files_or_systems_affected": [
+          "tests/test_wg_net_sessions.c",
+          "tests/test_net_wg_handoff.c",
+          "kernel/agentos-root-task/include/wg_net.h",
+          "kernel/agentos-root-task/include/net_server.h",
+          "kernel/agentos-root-task/include/contracts/net_device_contract.h",
+          "xtask/src/cmd_host_test.rs"
+        ],
+        "verification_plan": "Run cargo xtask test and require test_wg_net_sessions and test_net_wg_handoff to compile and pass; inspect git diff to verify net_pd remains the device owner and no in-progress handoff code was removed.",
+        "current_assumptions": [
+          "The regression is an interface mismatch introduced during the current network handoff",
+          "The existing dirty network files are intentional work to preserve"
+        ],
+        "similarity_to_other_active_nodes": {
+          "finish_native_network": 0.68
+        },
+        "confidence_still_useful": 0.99
+      }
+    },
+    {
+      "id": "fractal_controlplane_contract_tests",
+      "title": "Specify Fractal-controlplane integration contracts and failing tests",
+      "capability": "code.generate",
+      "agent": "codex-luna",
+      "instruction": "Restore or create interfaces/wit/fractalos-capabilities-v1/capabilities.wit and define a versioned asynchronous Fractal control-plane boundary in kernel/agentos-root-task/include/contracts/agent_task_contract.h and kernel/agentos-root-task/include/agentos.h before implementation. Cover task submission, ProgramHandle and TaskHandle polling, cancellation, budget, authority epoch, TASK_VERIFY evidence, terminal results, and typed worker identity without paths, commands, URLs, credentials, or provider locators. Add failing host and target contract tests in tests/contracts/agent_task_test.c and tests/test_agent_task_gateway.c for every new opcode, error, stale handle, revocation, and nonblocking invariant, and register them in the native test runners.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 16000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "Versioned WIT and C IPC contracts with failing host and real-target tests for the Fractal task boundary",
+        "files_or_systems_affected": [
+          "interfaces/wit/fractalos-capabilities-v1/capabilities.wit",
+          "kernel/agentos-root-task/include/contracts/agent_task_contract.h",
+          "kernel/agentos-root-task/include/agentos.h",
+          "tests/contracts/agent_task_test.c",
+          "tests/test_agent_task_gateway.c",
+          "tests/harness/target_contract_runner.c"
+        ],
+        "verification_plan": "Compile the focused contract tests and confirm they fail only because implementation is absent; run cargo xtask gen-abi or cargo xtask gen-abi --check as supported and require no opcode or channel collision.",
+        "current_assumptions": [
+          "Existing AgentOS per-PD contracts remain the stable lower ABI",
+          "Long operations must return handles rather than hold a synchronous seL4 call"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_fractal_controlplane": 0.82,
+          "canonical_event_verify_contract_tests": 0.32
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "cursor_compat_contract_tests",
+      "title": "Define Cursor compatibility protocol and failing tests",
+      "capability": "code.generate",
+      "agent": "cursor",
+      "instruction": "Define the Cursor worker profile in manifests/workers/cursor.toml and a provider-neutral typed worker-session schema in interfaces/wit/fractal-worker-v1/worker.wit. Add failing tests in tests/compat/test_cursor_worker.rs that exercise version discovery, isolated workspace input, JSONL event normalization, cancellation, exit status, peak RSS, allowed-file enforcement, credential redaction, and mapping into the common Fractal terminal-result envelope. The manifest may describe an executable route but must grant no authority and must not embed a credential, personal path, or user record.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 11000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "A capability-neutral Cursor worker manifest, common worker WIT schema, and failing compatibility tests",
+        "files_or_systems_affected": [
+          "manifests/workers/cursor.toml",
+          "interfaces/wit/fractal-worker-v1/worker.wit",
+          "tests/compat/test_cursor_worker.rs"
+        ],
+        "verification_plan": "Run cargo test -p fractal-worker-compat cursor and confirm schema tests pass while launcher behavior tests fail until the adapter exists; scan fixtures and manifest for secrets and absolute personal paths.",
+        "current_assumptions": [
+          "The real Cursor CLI is supplied by the execution environment",
+          "Worker-specific syntax is isolated behind a common typed session protocol"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_cursor_worker": 0.86,
+          "claude_hermes_compat_contract_tests": 0.54
+        },
+        "confidence_still_useful": 0.96
+      }
+    },
+    {
+      "id": "claude_hermes_compat_contract_tests",
+      "title": "Define Claude and Hermes compatibility profiles and failing tests",
+      "capability": "code.generate",
+      "agent": "hermes",
+      "instruction": "Using interfaces/wit/fractal-worker-v1/worker.wit as the shared boundary, create manifests/workers/claude.toml and manifests/workers/hermes.toml plus failing tests/tests in tests/compat/test_claude_worker.rs and tests/compat/test_hermes_worker.rs. Each suite must prove real-version preflight, isolated repository input, normalized streaming events, cancellation, terminal status, peak RSS, allowed-file enforcement, opaque-secret handling, and identical Fractal result semantics despite different CLI output formats. Do not add shell, network, or filesystem authority to the manifests.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 14000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "Claude and Hermes worker profiles with failing common-protocol compatibility and safety tests",
+        "files_or_systems_affected": [
+          "manifests/workers/claude.toml",
+          "manifests/workers/hermes.toml",
+          "interfaces/wit/fractal-worker-v1/worker.wit",
+          "tests/compat/test_claude_worker.rs",
+          "tests/compat/test_hermes_worker.rs"
+        ],
+        "verification_plan": "Run cargo test -p fractal-worker-compat claude and cargo test -p fractal-worker-compat hermes; require schema and fixture parsers to pass and missing launcher behavior to fail explicitly rather than skip.",
+        "current_assumptions": [
+          "Real Claude and Hermes CLIs are external compatibility executables",
+          "One worker WIT interface can normalize their distinct event streams"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_claude_worker": 0.78,
+          "implement_hermes_worker": 0.78,
+          "cursor_compat_contract_tests": 0.54
+        },
+        "confidence_still_useful": 0.95
+      }
+    },
+    {
+      "id": "remote_mesh_contract_tests",
+      "title": "Specify remote Fractal session, grant, and mesh frame contracts",
+      "capability": "code.generate",
+      "agent": "codex-luna",
+      "instruction": "Extend kernel/agentos-root-task/include/contracts/mesh_agent_contract.h and kernel/agentos-root-task/include/agentos.h contract-first for NodeID, ServiceID, SpaceID, asynchronous remote session handles, signed service advertisements, RemoteGrant audience and scope, fenced execution leases, revocation epochs, typed task, event, object, and control frames, cancellation, and reconnect resume tokens. Add tests/contracts/mesh_agent_test.c and new tests/test_fractal_mesh_frames.rs failing cases for malformed lengths, replay, wrong audience, stale epoch, remote-badge injection, duplicate completion, and bounded flow control. Keep the wire encoding generated and transport-neutral; datagrams may carry only disposable hints.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 17000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "Versioned remote-session and authority contracts with adversarial failing C and Rust tests",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/include/contracts/mesh_agent_contract.h",
+          "kernel/agentos-root-task/include/agentos.h",
+          "interfaces/wit/fractal-mesh-v1/mesh.wit",
+          "tests/contracts/mesh_agent_test.c",
+          "tests/test_fractal_mesh_frames.rs"
+        ],
+        "verification_plan": "Run focused C contract compilation, Rust frame tests, and cargo xtask gen-abi validation; confirm implementation-dependent tests fail and every newly introduced opcode has success and denial coverage.",
+        "current_assumptions": [
+          "Headscale supplies authenticated encrypted transport identity only",
+          "QUIC is the preferred initial transport but semantic frames remain transport-neutral"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_remote_mesh_sessions": 0.82,
+          "implement_remote_authority": 0.66,
+          "implement_shared_space_replication": 0.35
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "companion_export_contract_tests",
+      "title": "Specify typed companion gateway exports and failing tests",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Create interfaces/wit/fractal-companion-v1/companion.wit and kernel/agentos-root-task/include/contracts/companion_export_contract.h before any implementation. Define versioned Project, Progress, DailyRoot, HealthAdapter, WorkerMemory, EventCursor, and TaskIntent types with explicit field bounds, ObjectIDs, event ranges, authority epochs, redaction classes, pagination, and typed errors. Add new opcodes to kernel/agentos-root-task/include/agentos.h and failing tests/contracts/companion_export_test.c plus tests/contract/test_companion_schema.rs for every request, denial, stale cursor, oversized result, and schema compatibility path. The contract must not expose raw credentials, personal records, shell commands, filesystem paths, or promotion data.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 15000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "A versioned companion WIT and PD contract with failing bounded export and denial tests",
+        "files_or_systems_affected": [
+          "interfaces/wit/fractal-companion-v1/companion.wit",
+          "kernel/agentos-root-task/include/contracts/companion_export_contract.h",
+          "kernel/agentos-root-task/include/agentos.h",
+          "tests/contracts/companion_export_test.c",
+          "tests/contract/test_companion_schema.rs"
+        ],
+        "verification_plan": "Run WIT parsing and compatibility tests, compile the C contract suite, and run ABI collision validation; confirm behavior tests fail until the export PD and gateway exist.",
+        "current_assumptions": [
+          "Companion data is a typed projection of canonical state rather than a second source of truth",
+          "The browser-facing implementation will exist only in a sibling repository"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_companion_gateway": 0.81,
+          "daily_root_contract_tests": 0.38,
+          "health_adapter_contract_tests": 0.38,
+          "project_progress_contract_tests": 0.42
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "daily_root_contract_tests",
+      "title": "Define the immutable daily-root model and failing tests",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Add the DailyRoot and DailyItem projection semantics to interfaces/wit/fractal-companion-v1/companion.wit and create tests/contract/test_daily_root.rs. Specify a date and timezone key, pinned project and event roots, provenance, redaction status, source freshness, immutable bundle ObjectID, explicit conflict heads, deterministic ordering, and typed task-intent references. Write failing tests for deterministic rebuild, stale source, unauthorized field projection, timezone rollover, offline branch conflict, and schema-declared merge; do not include raw calendar, message, health, or file records.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 10000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "A deterministic privacy-preserving DailyRoot schema and failing projection tests",
+        "files_or_systems_affected": [
+          "interfaces/wit/fractal-companion-v1/companion.wit",
+          "tests/contract/test_daily_root.rs"
+        ],
+        "verification_plan": "Run cargo test -p fractal-companion-contract daily_root and require schema-only checks to pass and unimplemented projection tests to fail with the expected cases.",
+        "current_assumptions": [
+          "DailyRoot is a derived immutable read model, not a mutable calendar database",
+          "Raw personal records stay behind source adapters and are not exported"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_daily_root_projection": 0.84,
+          "companion_export_contract_tests": 0.38
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "health_adapter_contract_tests",
+      "title": "Define the privacy-bounded health adapter and failing tests",
+      "capability": "code.generate",
+      "agent": "hermes",
+      "instruction": "Define HealthAdapterSummary and HealthSignal in interfaces/wit/fractal-companion-v1/companion.wit with source class, consent scope, freshness, coarse status, provenance hash, redaction state, and no raw medical record fields. Create tests/contract/test_health_adapter.rs that fail until the adapter enforces explicit authorization, minimum-necessary aggregation, expiry, deletion or revocation, deterministic projection, and canary-record non-disclosure. Keep source credentials opaque and outside canonical events and immutable shared workspaces.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 9000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "A minimum-necessary health summary boundary and failing privacy and revocation tests",
+        "files_or_systems_affected": [
+          "interfaces/wit/fractal-companion-v1/companion.wit",
+          "tests/contract/test_health_adapter.rs"
+        ],
+        "verification_plan": "Run cargo test -p fractal-companion-contract health_adapter and a static canary-field scan; require schema checks to pass and implementation cases to fail until the adapter exists.",
+        "current_assumptions": [
+          "Only coarse user-authorized summaries belong at the companion boundary",
+          "Health source systems remain external and are not implemented in AgentOS core"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_health_adapter": 0.86,
+          "companion_export_contract_tests": 0.38
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "project_progress_contract_tests",
+      "title": "Define project and progress adapter semantics and failing tests",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Define ProjectSnapshot, ProgressNode, ProofLevel, BlockerEvidence, WorkerAssignment, and typed pagination in interfaces/wit/fractal-companion-v1/companion.wit. Add tests/contract/test_project_progress.rs for deterministic Beads and Fractal event projection, dependency ordering, honest proof levels, active versus dormant memory fields, stale cursor rejection, redaction, and exclusion of hidden promotion details. The adapter must expose immutable identifiers and event ranges rather than writable Beads internals.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 10000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "Typed project and progress read-model schemas with failing projection and proof-honesty tests",
+        "files_or_systems_affected": [
+          "interfaces/wit/fractal-companion-v1/companion.wit",
+          "tests/contract/test_project_progress.rs"
+        ],
+        "verification_plan": "Run cargo test -p fractal-companion-contract project_progress; require deterministic fixture serialization and expected failures for missing adapter behavior.",
+        "current_assumptions": [
+          "Beads remains the issue source while the canonical Fractal event stream supplies execution state",
+          "Proof level is explicit data and never inferred from a green host-only test"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_project_progress_adapter": 0.87,
+          "companion_export_contract_tests": 0.42
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "canonical_event_verify_contract_tests",
+      "title": "Specify canonical event, TASK_VERIFY, and lifecycle tests",
+      "capability": "code.generate",
+      "agent": "codex-luna",
+      "instruction": "Recover or define the append-only Agent event schema and TASK_VERIFY version transition in kernel/agentos-root-task/include/contracts/eventbus_contract.h, kernel/agentos-root-task/include/contracts/agent_task_contract.h, and interfaces/wit/fractalos-capabilities-v1/capabilities.wit. Add failing tests/test_agent_event_stream.c and tests/contracts/eventbus_test.c cases proving every task, nested call, object transition, mailbox event, budget, authority change, verification, effect, checkpoint, commit, disconnect, and reconnect has a hash-chained event; prove exact replay and reject tamper, truncation, reorder, cross-scope references, commit without matching TASK_VERIFY evidence, and any candidate-visible PROMOTION_VERIFY path.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 15000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "Versioned canonical event and TASK_VERIFY contracts with replay, tamper, leakage, and lifecycle failing tests",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/include/contracts/eventbus_contract.h",
+          "kernel/agentos-root-task/include/contracts/agent_task_contract.h",
+          "interfaces/wit/fractalos-capabilities-v1/capabilities.wit",
+          "tests/test_agent_event_stream.c",
+          "tests/contracts/eventbus_test.c"
+        ],
+        "verification_plan": "Compile and run the focused contract suites, requiring existing schema checks to pass and implementation-dependent replay and verification cases to fail for the documented reason; validate opcode uniqueness.",
+        "current_assumptions": [
+          "The event stream is the sole execution source of truth",
+          "PROMOTION_VERIFY remains unavailable to candidate authority"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_canonical_event_verify": 0.88,
+          "fractal_controlplane_contract_tests": 0.32,
+          "implement_actor_memory_lifecycle": 0.28
+        },
+        "confidence_still_useful": 0.99
+      }
+    },
+    {
+      "id": "finish_native_network",
+      "title": "Complete the native net_pd, WireGuard, and zero-copy handoff",
+      "capability": "code.edit",
+      "agent": "cursor",
+      "instruction": "Using the repaired host tests, finish the current network handoff across kernel/agentos-root-task/src/wg_net.c, services/net-server/net_server.c, services/net-service/net_pd.c, kernel/agentos-root-task/src/system_desc_aarch64.c, and kernel/agentos-root-task/src/main.c. Keep net_pd as the only writable NIC MMIO and DMA owner, use IRQ-driven bounded RX and TX queues, enforce ring ownership and backpressure, route WireGuard session traffic through the net_device contract, preserve Headscale netmap compatibility, and extend tests/test_net_fastpath.c and tests/test_net_wg_handoff.c before each behavioral change. Do not introduce polling as the claimed production path or overwrite unrelated dirty work.",
+      "depends_on": [
+        "fix_wg_compile_regression"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 24000,
+        "dependencies": [
+          "fix_wg_compile_regression"
+        ],
+        "expected_artifact": "A single-owner IRQ-driven native NIC and WireGuard handoff with bounded zero-copy rings and host coverage",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/wg_net.c",
+          "services/net-server/net_server.c",
+          "services/net-service/net_pd.c",
+          "kernel/agentos-root-task/src/system_desc_aarch64.c",
+          "kernel/agentos-root-task/src/main.c",
+          "tests/test_net_fastpath.c",
+          "tests/test_net_wg_handoff.c"
+        ],
+        "verification_plan": "Run cargo xtask test, make test-native-net, crypto vectors, replay and rekey tests, and focused ownership assertions; leave target proof for the dual-architecture gate.",
+        "current_assumptions": [
+          "The dirty handoff establishes the intended endpoint and shared-ring topology",
+          "The native tailnet path remains gated on real target proof"
+        ],
+        "similarity_to_other_active_nodes": {
+          "fix_wg_compile_regression": 0.68,
+          "implement_remote_mesh_sessions": 0.34
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "implement_fractal_controlplane",
+      "title": "Implement the asynchronous Fractal control-plane bridge",
+      "capability": "code.edit",
+      "agent": "codex-luna",
+      "instruction": "Implement the approved Fractal task contract in kernel/agentos-root-task/src/agent_task_gateway.c and the appropriate existing agent runtime and EventBus adapter files. Submission must validate badge, capability subset, authority epoch, ObjectIDs, budget, and bounds, enqueue work, and return a handle before long execution; completion, cancellation, failure, TASK_VERIFY evidence, and resource metrics must arrive through authenticated events. Generate Rust bindings under userspace/sdk from the WIT source and update system topology without creating a second contract for any PD. Make tests/contracts/agent_task_test.c and tests/test_agent_task_gateway.c pass on host while retaining target assertions.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 26000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests"
+        ],
+        "expected_artifact": "A nonblocking capability-authorized Fractal bridge with generated SDK bindings and passing host contract tests",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/agent_task_gateway.c",
+          "kernel/agentos-root-task/src/main.c",
+          "kernel/agentos-root-task/agentos.toml",
+          "userspace/sdk/src/fractal.rs",
+          "tests/contracts/agent_task_test.c",
+          "tests/test_agent_task_gateway.c"
+        ],
+        "verification_plan": "Run focused contract and integration tests, cargo test for userspace/sdk, and an instrumented async flow proving submission returns before delayed completion and revocation prevents dispatch.",
+        "current_assumptions": [
+          "Existing EventBus, AgentFS, QuotaPD, CapBroker, ModelSvc, ToolSvc, and ExecServer remain shared services",
+          "Workers never mint capabilities or create PDs"
+        ],
+        "similarity_to_other_active_nodes": {
+          "fractal_controlplane_contract_tests": 0.82,
+          "implement_canonical_event_verify": 0.44,
+          "implement_agentlang_runtime": 0.34
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "implement_codex_worker",
+      "title": "Integrate the real Codex compatibility worker through Fractal",
+      "capability": "code.edit",
+      "agent": "codex-luna",
+      "instruction": "Refactor the existing official Codex path in tools/run-agent and tests/e2e/test_codex_agent.sh to implement interfaces/wit/fractal-worker-v1/worker.wit and the common Fractal session envelope. Preserve official codex exec --json, ephemeral isolated Git workspaces, explicit workspace-write sandboxing, the narrow AgentOS MCP allowlist, structured usage and max-RSS capture, and credential-free version preflight. Add manifests/workers/codex.toml and ensure live authentication uses an opaque secret handle or inherited ephemeral process channel that is never persisted or logged.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 15000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests"
+        ],
+        "expected_artifact": "A real official-Codex Fractal worker adapter with isolated live E2E and structured resource evidence",
+        "files_or_systems_affected": [
+          "tools/run-agent/src/main.rs",
+          "manifests/workers/codex.toml",
+          "tests/e2e/test_codex_agent.sh",
+          "tests/compat/test_codex_worker.rs"
+        ],
+        "verification_plan": "Run credential-free version and fixture parser tests, then with explicit live opt-in run tests/e2e/test_codex_agent.sh and require a verified fixture edit, one allowed MCP call, typed completion, and no secret canary in outputs.",
+        "current_assumptions": [
+          "The official Codex CLI is available in the live gate environment",
+          "The existing host-side compatibility route remains valid until the full Linux guest prerequisites are proven"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_cursor_worker": 0.58,
+          "implement_claude_worker": 0.56,
+          "implement_hermes_worker": 0.56
+        },
+        "confidence_still_useful": 0.96
+      }
+    },
+    {
+      "id": "implement_cursor_worker",
+      "title": "Implement the real Cursor compatibility worker",
+      "capability": "code.generate",
+      "agent": "cursor",
+      "instruction": "Create a Cursor adapter in tools/fractal-worker-compat that loads manifests/workers/cursor.toml, performs real CLI version preflight, launches the CLI in a temporary isolated Git workspace with only declared Fractal capabilities, normalizes its streaming output into interfaces/wit/fractal-worker-v1/worker.wit, propagates cancellation and deadlines, measures peak RSS, and rejects file changes outside the allowed set. Use opaque credential handles and deterministic redaction; never embed credentials, personal paths, or unrestricted shell and network authority. Make tests/compat/test_cursor_worker.rs pass and add a live opt-in case to tests/e2e/test_fractal_workers.sh.",
+      "depends_on": [
+        "cursor_compat_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 17000,
+        "dependencies": [
+          "cursor_compat_contract_tests"
+        ],
+        "expected_artifact": "A production Cursor CLI adapter with passing fixture and live opt-in Fractal worker tests",
+        "files_or_systems_affected": [
+          "tools/fractal-worker-compat/Cargo.toml",
+          "tools/fractal-worker-compat/src/cursor.rs",
+          "tests/compat/test_cursor_worker.rs",
+          "tests/e2e/test_fractal_workers.sh"
+        ],
+        "verification_plan": "Run cargo test -p fractal-worker-compat cursor and the live Cursor branch of tests/e2e/test_fractal_workers.sh; require version evidence, verified isolated edit, cancellation coverage, bounded RSS, and zero redaction canary leaks.",
+        "current_assumptions": [
+          "The live environment supplies a supported Cursor CLI and explicit opt-in",
+          "The common worker crate may be host-side tooling under tools"
+        ],
+        "similarity_to_other_active_nodes": {
+          "cursor_compat_contract_tests": 0.86,
+          "implement_codex_worker": 0.58,
+          "implement_claude_worker": 0.6,
+          "implement_hermes_worker": 0.6
+        },
+        "confidence_still_useful": 0.95
+      }
+    },
+    {
+      "id": "implement_claude_worker",
+      "title": "Implement the real Claude compatibility worker",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Implement tools/fractal-worker-compat/src/claude.rs from manifests/workers/claude.toml and interfaces/wit/fractal-worker-v1/worker.wit. Perform real CLI version preflight, execute only inside an isolated temporary Git workspace, translate streaming events and terminal usage into the common Fractal result, propagate cancellation and deadlines, measure peak RSS, enforce the allowed-file set, and use opaque credential handles with deterministic redaction. Make tests/compat/test_claude_worker.rs pass and add a non-skipping live opt-in Claude case to tests/e2e/test_fractal_workers.sh.",
+      "depends_on": [
+        "claude_hermes_compat_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 16000,
+        "dependencies": [
+          "claude_hermes_compat_contract_tests"
+        ],
+        "expected_artifact": "A production Claude CLI adapter with passing fixture and live opt-in Fractal worker tests",
+        "files_or_systems_affected": [
+          "tools/fractal-worker-compat/src/claude.rs",
+          "tests/compat/test_claude_worker.rs",
+          "tests/e2e/test_fractal_workers.sh"
+        ],
+        "verification_plan": "Run cargo test -p fractal-worker-compat claude and the live Claude branch of tests/e2e/test_fractal_workers.sh; require a verified edit, normalized typed result, cancellation, RSS, path-boundary, and secret-redaction evidence.",
+        "current_assumptions": [
+          "The live environment supplies the official Claude compatibility CLI and explicit opt-in",
+          "CLI-specific event parsing remains isolated from core AgentOS contracts"
+        ],
+        "similarity_to_other_active_nodes": {
+          "claude_hermes_compat_contract_tests": 0.78,
+          "implement_cursor_worker": 0.6,
+          "implement_hermes_worker": 0.66
+        },
+        "confidence_still_useful": 0.95
+      }
+    },
+    {
+      "id": "implement_hermes_worker",
+      "title": "Implement the real Hermes compatibility worker",
+      "capability": "code.generate",
+      "agent": "hermes",
+      "instruction": "Implement tools/fractal-worker-compat/src/hermes.rs from manifests/workers/hermes.toml and interfaces/wit/fractal-worker-v1/worker.wit. Perform real CLI version preflight, execute only inside an isolated temporary Git workspace, normalize streaming and terminal output, propagate cancellation and deadlines, measure peak RSS, enforce allowed-file changes, and authenticate through opaque credential handles with deterministic redaction. Make tests/compat/test_hermes_worker.rs pass and add a non-skipping live opt-in Hermes case to tests/e2e/test_fractal_workers.sh without granting ambient authority.",
+      "depends_on": [
+        "claude_hermes_compat_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 16000,
+        "dependencies": [
+          "claude_hermes_compat_contract_tests"
+        ],
+        "expected_artifact": "A production Hermes CLI adapter with passing fixture and live opt-in Fractal worker tests",
+        "files_or_systems_affected": [
+          "tools/fractal-worker-compat/src/hermes.rs",
+          "tests/compat/test_hermes_worker.rs",
+          "tests/e2e/test_fractal_workers.sh"
+        ],
+        "verification_plan": "Run cargo test -p fractal-worker-compat hermes and the live Hermes branch of tests/e2e/test_fractal_workers.sh; require verified output, typed normalization, cancellation, RSS, workspace scope, and redaction evidence.",
+        "current_assumptions": [
+          "The live environment supplies a supported Hermes CLI and explicit opt-in",
+          "Hermes uses the same semantic result contract despite a distinct native event format"
+        ],
+        "similarity_to_other_active_nodes": {
+          "claude_hermes_compat_contract_tests": 0.78,
+          "implement_cursor_worker": 0.6,
+          "implement_claude_worker": 0.66
+        },
+        "confidence_still_useful": 0.94
+      }
+    },
+    {
+      "id": "implement_canonical_event_verify",
+      "title": "Implement canonical event sourcing and verified-only commits",
+      "capability": "code.edit",
+      "agent": "codex-luna",
+      "instruction": "Implement the canonical hash-chained event stream and TASK_VERIFY transition required by tests/test_agent_event_stream.c across kernel/agentos-root-task/src/event_bus.c, kernel/agentos-root-task/src/agent_task_gateway.c, and services/agentfs/agentfs.c. Emit a bounded authenticated event for every model-visible byte or immutable reference, program and nested call state, object or root change, actor message, budget, authority epoch, effect, checkpoint, verification, commit, disconnect, and reconnect. Derive replayed DAG, exact context, budget, effect ledger, and root state from a pinned range; reject tamper, truncation, reorder, scope crossing, and commits without matching successful TASK_VERIFY evidence. Keep hidden PROMOTION_VERIFY outside candidate contracts and events visible to candidates.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 26000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "A durable canonical event stream with deterministic replay, TASK_VERIFY evidence, and verified-only root publication",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/event_bus.c",
+          "kernel/agentos-root-task/src/agent_task_gateway.c",
+          "services/agentfs/agentfs.c",
+          "tests/test_agent_event_stream.c",
+          "tests/contracts/eventbus_test.c"
+        ],
+        "verification_plan": "Run event, AgentFS, task gateway, tamper, replay, and verification suites twice; compare projection hashes and prove rejected commits leave roots and effects unchanged.",
+        "current_assumptions": [
+          "Immutable ObjectIDs and AgentFS CAS primitives can be recovered or already exist",
+          "Event visibility is capability scoped"
+        ],
+        "similarity_to_other_active_nodes": {
+          "canonical_event_verify_contract_tests": 0.88,
+          "implement_fractal_controlplane": 0.44,
+          "implement_shared_space_replication": 0.48
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "implement_remote_mesh_sessions",
+      "title": "Implement resumable typed Fractal mesh sessions",
+      "capability": "code.generate",
+      "agent": "codex-luna",
+      "instruction": "Create a singleton tools/fractal-mesh-gateway Rust service implementing interfaces/wit/fractal-mesh-v1/mesh.wit over one bounded QUIC connection per active peer with ALPN fractalos-agent/1. Use reliable bidirectional task streams, reliable unidirectional event and object streams, deterministic binary frame headers and CBOR manifests, explicit flow-control limits, cancellation, keepalive, path migration, and resume tokens; allow datagrams only for disposable health or cache hints. Integrate Headscale peer discovery from the existing mesh-controller route without treating it as authority, add deterministic in-memory transport fixtures, and make tests/test_fractal_mesh_frames.rs pass including disconnect, duplicate, reordering, and bounded-memory cases.",
+      "depends_on": [
+        "remote_mesh_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 28000,
+        "dependencies": [
+          "remote_mesh_contract_tests"
+        ],
+        "expected_artifact": "A singleton bounded QUIC MeshGateway with typed resumable sessions and deterministic transport tests",
+        "files_or_systems_affected": [
+          "tools/fractal-mesh-gateway/Cargo.toml",
+          "tools/fractal-mesh-gateway/src/lib.rs",
+          "tools/fractal-mesh-gateway/src/main.rs",
+          "tests/test_fractal_mesh_frames.rs",
+          "Cargo.toml"
+        ],
+        "verification_plan": "Run cargo test -p fractal-mesh-gateway with simulated loss, reorder, path change, 30-second logical offline interval, duplicate frames, stream exhaustion, and peer-memory limits; run clippy with warnings denied.",
+        "current_assumptions": [
+          "A host or guest singleton gateway is an allowed external tool while native tailnet support matures",
+          "The semantic frame contract remains stable if later transport benchmarks select another carrier"
+        ],
+        "similarity_to_other_active_nodes": {
+          "remote_mesh_contract_tests": 0.82,
+          "finish_native_network": 0.34,
+          "implement_shared_space_replication": 0.52
+        },
+        "confidence_still_useful": 0.96
+      }
+    },
+    {
+      "id": "implement_remote_authority",
+      "title": "Implement remote grants, leases, and revocation fencing",
+      "capability": "code.edit",
+      "agent": "hermes",
+      "instruction": "Implement RemoteGrant validation and execution-lease fencing in the existing CapBroker, AuthServer, MeshAgent, and Fractal gateway paths using the approved mesh contract. Bind the authenticated tailnet peer to subject_node, verify issuer signature, audience_node, agent, space, interface and operations, object scope, effect class, budget, expiry, nonce, authority_epoch, and revocation_epoch, then ask local CapBroker to derive a narrow local endpoint badge. Recheck at dispatch and completion, never accept a serialized or remote badge, emit canonical authorization and denial events, and add tests/security/test_remote_grants.c covering fabricated, replayed, stale, expired, revoked, wrong-audience, over-budget, and partitioned-lease cases.",
+      "depends_on": [
+        "remote_mesh_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 23000,
+        "dependencies": [
+          "remote_mesh_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "Audience-bound remote authorization with fenced leases, immediate revocation, denial events, and adversarial tests",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/cap_broker.c",
+          "kernel/agentos-root-task/src/auth_server.c",
+          "kernel/agentos-root-task/src/mesh_agent.c",
+          "tools/fractal-mesh-gateway/src/auth.rs",
+          "tests/security/test_remote_grants.c"
+        ],
+        "verification_plan": "Run the remote-grant adversarial suite and instrument local service dispatch counters; require every invalid case to fail before dispatch, every revocation to fence old leases, and every outcome to emit the correct scoped canonical event.",
+        "current_assumptions": [
+          "CapBroker is the only component allowed to derive local endpoint authority",
+          "Tailnet peer identity supplies transport identity only and never grants application permission"
+        ],
+        "similarity_to_other_active_nodes": {
+          "remote_mesh_contract_tests": 0.66,
+          "implement_remote_mesh_sessions": 0.38,
+          "implement_shared_space_replication": 0.31
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "implement_companion_gateway",
+      "title": "Implement the typed local companion gateway boundary",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Implement the non-UI companion export PD in kernel/agentos-root-task/src/companion_export.c using exactly kernel/agentos-root-task/include/contracts/companion_export_contract.h, and create a generated Rust client plus local Axum gateway under ../agentos-companion/gateway. The PD must project bounded event-pinned reads and narrowly scoped TaskIntent submissions, while the external gateway terminates local HTTP/3 with HTTP/2 fallback, validates schema versions, enforces local authentication, CSP-facing response headers, request limits, and redaction. Do not add browser assets, JavaScript, TypeScript, HTML, CSS, WebSockets, or an HTTP server to controlplane; make the C contract and sibling gateway contract tests pass.",
+      "depends_on": [
+        "companion_export_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 22000,
+        "dependencies": [
+          "companion_export_contract_tests"
+        ],
+        "expected_artifact": "A bounded companion export PD and a typed local gateway in the sibling companion repository with no controlplane UI code",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/companion_export.c",
+          "kernel/agentos-root-task/agentos.toml",
+          "tests/contracts/companion_export_test.c",
+          "../agentos-companion/gateway/Cargo.toml",
+          "../agentos-companion/gateway/src/main.rs"
+        ],
+        "verification_plan": "Run the C companion contract suite and cargo test for ../agentos-companion/gateway; probe response bounds, schema negotiation, unauthorized intents, stale cursors, redaction, and local authentication, then scan controlplane for prohibited UI files.",
+        "current_assumptions": [
+          "The sibling repository may be created if it does not already exist",
+          "Only the external gateway terminates browser protocols"
+        ],
+        "similarity_to_other_active_nodes": {
+          "companion_export_contract_tests": 0.81,
+          "build_companion_pages": 0.46
+        },
+        "confidence_still_useful": 0.96
+      }
+    },
+    {
+      "id": "implement_daily_root_projection",
+      "title": "Implement deterministic daily-root projection",
+      "capability": "code.generate",
+      "agent": "hermes",
+      "instruction": "Implement a Rust DailyRoot projector in userspace/sdk/src/daily_root.rs from interfaces/wit/fractal-companion-v1/companion.wit and canonical event and object inputs. It must deterministically build one immutable bundle for a requested local date and timezone from authorized summaries, pin project and event roots, include provenance and freshness without raw personal records, preserve offline conflict heads, and create only typed task-intent references. Make tests/contract/test_daily_root.rs pass for replay determinism, timezone rollover, stale source, authorization, redaction, conflict, and schema-declared merge.",
+      "depends_on": [
+        "daily_root_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 15000,
+        "dependencies": [
+          "daily_root_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "A deterministic event-pinned DailyRoot projection library with privacy and conflict tests",
+        "files_or_systems_affected": [
+          "userspace/sdk/src/daily_root.rs",
+          "userspace/sdk/src/lib.rs",
+          "tests/contract/test_daily_root.rs"
+        ],
+        "verification_plan": "Run the DailyRoot suite twice with reordered source arrival and clean caches; require identical ObjectIDs for equivalent inputs, distinct conflict heads, correct timezone keys, and zero raw-record canary fields.",
+        "current_assumptions": [
+          "Canonical events and immutable objects expose authorized summary inputs",
+          "Timezone is explicit input rather than ambient host state"
+        ],
+        "similarity_to_other_active_nodes": {
+          "daily_root_contract_tests": 0.84,
+          "implement_project_progress_adapter": 0.28,
+          "build_companion_pages": 0.31
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "implement_health_adapter",
+      "title": "Implement the minimum-necessary health adapter",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Implement userspace/sdk/src/health_adapter.rs as a capability-scoped projection boundary from opaque external source handles to HealthAdapterSummary. Enforce explicit consent scope, allowed summary fields, freshness and expiry, source revocation, minimum-necessary aggregation, provenance hashing, and deterministic redaction; keep raw medical records and source credentials out of AgentFS shared spaces, canonical event payloads, logs, and companion responses. Make tests/contract/test_health_adapter.rs pass including seeded personal-record and credential canaries.",
+      "depends_on": [
+        "health_adapter_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 13000,
+        "dependencies": [
+          "health_adapter_contract_tests"
+        ],
+        "expected_artifact": "A consent-scoped coarse health summary adapter with deterministic privacy and revocation behavior",
+        "files_or_systems_affected": [
+          "userspace/sdk/src/health_adapter.rs",
+          "userspace/sdk/src/lib.rs",
+          "tests/contract/test_health_adapter.rs"
+        ],
+        "verification_plan": "Run health adapter authorization, expiry, revocation, determinism, and canary non-disclosure tests; scan generated events, objects, logs, and serialized summaries for forbidden fields.",
+        "current_assumptions": [
+          "External source access is represented by opaque capability handles",
+          "The adapter exports summaries only and does not provide medical advice"
+        ],
+        "similarity_to_other_active_nodes": {
+          "health_adapter_contract_tests": 0.86,
+          "implement_companion_gateway": 0.24
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "implement_project_progress_adapter",
+      "title": "Implement typed project and progress projections",
+      "capability": "code.generate",
+      "agent": "cursor",
+      "instruction": "Implement userspace/sdk/src/project_progress.rs to project Beads issue snapshots and canonical Fractal events into interfaces/wit/fractal-companion-v1/companion.wit without exposing writable Beads internals. Preserve dependency ordering, immutable issue and event identifiers, worker assignments, typed blocker evidence, explicit host, target, QEMU, live, and external proof levels, active and dormant memory metrics, stable pagination, and redaction. Make tests/contract/test_project_progress.rs pass, including stale cursors, missing evidence, hidden-promotion exclusion, and deterministic rebuild from the same pinned inputs.",
+      "depends_on": [
+        "project_progress_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 15000,
+        "dependencies": [
+          "project_progress_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "A deterministic proof-honest project and progress adapter with typed pagination and memory fields",
+        "files_or_systems_affected": [
+          "userspace/sdk/src/project_progress.rs",
+          "userspace/sdk/src/lib.rs",
+          "tests/contract/test_project_progress.rs"
+        ],
+        "verification_plan": "Run project-progress tests on reordered and stale fixtures; require stable output hashes, correct dependency topology, explicit proof levels, cursor rejection, redaction, and no hidden verifier data.",
+        "current_assumptions": [
+          "The adapter reads a bounded exported Beads snapshot rather than mutating the tracker",
+          "Canonical events carry worker and memory telemetry references"
+        ],
+        "similarity_to_other_active_nodes": {
+          "project_progress_contract_tests": 0.87,
+          "implement_daily_root_projection": 0.28,
+          "build_companion_pages": 0.34
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "implement_agentlang_runtime",
+      "title": "Implement deterministic AgentLang, AOT WASM, and service graph execution",
+      "capability": "code.generate",
+      "agent": "codex-luna",
+      "instruction": "Recover or implement kernel/agentos-root-task/include/agent_lang.h, kernel/agentos-root-task/include/agent_ir.h, their C bootstrap sources, and the production trusted no_std Rust runtime under libs/fractal-runtime. Generate AgentLang prelude and Rust/WASM bindings from interfaces/wit/fractalos-capabilities-v1/capabilities.wit; deterministically parse, type and effect check, lower to canonical Agent IR, compile and validate capability-scoped WASM, cache artifacts by full content hash, execute bounded structured concurrency, and validate immutable interface-to-provider service graphs. Every nested call must reauthorize capability, scope, budget, epoch, and provider concurrency safety. Add determinism, cache-corruption, provider-swap, undeclared-import, limit, cancellation, deadline, and child-failure tests and make them pass.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 32000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "A deterministic AgentLang-to-WASM runtime with generated bindings, validated AOT cache, structured concurrency, and governed provider swaps",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/include/agent_lang.h",
+          "kernel/agentos-root-task/include/agent_ir.h",
+          "kernel/agentos-root-task/src/agent_lang.c",
+          "kernel/agentos-root-task/src/agent_ir.c",
+          "libs/fractal-runtime/Cargo.toml",
+          "libs/fractal-runtime/src/lib.rs",
+          "tests/test_agent_lang.c",
+          "tests/test_agent_ir.c"
+        ],
+        "verification_plan": "Run C bootstrap tests and cargo test -p fractal-runtime twice from clean caches, compare full SHA-256 IR and WASM outputs, corrupt cache artifacts, swap compatible providers, and require all adversarial limits and fabricated calls to fail deterministically.",
+        "current_assumptions": [
+          "Accepted AgentLang and WIT bootstrap artifacts are recoverable from Git history",
+          "WASM is the production trust boundary while direct Agent IR remains a bootstrap and benchmark arm"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_fractal_controlplane": 0.34,
+          "implement_actor_memory_lifecycle": 0.37,
+          "run_host_security_performance_gates": 0.22
+        },
+        "confidence_still_useful": 0.96
+      }
+    },
+    {
+      "id": "implement_actor_memory_lifecycle",
+      "title": "Implement async actors, warm pools, scheduling, and passivation metrics",
+      "capability": "code.edit",
+      "agent": "claude",
+      "instruction": "Extend the existing agent pool, snapshot scheduler, memory profiler, QuotaPD, and core-affinity paths to implement scoped AgentHandle, TaskHandle, ProgramHandle, bounded persistent mailboxes, immediate SPAWN and DELEGATE handles, cancellation and deadline propagation, passivation to immutable roots, authorized reactivation, dynamic warm-pool sizing, and topology-aware placement. Release stacks, transient WASM memory, guest state, and private service mappings on passivation; retain at most 256 KiB of dormant metadata and mailbox state per actor. Emit active_private_bytes, dormant_private_bytes, shared_bytes, actor_count, active_peer_bytes, placement, and graph fingerprint, and add host and target tests for thousands of dormant actors, stale handles, reconnect reactivation, and the 150 MiB active-worker ceiling.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 29000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "A scoped actor lifecycle with bounded mailboxes, warm pools, topology placement, passivation, reactivation, and honest active-frontier memory telemetry",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/agent_pool.c",
+          "kernel/agentos-root-task/src/snapshot_sched.c",
+          "kernel/agentos-root-task/src/mem_profiler.c",
+          "kernel/agentos-root-task/src/quota_pd.c",
+          "kernel/agentos-root-task/src/core_affinity.c",
+          "tests/contracts/agent_pool_test.c",
+          "tests/contracts/mem_profiler_test.c"
+        ],
+        "verification_plan": "Run actor lifecycle, snapshot, quota, scheduler, and memory suites with 10000 dormant actors and bounded active actors; require handle lineage, cancellation, reactivation, topology placement, dormant limit, 90-percent memory reduction, and active ceiling assertions.",
+        "current_assumptions": [
+          "Heavy ModelSvc, ToolSvc, AgentFS, ExecServer, caches, transports, and indexes remain singleton shared services",
+          "Dormant actors need immutable roots and bounded mailboxes but no resident full harness"
+        ],
+        "similarity_to_other_active_nodes": {
+          "canonical_event_verify_contract_tests": 0.28,
+          "implement_agentlang_runtime": 0.37,
+          "run_dual_arch_qemu_gates": 0.22
+        },
+        "confidence_still_useful": 0.96
+      }
+    },
+    {
+      "id": "complete_gpu_pipeline",
+      "title": "Complete isolated GPU command and zero-copy tensor pipelines",
+      "capability": "code.edit",
+      "agent": "cursor",
+      "instruction": "Complete the existing GPU scheduler and shared-memory contracts in kernel/agentos-root-task/src/gpu_sched.c, kernel/agentos-root-task/src/gpu_shmem.c, and userspace/gpu_shmem_linux/gpu_shmem_linux.c without adding guest-specific drivers. Enforce exclusive capability-scoped device and queue ownership, validated command descriptors, tensor buffer ownership transfer, bounds, synchronization, quotas, revocation cleanup, backpressure, and zero-copy where the platform supports it. Add or extend tests/contracts/gpu_sched_test.c and tests/contracts/gpu_shmem_test.c first, include emulated contract proof separately from physical-device proof, and emit performance records compatible with performance/thresholds.json.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests",
+        "canonical_event_verify_contract_tests"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 3,
+        "parallel_group": "wave-3"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 22000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests",
+          "canonical_event_verify_contract_tests"
+        ],
+        "expected_artifact": "A capability-isolated GPU command and tensor pipeline with ownership, revocation, bounds, and measured zero-copy behavior",
+        "files_or_systems_affected": [
+          "kernel/agentos-root-task/src/gpu_sched.c",
+          "kernel/agentos-root-task/src/gpu_shmem.c",
+          "userspace/gpu_shmem_linux/gpu_shmem_linux.c",
+          "tests/contracts/gpu_sched_test.c",
+          "tests/contracts/gpu_shmem_test.c",
+          "performance/thresholds.json"
+        ],
+        "verification_plan": "Run GPU contract and adversarial tests for malformed commands, bounds, ownership, quota, revocation, reuse, and backpressure; run available physical or emulated performance proof and label the resulting proof level accurately.",
+        "current_assumptions": [
+          "Existing generic GPU scheduler and shared-memory contracts are the correct device abstraction",
+          "A missing physical GPU is an external proof blocker and never converted into a false native-hardware claim"
+        ],
+        "similarity_to_other_active_nodes": {
+          "run_host_security_performance_gates": 0.26,
+          "run_dual_arch_qemu_gates": 0.19
+        },
+        "confidence_still_useful": 0.91
+      }
+    },
+    {
+      "id": "implement_shared_space_replication",
+      "title": "Implement immutable shared-space replication and verified merge",
+      "capability": "code.generate",
+      "agent": "codex-luna",
+      "instruction": "Implement shared spaces in tools/fractal-mesh-gateway/src/space.rs and services/agentfs/agentfs.c using full 256-bit SHA-256 wire identities, immutable chunked objects, have and want negotiation, hash verification, range resume, optional authorized multi-source fetch, ordered SpaceRecord transitions, one online authority, warm replicas, and compare-and-swap root publication. Offline devices create branch roots; reconnect may use only a declared commutative merge or an authorized AgentLang merge with TASK_VERIFY evidence, otherwise preserve both heads. Never CRDT-merge capabilities, epochs, budgets, effects, leases, commits, ownership, or verifier state. Add tests/integration/test_shared_space_replication.rs for disconnect, partial transfer, corruption, duplicate chunks, divergence, verified merge, unresolved conflict, revocation, and convergence.",
+      "depends_on": [
+        "implement_canonical_event_verify",
+        "implement_remote_mesh_sessions",
+        "implement_remote_authority"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 4,
+        "parallel_group": "wave-4"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 28000,
+        "dependencies": [
+          "implement_canonical_event_verify",
+          "implement_remote_mesh_sessions",
+          "implement_remote_authority"
+        ],
+        "expected_artifact": "Resumable immutable shared-space replication with ordered CAS roots, verified AgentLang merge, and conflict preservation",
+        "files_or_systems_affected": [
+          "tools/fractal-mesh-gateway/src/space.rs",
+          "services/agentfs/agentfs.c",
+          "tests/integration/test_shared_space_replication.rs"
+        ],
+        "verification_plan": "Run the shared-space suite through direct and interrupted in-memory transports; compare final object and event heads, corrupt chunks, revoke access mid-transfer, create divergent edits, and require verified merge or two preserved heads with no silent overwrite.",
+        "current_assumptions": [
+          "Canonical events and RemoteGrant checks are available before root publication",
+          "The current shortened local ObjectID can remain only as a collision-checked index alias"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_remote_mesh_sessions": 0.52,
+          "implement_canonical_event_verify": 0.48,
+          "remote_mesh_contract_tests": 0.35
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "build_companion_pages",
+      "title": "Build project, daily-root, health, and worker-memory companion pages",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Work only in the sibling ../agentos-companion repository. Create a Vite and React TypeScript application that consumes the generated client for interfaces/wit/fractal-companion-v1/companion.wit and renders project dependency and proof state, typed progress, the immutable DailyRoot, coarse authorized health summaries, active versus dormant worker and peer memory, reconnect status, conflicts, and explicit blocker evidence. Page actions may submit only typed granted TaskIntent values and must show root and event-range provenance. Add unit, accessibility, contract-mock, error, stale-data, revoked-session, and no-sensitive-field tests; configure strict CSP and local-only defaults. Do not add, copy, or generate any UI file in controlplane.",
+      "depends_on": [
+        "implement_companion_gateway",
+        "implement_daily_root_projection",
+        "implement_health_adapter",
+        "implement_project_progress_adapter"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 4,
+        "parallel_group": "wave-4"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 22000,
+        "dependencies": [
+          "implement_companion_gateway",
+          "implement_daily_root_projection",
+          "implement_health_adapter",
+          "implement_project_progress_adapter"
+        ],
+        "expected_artifact": "A tested local companion application in the sibling repository with four typed pages and no controlplane UI changes",
+        "files_or_systems_affected": [
+          "../agentos-companion/package.json",
+          "../agentos-companion/src/App.tsx",
+          "../agentos-companion/src/pages/Project.tsx",
+          "../agentos-companion/src/pages/DailyRoot.tsx",
+          "../agentos-companion/src/pages/Health.tsx",
+          "../agentos-companion/src/pages/Workers.tsx"
+        ],
+        "verification_plan": "Run the sibling package test, typecheck, lint, production build, accessibility, CSP, revoked-session, stale-data, and generated-client contract tests; scan controlplane diff for every prohibited UI extension and package file.",
+        "current_assumptions": [
+          "The sibling repository is separately versioned and may use a browser toolchain",
+          "The companion receives projections and task intents only through the typed local gateway"
+        ],
+        "similarity_to_other_active_nodes": {
+          "implement_companion_gateway": 0.46,
+          "implement_daily_root_projection": 0.31,
+          "implement_project_progress_adapter": 0.34
+        },
+        "confidence_still_useful": 0.95
+      }
+    },
+    {
+      "id": "unify_fractal_graph_ui",
+      "title": "Unify the local and Society Fractal graph experience",
+      "capability": "code.generate",
+      "agent": "claude",
+      "instruction": "Work across the sibling fractalsociety-website, fractal-cli, and fractalmaster repositories after reading each repository's AGENTS.md. Make Fractal Society's ExecutionGraphPreview renderer and design tokens the canonical shared graph implementation by extracting a portable fractal-graph-ui package with pure projection logic and generated static assets. Keep one input projection containing graph, execution, learning, efficiency, and intelligence data; make the Society dashboard import it and make the local Rust board embed its built static bundle. Integrate the existing Overview, Execution, Economics, Memory, Traces and evidence, Failures and lessons, and Agents and tools lenses plus typed text and voice query compilation. Formalize local and hosted adapters for GET snapshot and POST query contracts, selectively port useful Three.js, live-agent, and task-detail behavior, then retire or redirect duplicate graph implementations only after visual parity, contract, query, and end-to-end tests pass. Rebuild and reinstall Fractal Voice after embedded assets change. Do not add UI files or browser-serving code to controlplane.",
+      "depends_on": [
+        "reconcile_prd_beads"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 2,
+        "parallel_group": "wave-2"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 30000,
+        "dependencies": [
+          "reconcile_prd_beads"
+        ],
+        "expected_artifact": "One tested shared Fractal graph renderer for local and hosted use with seven intelligence lenses and typed query adapters",
+        "files_or_systems_affected": [
+          "../fractalsociety-website",
+          "../fractal-cli/execution-graph",
+          "../fractal-cli/src/board.rs",
+          "../fractalmaster/intelligence_graph"
+        ],
+        "verification_plan": "Run shared projection contract tests, Society component tests and production build, local embedded-board tests and build, snapshot and query API tests, seven-lens fixtures, visual parity snapshots, local and hosted end-to-end queries, and a duplicate-source scan before removing or redirecting legacy graph entry points.",
+        "current_assumptions": [
+          "The Society project renderer is the selected visual source",
+          "Local and hosted adapters can consume one portable graph projection"
+        ],
+        "similarity_to_other_active_nodes": {
+          "build_companion_pages": 0.28,
+          "run_host_security_performance_gates": 0.22
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "run_host_security_performance_gates",
+      "title": "Run the complete host, security, worker, and performance preflight",
+      "capability": "project.tests.execute",
+      "agent": "hermes",
+      "instruction": "From a clean build directory, run cargo fmt --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, cargo xtask test, make test-host, make test-native-net, make test-agentos-mcp, make test-agentctl-mesh, all AgentLang determinism and cache tests, all worker compatibility fixture tests, the remote-grant adversarial suite, shared contract schema tests, secret canary scans, GPU contract tests, actor memory tests, and make perf-gate where the target prerequisites are available. Store a machine-readable command, exit-code, duration, proof-level, artifact-hash, and skip-reason record under build/evidence/host-security.json. Fix no production code in this node; file or update bounded Beads defects for failures and never treat an unavailable external prerequisite as a pass.",
+      "depends_on": [
+        "finish_native_network",
+        "implement_fractal_controlplane",
+        "implement_codex_worker",
+        "implement_cursor_worker",
+        "implement_claude_worker",
+        "implement_hermes_worker",
+        "implement_canonical_event_verify",
+        "implement_remote_mesh_sessions",
+        "implement_remote_authority",
+        "implement_companion_gateway",
+        "implement_daily_root_projection",
+        "implement_health_adapter",
+        "implement_project_progress_adapter",
+        "implement_agentlang_runtime",
+        "implement_actor_memory_lifecycle",
+        "complete_gpu_pipeline",
+        "unify_fractal_graph_ui"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 4,
+        "parallel_group": "wave-4"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 14000,
+        "dependencies": [
+          "finish_native_network",
+          "implement_fractal_controlplane",
+          "implement_codex_worker",
+          "implement_cursor_worker",
+          "implement_claude_worker",
+          "implement_hermes_worker",
+          "implement_canonical_event_verify",
+          "implement_remote_mesh_sessions",
+          "implement_remote_authority",
+          "implement_companion_gateway",
+          "implement_daily_root_projection",
+          "implement_health_adapter",
+          "implement_project_progress_adapter",
+          "implement_agentlang_runtime",
+          "implement_actor_memory_lifecycle",
+          "complete_gpu_pipeline",
+          "unify_fractal_graph_ui"
+        ],
+        "expected_artifact": "A machine-readable host and security preflight report with no hidden skips and bounded defect issues for failures",
+        "files_or_systems_affected": [
+          "build/evidence/host-security.json",
+          ".beads"
+        ],
+        "verification_plan": "Validate build/evidence/host-security.json against its schema, require all mandatory local commands to have exit_code zero, require each optional external command to have either success evidence or a linked precise blocker, and confirm no source file changed during execution.",
+        "current_assumptions": [
+          "Host tests are a prefilter and do not prove AgentOS target behavior",
+          "Live worker credentials and physical GPU access may be unavailable and must be recorded honestly"
+        ],
+        "similarity_to_other_active_nodes": {
+          "run_dual_arch_qemu_gates": 0.41,
+          "run_two_device_vertical_slice": 0.34,
+          "complete_gpu_pipeline": 0.26
+        },
+        "confidence_still_useful": 0.98
+      }
+    },
+    {
+      "id": "run_dual_arch_qemu_gates",
+      "title": "Run dual-architecture target, QEMU, and performance gates",
+      "capability": "project.tests.execute",
+      "agent": "codex-luna",
+      "instruction": "Run the repository-native real-target gates after implementation: make gate, make test-target-all, make perf-gate, the AArch64 Headscale mesh-controller validation, the x86_64 target contract image, and QEMU scenarios for asynchronous Fractal submit and completion, canonical event replay, authority revocation, actor passivation and reactivation, net_pd and WireGuard handoff, AgentIPC zero-copy ownership, GPU emulated contracts, and clean AgentOS boot. Capture serial logs and normalized JSON evidence under build/evidence/target-gates.json with architecture, board, commit, command, exit code, TAP counts, boot markers, performance thresholds, and proof level. Do not change production code or claim unsupported physical hardware proof.",
+      "depends_on": [
+        "finish_native_network",
+        "implement_fractal_controlplane",
+        "implement_canonical_event_verify",
+        "implement_remote_mesh_sessions",
+        "implement_remote_authority",
+        "implement_agentlang_runtime",
+        "implement_actor_memory_lifecycle",
+        "complete_gpu_pipeline"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 4,
+        "parallel_group": "wave-4"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 16000,
+        "dependencies": [
+          "finish_native_network",
+          "implement_fractal_controlplane",
+          "implement_canonical_event_verify",
+          "implement_remote_mesh_sessions",
+          "implement_remote_authority",
+          "implement_agentlang_runtime",
+          "implement_actor_memory_lifecycle",
+          "complete_gpu_pipeline"
+        ],
+        "expected_artifact": "Dual-architecture boot, TAP, security, lifecycle, and performance evidence with honest hardware proof labels",
+        "files_or_systems_affected": [
+          "build/evidence/target-gates.json",
+          "build/evidence/aarch64-serial.log",
+          "build/evidence/x86_64-serial.log",
+          ".beads"
+        ],
+        "verification_plan": "Require successful make gate, test-target-all, and perf-gate exits, TAP_DONE and expected boot markers for both architectures, threshold-valid performance JSON, and linked Beads blockers for any unavailable non-emulated hardware gate.",
+        "current_assumptions": [
+          "QEMU and both supported target toolchains are installed or their absence can be precisely evidenced",
+          "Only real target and QEMU results justify OS-level proof claims"
+        ],
+        "similarity_to_other_active_nodes": {
+          "run_host_security_performance_gates": 0.41,
+          "run_two_device_vertical_slice": 0.46,
+          "implement_actor_memory_lifecycle": 0.22
+        },
+        "confidence_still_useful": 0.97
+      }
+    },
+    {
+      "id": "run_two_device_vertical_slice",
+      "title": "Prove the complete two-device Fractal vertical slice",
+      "capability": "project.tests.execute",
+      "agent": "hermes",
+      "instruction": "Create or finalize tests/e2e/test_two_device_fractal.sh and tests/e2e/test_companion_gateway.sh as orchestration-only test harnesses, then run them against at least two clean authorized device environments enrolled through the existing FreeBSD Headscale controller and standard Tailscale route. Require real Codex, Cursor, Claude, and Hermes worker versions and live tasks through Fractal; signed discovery; audience-bound grants; asynchronous cooperative work; 30-second disconnect with queued mail; reconnect and exact event convergence; resumable object transfer; divergent workspace roots followed by TASK_VERIFY-backed merge or preserved conflict; active and dormant memory measurements; companion project, progress, daily-root, and health responses; revocation followed by denied transport and zero local dispatch; and credential and personal-record canary scans. Write build/evidence/two-device-vertical-slice.json with commands, node identities, redacted topology, event and root hashes, durations, memory, proof levels, and artifact hashes. If any external prerequisite is absent, exit nonzero or explicit blocked status, update the bounded Beads issue with exact evidence, and do not close the program epic.",
+      "depends_on": [
+        "implement_codex_worker",
+        "implement_cursor_worker",
+        "implement_claude_worker",
+        "implement_hermes_worker",
+        "implement_shared_space_replication",
+        "build_companion_pages",
+        "run_host_security_performance_gates",
+        "run_dual_arch_qemu_gates"
+      ],
+      "execution": {
+        "mode": "sequential",
+        "wave": 5
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 20000,
+        "dependencies": [
+          "implement_codex_worker",
+          "implement_cursor_worker",
+          "implement_claude_worker",
+          "implement_hermes_worker",
+          "implement_shared_space_replication",
+          "build_companion_pages",
+          "run_host_security_performance_gates",
+          "run_dual_arch_qemu_gates"
+        ],
+        "expected_artifact": "A machine-readable passing two-device vertical-slice report or a precise non-passing external-environment blocker with no false completion claim",
+        "files_or_systems_affected": [
+          "tests/e2e/test_two_device_fractal.sh",
+          "tests/e2e/test_companion_gateway.sh",
+          "build/evidence/two-device-vertical-slice.json",
+          ".beads"
+        ],
+        "verification_plan": "Validate the evidence JSON, require two distinct authorized NodeIDs, four real live worker completions, disconnect and reconnect convergence, verified merge or preserved conflict, revocation denial before dispatch, memory thresholds, companion schemas, and zero secret canary matches; any missing element is a failed gate rather than a skip.",
+        "current_assumptions": [
+          "Two controllable device environments, live worker CLIs, credentials, and a Headscale route can be provided for the final gate",
+          "External topology identifiers can be recorded in redacted or hashed form"
+        ],
+        "similarity_to_other_active_nodes": {
+          "run_host_security_performance_gates": 0.34,
+          "run_dual_arch_qemu_gates": 0.46,
+          "implement_shared_space_replication": 0.29
+        },
+        "confidence_still_useful": 0.95
+      }
+    },
+    {
+      "id": "publish_verified_program",
+      "title": "Commit, synchronize, push, and close only evidence-backed work",
+      "capability": "code.edit",
+      "agent": "codex-luna",
+      "instruction": "Audit all task diffs against the initial preservation baseline, AGENTS.md, the recovered PRD, and Beads acceptance criteria. Remove no user-owned change, prohibited file, secret, personal record, or untracked Fractal run state; stage only accepted program artifacts and commit them in coherent phase-scoped commits referencing their Beads IDs. Attach host, target, performance, live-worker, companion, and two-device evidence paths and commit hashes to the matching Beads issues; close only issues whose exact criteria passed and leave external-environment blockers open with precise commands, timestamps, observed output, prerequisites, and next actions. Run bd preflight and final quality checks, then git pull --rebase, bd dolt push, git push, and git status, resolving safe in-scope conflicts without destructive commands until the branch is up to date with origin. Close the parent epic only if the complete two-device vertical slice passed with no mandatory skip.",
+      "depends_on": [
+        "run_two_device_vertical_slice"
+      ],
+      "execution": {
+        "mode": "sequential",
+        "wave": 6
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 12000,
+        "dependencies": [
+          "run_two_device_vertical_slice"
+        ],
+        "expected_artifact": "Pushed evidence-linked commits, synchronized Beads state, an up-to-date branch, and only truthfully closed issues",
+        "files_or_systems_affected": [
+          ".git",
+          ".beads",
+          "build/evidence"
+        ],
+        "verification_plan": "Run bd preflight, git log with issue references, git status --short --branch, git rev-parse HEAD, and remote tracking comparison; require pushed commits, synchronized Beads, evidence links on each closure, no tracked secret or prohibited UI file, and an open precisely evidenced blocker whenever the final live gate did not pass.",
+        "current_assumptions": [
+          "The repository remote and Beads Dolt remote are reachable for final synchronization",
+          "The user explicitly authorized committing and pushing accepted work in the source request",
+          "Program completion is distinct from preserving and pushing useful partial work when an external gate is blocked"
+        ],
+        "similarity_to_other_active_nodes": {},
+        "confidence_still_useful": 0.99
+      }
+    }
+  ]
+}
