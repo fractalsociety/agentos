@@ -661,6 +661,140 @@ static void target_agent_harness_external_mcp_loop(void)
                        "model, ToolCap, MCP transport, or continuation failed");
 }
 
+static bool target_cap_broker_status(uint32_t *installed_caps,
+                                     uint32_t *authority_epoch)
+{
+    sel4_msg_t req, rep;
+    struct cap_broker_req_status status = {
+        .target_pd = CAPBROKER_HARNESS_PD_ID,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_CAP_GRANT_STATUS;
+    req.length = sizeof(status);
+    tr_copy(req.data, &status, sizeof(status));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    if (rep.opcode != CAP_BROKER_OK
+        || rep.length < sizeof(struct cap_broker_reply_runtime))
+        return false;
+    *installed_caps = tr_rd32(rep.data, 4u);
+    *authority_epoch = tr_rd32(rep.data, 8u);
+    return true;
+}
+
+static bool target_harness_missing_cap_denied(uint32_t cap_class,
+                                              uint32_t installed_caps,
+                                              uint32_t authority_epoch,
+                                              uint32_t task_id)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] = "{\"action\":\"final\",\"summary\":\"must-deny\"}";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = task_id;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL | cap_class;
+    submit.max_steps = 2u;
+    submit.authority_epoch = authority_epoch;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 256u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    return rep.opcode == HARNESS_ERR_CAP_DENIED
+        && tr_rd32(rep.data, 8u) == installed_caps;
+}
+
+static void target_cap_broker_missing_cap_roundtrip(uint32_t cap_class,
+                                                     uint32_t badge_rights,
+                                                     uint32_t task_id,
+                                                     const char *label)
+{
+    uint32_t before_caps = 0u, before_epoch = 0u;
+    bool status_ok = target_cap_broker_status(&before_caps, &before_epoch)
+        && (before_caps & cap_class) != 0u;
+
+    sel4_msg_t req, rep;
+    struct cap_broker_req_revoke revoke = {
+        .target_pd = CAPBROKER_HARNESS_PD_ID,
+        .cap_class = cap_class,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_CAP_REVOKE_GRANT;
+    req.length = sizeof(revoke);
+    tr_copy(req.data, &revoke, sizeof(revoke));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    uint32_t revoked_caps = tr_rd32(rep.data, 4u);
+    uint32_t revoked_epoch = tr_rd32(rep.data, 8u);
+    bool revoke_ok = status_ok && rep.opcode == CAP_BROKER_OK
+        && tr_rd32(rep.data, 12u) == 1u
+        && revoked_caps == (before_caps & ~cap_class)
+        && revoked_epoch == before_epoch + 1u;
+    bool denied = revoke_ok && target_harness_missing_cap_denied(
+        cap_class, revoked_caps, revoked_epoch, task_id);
+
+    struct cap_broker_req_grant grant = {
+        .target_pd = CAPBROKER_HARNESS_PD_ID,
+        .cap_class = cap_class,
+        .rights = badge_rights,
+        .ttl_ticks = 0u,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_CAP_GRANT;
+    req.length = sizeof(grant);
+    tr_copy(req.data, &grant, sizeof(grant));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    bool restored = revoke_ok && rep.opcode == CAP_BROKER_OK
+        && tr_rd32(rep.data, 4u) == before_caps
+        && tr_rd32(rep.data, 8u) == revoked_epoch + 1u
+        && tr_rd32(rep.data, 12u) == 1u;
+
+    if (denied && restored)
+        _tf_ok(label);
+    else
+        _tf_fail_point(label,
+                       "kernel delete, independent denial, or re-mint failed");
+}
+
+static void target_cap_broker_remaining_denials(void)
+{
+    target_cap_broker_missing_cap_roundtrip(
+        HARNESS_CAP_MODEL, 0u, 91u,
+        "CapBroker deletion independently denies ModelCap");
+    target_cap_broker_missing_cap_roundtrip(
+        HARNESS_CAP_MEMORY, 0u, 92u,
+        "CapBroker deletion independently denies MemoryCap");
+    target_cap_broker_missing_cap_roundtrip(
+        HARNESS_CAP_EXEC, EXECSVC_RIGHT_ALL, 93u,
+        "CapBroker deletion independently denies ExecCap");
+
+    uint32_t installed_caps = 0u, authority_epoch = 0u;
+    bool denied = target_cap_broker_status(&installed_caps, &authority_epoch)
+        && (installed_caps & HARNESS_CAP_NETWORK) == 0u
+        && target_harness_missing_cap_denied(
+            HARNESS_CAP_NETWORK, installed_caps, authority_epoch, 94u);
+    if (denied)
+        _tf_ok("default-absent NetCap denies native harness network authority");
+    else
+        _tf_fail_point(
+            "default-absent NetCap denies native harness network authority",
+            "NetCap was installed or a network-requiring task did not fail closed");
+}
+
 static void target_agent_harness_memory_loop(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
@@ -1178,6 +1312,7 @@ void target_contract_runner_main(void)
     target_agent_harness_live_repository();
 #endif
     target_benchmark_agent_harness();
+    target_cap_broker_remaining_denials();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_log_drain_tests((microkit_channel)CH_LOG_DRAIN);
