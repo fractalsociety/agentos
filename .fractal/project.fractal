@@ -6,7 +6,7 @@
     "prompt": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
     "visibility": "private"
   },
-  "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78",
+  "graph_hash": "sha256:60231c909085e382e870ee9a8f25e03fc14b243af8aa69b7419ec4cf904eca35",
   "graph": {
     "compiler_version": "fractal-harnessc/0.1.0",
     "edges": [
@@ -534,8 +534,15 @@
         "condition": "success",
         "from": "unify_fractal_graph_ui",
         "to": "run_host_security_performance_gates"
+      },
+      {
+        "condition": "success",
+        "from": "unify_fractal_graph_ui",
+        "to": "verify.unify_fractal_graph_ui.harness"
       }
     ],
+    "evolution": 1,
+    "evolution_arm": "grow.verification",
     "execution_flow": {
       "schema": "fractal.execution_flow.v1",
       "waves": [
@@ -576,7 +583,8 @@
             "finish_native_network",
             "implement_codex_worker",
             "implement_cursor_worker",
-            "remote_mesh_contract_tests"
+            "remote_mesh_contract_tests",
+            "verify.unify_fractal_graph_ui.harness"
           ],
           "parallel_group": "wave-3",
           "wave": 3
@@ -682,9 +690,9 @@
         }
       ]
     },
-    "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78",
-    "graph_id": "fg_35ae3866fc7f23621eb58b45de67485b",
-    "harness_hash": "sha256:0aec32f968e2f97874d4953ab8a910f25d6c6a9389b0d6c210fca79e16cdd121",
+    "graph_hash": "sha256:60231c909085e382e870ee9a8f25e03fc14b243af8aa69b7419ec4cf904eca35",
+    "graph_id": "fg_2945e24e1cbaf11865bf9a0333698072",
+    "harness_hash": "sha256:c84fc67349b590dd67bda67079ca499c9c1663dab1a1ef7213783dd641283fab",
     "nodes": [
       {
         "artifacts_produced": [],
@@ -4537,8 +4545,83 @@
         ],
         "sandbox_profile": "apple-container://local-work-v1",
         "title": "Record the external Fractal graph UI integration follow-up"
+      },
+      {
+        "artifacts_produced": [],
+        "attempt_count": 0,
+        "budget": {
+          "timeout_ms": 120000
+        },
+        "capability": "project.tests.execute",
+        "consumed_by": [],
+        "created_at": "1970-01-01T00:00:00Z",
+        "depends_on": [
+          "unify_fractal_graph_ui"
+        ],
+        "execution": {
+          "mode": "parallel",
+          "parallel_group": "wave-3",
+          "task_number": "3.8",
+          "wave": 3
+        },
+        "human_intervention": false,
+        "id": "verify.unify_fractal_graph_ui.harness",
+        "instruction": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
+        "kind": "container",
+        "memory_scopes": [
+          "acceptance:spec",
+          "work:goal",
+          "workspace:root"
+        ],
+        "node_type": "verification",
+        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
+        "policy_contract": {
+          "allowed_commands": [],
+          "allowed_writes": [],
+          "budgets": {
+            "max_attempts": 1,
+            "max_cost_usd": 20,
+            "max_diff_lines": 500,
+            "max_files_changed": 6,
+            "max_input_tokens": 250000,
+            "max_minutes": 60,
+            "max_output_tokens": 50000,
+            "max_steps": 40
+          },
+          "capability": "project.tests.execute",
+          "decision": "allow",
+          "evidence_requirements": [
+            "commands",
+            "exit_codes",
+            "stderr",
+            "stdout"
+          ],
+          "external_side_effects": false,
+          "network": {
+            "allowed_destinations": [],
+            "default": "deny"
+          },
+          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
+          "provenance": "builtin:safe-default.v1",
+          "sandbox_profile": "local-work-v1",
+          "schema": "fractal.node_policy_contract.v1",
+          "verifier_ids": [
+            "independent"
+          ]
+        },
+        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
+        "policy_provenance": "builtin:safe-default.v1",
+        "reopen_count": 0,
+        "requires": [
+          "unify_fractal_graph_ui.ready"
+        ],
+        "route_candidates": [
+          "apple-container://project-tests-execute-default"
+        ],
+        "sandbox_profile": "apple-container://local-work-v1"
       }
     ],
+    "parent_graph": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78",
     "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
     "policy_provenance": {
       "kind": "builtin_default",
@@ -4547,18 +4630,18 @@
     "policy_schema": "fractal.harness_policy.v1",
     "schema": "fractal.execution_graph.v1",
     "target": "darwin-arm64",
-    "work_hash": "sha256:cd14c9374765dab879d450a6c864e4c0478540fc6e098d5541bc284d09618dd8"
+    "work_hash": "sha256:2ea633134db2c2beafd8e0f6a011743f6f18e3d12a97bb33f53f2b1ee67118bd"
   },
   "execution": {
     "schema": "fractal.execution_state.v1",
-    "phase": "halted",
+    "phase": "executing",
     "assignments": {
       "canonical_event_verify_contract_tests": {
-        "agent_id": "codex-luna:4",
-        "agent_label": "codex-luna:4",
-        "state": "released",
+        "agent_id": "codex-luna:1",
+        "agent_label": "codex-luna:1",
+        "state": "completed",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "completed_at": "2026-08-24T20:24:16Z"
       },
       "claude_hermes_compat_contract_tests": {
         "agent_id": "hermes:4",
@@ -4568,18 +4651,18 @@
         "completed_at": "2026-08-24T19:45:05Z"
       },
       "companion_export_contract_tests": {
-        "agent_id": "claude:5",
-        "agent_label": "claude:5",
+        "agent_id": "claude:4",
+        "agent_label": "claude:4",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:55Z"
       },
       "complete_gpu_pipeline": {
         "agent_id": "cursor:3",
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4621,35 +4704,35 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_actor_memory_lifecycle": {
         "agent_id": "codex-luna:6",
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_claude_worker": {
-        "agent_id": "claude:4",
-        "agent_label": "claude:4",
+        "agent_id": "claude:5",
+        "agent_label": "claude:5",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:24:48Z"
       },
       "implement_codex_worker": {
         "agent_id": "codex-luna:3",
@@ -4663,7 +4746,7 @@
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_cursor_worker": {
         "agent_id": "cursor:1",
@@ -4677,49 +4760,49 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_fractal_controlplane": {
         "agent_id": "codex-luna:10",
         "agent_label": "codex-luna:10",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:38Z"
       },
       "implement_health_adapter": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:39Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:7",
         "agent_label": "hermes:7",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:39Z"
       },
       "implement_project_progress_adapter": {
         "agent_id": "cursor:2",
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:39Z"
       },
       "implement_remote_authority": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:39Z"
       },
       "implement_remote_mesh_sessions": {
-        "agent_id": "codex-luna:2",
-        "agent_label": "codex-luna:2",
-        "state": "released",
+        "agent_id": "codex-luna:3",
+        "agent_label": "codex-luna:3",
+        "state": "completed",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "completed_at": "2026-08-24T20:24:48Z"
       },
       "lead_plan": {
         "agent_id": "codex",
@@ -4750,14 +4833,14 @@
         "completed_at": "2026-08-24T19:50:39Z"
       },
       "unify_fractal_graph_ui": {
-        "agent_id": "claude:3",
-        "agent_label": "claude:3",
+        "agent_id": "claude:2",
+        "agent_label": "claude:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:14:49Z"
+        "released_at": "2026-08-24T20:15:54Z"
       }
     },
-    "updated_at": "2026-08-24T20:14:49Z"
+    "updated_at": "2026-08-24T20:24:48Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -4789,11 +4872,24 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T20:14:49Z",
-        "attempt_count": 3,
-        "artifacts_produced": [],
-        "consumed_by": [],
+        "ready_at": "2026-08-24T20:15:39Z",
+        "started_at": "2026-08-24T20:15:40Z",
+        "finished_at": "2026-08-24T20:24:16Z",
+        "executor": {
+          "agent": "codex-luna:1",
+          "version": "0.1.0"
+        },
+        "attempt_count": 4,
+        "outcome": "unverified_success",
+        "artifacts_produced": [
+          "artifact:canonical_event_verify_contract_tests:8736d7ca852af60057403f7e"
+        ],
+        "consumed_by": [
+          "artifact:fractal_controlplane_contract_tests:e54c454c1524d2a4edd99724",
+          "artifact:reconcile_prd_beads:b27739d9721e743d46728251"
+        ],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "claude_hermes_compat_contract_tests": {
         "node_id": "claude_hermes_compat_contract_tests",
@@ -4833,11 +4929,20 @@
           "remote_mesh_contract_tests"
         ],
         "created_at": "2026-08-24T20:14:49Z",
-        "attempt_count": 7,
+        "ready_at": "2026-08-24T20:15:39Z",
+        "started_at": "2026-08-24T20:15:52Z",
+        "finished_at": "2026-08-24T20:15:55Z",
+        "executor": {
+          "agent": "claude:4",
+          "version": "0.1.0"
+        },
+        "attempt_count": 11,
+        "outcome": "failed_execution",
+        "failure_code": "tool_failure",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 15
+        "reopen_count": 19
       },
       "complete_gpu_pipeline": {
         "node_id": "complete_gpu_pipeline",
@@ -4854,7 +4959,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 15
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -5001,7 +5106,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "implement_actor_memory_lifecycle": {
         "node_id": "implement_actor_memory_lifecycle",
@@ -5019,7 +5124,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 13
+        "reopen_count": 14
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5035,7 +5140,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 13
+        "reopen_count": 14
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5046,11 +5151,12 @@
           "fractal_controlplane_contract_tests"
         ],
         "created_at": "2026-08-24T20:14:49Z",
+        "ready_at": "2026-08-24T20:24:16Z",
         "attempt_count": 2,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_claude_worker": {
         "node_id": "implement_claude_worker",
@@ -5061,11 +5167,17 @@
           "implement_cursor_worker"
         ],
         "created_at": "2026-08-24T20:14:49Z",
-        "attempt_count": 6,
+        "ready_at": "2026-08-24T20:15:39Z",
+        "started_at": "2026-08-24T20:15:52Z",
+        "executor": {
+          "agent": "claude:5",
+          "version": "0.1.0"
+        },
+        "attempt_count": 10,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 19
       },
       "implement_codex_worker": {
         "node_id": "implement_codex_worker",
@@ -5106,7 +5218,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 12
+        "reopen_count": 13
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5149,7 +5261,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
@@ -5165,7 +5277,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 13
+        "reopen_count": 14
       },
       "implement_health_adapter": {
         "node_id": "implement_health_adapter",
@@ -5180,7 +5292,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 15
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5195,7 +5307,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 15
       },
       "implement_project_progress_adapter": {
         "node_id": "implement_project_progress_adapter",
@@ -5211,7 +5323,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 13
+        "reopen_count": 14
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5228,7 +5340,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 13
+        "reopen_count": 14
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5238,11 +5350,23 @@
           "remote_mesh_contract_tests"
         ],
         "created_at": "2026-08-24T20:14:49Z",
-        "attempt_count": 5,
-        "artifacts_produced": [],
-        "consumed_by": [],
+        "ready_at": "2026-08-24T20:15:39Z",
+        "started_at": "2026-08-24T20:15:40Z",
+        "finished_at": "2026-08-24T20:24:48Z",
+        "executor": {
+          "agent": "codex-luna:3",
+          "version": "0.1.0"
+        },
+        "attempt_count": 6,
+        "outcome": "unverified_success",
+        "artifacts_produced": [
+          "artifact:implement_remote_mesh_sessions:8736d7ca852af60057403f7e"
+        ],
+        "consumed_by": [
+          "artifact:remote_mesh_contract_tests:6214f1c18a17bb20dfac6cc2"
+        ],
         "human_intervention": false,
-        "reopen_count": 12
+        "reopen_count": 13
       },
       "implement_shared_space_replication": {
         "node_id": "implement_shared_space_replication",
@@ -5474,11 +5598,34 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T20:14:49Z",
-        "attempt_count": 10,
+        "ready_at": "2026-08-24T20:15:39Z",
+        "started_at": "2026-08-24T20:15:51Z",
+        "finished_at": "2026-08-24T20:15:54Z",
+        "executor": {
+          "agent": "claude:2",
+          "version": "0.1.0"
+        },
+        "attempt_count": 14,
+        "outcome": "failed_execution",
+        "failure_code": "tool_failure",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 17
+        "reopen_count": 21
+      },
+      "verify.unify_fractal_graph_ui.harness": {
+        "node_id": "verify.unify_fractal_graph_ui.harness",
+        "node_type": "verification",
+        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
+        "depends_on": [
+          "unify_fractal_graph_ui"
+        ],
+        "created_at": "2026-08-24T20:24:48Z",
+        "attempt_count": 0,
+        "artifacts_produced": [],
+        "consumed_by": [],
+        "human_intervention": false,
+        "reopen_count": 0
       }
     },
     "graph_edits": [
@@ -5511,92 +5658,6 @@
         "eventual_effect": {}
       }
     ],
-    "outcome": {
-      "acceptance_criteria": [
-        {
-          "id": "AC-1",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-10",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-11",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-12",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-13",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-14",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-15",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-2",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-3",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-4",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-5",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-6",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-7",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-8",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-9",
-          "passed": false,
-          "evidence_refs": []
-        }
-      ],
-      "maximum_parallelism": 0,
-      "retry_count": 94,
-      "reopened_node_count": 31,
-      "dead_or_unused_node_count": 1,
-      "human_intervention_count": 0,
-      "verification_coverage": 0.0,
-      "verification_coverage_denominator": 34
-    },
     "acceptance_criteria": [
       "AC-1",
       "AC-10",
@@ -5972,7 +6033,7 @@
       "failure:companion_export_contract_tests:tool_failure": {
         "id": "failure:companion_export_contract_tests:tool_failure",
         "node_id": "companion_export_contract_tests",
-        "attempt": 7,
+        "attempt": 11,
         "failure_code": "tool_failure",
         "outcome": "failed_execution",
         "state": "unresolved",
@@ -6081,12 +6142,76 @@
             "observed": {
               "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c"
             }
+          },
+          {
+            "attempt": 8,
+            "outcome": "failed_execution",
+            "summary": "node companion_export_contract_tests reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:companion_export_contract_tests:evidence:companion_expor",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:3",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 9,
+            "outcome": "failed_execution",
+            "summary": "node companion_export_contract_tests reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:companion_export_contract_tests:evidence:companion_expor",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:3",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 10,
+            "outcome": "failed_execution",
+            "summary": "node companion_export_contract_tests reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:companion_export_contract_tests:evidence:companion_expor",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:1",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 11,
+            "outcome": "failed_execution",
+            "summary": "node companion_export_contract_tests reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:companion_export_contract_tests:evidence:companion_expor",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:4",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
           }
         ],
-        "agent": "claude:5",
+        "agent": "claude:4",
         "version": "0.1.0",
         "observed": {
-          "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c"
+          "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
         },
         "objective_fingerprint": "sha256:2e9fb79add4692b8b567028cb306cabda2ee3adadf4d171a4e3fb4437c6f1906"
       },
@@ -6492,7 +6617,7 @@
       "failure:implement_claude_worker:tool_failure": {
         "id": "failure:implement_claude_worker:tool_failure",
         "node_id": "implement_claude_worker",
-        "attempt": 6,
+        "attempt": 10,
         "failure_code": "tool_failure",
         "outcome": "failed_execution",
         "state": "unresolved",
@@ -6585,12 +6710,76 @@
             "observed": {
               "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c"
             }
+          },
+          {
+            "attempt": 7,
+            "outcome": "failed_execution",
+            "summary": "node implement_claude_worker reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:implement_claude_worker:evidence:implement_claud",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:1",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 8,
+            "outcome": "failed_execution",
+            "summary": "node implement_claude_worker reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:implement_claude_worker:evidence:implement_claud",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:5",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 9,
+            "outcome": "failed_execution",
+            "summary": "node implement_claude_worker reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:implement_claude_worker:evidence:implement_claud",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:3",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 10,
+            "outcome": "failed_execution",
+            "summary": "node implement_claude_worker reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:implement_claude_worker:evidence:implement_claud",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:5",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
           }
         ],
-        "agent": "claude:4",
+        "agent": "claude:5",
         "version": "0.1.0",
         "observed": {
-          "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c"
+          "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
         },
         "objective_fingerprint": "sha256:6ef289dc3c260649eceb9a18d039df15f842272ab0d27f0b42c80ffaa7edb1d6"
       },
@@ -7637,7 +7826,7 @@
       "failure:unify_fractal_graph_ui:tool_failure": {
         "id": "failure:unify_fractal_graph_ui:tool_failure",
         "node_id": "unify_fractal_graph_ui",
-        "attempt": 10,
+        "attempt": 14,
         "failure_code": "tool_failure",
         "outcome": "failed_execution",
         "state": "unresolved",
@@ -7746,12 +7935,76 @@
             "observed": {
               "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c"
             }
+          },
+          {
+            "attempt": 11,
+            "outcome": "failed_execution",
+            "summary": "node unify_fractal_graph_ui reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:unify_fractal_graph_ui:evidence:unify_fractal_g",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:4",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 12,
+            "outcome": "failed_execution",
+            "summary": "node unify_fractal_graph_ui reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:unify_fractal_graph_ui:evidence:unify_fractal_g",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:2",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 13,
+            "outcome": "failed_execution",
+            "summary": "node unify_fractal_graph_ui reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:unify_fractal_graph_ui:evidence:unify_fractal_g",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:4",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
+          },
+          {
+            "attempt": 14,
+            "outcome": "failed_execution",
+            "summary": "node unify_fractal_graph_ui reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:unify_fractal_graph_ui:evidence:unify_fractal_g",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "claude:2",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
+            }
           }
         ],
-        "agent": "claude:3",
+        "agent": "claude:2",
         "version": "0.1.0",
         "observed": {
-          "graph_hash": "sha256:94f91d9e4f4a60ce57dedd3bdf0bb773d6ffffe2452171e3f4095d86a2df4b0c"
+          "graph_hash": "sha256:482e28852f9c4aeac3e4a384b3fb205d401db3b120370b62cb62b6c1a18e9e78"
         },
         "objective_fingerprint": "sha256:d8bb099329cd3850c76c319612048e81787ac810bbed72b5a693841752e1bbb7"
       }
@@ -7759,7 +8012,7 @@
     "lessons": {},
     "edges": {},
     "cross_project_links": {},
-    "failure_graph_hash": "sha256:cef4df997456b3a10f143e9b211ef384657a950d2bc48193bca8792a34828c77"
+    "failure_graph_hash": "sha256:79ddb6fb2f8231bc3cea7bffeca444726cd3f02142e18f01db98511a59a16e88"
   },
-  "updated_at": "2026-08-24T20:15:33Z"
+  "updated_at": "2026-08-24T20:24:48Z"
 }
