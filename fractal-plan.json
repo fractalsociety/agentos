@@ -493,7 +493,11 @@
         "expected_artifact": "A minimum-necessary health summary boundary and failing privacy and revocation tests",
         "files_or_systems_affected": [
           "interfaces/wit/fractal-companion-v1/companion.wit",
-          "tests/contract/test_health_adapter.rs"
+          "kernel/agentos-root-task/include/contracts/companion_export_contract.h",
+          "tests/contract/test_companion_schema.rs",
+          "tests/contract/test_health_adapter.rs",
+          "tests/contracts/companion_export_compile_test.c",
+          "tests/contracts/companion_export_test.c"
         ],
         "verification_plan": "Run cargo test -p fractal-companion-contract health_adapter and a static canary-field scan; require schema checks to pass and implementation cases to fail until the adapter exists.",
         "current_assumptions": [
@@ -676,7 +680,7 @@
       "title": "Complete generated Fractal WIT and Rust SDK bindings",
       "capability": "code.edit",
       "agent": "opencode",
-      "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Fix the reproduced cargo check -p agentos-sdk --no-default-features --features wit-bindings failure where generated bindings reference std. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests, WIT validation, default no_std check, and wit-bindings no_std check pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
+      "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Fix the reproduced cargo check -p agentos-sdk --no-default-features --features wit-bindings failure by adding the wit-bindgen 0.36 `std_feature` generator option inside the existing wit_bindgen::generate! block in userspace/sdk/src/lib.rs; this gates generated std::error::Error implementations without making wit-bindings imply std. Do not inspect Cargo registry paths outside the scoped worktree. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests, WIT validation, default no_std check, and wit-bindings no_std check pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
       "depends_on": [
         "fractal_controlplane_contract_tests",
         "implement_canonical_event_verify"
