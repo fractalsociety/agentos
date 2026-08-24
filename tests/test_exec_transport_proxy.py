@@ -120,6 +120,42 @@ class ExecTransportProxyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicated"):
             PROXY.parse_repo_overlays(duplicate)
 
+    def test_shared_repository_index_searches_and_reads_bounded_snapshot(self):
+        index = PROXY.RepositoryIndex({
+            pathlib.PurePosixPath("src/answer.c"):
+                b"int agentos_repo_answer(void) { return 0; }\n",
+            pathlib.PurePosixPath("README.md"): b"agent operating system\n",
+        })
+        code, matches = index.search(b"agentos_repo_answer", 4096)
+        self.assertEqual(code, 0)
+        self.assertIn(b"src/answer.c:1:", matches)
+        code, content = index.read(b"src/answer.c", 4096)
+        self.assertEqual(code, 0)
+        self.assertEqual(content, b"int agentos_repo_answer(void) { return 0; }\n")
+        for unsafe in (b"../etc/passwd", b".git/config", b"/etc/passwd"):
+            code, _ = index.read(unsafe, 4096)
+            self.assertEqual(code, 2)
+        code, output = index.search(b"", 4096)
+        self.assertEqual((code, output), (2, b"repo.search query is invalid\n"))
+
+    def test_repository_profiles_share_one_index_instance(self):
+        index = PROXY.RepositoryIndex({
+            pathlib.PurePosixPath("tracked.txt"): b"shared needle\n",
+        })
+        runner = PROXY.make_runner(
+            "clang", 1.0, repository_index=index
+        )
+        status, exit_code, output = runner(
+            PROXY.PROFILE_AGENTOS_REPO_SEARCH, b"needle", 1024
+        )
+        self.assertEqual((status, exit_code), (0, 0))
+        self.assertIn(b"tracked.txt:1", output)
+        status, exit_code, output = runner(
+            PROXY.PROFILE_AGENTOS_REPO_READ, b"tracked.txt", 1024
+        )
+        self.assertEqual((status, exit_code, output),
+                         (0, 0, b"shared needle\n"))
+
     @unittest.skipUnless(shutil.which("clang"), "toolchain unavailable")
     def test_repository_profile_fails_closed_without_admin_root(self):
         runner = PROXY.make_runner(

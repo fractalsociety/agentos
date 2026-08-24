@@ -1,9 +1,10 @@
 /*
  * ToolSvc — singleton capability-gated tool registry and dispatcher.
  *
- * The bootstrap service exposes one built-in MCP-compatible tool,
- * `agent.echo`. It is intentionally small: dynamic providers and external MCP
- * transports will extend this service without being copied into each worker.
+ * The singleton exposes capability-scoped built-ins. Repository discovery is
+ * delegated to a shared administrator-owned index rather than copied into
+ * every worker. Dynamic providers remain fail-closed until CapBroker can mint
+ * and revoke provider endpoints.
  */
 
 #include <stdbool.h>
@@ -19,13 +20,37 @@ static uint8_t *toolsvc_arena;
 static uint32_t toolsvc_arena_size;
 static uint64_t echo_call_count;
 
+typedef uint32_t (*toolsvc_repo_backend_fn)(
+    bool read, const uint8_t *input, uint32_t input_len,
+    uint8_t *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx);
+static toolsvc_repo_backend_fn repo_backend;
+static void *repo_backend_ctx;
+
 static const char echo_name[] = "agent.echo";
-static const char tool_list_json[] =
+static const char repo_search_name[] = "repo.search";
+static const char repo_read_name[] = "repo.read";
+static const char tool_list_echo_json[] =
     "{\"tools\":[{\"name\":\"agent.echo\",\"description\":"
     "\"Return the supplied JSON unchanged\",\"inputSchema\":{},\"calls\":0}]}";
-static const char tool_info_json[] =
+static const char tool_list_all_json[] =
+    "{\"tools\":[{\"name\":\"agent.echo\",\"description\":"
+    "\"Return the supplied JSON unchanged\",\"inputSchema\":{}},"
+    "{\"name\":\"repo.search\",\"description\":"
+    "\"Search the shared tracked-code index for a literal string\","
+    "\"inputSchema\":{\"type\":\"string\"}},"
+    "{\"name\":\"repo.read\",\"description\":"
+    "\"Read one tracked file from the shared repository snapshot\","
+    "\"inputSchema\":{\"type\":\"string\"}}]}";
+static const char echo_info_json[] =
     "{\"name\":\"agent.echo\",\"description\":"
     "\"Return the supplied JSON unchanged\",\"system\":true}";
+static const char repo_search_info_json[] =
+    "{\"name\":\"repo.search\",\"description\":"
+    "\"Search tracked files for a bounded literal query\",\"system\":true}";
+static const char repo_read_info_json[] =
+    "{\"name\":\"repo.read\",\"description\":"
+    "\"Read one bounded tracked file by relative path\",\"system\":true}";
 
 static void bytes_zero(void *ptr, uint32_t len)
 {
@@ -73,6 +98,11 @@ static uint16_t badge_client(toolsvc_badge_t badge)
     return (uint16_t)(badge >> 32u);
 }
 
+static uint32_t badge_rights(toolsvc_badge_t badge)
+{
+    return (uint32_t)badge;
+}
+
 static bool caller_range(uint16_t client, uint32_t offset, uint32_t len)
 {
     if (toolsvc_arena == NULL || client >= TOOLSVC_CLIENT_SLOT_COUNT)
@@ -97,17 +127,27 @@ void toolsvc_runtime_init(void *arena, uint32_t arena_size)
     toolsvc_arena = (uint8_t *)arena;
     toolsvc_arena_size = arena_size;
     echo_call_count = 0u;
+    repo_backend = NULL;
+    repo_backend_ctx = NULL;
+}
+
+void toolsvc_runtime_set_repo_backend(toolsvc_repo_backend_fn backend,
+                                      void *ctx)
+{
+    repo_backend = backend;
+    repo_backend_ctx = ctx;
 }
 
 static uint32_t write_json(uint16_t client, uint32_t offset, uint32_t cap,
                            const char *json, uint32_t len,
+                           uint32_t count,
                            uint8_t *reply, uint32_t *reply_len)
 {
     if (!caller_range(client, offset, cap)) return TOOLSVC_ERR_DENIED;
     if (cap <= len) return TOOLSVC_ERR_TOO_LARGE;
     bytes_copy(toolsvc_arena + offset, json, len);
     toolsvc_arena[offset + len] = '\0';
-    wr32(reply, 4u, 1u);
+    wr32(reply, 4u, count);
     wr32(reply, 8u, len);
     *reply_len = 12u;
     return TOOLSVC_ERR_OK;
@@ -125,11 +165,15 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
         return TOOLSVC_ERR_DENIED;
     }
     uint16_t client = badge_client(badge);
+    uint32_t rights = badge_rights(badge);
     uint32_t status = TOOLSVC_ERR_INVALID_ARG;
 
     if (opcode == TOOLSVC_OP_HEALTH && payload_len == 0u) {
         status = TOOLSVC_ERR_OK;
-        wr32(reply, 4u, 1u);
+        uint32_t count = ((rights & TOOLSVC_RIGHT_AGENT_ECHO) != 0u ? 1u : 0u)
+            + ((rights & TOOLSVC_RIGHT_REPO_SEARCH) != 0u ? 1u : 0u)
+            + ((rights & TOOLSVC_RIGHT_REPO_READ) != 0u ? 1u : 0u);
+        wr32(reply, 4u, count);
         wr32(reply, 8u, TOOLSVC_INTERFACE_VERSION);
         *reply_len = 12u;
     } else if (opcode == TOOLSVC_OP_INVOKE
@@ -145,12 +189,13 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
             || ranges_overlap(req.output_offset, req.output_buf_len,
                               req.input_offset, req.input_len)) {
             status = TOOLSVC_ERR_DENIED;
-        } else if (!bytes_equal(toolsvc_arena + req.name_offset, req.name_len,
-                                echo_name, sizeof(echo_name) - 1u)) {
-            status = TOOLSVC_ERR_NOT_FOUND;
-        } else if (req.output_buf_len <= req.input_len) {
-            status = TOOLSVC_ERR_TOO_LARGE;
-        } else {
+        } else if (bytes_equal(toolsvc_arena + req.name_offset, req.name_len,
+                               echo_name, sizeof(echo_name) - 1u)) {
+            if ((rights & TOOLSVC_RIGHT_AGENT_ECHO) == 0u) {
+                status = TOOLSVC_ERR_DENIED;
+            } else if (req.output_buf_len <= req.input_len) {
+                status = TOOLSVC_ERR_TOO_LARGE;
+            } else {
             bytes_copy(toolsvc_arena + req.output_offset,
                        toolsvc_arena + req.input_offset, req.input_len);
             toolsvc_arena[req.output_offset + req.input_len] = '\0';
@@ -159,16 +204,59 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
             wr32(reply, 4u, req.input_len);
             wr64(reply, 8u, 0u);
             *reply_len = 16u;
+            }
+        } else {
+            bool search = bytes_equal(toolsvc_arena + req.name_offset,
+                                      req.name_len, repo_search_name,
+                                      sizeof(repo_search_name) - 1u);
+            bool read = bytes_equal(toolsvc_arena + req.name_offset,
+                                    req.name_len, repo_read_name,
+                                    sizeof(repo_read_name) - 1u);
+            uint32_t required = search ? TOOLSVC_RIGHT_REPO_SEARCH
+                : (read ? TOOLSVC_RIGHT_REPO_READ : 0u);
+            uint32_t input_max = read ? TOOLSVC_REPO_PATH_MAX
+                : TOOLSVC_REPO_QUERY_MAX;
+            if (required == 0u) {
+                status = TOOLSVC_ERR_NOT_FOUND;
+            } else if ((rights & required) == 0u) {
+                status = TOOLSVC_ERR_DENIED;
+            } else if (req.input_len == 0u || req.input_len > input_max
+                       || req.output_buf_len > TOOLSVC_REPO_OUTPUT_MAX) {
+                status = TOOLSVC_ERR_TOO_LARGE;
+            } else if (repo_backend == NULL) {
+                status = TOOLSVC_ERR_PROVIDER_DOWN;
+            } else {
+                uint32_t output_len = 0u;
+                status = repo_backend(
+                    read, toolsvc_arena + req.input_offset, req.input_len,
+                    toolsvc_arena + req.output_offset, req.output_buf_len,
+                    &output_len, repo_backend_ctx);
+                if (status == TOOLSVC_ERR_OK
+                    && output_len < req.output_buf_len) {
+                    toolsvc_arena[req.output_offset + output_len] = '\0';
+                    wr32(reply, 4u, output_len);
+                    wr64(reply, 8u, 0u);
+                    *reply_len = 16u;
+                } else if (status == TOOLSVC_ERR_OK) {
+                    status = TOOLSVC_ERR_TOO_LARGE;
+                }
+            }
         }
     } else if (opcode == TOOLSVC_OP_LIST
                && payload != NULL
                && payload_len == sizeof(toolsvc_list_wire_t)) {
         toolsvc_list_wire_t req;
         bytes_copy(&req, payload, sizeof(req));
+        const char *json = rights == TOOLSVC_RIGHT_AGENT_ECHO
+            ? tool_list_echo_json : tool_list_all_json;
+        uint32_t len = rights == TOOLSVC_RIGHT_AGENT_ECHO
+            ? (uint32_t)(sizeof(tool_list_echo_json) - 1u)
+            : (uint32_t)(sizeof(tool_list_all_json) - 1u);
+        uint32_t count = ((rights & TOOLSVC_RIGHT_AGENT_ECHO) != 0u ? 1u : 0u)
+            + ((rights & TOOLSVC_RIGHT_REPO_SEARCH) != 0u ? 1u : 0u)
+            + ((rights & TOOLSVC_RIGHT_REPO_READ) != 0u ? 1u : 0u);
         status = write_json(client, req.output_offset, req.output_buf_len,
-                            tool_list_json,
-                            (uint32_t)(sizeof(tool_list_json) - 1u),
-                            reply, reply_len);
+                            json, len, count, reply, reply_len);
     } else if (opcode == TOOLSVC_OP_INFO
                && payload != NULL
                && payload_len == sizeof(toolsvc_info_wire_t)) {
@@ -176,14 +264,31 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
         bytes_copy(&req, payload, sizeof(req));
         if (!caller_range(client, req.name_offset, req.name_len)) {
             status = TOOLSVC_ERR_DENIED;
-        } else if (!bytes_equal(toolsvc_arena + req.name_offset, req.name_len,
-                                echo_name, sizeof(echo_name) - 1u)) {
-            status = TOOLSVC_ERR_NOT_FOUND;
         } else {
-            status = write_json(client, req.output_offset, req.output_buf_len,
-                                tool_info_json,
-                                (uint32_t)(sizeof(tool_info_json) - 1u),
-                                reply, reply_len);
+            const uint8_t *name = toolsvc_arena + req.name_offset;
+            const char *json = NULL;
+            uint32_t len = 0u, required = 0u;
+            if (bytes_equal(name, req.name_len, echo_name,
+                            sizeof(echo_name) - 1u)) {
+                json = echo_info_json;
+                len = (uint32_t)(sizeof(echo_info_json) - 1u);
+                required = TOOLSVC_RIGHT_AGENT_ECHO;
+            } else if (bytes_equal(name, req.name_len, repo_search_name,
+                                   sizeof(repo_search_name) - 1u)) {
+                json = repo_search_info_json;
+                len = (uint32_t)(sizeof(repo_search_info_json) - 1u);
+                required = TOOLSVC_RIGHT_REPO_SEARCH;
+            } else if (bytes_equal(name, req.name_len, repo_read_name,
+                                   sizeof(repo_read_name) - 1u)) {
+                json = repo_read_info_json;
+                len = (uint32_t)(sizeof(repo_read_info_json) - 1u);
+                required = TOOLSVC_RIGHT_REPO_READ;
+            }
+            if (json == NULL) status = TOOLSVC_ERR_NOT_FOUND;
+            else if ((rights & required) == 0u) status = TOOLSVC_ERR_DENIED;
+            else status = write_json(client, req.output_offset,
+                                     req.output_buf_len, json, len, 1u,
+                                     reply, reply_len);
         }
     } else if (opcode == TOOLSVC_OP_STATS && payload_len == 0u) {
         status = TOOLSVC_ERR_OK;
@@ -205,7 +310,53 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
 
 #ifndef AGENTOS_TEST_HOST
 
+#include "../../contracts/execsvc/interface.h"
+#include "../../kernel/agentos-root-task/include/sel4_client.h"
 #include "../../kernel/agentos-root-task/include/sel4_server.h"
+
+static uint32_t target_repo_backend(
+    bool read, const uint8_t *input, uint32_t input_len,
+    uint8_t *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx)
+{
+    (void)ctx;
+    const uint32_t source_rel = 0x100u;
+    const uint32_t output_rel = 0x2000u;
+    if (output_len == NULL || input_len == 0u
+        || input_len > EXECSVC_SOURCE_MAX || output_capacity == 0u
+        || output_capacity > EXECSVC_OUTPUT_MAX)
+        return TOOLSVC_ERR_INVALID_ARG;
+    uint8_t *arena = (uint8_t *)(uintptr_t)
+        EXECSVC_CLIENT_ARENA_VADDR(TOOLSVC_BOOTSTRAP_CLIENT_ID);
+    bytes_copy(arena + source_rel, input, input_len);
+    uint32_t partition = EXECSVC_CLIENT_ARENA_OFFSET(
+        TOOLSVC_BOOTSTRAP_CLIENT_ID);
+    execsvc_run_profile_wire_t wire = {
+        .source_offset = partition + source_rel,
+        .source_len = input_len,
+        .output_offset = partition + output_rel,
+        .output_capacity = output_capacity,
+        .profile_id = read ? EXECSVC_PROFILE_AGENTOS_REPO_READ
+                           : EXECSVC_PROFILE_AGENTOS_REPO_SEARCH,
+        .request_tag = read ? 0x72656164u : 0x66696e64u,
+    };
+    sel4_msg_t rep;
+    uint32_t status = sel4_client_call(PD_CNODE_SLOT_EXEC_SERVER_EP,
+                                       EXECSVC_OP_RUN_PROFILE,
+                                       &wire, sizeof(wire), &rep);
+    if (status != EXECSVC_OK || rep.length < sizeof(execsvc_run_profile_reply_t))
+        return status == EXECSVC_ERR_DENIED
+            ? TOOLSVC_ERR_DENIED : TOOLSVC_ERR_PROVIDER_DOWN;
+    execsvc_run_profile_reply_t result;
+    bytes_copy(&result, rep.data, sizeof(result));
+    if (result.status != EXECSVC_OK || result.request_tag != wire.request_tag
+        || result.output_len >= output_capacity)
+        return result.status == EXECSVC_ERR_DENIED
+            ? TOOLSVC_ERR_DENIED : TOOLSVC_ERR_PROVIDER_DOWN;
+    bytes_copy(output, arena + output_rel, result.output_len);
+    *output_len = result.output_len;
+    return TOOLSVC_ERR_OK;
+}
 
 static uint32_t toolsvc_handler(sel4_badge_t badge, const sel4_msg_t *req,
                                 sel4_msg_t *rep, void *ctx)
@@ -222,6 +373,7 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     (void)ns_ep;
     toolsvc_runtime_init((void *)(uintptr_t)TOOLSVC_SHMEM_VADDR,
                          TOOLSVC_SHMEM_SIZE);
+    toolsvc_runtime_set_repo_backend(target_repo_backend, NULL);
     static sel4_server_t server;
     sel4_server_init(&server, my_ep);
     (void)sel4_server_register(&server, SEL4_SERVER_OPCODE_ANY,

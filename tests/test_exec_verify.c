@@ -110,6 +110,18 @@ int main(void)
                                  EXECSVC_RIGHT_C11_COMPILE),
                &run, &run_reply) == EXECSVC_ERR_DENIED);
     assert(transport_calls == 1u);
+    run.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_SEARCH;
+    assert(execsvc_run_profile_dispatch(
+               badge_with_rights(SVC_ID_EXEC_SERVER, client,
+                                 EXECSVC_RIGHT_AGENTOS_REPO_READ),
+               &run, &run_reply) == EXECSVC_ERR_DENIED);
+    assert(transport_calls == 1u);
+    run.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_READ;
+    assert(execsvc_run_profile_dispatch(
+               badge_with_rights(SVC_ID_EXEC_SERVER, client,
+                                 EXECSVC_RIGHT_AGENTOS_REPO_SEARCH),
+               &run, &run_reply) == EXECSVC_ERR_DENIED);
+    assert(transport_calls == 1u);
 
     run.profile_id = 0xfeedu;
     assert(execsvc_run_profile_dispatch(badge(SVC_ID_EXEC_SERVER, client),

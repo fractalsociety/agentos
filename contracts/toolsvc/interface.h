@@ -25,7 +25,7 @@
 
 /* ── Version ─────────────────────────────────────────────────────────────── */
 
-#define TOOLSVC_INTERFACE_VERSION  2
+#define TOOLSVC_INTERFACE_VERSION  3
 
 /* ── Limits ──────────────────────────────────────────────────────────────── */
 
@@ -34,6 +34,23 @@
 #define TOOLSVC_TOOL_DESC_MAX       512
 #define TOOLSVC_SCHEMA_MAX          2048   /* JSON schema per tool (in/out) */
 #define TOOLSVC_AGENT_ID_BYTES      32
+
+/* Tool authority is carried in the immutable low 32 bits of the minted
+ * ToolSvc endpoint badge. A ToolCap therefore names the individual built-in
+ * tools it may invoke; possession of one ToolCap is not ambient authority for
+ * every tool registered by the singleton service. */
+#define TOOLSVC_RIGHT_AGENT_ECHO    (1u << 0)
+#define TOOLSVC_RIGHT_REPO_SEARCH   (1u << 1)
+#define TOOLSVC_RIGHT_REPO_READ     (1u << 2)
+#define TOOLSVC_RIGHT_ALL           \
+    (TOOLSVC_RIGHT_AGENT_ECHO | TOOLSVC_RIGHT_REPO_SEARCH \
+     | TOOLSVC_RIGHT_REPO_READ)
+
+/* Repository observations are deliberately smaller than a client arena so a
+ * model turn cannot use discovery as an unbounded workspace dump. */
+#define TOOLSVC_REPO_QUERY_MAX      512u
+#define TOOLSVC_REPO_PATH_MAX       256u
+#define TOOLSVC_REPO_OUTPUT_MAX     (16u * 1024u)
 
 /* One singleton arena is owned by ToolSvc. Each ToolCap client maps only the
  * 48 KiB partition selected by its immutable endpoint badge. */
@@ -50,6 +67,10 @@
     ((uint32_t)(client_id) * TOOLSVC_CLIENT_ARENA_SIZE)
 #define TOOLSVC_CLIENT_ARENA_VADDR(client_id) \
     (TOOLSVC_SHMEM_VADDR + TOOLSVC_CLIENT_ARENA_OFFSET(client_id))
+
+/* Stable descriptor index of the singleton ToolSvc PD. This is also the
+ * badge-selected ExecSvc partition used by its repository backend. */
+#define TOOLSVC_BOOTSTRAP_CLIENT_ID  12u
 
 /* ── Tool flags ──────────────────────────────────────────────────────────── */
 

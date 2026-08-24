@@ -56,6 +56,8 @@ int main(void)
     assert(!has_service(harness, SVC_ID_NET_SERVER));
     assert(!has_service(harness, SVC_ID_NET_PD));
     assert(has_service(harness, SVC_ID_TOOLSVC));
+    assert(service_badge_data(harness, SVC_ID_TOOLSVC)
+           == TOOLSVC_RIGHT_ALL);
     assert(has_service(harness, SVC_ID_AGENTFS));
     assert(has_service(harness, SVC_ID_EXEC_SERVER));
     assert(service_badge_data(harness, SVC_ID_EXEC_SERVER)
@@ -66,6 +68,12 @@ int main(void)
     assert(has_service(model, SVC_ID_NET_SERVER));
     assert(tools->self_svc_id == SVC_ID_TOOLSVC);
     assert(!has_service(tools, SVC_ID_NET_SERVER));
+    assert(!has_service(tools, SVC_ID_MODELSVC));
+    assert(!has_service(tools, SVC_ID_AGENTFS));
+    assert(!has_service(tools, SVC_ID_EXEC_TRANSPORT));
+    assert(has_service(tools, SVC_ID_EXEC_SERVER));
+    assert(service_badge_data(tools, SVC_ID_EXEC_SERVER)
+           == EXECSVC_RIGHT_AGENTOS_REPOSITORY);
     assert(memory->self_svc_id == SVC_ID_AGENTFS);
     assert(exec->self_svc_id == SVC_ID_EXEC_SERVER);
     assert(!has_service(exec, SVC_ID_MODELSVC));

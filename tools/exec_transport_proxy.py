@@ -22,6 +22,8 @@ MAGIC = 0x45584741
 VERSION = 1
 PROFILE_C11_COMPILE = 1
 PROFILE_AGENTOS_REPO_TEST = 2
+PROFILE_AGENTOS_REPO_SEARCH = 3
+PROFILE_AGENTOS_REPO_READ = 4
 REQUEST_HEADER = struct.Struct("<IIIIII")
 RESPONSE_HEADER = struct.Struct("<IIiII")
 REPO_BUNDLE_HEADER = struct.Struct("<IIII")
@@ -34,6 +36,10 @@ OVERLAY_BUNDLE_VERSION = 1
 REPO_PATH_MAX = 256
 SOURCE_MAX = 24 * 1024
 OUTPUT_MAX = 16 * 1024
+REPO_INDEX_FILE_MAX = 1024 * 1024
+REPO_INDEX_TOTAL_MAX = 32 * 1024 * 1024
+REPO_INDEX_FILES_MAX = 8192
+REPO_QUERY_MAX = 512
 
 
 def recv_exact(sock: socket.socket, length: int) -> bytes:
@@ -217,6 +223,102 @@ def _extract_git_snapshot(repository_root: pathlib.Path,
             target.chmod(member.mode & 0o777)
 
 
+class RepositoryIndex:
+    """One administrator-owned HEAD snapshot shared by all agent workers."""
+
+    def __init__(self, files: dict[pathlib.PurePosixPath, bytes]):
+        self._files = files
+
+    @classmethod
+    def from_git(cls, repository_root: str, timeout: float) -> "RepositoryIndex":
+        root = pathlib.Path(repository_root).resolve()
+        if not root.is_dir() or not (root / ".git").exists():
+            raise ValueError("managed repository root is not a Git worktree")
+        archived = subprocess.run(
+            ["git", "-C", str(root), "archive", "--format=tar", "HEAD"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=min(timeout, 30.0), check=False,
+        )
+        if archived.returncode != 0:
+            raise ValueError("administrator repository index snapshot failed")
+        files: dict[pathlib.PurePosixPath, bytes] = {}
+        total = 0
+        with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
+            for member in archive.getmembers():
+                if member.isdir():
+                    continue
+                path = pathlib.PurePosixPath(member.name)
+                if (not member.isfile() or path.is_absolute() or not path.parts
+                        or any(part in ("", ".", "..") for part in path.parts)
+                        or path.parts[0] == ".git"):
+                    raise ValueError("repository index contains an unsafe entry")
+                # Large tracked artifacts remain available to managed tests,
+                # but are intentionally omitted from code discovery instead
+                # of making every worker-facing index unbounded.
+                if member.size > REPO_INDEX_FILE_MAX:
+                    continue
+                if len(files) >= REPO_INDEX_FILES_MAX:
+                    raise ValueError("repository index exceeds bounded file limits")
+                source = archive.extractfile(member)
+                if source is None:
+                    raise ValueError("repository index extraction failed")
+                content = source.read(REPO_INDEX_FILE_MAX + 1)
+                total += len(content)
+                if len(content) != member.size or total > REPO_INDEX_TOTAL_MAX:
+                    raise ValueError("repository index exceeds bounded byte limits")
+                files[path] = content
+        return cls(files)
+
+    def search(self, raw_query: bytes, output_capacity: int) -> tuple[int, bytes]:
+        if not 0 < len(raw_query) <= REPO_QUERY_MAX or b"\x00" in raw_query:
+            return 2, b"repo.search query is invalid\n"
+        try:
+            query = raw_query.decode("utf-8").casefold()
+        except UnicodeDecodeError:
+            return 2, b"repo.search query is not UTF-8\n"
+        if not query.strip():
+            return 2, b"repo.search query is empty\n"
+        output = bytearray()
+        matches = 0
+        for path, content in self._files.items():
+            path_text = str(path)
+            if query in path_text.casefold():
+                record = f"{path_text}:0:<path match>\n".encode()
+                if len(output) + len(record) > output_capacity:
+                    break
+                output.extend(record)
+                matches += 1
+            if b"\x00" in content:
+                continue
+            text = content.decode("utf-8", errors="replace")
+            for line_number, line in enumerate(text.splitlines(), 1):
+                if query not in line.casefold():
+                    continue
+                compact = " ".join(line.strip().split())[:240]
+                record = f"{path_text}:{line_number}:{compact}\n".encode()
+                if len(output) + len(record) > output_capacity:
+                    return 0, bytes(output)
+                output.extend(record)
+                matches += 1
+                if matches >= 100:
+                    return 0, bytes(output)
+        if not output:
+            return 1, b"repo.search: no matches\n"
+        return 0, bytes(output)
+
+    def read(self, raw_path: bytes, output_capacity: int) -> tuple[int, bytes]:
+        try:
+            path = _validated_repo_path(raw_path)
+        except ValueError as exc:
+            return 2, (str(exc) + "\n").encode()
+        content = self._files.get(path)
+        if content is None:
+            return 1, b"repo.read: tracked path not found\n"
+        if len(content) > output_capacity:
+            return 2, b"repo.read: tracked file exceeds observation bound\n"
+        return 0, content
+
+
 def _sandboxed_repo_argv(workspace: pathlib.Path,
                          test_runner: str) -> list[str]:
     command = [test_runner, "test"]
@@ -290,7 +392,12 @@ Runner = Callable[[int, bytes, int], tuple[int, int, bytes]]
 def make_runner(compiler: str, timeout: float,
                 repository_root: str | None = None,
                 test_runner: str | None = None,
-                repository_timeout: float = 180.0) -> Runner:
+                repository_timeout: float = 180.0,
+                repository_index: RepositoryIndex | None = None) -> Runner:
+    if repository_index is None and repository_root is not None:
+        repository_index = RepositoryIndex.from_git(
+            repository_root, repository_timeout)
+
     def run(profile: int, source: bytes, output_capacity: int) -> tuple[int, int, bytes]:
         if profile == PROFILE_C11_COMPILE:
             exit_code, output = run_c11_compile(source, compiler, timeout)
@@ -302,6 +409,16 @@ def make_runner(compiler: str, timeout: float,
                     source, repository_root, test_runner, repository_timeout)
             except ValueError as exc:
                 exit_code, output = 2, (str(exc) + "\n").encode()
+        elif profile == PROFILE_AGENTOS_REPO_SEARCH:
+            if repository_index is None:
+                exit_code, output = 2, b"repository index is not configured\n"
+            else:
+                exit_code, output = repository_index.search(source, output_capacity)
+        elif profile == PROFILE_AGENTOS_REPO_READ:
+            if repository_index is None:
+                exit_code, output = 2, b"repository index is not configured\n"
+            else:
+                exit_code, output = repository_index.read(source, output_capacity)
         else:
             return 3, -1, b""
         if not output and exit_code == 0:

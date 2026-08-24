@@ -303,6 +303,7 @@ static void target_agent_harness_contract(void)
             + EXECSVC_CLIENT_ARENA_SIZE
         && tr_rd32(rep.data, 24u)
             == (HARNESS_SHARED_MODELSVC | HARNESS_SHARED_TOOL_MCP
+                | HARNESS_SHARED_REPO_INDEX
                 | HARNESS_SHARED_ARTIFACT_STORE
                 | HARNESS_SHARED_EXEC_GRAPH))
         _tf_ok("AgentHarness reports private and shared memory separately");
@@ -378,7 +379,7 @@ static void target_toolsvc_contract(void)
     req.opcode = TOOLSVC_OP_HEALTH;
     sel4_call((seL4_CPtr)TARGET_TOOLSVC_CAP, &req, &rep);
     if (rep.opcode == TOOLSVC_ERR_OK
-        && tr_rd32(rep.data, 4u) == 1u
+        && tr_rd32(rep.data, 4u) == 3u
         && tr_rd32(rep.data, 8u) == TOOLSVC_INTERFACE_VERSION)
         _tf_ok("ToolSvc target health over distinct ToolCap");
     else
@@ -600,10 +601,11 @@ static void target_agent_harness_live_repository(void)
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
     static const char model[] = "fast";
     static const char prompt[] =
-        "Repair tests/fixtures/repo_agent/answer.c so agentos_repo_answer takes "
-        "no arguments and returns 42. Use memory_write, then test that path with "
-        "the agentos_repo_tests profile, then return final only after the managed "
-        "repository test suite reports success.";
+        "Find the tracked file defining agentos_repo_answer with repo.search, "
+        "then inspect it with repo.read. Repair that discovered file so the "
+        "function takes no arguments and returns 42. Use memory_write, then test "
+        "that path with the agentos_repo_tests profile, then return final only "
+        "after the managed repository test suite reports success.";
     const uint32_t prompt_off = 0x1000u;
     const uint32_t model_off = 0x2000u;
     const uint32_t result_off = 0x4000u;
@@ -614,8 +616,8 @@ static void target_agent_harness_live_repository(void)
     tr_zero(&submit, sizeof(submit));
     submit.task_id = 5u;
     submit.harness_kind = HARNESS_KIND_CODEX;
-    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY
-        | HARNESS_CAP_EXEC;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_TOOL
+        | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC;
     submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
     submit.max_steps = 8u;
     submit.authority_epoch = 1u;
@@ -642,7 +644,9 @@ static void target_agent_harness_live_repository(void)
     sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
     if (completed && rep.opcode == HARNESS_OK
         && tr_rd32(rep.data, 12u) > 0u
-        && tr_rd32(rep.data, 24u) >= 2u
+        && tr_rd32(rep.data, 16u) >= 5u
+        && tr_rd32(rep.data, 20u) >= 2u
+        && tr_rd32(rep.data, 24u) >= 1u
         && tr_rd32(rep.data, 28u) >= 1u
         && (int32_t)tr_rd32(rep.data, 40u) == 0)
         _tf_ok("AgentHarness completes managed repository edit and tests");

@@ -178,7 +178,7 @@ credential; the heavier model client belongs to shared ModelSvc infrastructure
 rather than being duplicated into each worker.
 
 The expanded native live target gate passed on 2026-08-24. The AArch64 seL4 worker sent
-six ModelCap requests through ModelSvc and NetServer to a dedicated
+eight ModelCap requests through ModelSvc and NetServer to a dedicated
 `model_transport` protection domain. That PD alone owns the model VirtIO
 console and maps ModelSvc's service-private transport arena; the worker has no
 transport cap, NetCap, credential, or host socket. The host proxy forwarded the
@@ -187,11 +187,19 @@ returned `memory_write(src/live.c, "int agentos_answer(void) { ... }")`, then
 `test(src/live.c, c11_compile)`. ExecSvc validated the worker partition and
 profile, the distinct execution transport invoked the real host compiler, and
 Codex received `compile: ok` before returning `final`. Codex then independently
-repaired `tests/fixtures/repo_agent/answer.c`, selected
+invoked capability-scoped `repo.search` to locate the tracked definition of
+`agentos_repo_answer`, invoked separately authorized `repo.read` to inspect the
+discovered file, wrote the repair through AgentFS, selected
 `agentos_repo_tests`, received the successful managed-suite observation, and
-returned a second gated final answer. With on-target overlay-export isolation
-checks, the live VM suite passed 41/41; the credential-free hermetic suite
-passed 39/39.
+returned a second gated final answer. The repository index is one bounded,
+administrator-owned snapshot of Git `HEAD` in the persistent host execution
+proxy; it is shared by every worker and excludes files larger than 1 MiB, with
+8,192-file and 32 MiB aggregate ceilings. Workers receive only bounded
+observations and never a repository root, argv, shell, or host filesystem
+handle. ToolSvc checks distinct immutable badge rights for `agent.echo`,
+`repo.search`, and `repo.read`; its own ExecCap contains only the fixed search
+and read profiles. With on-target overlay-export isolation checks, the live VM
+suite passed 41/41; the credential-free hermetic suite passed 39/39.
 
 These dedicated model and execution consoles are honest intermediate
 transports, not a claim of native TCP, a native compiler, arbitrary repository
@@ -223,12 +231,15 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
 AgentFS, ExecSvc, and both transport PDs passed all 41 live target assertions.
-Host monotonic timestamps measured 445.10 ms from QEMU spawn to root-task
-readiness, a 3.99 ms cold native planner turn, and 12 warm turns with 0.190 ms
-p50 and 0.533 ms p95. ModelSvc cached queries measured 0.046 ms p50 and
-0.363 ms p95. The worker reported 274,432 bytes of private committed memory
-and 196,608 bytes of shared client mappings under its 64 MiB private limit.
-These are QEMU/host-arrival measurements, not bare-metal cycle counts.
+The repository-discovery run measured 499.868 ms from QEMU spawn to root-task
+readiness, a 4.006 ms cold native planner turn, and 12 warm turns with 0.175 ms
+p50 and 0.518 ms p95. ModelSvc cached queries measured 0.057 ms p50 and
+0.381 ms p95. The worker reported 274,432 bytes of private committed memory
+and 196,608 bytes of shared client mappings under its 64 MiB private limit;
+its shared-component bitmap now includes the singleton repository index.
+Host-side proxy memory is shared system infrastructure and is intentionally not
+reported as worker-private memory. These are QEMU/host-arrival measurements,
+not bare-metal cycle counts.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service

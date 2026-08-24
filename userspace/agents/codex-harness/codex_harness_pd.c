@@ -37,7 +37,10 @@ static const char harness_system_prompt[] =
     "\"c11_compile|agentos_repo_tests\"}; "
     "{\"action\":\"tool\",\"tool\":\"name\",\"input\":\"text\"}; or "
     "{\"action\":\"final\",\"summary\":\"result\"}. Never return final before "
-    "required verification succeeds.";
+    "required verification succeeds. repo.search accepts a literal query and "
+    "returns path:line:text matches from the shared tracked-code index. "
+    "repo.read accepts one relative tracked path. Use both to discover and "
+    "inspect code instead of guessing paths.";
 
 typedef uint32_t (*harness_model_backend_fn)(
     const char *system_prompt, uint32_t system_prompt_len,
@@ -1156,6 +1159,7 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
                                       + EXECSVC_CLIENT_ARENA_SIZE,
                                   HARNESS_SHARED_MODELSVC
                                       | HARNESS_SHARED_TOOL_MCP
+                                      | HARNESS_SHARED_REPO_INDEX
                                       | HARNESS_SHARED_ARTIFACT_STORE
                                       | HARNESS_SHARED_EXEC_GRAPH);
     sel4_server_init(&harness_server, my_ep);

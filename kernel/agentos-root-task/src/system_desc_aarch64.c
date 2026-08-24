@@ -39,6 +39,7 @@
 
 #include "system_desc.h"
 #include "../../../contracts/execsvc/interface.h"
+#include "../../../contracts/toolsvc/interface.h"
 
 /* agentos-8f5: a target contract-runner PD is appended only in test images. */
 #ifdef AGENTOS_SEL4_TEST_IMAGE
@@ -289,7 +290,8 @@ const system_desc_t system_desc_aarch64 = {
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
                 { SVC_ID_MODELSVC,  PD_CNODE_SLOT_MODELSVC_EP  },
-                { SVC_ID_TOOLSVC,   PD_CNODE_SLOT_TOOLSVC_EP   },
+                { SVC_ID_TOOLSVC,   PD_CNODE_SLOT_TOOLSVC_EP,
+                  TOOLSVC_RIGHT_ALL },
                 { SVC_ID_AGENTFS,   PD_CNODE_SLOT_AGENTFS_EP   },
                 { SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP,
                   EXECSVC_RIGHT_ALL },
@@ -304,9 +306,11 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 185u,
             .self_svc_id    = SVC_ID_TOOLSVC,
-            .init_ep_count  = 1u,
+            .init_ep_count  = 2u,
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
+                { SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP,
+                  EXECSVC_RIGHT_AGENTOS_REPOSITORY },
             },
         },
 
@@ -647,7 +651,7 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_LOG_DRAIN,  129u },   /* 74 + CH_LOG_DRAIN(55)       */
                 { SVC_ID_MODELSVC,   130u },   /* raw seL4 contract cap        */
                 { SVC_ID_AGENT_HARNESS, 131u }, /* native harness contract cap   */
-                { SVC_ID_TOOLSVC,   132u },   /* raw ToolSvc contract cap      */
+                { SVC_ID_TOOLSVC,   132u, TOOLSVC_RIGHT_ALL },
                 { SVC_ID_AGENTFS,   133u },   /* raw AgentFS contract cap       */
             },
         },
