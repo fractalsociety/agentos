@@ -4814,7 +4814,7 @@
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:01Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4863,14 +4863,14 @@
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:01Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:01Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:3",
@@ -4898,7 +4898,7 @@
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:02Z"
       },
       "implement_cursor_worker": {
         "agent_id": "cursor:1",
@@ -4908,18 +4908,18 @@
         "completed_at": "2026-08-24T19:47:28Z"
       },
       "implement_daily_root_projection": {
-        "agent_id": "hermes:1",
-        "agent_label": "hermes:1",
+        "agent_id": "codex/root",
+        "agent_label": "Codex",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:35:47Z"
       },
       "implement_fractal_controlplane": {
-        "agent_id": "codex-luna:3",
-        "agent_label": "codex-luna:3",
-        "state": "released",
+        "agent_id": "codex/root",
+        "agent_label": "Codex",
+        "state": "completed",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "completed_at": "2026-08-24T22:35:21Z"
       },
       "implement_fractal_controlplane_host": {
         "agent_id": "codex-luna",
@@ -4929,18 +4929,18 @@
         "completed_at": "2026-08-24T21:30:36Z"
       },
       "implement_fractal_controlplane_sdk": {
-        "agent_id": "codex/root",
-        "agent_label": "Codex",
-        "state": "released",
+        "agent_id": "opencode:5",
+        "agent_label": "opencode:5",
+        "state": "completed",
         "checked_out_at": "2026-08-24T21:39:30Z",
-        "released_at": "2026-08-24T22:21:36Z"
+        "completed_at": "2026-08-24T22:29:41Z"
       },
       "implement_health_adapter": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:02Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:3",
@@ -4954,14 +4954,14 @@
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:02Z"
       },
       "implement_remote_authority": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:21:21Z"
+        "released_at": "2026-08-24T22:22:02Z"
       },
       "implement_remote_mesh_sessions": {
         "agent_id": "codex-luna:3",
@@ -5006,7 +5006,7 @@
         "completed_at": "2026-08-24T21:55:08Z"
       }
     },
-    "updated_at": "2026-08-24T22:21:36Z"
+    "updated_at": "2026-08-24T22:35:47Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -5123,7 +5123,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 27
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -5295,7 +5295,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 25
+        "reopen_count": 26
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5311,7 +5311,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 25
+        "reopen_count": 26
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5402,7 +5402,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 24
+        "reopen_count": 25
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5441,11 +5441,16 @@
           "implement_fractal_controlplane"
         ],
         "created_at": "2026-08-24T22:21:21Z",
-        "attempt_count": 3,
+        "started_at": "2026-08-24T22:35:21Z",
+        "executor": {
+          "agent": "Codex",
+          "version": "0.1.0"
+        },
+        "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 23
+        "reopen_count": 24
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
@@ -5456,11 +5461,24 @@
           "implement_fractal_controlplane_sdk"
         ],
         "created_at": "2026-08-24T22:21:21Z",
-        "attempt_count": 8,
+        "ready_at": "2026-08-24T22:29:41Z",
+        "started_at": "2026-08-24T22:35:19Z",
+        "finished_at": "2026-08-24T22:35:21Z",
+        "executor": {
+          "agent": "Codex",
+          "version": "0.1.0"
+        },
+        "attempt_count": 10,
+        "outcome": "unverified_success",
+        "integration_failure": {
+          "schema": "fractal.integration_failure.v1",
+          "kind": "no_tracked_changes",
+          "summary": "hybrid build node `implement_fractal_controlplane` made no tracked source changes"
+        },
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 28
       },
       "implement_fractal_controlplane_host": {
         "node_id": "implement_fractal_controlplane_host",
@@ -5501,16 +5519,24 @@
           "implement_canonical_event_verify"
         ],
         "created_at": "2026-08-24T22:21:21Z",
-        "started_at": "2026-08-24T22:21:31Z",
+        "ready_at": "2026-08-24T22:22:02Z",
+        "started_at": "2026-08-24T22:22:02Z",
+        "finished_at": "2026-08-24T22:29:41Z",
         "executor": {
-          "agent": "Codex",
+          "agent": "opencode:5",
           "version": "0.1.0"
         },
-        "attempt_count": 4,
-        "artifacts_produced": [],
-        "consumed_by": [],
+        "attempt_count": 5,
+        "outcome": "unverified_success",
+        "artifacts_produced": [
+          "artifact:implement_fractal_controlplane_sdk:f8cd684375a5a5575ee41ab1"
+        ],
+        "consumed_by": [
+          "artifact:fractal_controlplane_contract_tests:e54c454c1524d2a4edd99724",
+          "artifact:implement_canonical_event_verify:8736d7ca852af60057403f7e"
+        ],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 7
       },
       "implement_health_adapter": {
         "node_id": "implement_health_adapter",
@@ -5525,7 +5551,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 27
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5563,7 +5589,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 25
+        "reopen_count": 26
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5580,7 +5606,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 25
+        "reopen_count": 26
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5896,6 +5922,92 @@
         "eventual_effect": {}
       }
     ],
+    "outcome": {
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-10",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-11",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-12",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-13",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-14",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-15",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-2",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-3",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-4",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-5",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-6",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-7",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-8",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-9",
+          "passed": false,
+          "evidence_refs": []
+        }
+      ],
+      "maximum_parallelism": 0,
+      "retry_count": 157,
+      "reopened_node_count": 33,
+      "dead_or_unused_node_count": 1,
+      "human_intervention_count": 0,
+      "verification_coverage": 0.05555555555555555,
+      "verification_coverage_denominator": 36
+    },
     "acceptance_criteria": [
       "AC-1",
       "AC-10",
@@ -8063,6 +8175,47 @@
         },
         "objective_fingerprint": "sha256:92d0adc71f85396fd1e9868dca074232758fc93c5caf2c28569bb6bba01133bc"
       },
+      "failure:implement_fractal_controlplane:invalid_output_schema": {
+        "id": "failure:implement_fractal_controlplane:invalid_output_schema",
+        "node_id": "implement_fractal_controlplane",
+        "attempt": 9,
+        "failure_code": "invalid_output_schema",
+        "outcome": "failed_execution",
+        "state": "unresolved",
+        "summary": "node implement_fractal_controlplane reported failed_execution with failure code invalid_output_schema",
+        "capability": "code.edit",
+        "component": "implementation",
+        "evidence": [
+          {
+            "legacy_ref": "evidence:implement_fractal_controlplane:evidence:implement_fract",
+            "kind": "workspace_state"
+          }
+        ],
+        "observations": [
+          {
+            "attempt": 9,
+            "outcome": "failed_execution",
+            "summary": "node implement_fractal_controlplane reported failed_execution with failure code invalid_output_schema",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:implement_fractal_controlplane:evidence:implement_fract",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "codex-luna:3",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:022bd5107e6ae663c0432d4a51473f9de8585fbb729c06f9750801917c3014f3"
+            }
+          }
+        ],
+        "agent": "codex-luna:3",
+        "version": "0.1.0",
+        "observed": {
+          "graph_hash": "sha256:022bd5107e6ae663c0432d4a51473f9de8585fbb729c06f9750801917c3014f3"
+        },
+        "objective_fingerprint": "sha256:188c161224f8b03657a0e61977bd125e534a4eea6feb65e0ae492c1b42c3d5af"
+      },
       "failure:implement_fractal_controlplane:timeout": {
         "id": "failure:implement_fractal_controlplane:timeout",
         "node_id": "implement_fractal_controlplane",
@@ -9281,7 +9434,7 @@
     "lessons": {},
     "edges": {},
     "cross_project_links": {},
-    "failure_graph_hash": "sha256:94e6e07fbfa762208f8a1a6d9d627a1f53317d2e4d5c0776dd990dbb9890af02"
+    "failure_graph_hash": "sha256:fa02f5e868bfd45fd78aea85bba4264798dcb26cff33228e235cf7762f129547"
   },
-  "updated_at": "2026-08-24T22:21:56Z"
+  "updated_at": "2026-08-24T22:35:57Z"
 }
