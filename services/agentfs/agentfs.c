@@ -43,6 +43,7 @@
 #include "agentos.h"
 #include "sel4_server.h"
 #include "contracts/agentfs_contract.h"
+#include "contracts/eventbus_contract.h"
 #include "workspace_overlay.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -52,6 +53,22 @@ uintptr_t agentfs_store_vaddr;
 
 /* Outbound endpoint to event bus (0 = not wired, fire-and-forget stub) */
 static seL4_CPtr g_eventbus_ep = 0;
+
+#if defined(__GNUC__)
+__attribute__((weak)) uint32_t agentos_eventbus_record(
+    struct eventbus_agent_event *event)
+{
+    (void)event;
+    return EVENTBUS_AGENT_EVENT_OK;
+}
+__attribute__((weak)) uint32_t agentos_eventbus_canonical_epoch(void)
+{
+    return 0u;
+}
+#else
+extern uint32_t agentos_eventbus_record(struct eventbus_agent_event *event);
+extern uint32_t agentos_eventbus_canonical_epoch(void);
+#endif
 
 /* ── Op codes ───────────────────────────────────────────────────────────── */
 #define OP_AGENTFS_PUT      0x30
@@ -195,29 +212,72 @@ static inline void rep_u32(sel4_msg_t *m, uint32_t off, uint32_t v) {
 #endif /* AGENTOS_IPC_HELPERS_DEFINED */
 
 /* ── Emit event to EventBus (fire-and-forget seL4_Call, guarded) ────────── */
-static void emit_event(uint32_t event_type, const object_id_t *id) {
+static eventbus_event_hash_t agentfs_hash_bytes(const uint8_t *bytes,
+                                                uint32_t length)
+{
+    eventbus_event_hash_t result = {{0}};
+    eventbus_event_hash_bytes(bytes, length, &result);
+    return result;
+}
+
+static uint32_t emit_event(uint32_t event_type, sel4_badge_t badge,
+                           const object_id_t *id) {
+    uint32_t canonical_status = EVENTBUS_AGENT_EVENT_OK;
 #ifndef AGENTOS_TEST_HOST
-    if (!g_eventbus_ep) return;
-    sel4_msg_t emsg = {0};
-    emsg.opcode = MSG_EVENT_PUBLISH;
-    rep_u32(&emsg, 0, MSG_EVENT_PUBLISH);
-    rep_u32(&emsg, 4, event_type);
-    /* Pack first 16 bytes of object ID */
-    uint32_t id0 = 0, id1 = 0, id2 = 0, id3 = 0;
-    for (int i = 0; i < 4; i++) id0 = (id0 << 8) | id->bytes[i];
-    for (int i = 4; i < 8; i++) id1 = (id1 << 8) | id->bytes[i];
-    for (int i = 8; i <12; i++) id2 = (id2 << 8) | id->bytes[i];
-    for (int i = 12;i <16; i++) id3 = (id3 << 8) | id->bytes[i];
-    rep_u32(&emsg, 8,  id0);
-    rep_u32(&emsg, 12, id1);
-    rep_u32(&emsg, 16, id2);
-    rep_u32(&emsg, 20, id3);
-    emsg.length = 24;
-    sel4_msg_t erep = {0};
-    sel4_call(g_eventbus_ep, &emsg, &erep);
+    if (g_eventbus_ep) {
+        sel4_msg_t emsg = {0};
+        emsg.opcode = MSG_EVENT_PUBLISH;
+        rep_u32(&emsg, 0, MSG_EVENT_PUBLISH);
+        rep_u32(&emsg, 4, event_type);
+        /* Pack first 16 bytes of object ID */
+        uint32_t id0 = 0, id1 = 0, id2 = 0, id3 = 0;
+        if (id != (const object_id_t *)0) {
+            for (int i = 0; i < 4; i++) id0 = (id0 << 8) | id->bytes[i];
+            for (int i = 4; i < 8; i++) id1 = (id1 << 8) | id->bytes[i];
+            for (int i = 8; i <12; i++) id2 = (id2 << 8) | id->bytes[i];
+            for (int i = 12;i <16; i++) id3 = (id3 << 8) | id->bytes[i];
+        }
+        rep_u32(&emsg, 8,  id0);
+        rep_u32(&emsg, 12, id1);
+        rep_u32(&emsg, 16, id2);
+        rep_u32(&emsg, 20, id3);
+        emsg.length = 24;
+        sel4_msg_t erep = {0};
+        sel4_call(g_eventbus_ep, &emsg, &erep);
+    }
 #else
     (void)event_type; (void)id;
 #endif
+
+    if (agentos_eventbus_record != (void *)0) {
+        uint8_t scope_seed[12] = {'a', 'f', 's', 0u, 0u, 0u,
+                                  0u, 0u, 0u, 0u, 0u, 0u};
+        uint8_t payload_seed[8] = {'a', 'f', 's', 'e', 0u, 0u, 0u, 0u};
+        struct eventbus_agent_event event = {0};
+        eventbus_event_hash_t scope;
+        eventbus_event_hash_t payload;
+        uint32_t i;
+
+        for (i = 0u; i < 8u; i++) {
+            scope_seed[4u + i] = (uint8_t)(badge >> (i * 8u));
+            if (i < 4u) payload_seed[4u + i] =
+                (uint8_t)(event_type >> (i * 8u));
+        }
+        scope = agentfs_hash_bytes(scope_seed, (uint32_t)sizeof(scope_seed));
+        if (id != (const object_id_t *)0)
+            payload = agentfs_hash_bytes(id->bytes, OBJECT_ID_BYTES);
+        else
+            payload = agentfs_hash_bytes(payload_seed,
+                                         (uint32_t)sizeof(payload_seed));
+        event.event_type = EVENTBUS_EVENT_OBJECT_TRANSITION;
+        event.authority_epoch = agentos_eventbus_canonical_epoch != (void *)0
+            ? agentos_eventbus_canonical_epoch() : 0u;
+        event.flags = EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+        event.scope_id = scope;
+        event.payload_root = payload;
+        canonical_status = agentos_eventbus_record(&event);
+    }
+    return canonical_status;
 }
 
 /* ── OP handlers ────────────────────────────────────────────────────────── */
@@ -255,7 +315,15 @@ static uint32_t h_put(sel4_badge_t b, const sel4_msg_t *req,
     obj->id.scheme = 1; /* blake3-analog */
 
     /* Emit event */
-    emit_event(EVT_OBJECT_CREATED, &obj->id);
+    if (emit_event(EVT_OBJECT_CREATED, b, &obj->id)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        obj->state = OBJ_STATE_TOMBSTONE;
+        hot_count--;
+        blob_watermark -= size;
+        total_puts--;
+        rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+        return SEL4_ERR_INVALID_OP;
+    }
 
     /* Return object ID first 16 bytes in reply */
     uint32_t w0 = 0, w1 = 0, w2 = 0, w3 = 0;
@@ -293,6 +361,12 @@ static uint32_t h_get(sel4_badge_t b, const sel4_msg_t *req,
     if (!obj) {
         rep_u32(rep, 0, AFS_ERR_NOENT); rep->length = 4;
         return SEL4_ERR_NOT_FOUND;
+    }
+
+    if (emit_event(EVT_OBJECT_CREATED, b, &obj->id)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+        return SEL4_ERR_INVALID_OP;
     }
 
     rep_u32(rep, 0,  AFS_OK);
@@ -337,6 +411,11 @@ static uint32_t h_vector(sel4_badge_t b, const sel4_msg_t *req,
     }
 
     if (!best || best_score < 0.01f) {
+        if (emit_event(EVT_OBJECT_CREATED, b, (const object_id_t *)0)
+                != EVENTBUS_AGENT_EVENT_OK) {
+            rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+            return SEL4_ERR_INVALID_OP;
+        }
         rep_u32(rep, 0, AFS_OK);
         rep_u32(rep, 4, 0);  /* zero results */
         rep->length = 8;
@@ -344,6 +423,11 @@ static uint32_t h_vector(sel4_badge_t b, const sel4_msg_t *req,
     }
 
     /* Return top-1 result */
+    if (emit_event(EVT_OBJECT_CREATED, b, &best->id)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+        return SEL4_ERR_INVALID_OP;
+    }
     uint32_t id_prefix = 0;
     for (int i = 0; i < 4; i++)
         id_prefix = (id_prefix << 8) | best->id.bytes[i];
@@ -361,6 +445,11 @@ static uint32_t h_vector(sel4_badge_t b, const sel4_msg_t *req,
 static uint32_t h_stat(sel4_badge_t b, const sel4_msg_t *req,
                         sel4_msg_t *rep, void *ctx) {
     (void)b; (void)req; (void)ctx;
+    if (emit_event(EVT_OBJECT_CREATED, b, (const object_id_t *)0)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+        return SEL4_ERR_INVALID_OP;
+    }
     rep_u32(rep, 0,  AFS_OK);
     rep_u32(rep, 4,  hot_count);
     rep_u32(rep, 8,  blob_watermark);
@@ -374,6 +463,11 @@ static uint32_t h_stat(sel4_badge_t b, const sel4_msg_t *req,
 static uint32_t h_health(sel4_badge_t b, const sel4_msg_t *req,
                           sel4_msg_t *rep, void *ctx) {
     (void)b; (void)req; (void)ctx;
+    if (emit_event(EVT_OBJECT_CREATED, b, (const object_id_t *)0)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+        return SEL4_ERR_INVALID_OP;
+    }
     rep_u32(rep, 0, AFS_OK);
     rep_u32(rep, 4, hot_count);
     rep_u32(rep, 8, blob_watermark);
@@ -400,7 +494,12 @@ static uint32_t h_delete(sel4_badge_t b, const sel4_msg_t *req,
         return SEL4_ERR_NOT_FOUND;
     }
     obj->state = OBJ_STATE_TOMBSTONE;
-    emit_event(EVT_OBJECT_DELETED, &obj->id);
+    if (emit_event(EVT_OBJECT_DELETED, b, &obj->id)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        obj->state = OBJ_STATE_LIVE;
+        rep_u32(rep, 0, AFS_ERR_INTRNL); rep->length = 4;
+        return SEL4_ERR_INVALID_OP;
+    }
 
     rep_u32(rep, 0, AFS_OK);
     rep->length = 4;

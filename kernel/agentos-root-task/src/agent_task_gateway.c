@@ -1,8 +1,20 @@
 #include "contracts/agent_harness_contract.h"
+#include "contracts/eventbus_contract.h"
 #include "agent_task_gateway.h"
 
 #include <stdbool.h>
 #include <stddef.h>
+
+#if defined(__GNUC__)
+__attribute__((weak)) uint32_t agentos_eventbus_record(
+    struct eventbus_agent_event *event)
+{
+    (void)event;
+    return EVENTBUS_AGENT_EVENT_OK;
+}
+#else
+extern uint32_t agentos_eventbus_record(struct eventbus_agent_event *event);
+#endif
 
 static struct {
     uint8_t *arena;
@@ -26,6 +38,8 @@ static struct {
     uint32_t state;
     bool active;
     bool ran;
+    eventbus_event_hash_t scope_id;
+    eventbus_event_hash_t event_head;
     struct harness_reply_result last_metrics;
 } g_task;
 
@@ -40,6 +54,58 @@ static void bytes_copy(void *dst, const void *src, uint32_t len)
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     for (uint32_t i = 0u; i < len; i++) d[i] = s[i];
+}
+
+static eventbus_event_hash_t gateway_task_hash(uint32_t task_id)
+{
+    uint8_t seed[8] = {'t', 'a', 's', 'k', 0u, 0u, 0u, 0u};
+    eventbus_event_hash_t result = {{0}};
+    seed[4] = (uint8_t)task_id;
+    seed[5] = (uint8_t)(task_id >> 8u);
+    seed[6] = (uint8_t)(task_id >> 16u);
+    seed[7] = (uint8_t)(task_id >> 24u);
+    eventbus_event_hash_bytes(seed, (uint32_t)sizeof(seed), &result);
+    return result;
+}
+
+static uint32_t gateway_emit(uint32_t event_type, uint32_t flags,
+                             const eventbus_event_hash_t *payload_root,
+                             const eventbus_event_hash_t *evidence_root,
+                             int32_t budget_delta)
+{
+    struct eventbus_agent_event event;
+    uint32_t status;
+
+    /* The legacy host gateway can be tested without linking EventBus. */
+    if (agentos_eventbus_record == (void *)0)
+        return EVENTBUS_AGENT_EVENT_OK;
+
+    event = (struct eventbus_agent_event){0};
+    event.event_type = event_type;
+    event.authority_epoch = g_task.authority_epoch;
+    event.budget_delta = budget_delta;
+    event.flags = flags | EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+    event.scope_id = g_task.scope_id;
+    event.task_id = gateway_task_hash(g_task.task_id);
+    event.causal_parent = g_task.event_head;
+    if (payload_root != (const eventbus_event_hash_t *)0)
+        event.payload_root = *payload_root;
+    if (evidence_root != (const eventbus_event_hash_t *)0)
+        event.evidence_root = *evidence_root;
+
+    status = agentos_eventbus_record(&event);
+    if (status == EVENTBUS_AGENT_EVENT_OK)
+        g_task.event_head = event.event_hash;
+    return status;
+}
+
+static uint32_t gateway_emit_bytes(uint32_t event_type, uint32_t flags,
+                                   const uint8_t *bytes, uint32_t length)
+{
+    eventbus_event_hash_t payload = {{0}};
+    eventbus_event_hash_bytes(bytes, length, &payload);
+    return gateway_emit(event_type, flags, &payload,
+                        (const eventbus_event_hash_t *)0, 0);
 }
 
 static bool gateway_ready(void)
@@ -100,9 +166,21 @@ uint32_t agent_task_gateway_begin(const struct agent_task_req_begin *req,
     g_task.state = HARNESS_STATE_IDLE;
     g_task.active = true;
     g_task.ran = false;
+    g_task.scope_id = gateway_task_hash(task_id);
+    g_task.event_head = (eventbus_event_hash_t){{0}};
     bytes_zero(&g_task.last_metrics, sizeof(g_task.last_metrics));
     bytes_zero(g_task.arena + AGENT_TASK_PROMPT_OFFSET, req->prompt_len);
     bytes_zero(g_task.arena + AGENT_TASK_RESULT_OFFSET, req->result_capacity);
+
+    if (gateway_emit(EVENTBUS_EVENT_TASK,
+                     EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                     (const eventbus_event_hash_t *)0,
+                     (const eventbus_event_hash_t *)0, 0)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        g_task.active = false;
+        reply->status = AGENT_TASK_ERR_HARNESS;
+        return reply->status;
+    }
 
     reply->status = AGENT_TASK_OK;
     reply->task_id = task_id;
@@ -125,6 +203,19 @@ uint32_t agent_task_gateway_write(const struct agent_task_req_write *req)
     bytes_copy(g_task.arena + AGENT_TASK_PROMPT_OFFSET + req->offset,
                req->data, req->len);
     g_task.received_len += req->len;
+    if (gateway_emit_bytes(EVENTBUS_EVENT_TASK,
+                            EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                            req->data, req->len)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        g_task.received_len -= req->len;
+        bytes_zero(g_task.arena + AGENT_TASK_PROMPT_OFFSET + req->offset,
+                   req->len);
+        return AGENT_TASK_ERR_HARNESS;
+    }
+    /* The same bounded message is also an actor/mailbox transition. */
+    (void)gateway_emit_bytes(EVENTBUS_EVENT_MAILBOX,
+                             EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                             req->data, req->len);
     return AGENT_TASK_OK;
 }
 
@@ -150,8 +241,37 @@ uint32_t agent_task_gateway_run(const struct agent_task_req_run *req,
 
     /* Refresh kernel-owned authority at the effect boundary. The caller never
      * supplies an epoch and task text cannot manufacture a grant. */
+    uint32_t prior_epoch = g_task.authority_epoch;
     g_task.authority(&g_task.available_caps, &g_task.authority_epoch,
                      g_task.ctx);
+    if (g_task.authority_epoch != prior_epoch) {
+        if (gateway_emit(EVENTBUS_EVENT_AUTHORITY_CHANGE,
+                         EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                         (const eventbus_event_hash_t *)0,
+                         (const eventbus_event_hash_t *)0, 0)
+                != EVENTBUS_AGENT_EVENT_OK) {
+            reply->status = AGENT_TASK_ERR_AUTHORITY;
+            return reply->status;
+        }
+    }
+    if (gateway_emit(EVENTBUS_EVENT_BUDGET,
+                     EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                     (const eventbus_event_hash_t *)0,
+                     (const eventbus_event_hash_t *)0,
+                     -(int32_t)g_task.max_steps)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        reply->status = AGENT_TASK_ERR_HARNESS;
+        return reply->status;
+    }
+
+    if (gateway_emit(EVENTBUS_EVENT_NESTED_CALL,
+                     EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                     (const eventbus_event_hash_t *)0,
+                     (const eventbus_event_hash_t *)0, 0)
+            != EVENTBUS_AGENT_EVENT_OK) {
+        reply->status = AGENT_TASK_ERR_HARNESS;
+        return reply->status;
+    }
 
     struct harness_req_submit submit;
     bytes_zero(&submit, sizeof(submit));
@@ -192,6 +312,40 @@ uint32_t agent_task_gateway_run(const struct agent_task_req_run *req,
         g_task.last_metrics = metrics;
         g_task.result_len = metrics.result_len;
         g_task.state = metrics.state;
+
+        eventbus_event_hash_t result_root = {{0}};
+        eventbus_event_hash_t evidence_root = {{0}};
+        eventbus_event_hash_bytes(
+            g_task.arena + AGENT_TASK_RESULT_OFFSET, g_task.result_len,
+            &result_root);
+        eventbus_event_hash_bytes((const uint8_t *)&metrics,
+                                  (uint32_t)sizeof(metrics), &evidence_root);
+        if (gateway_emit(EVENTBUS_EVENT_EFFECT,
+                         EVENTBUS_EVENT_FLAG_EXTERNAL_EFFECT
+                             | EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                         &result_root, (const eventbus_event_hash_t *)0, 0)
+                != EVENTBUS_AGENT_EVENT_OK) {
+            reply->status = AGENT_TASK_ERR_HARNESS;
+            return reply->status;
+        }
+        if (metrics.verification_exit_code == 0) {
+            if (gateway_emit(EVENTBUS_EVENT_TASK_VERIFY,
+                             EVENTBUS_EVENT_FLAG_TASK_VERIFY_SUCCESS
+                                 | EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                             &result_root, &evidence_root, 0)
+                    != EVENTBUS_AGENT_EVENT_OK
+                || gateway_emit(EVENTBUS_EVENT_CHECKPOINT,
+                                EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                                &result_root, &evidence_root, 0)
+                       != EVENTBUS_AGENT_EVENT_OK
+                || gateway_emit(EVENTBUS_EVENT_COMMIT,
+                                EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                                &result_root, &evidence_root, 0)
+                       != EVENTBUS_AGENT_EVENT_OK) {
+                reply->status = AGENT_TASK_ERR_EVIDENCE_MISMATCH;
+                return reply->status;
+            }
+        }
     }
 
     reply->status = AGENT_TASK_OK;
@@ -225,6 +379,14 @@ uint32_t agent_task_gateway_result(const struct agent_task_req_result *req,
     }
     uint32_t len = g_task.result_len - req->offset;
     if (len > req->max_len) len = req->max_len;
+    if (gateway_emit_bytes(EVENTBUS_EVENT_TASK,
+                            EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                            g_task.arena + AGENT_TASK_RESULT_OFFSET
+                                + req->offset,
+                            len) != EVENTBUS_AGENT_EVENT_OK) {
+        reply->status = AGENT_TASK_ERR_HARNESS;
+        return reply->status;
+    }
     bytes_copy(reply->data,
                g_task.arena + AGENT_TASK_RESULT_OFFSET + req->offset, len);
     reply->status = AGENT_TASK_OK;
