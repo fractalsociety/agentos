@@ -4553,32 +4553,32 @@
     "phase": "halted",
     "assignments": {
       "canonical_event_verify_contract_tests": {
-        "agent_id": "codex-luna:1",
-        "agent_label": "codex-luna:1",
+        "agent_id": "codex-luna:2",
+        "agent_label": "codex-luna:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       },
       "claude_hermes_compat_contract_tests": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       },
       "companion_export_contract_tests": {
         "agent_id": "codex-luna:3",
         "agent_label": "codex-luna:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "complete_gpu_pipeline": {
         "agent_id": "cursor:3",
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4592,7 +4592,7 @@
         "agent_label": "codex-luna:5",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "finish_native_network": {
         "agent_id": "cursor:7",
@@ -4620,105 +4620,105 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "implement_actor_memory_lifecycle": {
         "agent_id": "codex-luna:6",
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "implement_claude_worker": {
         "agent_id": "codex-luna:5",
         "agent_label": "codex-luna:5",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "implement_codex_worker": {
-        "agent_id": "codex-luna:9",
-        "agent_label": "codex-luna:9",
+        "agent_id": "codex-luna:3",
+        "agent_label": "codex-luna:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       },
       "implement_companion_gateway": {
         "agent_id": "claude:1",
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:53Z"
       },
       "implement_cursor_worker": {
-        "agent_id": "cursor:8",
-        "agent_label": "cursor:8",
+        "agent_id": "cursor:1",
+        "agent_label": "cursor:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       },
       "implement_daily_root_projection": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "implement_fractal_controlplane": {
         "agent_id": "codex-luna:10",
         "agent_label": "codex-luna:10",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "implement_health_adapter": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:7",
         "agent_label": "hermes:7",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "implement_project_progress_adapter": {
         "agent_id": "cursor:2",
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "implement_remote_authority": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "implement_remote_mesh_sessions": {
         "agent_id": "codex-luna:1",
         "agent_label": "codex-luna:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:38:54Z"
       },
       "lead_plan": {
         "agent_id": "codex",
@@ -4728,11 +4728,11 @@
         "completed_at": "2026-08-24T17:10:09Z"
       },
       "project_progress_contract_tests": {
-        "agent_id": "codex-luna:6",
-        "agent_label": "codex-luna:6",
+        "agent_id": "claude:3",
+        "agent_label": "claude:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       },
       "reconcile_prd_beads": {
         "agent_id": "codex-luna:1",
@@ -4746,17 +4746,17 @@
         "agent_label": "codex-luna:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       },
       "unify_fractal_graph_ui": {
-        "agent_id": "codex-luna:3",
-        "agent_label": "codex-luna:3",
+        "agent_id": "claude:1",
+        "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T19:38:21Z"
+        "released_at": "2026-08-24T19:41:10Z"
       }
     },
-    "updated_at": "2026-08-24T19:38:21Z"
+    "updated_at": "2026-08-24T19:41:10Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -4788,11 +4788,20 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 1,
+        "ready_at": "2026-08-24T19:38:54Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "codex-luna:2",
+          "version": "0.1.0"
+        },
+        "attempt_count": 2,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 7
       },
       "claude_hermes_compat_contract_tests": {
         "node_id": "claude_hermes_compat_contract_tests",
@@ -4803,11 +4812,20 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 1,
+        "ready_at": "2026-08-24T19:38:54Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "hermes:1",
+          "version": "0.1.0"
+        },
+        "attempt_count": 2,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 7
       },
       "companion_export_contract_tests": {
         "node_id": "companion_export_contract_tests",
@@ -4823,7 +4841,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       },
       "complete_gpu_pipeline": {
         "node_id": "complete_gpu_pipeline",
@@ -4840,7 +4858,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -4881,7 +4899,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 9
       },
       "finish_native_network": {
         "node_id": "finish_native_network",
@@ -4974,7 +4992,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 7
       },
       "implement_actor_memory_lifecycle": {
         "node_id": "implement_actor_memory_lifecycle",
@@ -4992,7 +5010,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5008,7 +5026,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5023,7 +5041,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "implement_claude_worker": {
         "node_id": "implement_claude_worker",
@@ -5038,7 +5056,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_codex_worker": {
         "node_id": "implement_codex_worker",
@@ -5048,11 +5066,20 @@
           "fractal_controlplane_contract_tests"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 5,
+        "ready_at": "2026-08-24T19:38:54Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "codex-luna:3",
+          "version": "0.1.0"
+        },
+        "attempt_count": 6,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_companion_gateway": {
         "node_id": "implement_companion_gateway",
@@ -5067,7 +5094,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5077,11 +5104,20 @@
           "cursor_compat_contract_tests"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 6,
+        "ready_at": "2026-08-24T19:38:54Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "cursor:1",
+          "version": "0.1.0"
+        },
+        "attempt_count": 7,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       },
       "implement_daily_root_projection": {
         "node_id": "implement_daily_root_projection",
@@ -5098,7 +5134,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 8
+        "reopen_count": 9
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
@@ -5114,7 +5150,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_health_adapter": {
         "node_id": "implement_health_adapter",
@@ -5129,7 +5165,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5144,7 +5180,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       },
       "implement_project_progress_adapter": {
         "node_id": "implement_project_progress_adapter",
@@ -5160,7 +5196,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5177,7 +5213,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 11
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5191,7 +5227,7 @@
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "implement_shared_space_replication": {
         "node_id": "implement_shared_space_replication",
@@ -5253,11 +5289,20 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 4,
+        "ready_at": "2026-08-24T19:38:55Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "claude:3",
+          "version": "0.1.0"
+        },
+        "attempt_count": 5,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "publish_verified_program": {
         "node_id": "publish_verified_program",
@@ -5309,11 +5354,20 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 1,
+        "ready_at": "2026-08-24T19:38:55Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "codex-luna:1",
+          "version": "0.1.0"
+        },
+        "attempt_count": 2,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 6
+        "reopen_count": 7
       },
       "run_dual_arch_qemu_gates": {
         "node_id": "run_dual_arch_qemu_gates",
@@ -5397,11 +5451,20 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T19:38:21Z",
-        "attempt_count": 6,
+        "ready_at": "2026-08-24T19:38:55Z",
+        "started_at": "2026-08-24T19:38:56Z",
+        "finished_at": "2026-08-24T19:41:10Z",
+        "executor": {
+          "agent": "claude:1",
+          "version": "0.1.0"
+        },
+        "attempt_count": 7,
+        "outcome": "cancelled",
+        "failure_code": "premature_completion",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 11
+        "reopen_count": 12
       }
     },
     "graph_edits": [
@@ -5513,12 +5576,13 @@
         }
       ],
       "maximum_parallelism": 0,
-      "retry_count": 74,
+      "retry_count": 81,
       "reopened_node_count": 31,
       "dead_or_unused_node_count": 1,
       "human_intervention_count": 0,
       "verification_coverage": 0.0,
-      "verification_coverage_denominator": 34
+      "verification_coverage_denominator": 34,
+      "stopped_too_early": true
     },
     "acceptance_criteria": [
       "AC-1",
@@ -5738,37 +5802,63 @@
         ],
         "aggregation_version": 1,
         "config_hash": "sha256:de8c7d975e69c954e05e3448e2086b7d83447a90183ee7d63de34a189384a64c"
+      },
+      {
+        "episode_id": "ep_9674fb474b919a098e2852ea",
+        "waste_type": "overlapping_files",
+        "detected_node": "unify_fractal_graph_ui",
+        "affected_node_ids": [
+          "run_dual_arch_qemu_gates",
+          "unify_fractal_graph_ui"
+        ],
+        "affected_count": 2,
+        "proposed_action": "reassign",
+        "accepted": false,
+        "mode": "suggest",
+        "estimated_tokens_avoided": 15000,
+        "estimation_basis": "parallel nodes touch shared path(s): .beads",
+        "confidence": 0.74,
+        "confidence_adjusted_tokens_avoided": 11100,
+        "actual_followup_result": "suggest mode requires explicit acceptance for every repair",
+        "human_override": false,
+        "actor": "fractal-efficiency",
+        "detected_at": "2026-08-24T19:38:55Z",
+        "evidence_refs": [
+          "sim:unify_fractal_graph_ui:run_dual_arch_qemu_gates:0.11"
+        ],
+        "aggregation_version": 1,
+        "config_hash": "sha256:de8c7d975e69c954e05e3448e2086b7d83447a90183ee7d63de34a189384a64c"
       }
     ],
     "build": {
-      "episode_count": 3,
-      "gross_estimated_tokens_avoided": 21000,
-      "confidence_adjusted_tokens_avoided": 15540,
+      "episode_count": 4,
+      "gross_estimated_tokens_avoided": 36000,
+      "confidence_adjusted_tokens_avoided": 26640,
       "realized_tokens_saved": 0,
-      "estimated_cost_avoided": 0.63,
+      "estimated_cost_avoided": 1.08,
       "realized_cost_avoided": 0.0,
-      "estimated_agent_hours_avoided": 0.7,
+      "estimated_agent_hours_avoided": 1.2,
       "realized_agent_hours_avoided": 0.0,
       "rework_prevented": 0,
       "waste_breakdown": {
-        "overlapping_files": 3
+        "overlapping_files": 4
       },
       "highest_intervention": "reassign",
       "aggregation_version": 1,
       "config_hash": "sha256:de8c7d975e69c954e05e3448e2086b7d83447a90183ee7d63de34a189384a64c"
     },
     "lifetime": {
-      "episode_count": 3,
-      "gross_estimated_tokens_avoided": 21000,
-      "confidence_adjusted_tokens_avoided": 15540,
+      "episode_count": 4,
+      "gross_estimated_tokens_avoided": 36000,
+      "confidence_adjusted_tokens_avoided": 26640,
       "realized_tokens_saved": 0,
-      "estimated_cost_avoided": 0.63,
+      "estimated_cost_avoided": 1.08,
       "realized_cost_avoided": 0.0,
-      "estimated_agent_hours_avoided": 0.7,
+      "estimated_agent_hours_avoided": 1.2,
       "realized_agent_hours_avoided": 0.0,
       "rework_prevented": 0,
       "waste_breakdown": {
-        "overlapping_files": 3
+        "overlapping_files": 4
       },
       "highest_intervention": "reassign",
       "aggregation_version": 1,
@@ -7449,5 +7539,5 @@
     "cross_project_links": {},
     "failure_graph_hash": "sha256:54d4fb5dcfc45dbfef50a9a053cbfe0f67149ea77efa333a9ff59c71ff8947c5"
   },
-  "updated_at": "2026-08-24T19:38:48Z"
+  "updated_at": "2026-08-24T19:41:44Z"
 }
