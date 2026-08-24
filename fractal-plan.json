@@ -914,6 +914,7 @@
         ],
         "expected_artifact": "A singleton bounded QUIC MeshGateway with typed resumable sessions and deterministic transport tests",
         "files_or_systems_affected": [
+          "interfaces/wit/fractal-mesh-v1/mesh.wit",
           "tools/fractal-mesh-gateway/Cargo.toml",
           "tools/fractal-mesh-gateway/src/lib.rs",
           "tools/fractal-mesh-gateway/src/main.rs",
