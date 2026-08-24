@@ -1,0 +1,85 @@
+package fractal:mesh@1.0.0;
+
+/// Transport-neutral typed mesh sessions. The native implementation uses one
+/// QUIC connection per active peer with ALPN `fractalos-agent/1`; Headscale
+/// identity is connectivity metadata and never grants AgentOS authority.
+interface mesh {
+  type peer-id = string;
+  type session-id = string;
+  type object-id = list<u8>;
+
+  enum stream-kind {
+    task,
+    event,
+    object,
+    control,
+    hint,
+  }
+
+  enum session-state {
+    pending,
+    running,
+    cancelling,
+    completed,
+    failed,
+    cancelled,
+  }
+
+  record limits {
+    max-payload-bytes: u32,
+    max-inflight-frames: u32,
+    max-inflight-bytes: u64,
+    max-peer-bytes: u64,
+    keepalive-seconds: u32,
+  }
+
+  /// Canonical CBOR metadata attached to event/object streams. Object IDs are
+  /// SHA-256 values; resume-token is opaque to the WIT consumer.
+  record manifest {
+    session: session-id,
+    stream: stream-kind,
+    object: option<object-id>,
+    total-bytes: u64,
+    chunk-size: u32,
+    resume-token: list<u8>,
+  }
+
+  record peer-advertisement {
+    peer: peer-id,
+    node-id: option<string>,
+    node-key: option<string>,
+    endpoints: list<string>,
+    tags: list<string>,
+  }
+
+  record task-request {
+    session: session-id,
+    payload: list<u8>,
+    resume-token: option<list<u8>>,
+  }
+
+  record cancel-request {
+    session: session-id,
+    reason: string,
+    deadline-unix-ms: option<u64>,
+  }
+
+  record session-status {
+    session: session-id,
+    state: session-state,
+    next-task-sequence: u64,
+    next-event-sequence: u64,
+    next-object-sequence: u64,
+    resume-token: list<u8>,
+  }
+
+  discover-peers: func() -> list<peer-advertisement>;
+  open-task: func(peer: peer-id, request: task-request) -> result<session-status, string>;
+  cancel: func(peer: peer-id, request: cancel-request) -> result<session-status, string>;
+  resume: func(peer: peer-id, session: session-id, token: list<u8>) -> result<session-status, string>;
+  limits: func() -> limits;
+}
+
+world fractal-mesh-v1 {
+  export mesh;
+}

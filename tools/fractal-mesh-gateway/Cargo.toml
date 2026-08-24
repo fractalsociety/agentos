@@ -1,0 +1,18 @@
+[package]
+name = "fractal-mesh-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Singleton bounded QUIC gateway for resumable Fractal mesh sessions"
+publish = false
+
+[dependencies]
+quinn = "0.11"
+rcgen = "0.13"
+rustls = "0.23"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror.workspace = true
+tokio.workspace = true

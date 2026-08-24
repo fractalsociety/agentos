@@ -27,6 +27,8 @@ members = [
     "tools/agentos-mcp",
     # Fractal compatibility workers (Codex/Cursor/Claude/Hermes adapters)
     "tools/fractal-worker-compat",
+    # Singleton QUIC gateway for typed, resumable Fractal mesh sessions
+    "tools/fractal-mesh-gateway",
     # Per-PD ABI table generator
     "tools/gen-abi",
     # Workspace task runner
