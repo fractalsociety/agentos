@@ -865,6 +865,8 @@
           "tools/fractal-worker-compat/Cargo.toml",
           "tools/fractal-worker-compat/src/lib.rs",
           "tools/fractal-worker-compat/src/claude.rs",
+          "tools/fractal-worker-compat/src/cursor.rs",
+          "tools/fractal-worker-compat/src/bin/fractal_claude_worker.rs",
           "tests/compat/test_claude_worker.rs",
           "tests/e2e/test_fractal_workers.sh"
         ],

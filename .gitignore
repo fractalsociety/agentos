@@ -1,5 +1,7 @@
 # Build outputs
-build/
+build/*
+!build/evidence/
+!build/evidence/**
 deps/
 *.o
 *.d
