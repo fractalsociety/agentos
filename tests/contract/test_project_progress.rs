@@ -59,6 +59,44 @@ fn field_lines(record: &str) -> Vec<String> {
         .collect()
 }
 
+/// The declaration of one `companion-export` operation, flattened to a single
+/// line with doc comments stripped. Signatures are asserted against this
+/// rather than against raw file text so a prose mention of a result type can
+/// never stand in for the operation actually returning it.
+fn operation_signature(operation: &str) -> String {
+    let interface = body_after("interface companion-export");
+    let start = interface
+        .find(&format!("{operation}: func"))
+        .unwrap_or_else(|| panic!("missing operation {operation}"));
+    let end = interface[start..]
+        .find(';')
+        .map(|idx| start + idx)
+        .unwrap_or_else(|| panic!("unterminated operation {operation}"));
+    interface[start..end]
+        .lines()
+        .map(|line| line.split("///").next().unwrap_or_default().trim())
+        .collect::<Vec<_>>()
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A typed page is a `page-info` frame plus a homogeneous item list. Neither
+/// half may be dropped: a bare list has no cursor and no pinned range.
+fn assert_typed_page(page: &str, item: &str) {
+    let header = format!("record {page}");
+    let body = body_after(&header);
+    assert!(
+        body.contains("page: page-info"),
+        "{page} must carry the page-info frame; body was:\n{body}"
+    );
+    assert!(
+        body.contains(&format!("items: list<{item}>")),
+        "{page} must carry list<{item}>; body was:\n{body}"
+    );
+}
+
 #[test]
 fn deterministic_beads_and_fractal_projection_is_pinned() {
     assert_record_has_fields(
@@ -126,10 +164,20 @@ fn dependency_edges_are_typed_and_deterministically_ordered() {
     let progress = normalized_wit();
     assert!(progress.contains("ascending `depth`"));
     assert!(progress.contains("lower depth"));
+
+    // Dependency order only survives the boundary if nodes cross inside a
+    // typed page: the page-info frame carries the cursor position that pins
+    // where the deterministic ordering resumes.
+    assert_typed_page("progress-node-page", "progress-node");
+    let signature = operation_signature("list-progress");
     assert!(
-        WIT.contains("list-progress: func")
-            && WIT.contains("result<progress-node-page, export-error>"),
-        "progress must be returned through a typed page"
+        signature.contains("project-id: object-id") && signature.contains("page: page-request"),
+        "list-progress must be scoped and bounded: {signature}"
+    );
+    assert!(
+        signature.contains("-> result<progress-page, export-error>")
+            || signature.contains("-> result<progress-node-page, export-error>"),
+        "progress must be returned through a typed page: {signature}"
     );
 }
 
@@ -197,6 +245,9 @@ fn active_and_dormant_memory_are_distinct_fields() {
 
 #[test]
 fn typed_pagination_rejects_stale_cursors() {
+    // Every dimension a cursor is bound to is a dimension staleness can be
+    // detected in. Dropping one turns a stale-cursor error into a silently
+    // wrong page.
     assert_record_has_fields(
         "event-cursor",
         &[
@@ -204,6 +255,8 @@ fn typed_pagination_rejects_stale_cursors() {
             "authority-epoch: u64",
             "stream-id: u32",
             "schema-major: u32",
+            "projection: projection-kind",
+            "position: u64",
             "root: object-id",
         ],
     );
@@ -227,11 +280,21 @@ fn typed_pagination_rejects_stale_cursors() {
     );
     assert!(body_after("enum export-error").contains("stale-cursor"));
     assert!(
-        WIT.contains("list-projects: func")
-            && WIT.contains("list-progress: func")
-            && WIT.contains("page: page-request")
-            && WIT.contains("project-snapshot-page")
-            && WIT.contains("progress-node-page")
+        normalized_wit().contains("stale the moment the epoch advances"),
+        "cursor staleness must be normative, not advisory"
+    );
+
+    assert_typed_page("project-snapshot-page", "project-snapshot");
+    assert_typed_page("progress-node-page", "progress-node");
+    let projects = operation_signature("list-projects");
+    assert!(
+        projects.contains("page: page-request"),
+        "list-projects must be bounded by a page-request: {projects}"
+    );
+    assert!(
+        projects.contains("-> result<project-page, export-error>")
+            || projects.contains("-> result<project-snapshot-page, export-error>"),
+        "project snapshots must be returned through a typed page: {projects}"
     );
 }
 
