@@ -314,7 +314,7 @@ submodules:
 build-tools:
 	@echo "Building agentOS Rust tools..."
 	@cargo build --release \
-		-p gen-sdf -p gen-ringbuf -p sign-wasm -p attest-verify \
+		-p run-agent -p gen-sdf -p gen-ringbuf -p sign-wasm -p attest-verify \
 		-p make-swap-image -p trace-replay -p agentos-mcp -p xtask
 	@echo "✓ Tools built → target/release/"
 

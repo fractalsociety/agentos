@@ -1,0 +1,75 @@
+# Fractal compatibility worker manifest: official Codex
+#
+# This profile describes the route and policy; it grants no ambient authority.
+# Authentication is an opaque broker handle or an inherited short-lived
+# process channel. Credential values are never part of this manifest.
+
+[worker]
+id = "codex"
+provider = "codex"
+protocol = "fractal-worker/v1"
+protocol_wit = "interfaces/wit/fractal-worker-v1/worker.wit"
+description = "Official Codex CLI compatibility worker behind the provider-neutral Fractal worker boundary."
+
+[worker.executable]
+kind = "path-lookup"
+name = "codex"
+aliases = ["codex-cli"]
+
+[discovery]
+version_args = ["--version"]
+expect_semver = true
+requires_real_version_preflight = true
+
+[session]
+stream_format = "jsonl"
+native_output_format = "codex-exec-json"
+launch_args = ["exec", "--ignore-user-config", "--ephemeral", "--json", "--sandbox", "workspace-write"]
+requires_isolated_git_workspace = true
+workspace_path_arg = "--cd"
+prompt_arg_mode = "positional"
+allowed_file_enforcement = "post-run-diff-and-deny"
+
+[auth]
+mode = "opaque-secret-handle"
+handle_env = "FRACTAL_CODEX_SECRET_HANDLE"
+inherit_process_channel = true
+
+[limits]
+max_rss_bytes = 157286400
+default_deadline_ms = 600000
+
+[policy]
+grant_shell = false
+grant_network = false
+grant_filesystem = false
+grant_environment = false
+allow_absolute_workspace_paths = false
+allow_path_parent_segments = false
+persist_credentials = false
+log_credentials = false
+
+[redaction]
+credential_patterns = [
+  "sk-[A-Za-z0-9._-]+",
+  "(?i)(api[_-]?key|token|password)=\\S+",
+  "(?i)authorization:\\s*bearer\\s+\\S+",
+]
+personal_record_patterns = [
+  "(?i)ssn[:=]\\S+",
+  "(?i)medical-record[:=]\\S+",
+]
+absolute_path_patterns = [
+  "/Users/[^ ]+",
+  "/home/[^ ]+",
+  "/private/var/[^ ]+",
+  "[A-Za-z]:\\\\Users\\\\[^ ]+",
+]
+replacement = "[REDACTED]"
+
+[terminal_result]
+schema = "fractal.worker.terminal-result.v1"
+map_exit_zero_to = "success"
+map_cancel_signal_to = "cancelled"
+include_peak_rss = true
+include_usage_tokens = true
