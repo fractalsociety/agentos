@@ -237,5 +237,51 @@ uint32_t agentfs_workspace_dispatch(uint64_t badge, uint32_t opcode,
         return finish(reply, reply_len, AGENTFS_OK);
     }
 
+    if (opcode == MSG_AGENTFS_EXPORT_OVERLAY && payload != NULL
+        && payload_len == sizeof(struct agentfs_req_export_overlay)) {
+        struct agentfs_req_export_overlay req;
+        bytes_copy(&req, payload, sizeof(req));
+        if (req.output_capacity < sizeof(agentfs_overlay_bundle_header_t)
+            || !caller_range(client, req.output_offset, req.output_capacity))
+            return finish(reply, reply_len, AGENTFS_ERR_DENIED);
+
+        uint32_t total = sizeof(agentfs_overlay_bundle_header_t);
+        uint32_t count = 0u;
+        for (uint32_t i = 0u; i < AGENTFS_WORKSPACE_MAX_FILES; i++) {
+            const workspace_file_t *file = &workspace_files[i];
+            if (!file->active || file->owner != client) continue;
+            uint32_t entry_len = sizeof(agentfs_overlay_entry_header_t)
+                               + file->path_len + file->size;
+            if (entry_len > req.output_capacity - total)
+                return finish(reply, reply_len, AGENTFS_ERR_TOO_LARGE);
+            total += entry_len;
+            count++;
+        }
+        if (count == 0u)
+            return finish(reply, reply_len, AGENTFS_ERR_NOT_FOUND);
+
+        uint8_t *out = workspace_arena + req.output_offset;
+        wr32(out, 0u, AGENTFS_OVERLAY_BUNDLE_MAGIC);
+        wr32(out, 4u, AGENTFS_OVERLAY_BUNDLE_VERSION);
+        wr32(out, 8u, count);
+        wr32(out, 12u, total);
+        uint32_t cursor = sizeof(agentfs_overlay_bundle_header_t);
+        for (uint32_t i = 0u; i < AGENTFS_WORKSPACE_MAX_FILES; i++) {
+            const workspace_file_t *file = &workspace_files[i];
+            if (!file->active || file->owner != client) continue;
+            wr32(out, cursor, file->path_len);
+            wr32(out, cursor + 4u, file->size);
+            cursor += sizeof(agentfs_overlay_entry_header_t);
+            bytes_copy(out + cursor, file->path, file->path_len);
+            cursor += file->path_len;
+            bytes_copy(out + cursor, file->data, file->size);
+            cursor += file->size;
+        }
+        wr32(reply, 4u, total);
+        wr32(reply, 8u, count);
+        *reply_len = 12u;
+        return finish(reply, reply_len, AGENTFS_OK);
+    }
+
     return finish(reply, reply_len, AGENTFS_ERR_BAD_PATH);
 }

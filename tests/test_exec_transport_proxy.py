@@ -22,6 +22,17 @@ class ExecTransportProxyTests(unittest.TestCase):
             len(path), len(content),
         ) + path + content
 
+    @staticmethod
+    def overlay_bundle(entries: list[tuple[bytes, bytes]]) -> bytes:
+        body = b"".join(
+            PROXY.OVERLAY_ENTRY_HEADER.pack(len(path), len(content))
+            + path + content for path, content in entries
+        )
+        return PROXY.OVERLAY_BUNDLE_HEADER.pack(
+            PROXY.OVERLAY_BUNDLE_MAGIC, PROXY.OVERLAY_BUNDLE_VERSION,
+            len(entries), PROXY.OVERLAY_BUNDLE_HEADER.size + len(body),
+        ) + body
+
     def test_wire_round_trip_preserves_profile_and_tag(self):
         left, right = socket.socketpair()
         seen = []
@@ -94,6 +105,20 @@ class ExecTransportProxyTests(unittest.TestCase):
                        b".git/config", b"bad\x00path"):
             with self.assertRaises(ValueError):
                 PROXY.parse_repo_bundle(self.repo_bundle(unsafe, content))
+
+    def test_multi_file_overlay_bundle_is_bounded_and_badge_export_compatible(self):
+        entries = [
+            (b"src/answer.c", b"int answer(void) { return 42; }\n"),
+            (b"tests/answer.txt", b"42\n"),
+        ]
+        decoded = PROXY.parse_repo_overlays(self.overlay_bundle(entries))
+        self.assertEqual([(str(path), content) for path, content in decoded], [
+            ("src/answer.c", entries[0][1]),
+            ("tests/answer.txt", entries[1][1]),
+        ])
+        duplicate = self.overlay_bundle([entries[0], entries[0]])
+        with self.assertRaisesRegex(ValueError, "duplicated"):
+            PROXY.parse_repo_overlays(duplicate)
 
     @unittest.skipUnless(shutil.which("clang"), "toolchain unavailable")
     def test_repository_profile_fails_closed_without_admin_root(self):

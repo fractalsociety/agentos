@@ -449,6 +449,8 @@ void agentfs_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, MSG_AGENTFS_WRITE,  h_workspace, (void *)0);
     sel4_server_register(&srv, MSG_AGENTFS_STAT,   h_workspace, (void *)0);
     sel4_server_register(&srv, MSG_AGENTFS_DELETE, h_workspace, (void *)0);
+    sel4_server_register(&srv, MSG_AGENTFS_EXPORT_OVERLAY,
+                         h_workspace, (void *)0);
     sel4_server_run(&srv);
 }
 

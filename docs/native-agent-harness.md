@@ -112,8 +112,8 @@ compiler exit becomes a model observation so the agent can edit and retry;
 `final` remains denied until a later profile run exits zero.
 
 The second deployed profile, `AGENTOS_REPO_TEST`, is repository-scoped without
-granting the worker a shell or host filesystem path. Its input is one bounded
-relative path plus one overlay file (24 KiB total). ExecSvc requires the
+granting the worker a shell or host filesystem path. AgentFS exports up to 64
+badge-owned overlay files within one 24 KiB bundle. ExecSvc requires the
 profile-specific badge right, rejects cross-worker arena access, and forwards
 the bundle through the isolated execution transport. The administrator—not the
 worker—selects the repository root, prebuilt test runner, timeout, and fixed
@@ -131,8 +131,8 @@ compiler profile through ExecCap, observation of compiler success, and
 `final`. A second authenticated task repaired a tracked fixture through its
 AgentFS overlay, invoked the capability-scoped managed repository suite, saw
 `repository tests: ok`, and only then returned `final`. It is not yet a
-general-purpose Codex replacement: repository execution currently accepts one
-bounded overlay file, external MCP providers and repository indexing are not
+general-purpose Codex replacement: repository change sets are capped at 24 KiB,
+external MCP providers and repository indexing are not
 wired to ToolSvc, and the monitor's dynamic CapabilityBroker records policy
 metadata without performing CNode mint/delete/revoke operations. The built-in
 `agentos-smoke-coder` remains only the deterministic hermetic-test model.
@@ -189,8 +189,9 @@ profile, the distinct execution transport invoked the real host compiler, and
 Codex received `compile: ok` before returning `final`. Codex then independently
 repaired `tests/fixtures/repo_agent/answer.c`, selected
 `agentos_repo_tests`, received the successful managed-suite observation, and
-returned a second gated final answer. The live VM suite passed 39/39; the
-credential-free hermetic suite passed 37/37.
+returned a second gated final answer. With on-target overlay-export isolation
+checks, the live VM suite passed 41/41; the credential-free hermetic suite
+passed 39/39.
 
 These dedicated model and execution consoles are honest intermediate
 transports, not a claim of native TCP, a native compiler, arbitrary repository
@@ -221,21 +222,21 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 ```
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
-AgentFS, ExecSvc, and both transport PDs passed all 39 live target assertions.
-Host monotonic timestamps measured 445.35 ms from QEMU spawn to root-task
-readiness, a 4.67 ms cold native planner turn, and 12 warm turns with 0.188 ms
-p50 and 0.558 ms p95. ModelSvc cached queries measured 0.049 ms p50 and
-0.378 ms p95. The worker reported 278,528 bytes of private committed memory
+AgentFS, ExecSvc, and both transport PDs passed all 41 live target assertions.
+Host monotonic timestamps measured 494.95 ms from QEMU spawn to root-task
+readiness, a 4.18 ms cold native planner turn, and 12 warm turns with 0.294 ms
+p50 and 0.614 ms p95. ModelSvc cached queries measured 0.051 ms p50 and
+0.375 ms p95. The worker reported 274,432 bytes of private committed memory
 and 196,608 bytes of shared client mappings under its 64 MiB private limit.
 These are QEMU/host-arrival measurements, not bare-metal cycle counts.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service
 PDs now use a 20 ms/100 ms interactive class; the repeated warm-turn p95 fell
-to sub-millisecond latency in subsequent runs. The 278,528-byte bootstrap is
+to sub-millisecond latency in subsequent runs. The 274,432-byte bootstrap is
 intentionally below the mature 20 MiB target floor; future context, overlay,
 and tool state must remain below the 150 MiB ceiling rather than padding the
-worker. Adding managed repository testing increased worker-private committed
-memory by one 4 KiB page; the repository snapshot, test runner, model client,
-cache, and execution machinery remain shared rather than duplicated per
-worker.
+worker. Multi-file export remains inside the existing MemoryCap and ExecCap
+windows and does not add a per-worker repository copy; the repository snapshot,
+test runner, model client, cache, and execution machinery remain shared rather
+than duplicated per worker.

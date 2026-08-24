@@ -21,7 +21,7 @@
 #pragma once
 #include "../agentos.h"
 
-#define AGENTFS_INTERFACE_VERSION 2u
+#define AGENTFS_INTERFACE_VERSION 3u
 
 /* Singleton transfer arena. AgentFS owns all 4 MiB; an ordinary MemoryCap
  * client maps only the badge-selected 48 KiB partition. File contents remain
@@ -43,6 +43,23 @@
 #define AGENTFS_WORKSPACE_FILE_MAX      8192u
 #define AGENTFS_WRITE_CREATE        (1u << 0)
 #define AGENTFS_WRITE_TRUNCATE      (1u << 1)
+
+/* Bounded badge-owned workspace export. The header is followed by
+ * entry_count repetitions of entry-header, path bytes, then content bytes. */
+#define AGENTFS_OVERLAY_BUNDLE_MAGIC   0x564f4641u /* "AFOV" */
+#define AGENTFS_OVERLAY_BUNDLE_VERSION 1u
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t entry_count;
+    uint32_t total_len;
+} agentfs_overlay_bundle_header_t;
+
+typedef struct {
+    uint32_t path_len;
+    uint32_t content_len;
+} agentfs_overlay_entry_header_t;
 
 /* ─── Channel IDs ────────────────────────────────────────────────────────── */
 #define AGENTFS_CH_CONTROLLER   CH_VFS_SERVER   /* controller → agentfs */
@@ -84,6 +101,11 @@ struct agentfs_req_delete {
 struct agentfs_req_search {
     uint32_t query_len;         /* prefix query string in shmem */
     uint32_t max_results;
+};
+
+struct agentfs_req_export_overlay {
+    uint32_t output_offset;
+    uint32_t output_capacity;
 };
 
 /* ─── Reply structs ──────────────────────────────────────────────────────── */
@@ -156,3 +178,9 @@ _Static_assert(sizeof(struct agentfs_req_write) == 24u,
                "AgentFS write wire must fit one seL4 payload");
 _Static_assert(sizeof(struct agentfs_req_read) == 20u,
                "AgentFS read wire must fit one seL4 payload");
+_Static_assert(sizeof(struct agentfs_req_export_overlay) == 8u,
+               "AgentFS overlay export wire must fit one seL4 payload");
+_Static_assert(sizeof(agentfs_overlay_bundle_header_t) == 16u,
+               "AgentFS overlay bundle header ABI drift");
+_Static_assert(sizeof(agentfs_overlay_entry_header_t) == 8u,
+               "AgentFS overlay entry header ABI drift");

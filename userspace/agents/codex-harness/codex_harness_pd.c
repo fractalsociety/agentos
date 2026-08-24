@@ -995,21 +995,29 @@ static uint32_t target_test_backend(
         EXECSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
     uint32_t transport_len = source_len;
     if (profile_id == EXECSVC_PROFILE_AGENTOS_REPO_TEST) {
-        if (path == NULL || path_len == 0u || path_len > EXECSVC_REPO_PATH_MAX
-            || sizeof(execsvc_repo_bundle_header_t) + path_len + source_len
-               > EXECSVC_SOURCE_MAX)
-            return HARNESS_ERR_EXEC;
-        execsvc_repo_bundle_header_t header = {
-            .magic = EXECSVC_REPO_BUNDLE_MAGIC,
-            .version = EXECSVC_REPO_BUNDLE_VERSION,
-            .path_len = path_len,
-            .content_len = source_len,
+        (void)path;
+        (void)path_len;
+        const uint32_t export_rel = 0x100u;
+        uint8_t *memory_arena = (uint8_t *)(uintptr_t)
+            AGENTFS_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+        uint32_t memory_partition = AGENTFS_CLIENT_ARENA_OFFSET(
+            AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+        struct agentfs_req_export_overlay export_wire = {
+            .output_offset = memory_partition + export_rel,
+            .output_capacity = EXECSVC_SOURCE_MAX,
         };
-        bytes_copy(exec_arena + source_rel, &header, sizeof(header));
-        bytes_copy(exec_arena + source_rel + sizeof(header), path, path_len);
-        bytes_copy(exec_arena + source_rel + sizeof(header) + path_len,
-                   source, source_len);
-        transport_len = sizeof(header) + path_len + source_len;
+        sel4_msg_t export_reply;
+        uint32_t export_status = sel4_client_call(
+            PD_CNODE_SLOT_AGENTFS_EP, MSG_AGENTFS_EXPORT_OVERLAY,
+            &export_wire, sizeof(export_wire), &export_reply);
+        if (export_status != AGENTFS_OK || export_reply.length < 12u)
+            return export_status == AGENTFS_ERR_DENIED
+                ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_MEMORY;
+        transport_len = rd32(export_reply.data, 4u);
+        if (transport_len == 0u || transport_len > EXECSVC_SOURCE_MAX)
+            return HARNESS_ERR_MEMORY;
+        bytes_copy(exec_arena + source_rel,
+                   memory_arena + export_rel, transport_len);
     } else {
         bytes_copy(exec_arena + source_rel, source, source_len);
     }

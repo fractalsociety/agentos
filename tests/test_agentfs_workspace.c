@@ -83,6 +83,35 @@ int main(void)
            == AGENTFS_OK);
     assert(rd32_test(reply, 16u) == 2u);
 
+    const char path2[] = "tests/answer.txt";
+    const char data2[] = "42\n";
+    memcpy(arena + base + 0x500u, path2, sizeof(path2) - 1u);
+    memcpy(arena + base + 0x700u, data2, sizeof(data2) - 1u);
+    write.path_offset = base + 0x500u;
+    write.path_len = sizeof(path2) - 1u;
+    write.data_offset = base + 0x700u;
+    write.data_len = sizeof(data2) - 1u;
+    assert(agentfs_workspace_dispatch(badge, MSG_AGENTFS_WRITE,
+                                      &write, sizeof(write), reply, &reply_len)
+           == AGENTFS_OK);
+
+    struct agentfs_req_export_overlay export_req = {
+        .output_offset = base + 0x1000u,
+        .output_capacity = 0x5000u,
+    };
+    assert(agentfs_workspace_dispatch(badge, MSG_AGENTFS_EXPORT_OVERLAY,
+                                      &export_req, sizeof(export_req),
+                                      reply, &reply_len) == AGENTFS_OK);
+    const uint8_t *bundle = arena + export_req.output_offset;
+    assert(rd32_test(bundle, 0u) == AGENTFS_OVERLAY_BUNDLE_MAGIC);
+    assert(rd32_test(bundle, 4u) == AGENTFS_OVERLAY_BUNDLE_VERSION);
+    assert(rd32_test(bundle, 8u) == 2u);
+    assert(rd32_test(bundle, 12u) == rd32_test(reply, 4u));
+    export_req.output_offset = AGENTFS_CLIENT_ARENA_OFFSET(client + 1u);
+    assert(agentfs_workspace_dispatch(badge, MSG_AGENTFS_EXPORT_OVERLAY,
+                                      &export_req, sizeof(export_req),
+                                      reply, &reply_len) == AGENTFS_ERR_DENIED);
+
     struct agentfs_req_delete del = {
         .path_offset = base + 0x100u,
         .path_len = sizeof(path) - 1u,

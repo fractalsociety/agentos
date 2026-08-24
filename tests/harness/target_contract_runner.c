@@ -730,6 +730,35 @@ static void target_agentfs_workspace_contract(void)
     else
         _tf_fail_point("AgentFS denies cross-worker overlay offsets",
                        "cross-partition read was accepted");
+
+    struct agentfs_req_export_overlay export_req = {
+        .output_offset = output_off,
+        .output_capacity = 0x4000u,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_AGENTFS_EXPORT_OVERLAY;
+    req.length = sizeof(export_req);
+    tr_copy(req.data, &export_req, sizeof(export_req));
+    sel4_call((seL4_CPtr)TARGET_AGENTFS_CAP, &req, &rep);
+    if (rep.opcode == AGENTFS_OK
+        && tr_rd32(rep.data, 8u) == 1u
+        && tr_rd32((const uint8_t *)(uintptr_t)
+                       (AGENTFS_SHMEM_VADDR + output_off), 0u)
+            == AGENTFS_OVERLAY_BUNDLE_MAGIC)
+        _tf_ok("AgentFS exports the caller's bounded workspace overlay");
+    else
+        _tf_fail_point("AgentFS exports the caller's bounded workspace overlay",
+                       "badge-owned overlay export failed");
+
+    export_req.output_offset = AGENTFS_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID - 1u);
+    tr_copy(req.data, &export_req, sizeof(export_req));
+    sel4_call((seL4_CPtr)TARGET_AGENTFS_CAP, &req, &rep);
+    if (rep.opcode == AGENTFS_ERR_DENIED)
+        _tf_ok("AgentFS denies cross-worker overlay exports");
+    else
+        _tf_fail_point("AgentFS denies cross-worker overlay exports",
+                       "overlay bundle escaped the caller partition");
 }
 
 static void target_execsvc_profile_contract(void)

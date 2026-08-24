@@ -27,6 +27,10 @@ RESPONSE_HEADER = struct.Struct("<IIiII")
 REPO_BUNDLE_HEADER = struct.Struct("<IIII")
 REPO_BUNDLE_MAGIC = 0x50524741
 REPO_BUNDLE_VERSION = 1
+OVERLAY_BUNDLE_HEADER = struct.Struct("<IIII")
+OVERLAY_ENTRY_HEADER = struct.Struct("<II")
+OVERLAY_BUNDLE_MAGIC = 0x564F4641
+OVERLAY_BUNDLE_VERSION = 1
 REPO_PATH_MAX = 256
 SOURCE_MAX = 24 * 1024
 OUTPUT_MAX = 16 * 1024
@@ -115,19 +119,9 @@ def run_c11_compile(source: bytes, compiler: str, timeout: float) -> tuple[int, 
     return completed.returncode, completed.stdout[:OUTPUT_MAX]
 
 
-def parse_repo_bundle(payload: bytes) -> tuple[pathlib.PurePosixPath, bytes]:
-    if len(payload) < REPO_BUNDLE_HEADER.size:
-        raise ValueError("repository bundle is truncated")
-    magic, version, path_len, content_len = REPO_BUNDLE_HEADER.unpack_from(payload)
-    if magic != REPO_BUNDLE_MAGIC or version != REPO_BUNDLE_VERSION:
-        raise ValueError("repository bundle header is invalid")
-    if not 0 < path_len <= REPO_PATH_MAX:
+def _validated_repo_path(raw_path: bytes) -> pathlib.PurePosixPath:
+    if not 0 < len(raw_path) <= REPO_PATH_MAX:
         raise ValueError("repository path length is invalid")
-    if content_len > SOURCE_MAX - REPO_BUNDLE_HEADER.size - path_len:
-        raise ValueError("repository overlay content is too large")
-    if len(payload) != REPO_BUNDLE_HEADER.size + path_len + content_len:
-        raise ValueError("repository bundle length is invalid")
-    raw_path = payload[REPO_BUNDLE_HEADER.size:REPO_BUNDLE_HEADER.size + path_len]
     if b"\x00" in raw_path:
         raise ValueError("repository path contains NUL")
     try:
@@ -138,8 +132,57 @@ def parse_repo_bundle(payload: bytes) -> tuple[pathlib.PurePosixPath, bytes]:
         part in ("", ".", "..") for part in path.parts
     ) or path.parts[0] == ".git":
         raise ValueError("repository path escapes the managed workspace")
-    content = payload[REPO_BUNDLE_HEADER.size + path_len:]
-    return path, content
+    return path
+
+
+def parse_repo_overlays(
+    payload: bytes,
+) -> list[tuple[pathlib.PurePosixPath, bytes]]:
+    if len(payload) < REPO_BUNDLE_HEADER.size:
+        raise ValueError("repository bundle is truncated")
+    magic, version, field_a, field_b = REPO_BUNDLE_HEADER.unpack_from(payload)
+    if magic == REPO_BUNDLE_MAGIC and version == REPO_BUNDLE_VERSION:
+        path_len, content_len = field_a, field_b
+        if content_len > SOURCE_MAX - REPO_BUNDLE_HEADER.size - path_len:
+            raise ValueError("repository overlay content is too large")
+        if len(payload) != REPO_BUNDLE_HEADER.size + path_len + content_len:
+            raise ValueError("repository bundle length is invalid")
+        path_start = REPO_BUNDLE_HEADER.size
+        path = _validated_repo_path(payload[path_start:path_start + path_len])
+        return [(path, payload[path_start + path_len:])]
+    if magic != OVERLAY_BUNDLE_MAGIC or version != OVERLAY_BUNDLE_VERSION:
+        raise ValueError("repository bundle header is invalid")
+    entry_count, total_len = field_a, field_b
+    if entry_count == 0 or entry_count > 64 or total_len != len(payload):
+        raise ValueError("repository overlay bundle length is invalid")
+    cursor = OVERLAY_BUNDLE_HEADER.size
+    overlays: list[tuple[pathlib.PurePosixPath, bytes]] = []
+    seen: set[pathlib.PurePosixPath] = set()
+    for _ in range(entry_count):
+        if cursor + OVERLAY_ENTRY_HEADER.size > len(payload):
+            raise ValueError("repository overlay entry is truncated")
+        path_len, content_len = OVERLAY_ENTRY_HEADER.unpack_from(payload, cursor)
+        cursor += OVERLAY_ENTRY_HEADER.size
+        end = cursor + path_len + content_len
+        if end > len(payload):
+            raise ValueError("repository overlay entry length is invalid")
+        path = _validated_repo_path(payload[cursor:cursor + path_len])
+        if path in seen:
+            raise ValueError("repository overlay path is duplicated")
+        seen.add(path)
+        cursor += path_len
+        overlays.append((path, payload[cursor:cursor + content_len]))
+        cursor += content_len
+    if cursor != len(payload):
+        raise ValueError("repository overlay bundle has trailing bytes")
+    return overlays
+
+
+def parse_repo_bundle(payload: bytes) -> tuple[pathlib.PurePosixPath, bytes]:
+    overlays = parse_repo_overlays(payload)
+    if len(overlays) != 1:
+        raise ValueError("repository bundle contains multiple overlays")
+    return overlays[0]
 
 
 def _extract_git_snapshot(repository_root: pathlib.Path,
@@ -198,7 +241,7 @@ def _sandboxed_repo_argv(workspace: pathlib.Path,
 
 def run_agentos_repo_test(payload: bytes, repository_root: str | None,
                           test_runner: str, timeout: float) -> tuple[int, bytes]:
-    path, content = parse_repo_bundle(payload)
+    overlays = parse_repo_overlays(payload)
     if repository_root is None:
         raise ValueError("managed repository root is not configured")
     root = pathlib.Path(repository_root).resolve()
@@ -213,11 +256,12 @@ def run_agentos_repo_test(payload: bytes, repository_root: str | None,
         )
         if initialized.returncode != 0:
             raise ValueError("managed workspace initialization failed")
-        overlay = workspace.joinpath(*path.parts)
-        overlay.parent.mkdir(parents=True, exist_ok=True)
-        if overlay.exists() and not overlay.is_file():
-            raise ValueError("repository overlay target is not a regular file")
-        overlay.write_bytes(content)
+        for path, content in overlays:
+            overlay = workspace.joinpath(*path.parts)
+            overlay.parent.mkdir(parents=True, exist_ok=True)
+            if overlay.exists() and not overlay.is_file():
+                raise ValueError("repository overlay target is not a regular file")
+            overlay.write_bytes(content)
         sandbox_tmp = workspace / "tmp"
         sandbox_tmp.mkdir()
         env = {

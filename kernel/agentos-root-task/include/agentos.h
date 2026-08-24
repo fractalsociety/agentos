@@ -780,6 +780,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_AGENTFS_LIST                0x1004  /* path in shmem → MR0=count; entries in shmem */
 #define MSG_AGENTFS_DELETE              0x1005  /* path in shmem → MR0=ok */
 #define MSG_AGENTFS_SEARCH              0x1006  /* query in shmem → MR0=count; results in shmem */
+#define MSG_AGENTFS_EXPORT_OVERLAY      0x1007  /* badge-owned overlay bundle → checked shmem */
 
 /* ─── AgentPool contract opcodes (0x1100) ───────────────────────────────── */
 #define MSG_AGENTPOOL_ALLOC_WORKER      0x1101  /* MR1=cap_mask → MR0=ok MR1=worker_slot */
