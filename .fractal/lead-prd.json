@@ -1,0 +1,148 @@
+{
+  "schema": "fractal.prd.v1",
+  "title": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
+  "summary": "Build and prove a production-quality AgentOS program in which real Codex, Cursor, Claude, and Hermes compatibility workers execute capability-scoped asynchronous work through Fractal across at least two authorized Headscale/Tailscale device environments, share immutable verified workspaces through disconnects, expose honest memory and progress telemetry, and feed a separate local companion application without adding UI code to controlplane.",
+  "architecture": {
+    "approach": "Preserve the existing seL4 Microkit service ABI and implement a contract-first vertical slice above it: AgentLang compiles deterministically through canonical Agent IR to capability-scoped WASM in a trusted no_std Rust host; worker-specific host or Linux-guest adapters speak one typed Fractal worker protocol; a singleton MeshGateway carries typed QUIC frames over the existing Headscale/Tailscale route; CapBroker converts audience-bound remote grants into narrow local capabilities; AgentFS and the canonical hashed event stream own immutable objects, task lineage, CAS roots, and verified merge evidence; read-only typed projections are exported through a local gateway to a sibling companion repository.",
+    "rationale": "This design follows the existing PRD and Beads decisions, keeps seL4 as the only authority boundary, avoids duplicating heavyweight services per worker, keeps tailnet identity strictly separate from AgentOS authority, supports offline-first immutable state and deterministic replay, and isolates all human-facing code outside controlplane while retaining a testable typed boundary.",
+    "components": [
+      {
+        "name": "FractalControlPlane",
+        "responsibility": "Owns asynchronous semantic dispatch, task handles, cancellation, verification evidence, and adapters from AgentLang operations to existing AgentOS PD contracts.",
+        "technology": "Freestanding C Microkit PD adapters plus generated WIT interfaces and no_std Rust SDK bindings"
+      },
+      {
+        "name": "CanonicalState",
+        "responsibility": "Owns append-only hash-chained events, immutable SHA-256 objects, scoped roots, compare-and-swap publication, causal replay, and conflict-preserving verified merge.",
+        "technology": "AgentFS and EventBus C PDs with fixed-layout IPC contracts and deterministic host projections"
+      },
+      {
+        "name": "AgentLangRuntime",
+        "responsibility": "Parses and type-checks AgentLang, emits canonical Agent IR and byte-identical capability-scoped WASM, validates imports and limits, caches AOT artifacts, and executes structured concurrency.",
+        "technology": "no_std Rust trusted host, generated WIT bindings, deterministic WASM validation, and content-addressed artifact cache"
+      },
+      {
+        "name": "CompatibilityWorkers",
+        "responsibility": "Runs official Codex, Cursor, Claude, and Hermes CLIs behind one capability-scoped Fractal session protocol with isolated workspaces, structured results, resource metrics, and credential redaction.",
+        "technology": "Rust host or Linux-guest launch adapters, JSONL protocol parsers, AgentOS CC-PD, and explicit secret handles"
+      },
+      {
+        "name": "TailnetTransport",
+        "responsibility": "Provides the existing device enrollment and encrypted connectivity route without granting application authority.",
+        "technology": "Full Go Headscale server in the FreeBSD mesh-controller guest, standard tailscaled clients and shared-memory bridge, then boot-proven native net_pd and WireGuard path"
+      },
+      {
+        "name": "MeshGateway",
+        "responsibility": "Discovers signed services, multiplexes asynchronous task, event, and object channels, resumes transfers after reconnect, and bounds active-peer memory.",
+        "technology": "Singleton Rust QUIC service using ALPN fractalos-agent/1, generated length-delimited binary frames, and deterministic CBOR manifests"
+      },
+      {
+        "name": "RemoteAuthority",
+        "responsibility": "Validates peer binding, audience, object scope, effect class, budget, lease, authority epoch, and revocation epoch before deriving a local seL4 capability.",
+        "technology": "CapBroker and AuthServer contracts with signed RemoteGrant records and fenced execution leases"
+      },
+      {
+        "name": "CompanionProjectionBoundary",
+        "responsibility": "Exports typed progress, project, daily-root, and health-adapter read models plus narrowly scoped task intents without credentials or personal records.",
+        "technology": "Versioned WIT schemas, Rust projection library, and a local Axum HTTP/3 or HTTP/2 gateway"
+      },
+      {
+        "name": "CompanionApplication",
+        "responsibility": "Renders project, daily, worker-memory, and health pages and submits only explicitly granted typed intents outside the AgentOS repository.",
+        "technology": "Sibling repository with TypeScript, React, Vite, generated typed client, CSP, and local-only deployment"
+      },
+      {
+        "name": "ProofPipeline",
+        "responsibility": "Produces honest host, security, AArch64, x86_64, QEMU, performance, live-worker, and two-device evidence and prevents unsupported proof claims.",
+        "technology": "Cargo xtask, Make, TAP contract runner, QEMU, shell E2E harnesses, and machine-readable JSON evidence"
+      }
+    ]
+  },
+  "acceptance_criteria": [
+    {
+      "id": "AC-1",
+      "criterion": "The Beads graph matches the recovered Fractal PRD and contains bounded, dependency-linked issues for Cursor compatibility, Fractal-controlplane integration, remote Fractal sessions, companion gateway, daily-root, health adapter, project-progress adapter, companion pages, and the two-device gate.",
+      "verification": "Run bd lint and bd preflight, then query bd list --all --json and assert exactly one non-superseded issue matching each required scope has description, design, acceptance criteria, dependency edges, and an evidence field."
+    },
+    {
+      "id": "AC-2",
+      "criterion": "The current test_wg_net_sessions compile regression is fixed without removing or bypassing the in-progress net_pd-to-WireGuard handoff.",
+      "verification": "Run cargo xtask test and require test_wg_net_sessions and test_net_wg_handoff to compile and pass; inspect the diff to confirm the new net_device session and ownership APIs remain exercised."
+    },
+    {
+      "id": "AC-3",
+      "criterion": "AgentOS boots and its contract and performance suites pass on supported AArch64 and x86_64 QEMU targets.",
+      "verification": "Run make gate, make test-target-all, and make perf-gate; require zero exit codes, TAP_DONE from both target runners, boot success markers, and threshold-checked JSON performance reports."
+    },
+    {
+      "id": "AC-4",
+      "criterion": "Real Codex, Cursor, Claude, and Hermes compatibility workers each accept a Fractal task, edit only an isolated fixture workspace, run its native verification, and return the same typed terminal-result envelope with usage and peak-memory metrics.",
+      "verification": "Run make e2e-fractal-workers with all four live opt-in variables and CLI paths configured; require four distinct version records, successful fixture commits, schema-valid JSONL results, zero out-of-scope changes, and no skipped live worker."
+    },
+    {
+      "id": "AC-5",
+      "criterion": "At least two authorized device environments enroll through the existing Headscale/Tailscale route and discover only explicitly advertised Fractal services.",
+      "verification": "Run tests/e2e/test_two_device_fractal.sh against two clean device environments and the FreeBSD mesh-controller role; require distinct NodeIDs, authenticated tailnet peers, signed service advertisements, and successful deny-by-default policy checks."
+    },
+    {
+      "id": "AC-6",
+      "criterion": "Tailnet identity never creates AgentOS authority, and a revoked, expired, wrong-audience, stale-epoch, or fabricated grant is rejected before local PD dispatch.",
+      "verification": "Run tests/security/test_remote_grants and the revocation phase of tests/e2e/test_two_device_fractal.sh; require auditable denial events, unchanged service invocation counters, and immediate rejection after revocation."
+    },
+    {
+      "id": "AC-7",
+      "criterion": "Asynchronous cooperative tasks and mailbox messages survive a forced disconnect and reconnect without duplicate effects, lost terminal state, or a blocked synchronous seL4 call.",
+      "verification": "During tests/e2e/test_two_device_fractal.sh, sever the peer route for 30 seconds, queue work on both sides, restore connectivity, and assert handle continuity, exactly-once committed effects, deterministic event convergence, and bounded resync time in the evidence JSON."
+    },
+    {
+      "id": "AC-8",
+      "criterion": "Capability-scoped immutable shared workspaces synchronize missing objects, publish roots by compare-and-swap, merge only with TASK_VERIFY evidence, and preserve both roots on unresolved conflict.",
+      "verification": "Run tests/integration/test_shared_space_replication and the two-device divergent-edit scenario; verify full SHA-256 identities, resumable chunk hashes, CAS conflict detection, verified merge evidence, and absence of silent last-writer-wins."
+    },
+    {
+      "id": "AC-9",
+      "criterion": "Worker and mesh memory is measured honestly: an active worker remains below the 150 MiB private hard ceiling, dormant actors retain at most 256 KiB each excluding shared immutable cache, and dormant memory is at least 90 percent below the corresponding active harness allocation.",
+      "verification": "Run the active-frontier memory scenario through make perf-gate and tests/e2e/test_two_device_fractal.sh; validate emitted active_private_bytes, dormant_private_bytes, shared_bytes, actor_count, and active_peer_bytes against performance/thresholds.json."
+    },
+    {
+      "id": "AC-10",
+      "criterion": "A separate local companion application receives versioned typed progress, project, daily-root, and health-adapter data and can submit only explicitly granted task intents.",
+      "verification": "Run the sibling companion contract suite and tests/e2e/test_companion_gateway.sh; validate every response against interfaces/wit/fractal-companion-v1/companion.wit, pin each projection to an event range and root, and prove an ungranted mutation returns a typed denial."
+    },
+    {
+      "id": "AC-11",
+      "criterion": "No UI or browser-serving implementation is added to controlplane; all companion pages and assets live in a sibling repository.",
+      "verification": "Run git diff --name-only against the planning baseline and fail if controlplane adds html, css, js, mjs, jsx, tsx, vue, svelte, package.json, node_modules, yarn.lock, or bun.lockb; separately require the companion page tests in ../agentos-companion to pass."
+    },
+    {
+      "id": "AC-12",
+      "criterion": "Credentials and personal records are never persisted, logged, included in canonical events, transferred as workspace objects, or returned by companion projections.",
+      "verification": "Run tests/security/test_secret_redaction.sh with seeded canary credentials and personal-record fixtures, scan structured logs, events, objects, worker outputs, crash paths, and companion responses, and require zero canary matches while live workers authenticate through opaque secret handles."
+    },
+    {
+      "id": "AC-13",
+      "criterion": "Pinned AgentLang source, prelude, compiler, constraints, and provider interfaces produce byte-identical Agent IR and WASM, and every nested operation is independently authorized and bounded.",
+      "verification": "Run the AgentLang determinism and adversarial suites twice from clean caches; compare SHA-256 artifacts and require rejection of undeclared imports, stale interfaces, excess fuel, memory, children, results, deadlines, cancellation violations, and fabricated calls."
+    },
+    {
+      "id": "AC-14",
+      "criterion": "The isolated GPU command and zero-copy tensor path, zero-copy AgentIPC path, AOT cache, warm pools, and topology-aware scheduling remain capability isolated and satisfy checked-in performance thresholds on applicable hardware or QEMU emulation.",
+      "verification": "Run make perf-gate plus focused GPU, AgentIPC, AOT-cache, warm-pool, and scheduler tests; require exclusive device ownership, bounded queues, cache-integrity checks, topology metrics, and threshold-valid machine-readable results, recording unsupported physical-GPU proof separately from emulated contract proof."
+    },
+    {
+      "id": "AC-15",
+      "criterion": "Accepted work is committed and pushed with Beads closed only when concrete evidence supports each claim; unavailable external environments remain open with precise reproducible blocker evidence and do not count as product completion.",
+      "verification": "Run bd preflight, git pull --rebase, bd dolt push, git push, and git status; require the branch to be up to date with origin, evidence paths and commit hashes attached to closed issues, and any live-environment blocker issue to contain the failed command, timestamp, prerequisite, observed output, and next action."
+    }
+  ],
+  "non_goals": [
+    "Replacing seL4, Microkit IPC, or existing per-PD lower contracts",
+    "Granting AgentOS authority from Headscale identity, tailnet IP, MagicDNS, WireGuard keys, device tags, or remote badges",
+    "Adding HTML, CSS, JavaScript, TypeScript, browser assets, dashboards, WebSockets, or interactive UI code to controlplane",
+    "Putting Python, Node.js, or another interpreted runtime in kernel, services, libs, or userspace/servers",
+    "Giving generated AgentLang or worker code ambient filesystem, shell, network, environment, credential, or promotion-verifier access",
+    "Building a globally mutable distributed filesystem, full-mesh canonical gossip log, or automatic last-writer-wins merge",
+    "Porting the full Go Headscale server into a freestanding native PD",
+    "Claiming native hardware, live model, physical GPU, relay, or two-device proof from host stubs or skipped tests"
+  ]
+}
