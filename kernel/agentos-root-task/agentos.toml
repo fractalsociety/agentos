@@ -10,11 +10,16 @@
 #
 # Arch-specific overrides live in boards/<board-name>/agentos.toml.
 
+# FractalOS capabilities-v1 is carried by the existing controller endpoint.
+# Its authenticated event stream is emitted through event_bus, and execution
+# remains bound to the existing Codex AgentHarness below; no extra PD image is
+# introduced for the generated SDK surface.
 [[pd]]
 name = "controller"
 priority = 50
 
 [[pd]]
+# Existing passive EventBus transport and canonical stream adapter.
 name = "event_bus"
 priority = 200
 
@@ -111,6 +116,8 @@ name = "model_svc"
 priority = 190
 
 [[pd]]
+# Compatibility backend for controller task submissions.  The Fractal bridge
+# never registers a second harness contract or endpoint.
 name = "codex_harness"
 priority = 120
 

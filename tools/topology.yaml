@@ -258,8 +258,9 @@ pds:
 channels:
   # Core: controller <-> event_bus
   # The asynchronous Fractal task-control-plane (0x2E01..0x2E08) is
-  # multiplexed on this existing authenticated controller/EventBus seam; it
-  # does not introduce another PD or a second contract endpoint.
+  # multiplexed on this existing authenticated controller/EventBus seam. The
+  # generated SDK uses the same endpoint; it does not introduce another PD,
+  # shared-memory ring, or second contract endpoint.
   - name: ctrl_eventbus
     pd_a: controller
     id_a: 0

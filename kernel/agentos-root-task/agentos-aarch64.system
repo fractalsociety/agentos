@@ -79,7 +79,9 @@
              setvar_vaddr="block_shmem_ctrl_vaddr" />
     </protection_domain>
 
-    <!-- EventBus: passive pub/sub backbone -->
+    <!-- EventBus: passive pub/sub backbone.  The controller's Fractal v1
+         stream is authenticated by the existing kernel adapter and uses this
+         singleton transport; no Fractal-specific PD or ring is added. -->
     <protection_domain name="event_bus" priority="200" passive="true">
         <program_image path="event_bus.elf" />
         <map mr="eventbus_ring" vaddr="0x3000000" perms="rw" setvar_vaddr="eventbus_ring_vaddr" />

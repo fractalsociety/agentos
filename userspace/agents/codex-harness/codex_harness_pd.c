@@ -5,6 +5,11 @@
  * real ModelSvc planner turns plus capability-bound ToolSvc dispatch. It has
  * no network client and no ambient service lookup. Additional action backends
  * must be added as distinct capability-bound calls.
+ *
+ * The Fractal capabilities-v1 controller bridge binds to this existing
+ * AgentHarness runtime for compatibility execution.  The bridge owns the
+ * asynchronous controller/EventBus endpoint; this PD continues to expose
+ * only the legacy harness contract and does not mint a second task endpoint.
  */
 
 #include <stdbool.h>

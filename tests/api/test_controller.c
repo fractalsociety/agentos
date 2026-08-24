@@ -13,16 +13,17 @@
  *   9.  MSG_VMM_REGISTER reply carries granted_guests field
  *   10. MSG_VMM_VCPU_SET_REGS handler returns SEL4_ERR_OK (no shmem => host stub ok)
  *   11. MSG_WORKER_RETRIEVE handler returns SEL4_ERR_OK (agentfs stub ok)
- *   12. Unknown opcode returns SEL4_ERR_INVALID_OP
- *   13. EventBus ready flag set after init (stub connect returns OK)
- *   14. boot sequence: notification count starts at zero
- *   15. notification kind 0 sets eventbus_ready
- *   16. notification kind 1 with tag != MSG_SPAWN_AGENT sets initagent_ready
- *   17. notification kind 1 with MSG_SPAWN_AGENT triggers agent spawn path
- *   18. notification kind 3 (vibe engine) triggers vibe_swap_in_progress
- *   19. notification kind 5 (gpu sched online) — GPU Scheduler online path
- *   20. notification kind 6 (mesh agent) executes without fault
- *   21-23. boot readiness reports enabled, disabled, and failed services truthfully
+ *   12. Fractal v1 labels route through the existing controller endpoint
+ *   13. Unknown opcode returns SEL4_ERR_INVALID_OP
+ *   14. EventBus ready flag set after init (stub connect returns OK)
+ *   15. boot sequence: notification count starts at zero
+ *   16. notification kind 0 sets eventbus_ready
+ *   17. notification kind 1 with tag != MSG_SPAWN_AGENT sets initagent_ready
+ *   18. notification kind 1 with MSG_SPAWN_AGENT triggers agent spawn path
+ *   19. notification kind 3 (vibe engine) triggers vibe_swap_in_progress
+ *   20. notification kind 5 (gpu sched online) — GPU Scheduler online path
+ *   21. notification kind 6 (mesh agent) executes without fault
+ *   29-31. boot readiness reports enabled, disabled, and failed services truthfully
  *
  * Build & run:
  *   cc -DAGENTOS_TEST_HOST \
@@ -239,7 +240,37 @@ static void test_worker_retrieve_ok(void)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Test 12: Unknown opcode returns SEL4_ERR_INVALID_OP
+ * Test 12: every Fractal v1 operation is registered on the existing
+ * controller endpoint.  Empty payloads intentionally exercise the handler's
+ * bounded decode path rather than executing a task.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+static void test_fractal_routes(void)
+{
+    static const uint32_t fractal_opcodes[] = {
+        MSG_FRACTAL_PROGRAM_OPEN,
+        MSG_FRACTAL_PROGRAM_POLL,
+        MSG_FRACTAL_TASK_SUBMIT,
+        MSG_FRACTAL_TASK_POLL,
+        MSG_FRACTAL_TASK_CANCEL,
+        MSG_FRACTAL_TASK_BUDGET,
+        MSG_FRACTAL_TASK_VERIFY,
+        MSG_FRACTAL_TASK_RESULT,
+    };
+
+    setup();
+    for (uint32_t i = 0u;
+         i < sizeof(fractal_opcodes) / sizeof(fractal_opcodes[0]); i++) {
+        sel4_msg_t req = make_req(fractal_opcodes[i]);
+        sel4_msg_t rep;
+        uint32_t rc = controller_dispatch_one(0u, &req, &rep);
+        ASSERT_EQ(rc, (uint64_t)AGENT_TASK_ERR_INVALID,
+                  "Fractal v1 route: bounded empty request is rejected");
+    }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Test 13: Unknown opcode returns SEL4_ERR_INVALID_OP
  * ─────────────────────────────────────────────────────────────────────────── */
 
 static void test_unknown_opcode(void)
@@ -380,7 +411,7 @@ static void test_boot_nameserver_registration_summary(void)
 
 int main(void)
 {
-    TAP_PLAN(23);
+    TAP_PLAN(31);
 
     test_init_no_crash();
     test_policy_loaded_at_init();
@@ -393,6 +424,7 @@ int main(void)
     test_vmm_register_guests();
     test_vmm_vcpu_set_regs_ok();
     test_worker_retrieve_ok();
+    test_fractal_routes();
     test_unknown_opcode();
     test_eventbus_ready_after_init();
     test_notif_count_zero_at_start();

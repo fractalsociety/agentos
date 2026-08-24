@@ -1,6 +1,12 @@
 /*
  * agentOS EventBus Protection Domain — E5-S1: raw seL4 IPC
  *
+ * Fractal capabilities-v1 uses this existing transport through the
+ * kernel-owned adapter in kernel/agentos-root-task/src/event_bus.c.  Keep
+ * this file limited to the legacy ring/IPC compatibility layer: canonical
+ * event hashing, authority checks, and Fractal completion callbacks belong to
+ * that adapter and are deliberately not reimplemented here.
+ *
  * The EventBus is the publish-subscribe backbone of agentOS.
  * It runs as a passive server (only executes when called via seL4 IPC).
  *
