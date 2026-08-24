@@ -148,6 +148,16 @@ typedef enum {
     MSG_FRACTAL_TASK_VERIFY        = 0x2E07,
     MSG_FRACTAL_TASK_RESULT        = 0x2E08,
 
+    /* Versioned local companion export contract (0x2F00).  Payloads and
+     * typed errors are defined by contracts/companion_export_contract.h. */
+    MSG_COMPANION_DESCRIBE         = 0x2F01,
+    MSG_COMPANION_LIST_PROJECTS    = 0x2F02,
+    MSG_COMPANION_LIST_PROGRESS    = 0x2F03,
+    MSG_COMPANION_GET_DAILY_ROOT   = 0x2F04,
+    MSG_COMPANION_GET_HEALTH_ADAPTER = 0x2F05,
+    MSG_COMPANION_LIST_WORKER_MEMORY = 0x2F06,
+    MSG_COMPANION_SUBMIT_TASK_INTENT = 0x2F07,
+
     /* VibeEngine module registry opcodes (in OP_ space, not MSG_) */
     OP_VIBE_REPLAY             = 0x46,   /* Boot replay: seed registry from AgentFS */
     OP_VIBE_HOTRELOAD          = 0x47,   /* Zero-downtime slot update (was REGISTRY_QUERY) */
