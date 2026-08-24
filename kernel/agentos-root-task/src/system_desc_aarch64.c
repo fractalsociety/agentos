@@ -274,8 +274,8 @@ const system_desc_t system_desc_aarch64 = {
             },
         },
 
-        /* Native Codex-style harness. ModelSvc and ToolSvc are distinct effect
-         * capabilities; direct AgentFS, ExecServer, and NetServer are absent. */
+        /* Native Codex-style harness. ModelSvc, ToolSvc, and AgentFS are
+         * distinct effect capabilities; ExecServer and NetServer are absent. */
         {
             .name           = "codex_harness",
             .elf_path       = "codex_harness.elf",
@@ -283,11 +283,12 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 120u,
             .self_svc_id    = SVC_ID_AGENT_HARNESS,
-            .init_ep_count  = 3u,
+            .init_ep_count  = 4u,
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
                 { SVC_ID_MODELSVC,  PD_CNODE_SLOT_MODELSVC_EP  },
                 { SVC_ID_TOOLSVC,   PD_CNODE_SLOT_TOOLSVC_EP   },
+                { SVC_ID_AGENTFS,   PD_CNODE_SLOT_AGENTFS_EP   },
             },
         },
 
@@ -609,7 +610,7 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 7u,
+            .init_ep_count  = 8u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_EVENTBUS,   75u  },   /* 74 + MONITOR_CH_EVENTBUS(1) */
@@ -618,6 +619,7 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_MODELSVC,   130u },   /* raw seL4 contract cap        */
                 { SVC_ID_AGENT_HARNESS, 131u }, /* native harness contract cap   */
                 { SVC_ID_TOOLSVC,   132u },   /* raw ToolSvc contract cap      */
+                { SVC_ID_AGENTFS,   133u },   /* raw AgentFS contract cap       */
             },
         },
 #endif

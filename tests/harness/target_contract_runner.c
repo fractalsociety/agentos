@@ -44,6 +44,7 @@
 #include "../../contracts/modelsvc/interface.h"
 #include "../../contracts/toolsvc/interface.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
  *
@@ -140,6 +141,7 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_MODELSVC_CAP 130u
 #define TARGET_AGENT_HARNESS_CAP 131u
 #define TARGET_TOOLSVC_CAP 132u
+#define TARGET_AGENTFS_CAP 133u
 #define TARGET_TEST_RUNNER_CLIENT_ID 22u
 #define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
 #define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
@@ -188,7 +190,7 @@ static void target_modelsvc_contract(void)
     tr_zero(&rep, sizeof(rep));
     req.opcode = MODELSVC_OP_HEALTH;
     sel4_call((seL4_CPtr)TARGET_MODELSVC_CAP, &req, &rep);
-    if (rep.opcode == MODELSVC_ERR_OK && tr_rd32(rep.data, 4u) == 4u)
+    if (rep.opcode == MODELSVC_ERR_OK && tr_rd32(rep.data, 4u) == 5u)
         _tf_ok("ModelSvc target health over real seL4 IPC");
     else
         _tf_fail_point("ModelSvc target health over real seL4 IPC",
@@ -294,9 +296,10 @@ static void target_agent_harness_contract(void)
         && tr_rd32(rep.data, 4u) <= HARNESS_WORKER_MAX_BYTES
         && tr_rd32(rep.data, 8u) == HARNESS_WORKER_DEFAULT_LIMIT_BYTES
         && tr_rd32(rep.data, 12u) == HARNESS_SHMEM_SIZE
-            + TOOLSVC_CLIENT_ARENA_SIZE
+            + TOOLSVC_CLIENT_ARENA_SIZE + AGENTFS_CLIENT_ARENA_SIZE
         && tr_rd32(rep.data, 24u)
-            == (HARNESS_SHARED_MODELSVC | HARNESS_SHARED_TOOL_MCP))
+            == (HARNESS_SHARED_MODELSVC | HARNESS_SHARED_TOOL_MCP
+                | HARNESS_SHARED_ARTIFACT_STORE))
         _tf_ok("AgentHarness reports private and shared memory separately");
     else
         _tf_fail_point("AgentHarness reports private and shared memory separately",
@@ -322,7 +325,8 @@ static void target_agent_harness_contract(void)
     target_emit_batch_marker("BEGIN", AGENT_HARNESS_COLD_TURN_METRIC, 1u, 0u);
     sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
     bool submit_ok = rep.opcode == HARNESS_OK
-        && tr_rd32(rep.data, 8u) == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL)
+        && tr_rd32(rep.data, 8u)
+            == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL | HARNESS_CAP_MEMORY)
         && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
         && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
                     expected, sizeof(expected) - 1u);
@@ -465,6 +469,127 @@ static void target_agent_harness_tool_loop(void)
     else
         _tf_fail_point("AgentHarness accounts distinct model and tool capabilities",
                        "tool-loop metrics were incomplete");
+}
+
+static void target_agent_harness_memory_loop(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "agentos-smoke-coder";
+    static const char prompt[] = "edit-and-readback-smoke";
+    static const char expected[] = "edit-readback-verified";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 3u;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY;
+    submit.max_steps = 5u;
+    submit.authority_epoch = 1u;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 256u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
+        && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
+                    expected, sizeof(expected) - 1u))
+        _tf_ok("AgentHarness edits and reads back AgentFS through MemoryCap");
+    else
+        _tf_fail_point("AgentHarness edits and reads back AgentFS through MemoryCap",
+                       "model-memory-model loop did not complete");
+
+    struct harness_req_task result_req = {.task_id = 3u};
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_RESULT;
+    req.length = sizeof(result_req);
+    tr_copy(req.data, &result_req, sizeof(result_req));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 16u) == 3u
+        && tr_rd32(rep.data, 24u) == 2u
+        && tr_rd32(rep.data, 44u) == (HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY))
+        _tf_ok("AgentHarness accounts isolated model and memory capabilities");
+    else
+        _tf_fail_point("AgentHarness accounts isolated model and memory capabilities",
+                       "memory-loop metrics were incomplete");
+}
+
+static void target_agentfs_workspace_contract(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)AGENTFS_SHMEM_VADDR;
+    const uint32_t client_base = AGENTFS_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID);
+    const uint32_t path_off = client_base + 0x100u;
+    const uint32_t data_off = client_base + 0x400u;
+    const uint32_t output_off = client_base + 0x1000u;
+    static const char path[] = "src/native.txt";
+    static const char content[] = "agentfs-edit";
+    for (uint32_t i = 0u; i < sizeof(path); i++) arena[path_off + i] = path[i];
+    for (uint32_t i = 0u; i < sizeof(content); i++) arena[data_off + i] = content[i];
+
+    struct agentfs_req_write write;
+    tr_zero(&write, sizeof(write));
+    write.path_offset = path_off;
+    write.path_len = sizeof(path) - 1u;
+    write.data_offset = data_off;
+    write.data_len = sizeof(content) - 1u;
+    write.flags = AGENTFS_WRITE_CREATE | AGENTFS_WRITE_TRUNCATE;
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_AGENTFS_WRITE;
+    req.length = sizeof(write);
+    tr_copy(req.data, &write, sizeof(write));
+    sel4_call((seL4_CPtr)TARGET_AGENTFS_CAP, &req, &rep);
+    if (rep.opcode == AGENTFS_OK
+        && tr_rd32(rep.data, 8u) == sizeof(content) - 1u
+        && tr_rd32(rep.data, 16u) == 1u)
+        _tf_ok("AgentFS writes a badge-isolated workspace overlay");
+    else
+        _tf_fail_point("AgentFS writes a badge-isolated workspace overlay",
+                       "write reply was invalid");
+
+    struct agentfs_req_read read;
+    tr_zero(&read, sizeof(read));
+    read.path_offset = path_off;
+    read.path_len = sizeof(path) - 1u;
+    read.output_offset = output_off;
+    read.output_capacity = 128u;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_AGENTFS_READ;
+    req.length = sizeof(read);
+    tr_copy(req.data, &read, sizeof(read));
+    sel4_call((seL4_CPtr)TARGET_AGENTFS_CAP, &req, &rep);
+    if (rep.opcode == AGENTFS_OK
+        && tr_rd32(rep.data, 4u) == sizeof(content) - 1u
+        && tr_equal((const char *)(uintptr_t)(AGENTFS_SHMEM_VADDR + output_off),
+                    content, sizeof(content) - 1u))
+        _tf_ok("AgentFS reads the updated workspace artifact");
+    else
+        _tf_fail_point("AgentFS reads the updated workspace artifact",
+                       "read failed or content mismatched");
+
+    read.output_offset = AGENTFS_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID - 1u);
+    tr_copy(req.data, &read, sizeof(read));
+    sel4_call((seL4_CPtr)TARGET_AGENTFS_CAP, &req, &rep);
+    if (rep.opcode == AGENTFS_ERR_DENIED)
+        _tf_ok("AgentFS denies cross-worker overlay offsets");
+    else
+        _tf_fail_point("AgentFS denies cross-worker overlay offsets",
+                       "cross-partition read was accepted");
 }
 
 static void target_benchmark_agent_harness(void)
@@ -632,7 +757,9 @@ void target_contract_runner_main(void)
      * contract must not hide whether the booted image can run an agent turn. */
     target_agent_harness_contract();
     target_toolsvc_contract();
+    target_agentfs_workspace_contract();
     target_agent_harness_tool_loop();
+    target_agent_harness_memory_loop();
     target_benchmark_agent_harness();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);

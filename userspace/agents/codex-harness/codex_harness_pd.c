@@ -13,6 +13,7 @@
 
 #include "../../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
 #include "../../../contracts/toolsvc/interface.h"
+#include "../../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 
 #define HARNESS_SYSTEM_PROMPT_OFFSET 0xa000u
 #define HARNESS_SYSTEM_PROMPT_CAP    4096u
@@ -37,6 +38,12 @@ typedef uint32_t (*harness_model_backend_fn)(
 typedef uint32_t (*harness_tool_backend_fn)(
     const char *name, uint32_t name_len,
     const char *input, uint32_t input_len,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx);
+
+typedef uint32_t (*harness_memory_backend_fn)(
+    bool write, const char *path, uint32_t path_len,
+    const char *content, uint32_t content_len,
     char *output, uint32_t output_capacity, uint32_t *output_len,
     void *ctx);
 
@@ -66,6 +73,8 @@ static harness_model_backend_fn runtime_model_backend;
 static void *runtime_model_ctx;
 static harness_tool_backend_fn runtime_tool_backend;
 static void *runtime_tool_ctx;
+static harness_memory_backend_fn runtime_memory_backend;
+static void *runtime_memory_ctx;
 static harness_task_state_t current_task;
 static uint32_t runtime_private_committed_bytes;
 static uint32_t runtime_private_limit_bytes;
@@ -219,6 +228,8 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     runtime_model_ctx = model_ctx;
     runtime_tool_backend = NULL;
     runtime_tool_ctx = NULL;
+    runtime_memory_backend = NULL;
+    runtime_memory_ctx = NULL;
     runtime_private_committed_bytes = 0u;
     runtime_private_limit_bytes = HARNESS_WORKER_DEFAULT_LIMIT_BYTES;
     runtime_shared_mapped_bytes = arena_size;
@@ -234,6 +245,13 @@ void harness_runtime_set_tool_backend(harness_tool_backend_fn tool_backend,
 {
     runtime_tool_backend = tool_backend;
     runtime_tool_ctx = tool_ctx;
+}
+
+void harness_runtime_set_memory_backend(harness_memory_backend_fn memory_backend,
+                                        void *memory_ctx)
+{
+    runtime_memory_backend = memory_backend;
+    runtime_memory_ctx = memory_ctx;
 }
 
 void harness_runtime_set_resources(uint32_t private_committed_bytes,
@@ -305,134 +323,163 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
     current_task.occupied = true;
     current_task.task_id = req->task_id;
     current_task.state = HARNESS_STATE_PLANNING;
-    current_task.step = 1u;
     current_task.verification_exit_code = -1;
-    current_task.model_calls = 1u;
     current_task.used_caps = HARNESS_CAP_MODEL;
 
+    const char *next_prompt = (const char *)(runtime_arena
+                                             + req->prompt_offset);
+    uint32_t next_prompt_len = req->prompt_len;
     char *response = (char *)(runtime_arena + req->result_offset);
-    response[0] = '\0';
-    uint32_t response_len = 0u, tokens_in = 0u, tokens_out = 0u;
-    uint32_t status = runtime_model_backend(
-        harness_system_prompt, (uint32_t)(sizeof(harness_system_prompt) - 1u),
-        (const char *)(runtime_arena + req->prompt_offset), req->prompt_len,
-        req->model_id_len == 0u ? NULL
-            : (const char *)(runtime_arena + req->model_id_offset),
-        req->model_id_len, response, req->result_capacity, &response_len,
-        &tokens_in, &tokens_out, runtime_model_ctx);
-    current_task.tokens_in = tokens_in;
-    current_task.tokens_out = tokens_out;
-    if (status != HARNESS_OK || response_len >= req->result_capacity)
-        return fail_task(status == HARNESS_OK ? HARNESS_ERR_MODEL : status, rep);
-    response[response_len] = '\0';
-
-    const char *json = response;
-    uint32_t json_len = response_len;
+    char *action_input = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
+    char *observation = (char *)(runtime_arena + HARNESS_TOOL_OUTPUT_OFFSET);
     static const char echo_prefix[] = "agentos:";
-    if (json_len >= sizeof(echo_prefix) - 1u
-        && bytes_equal(json, sizeof(echo_prefix) - 1u,
-                       echo_prefix, sizeof(echo_prefix) - 1u)) {
-        json += sizeof(echo_prefix) - 1u;
-        json_len -= sizeof(echo_prefix) - 1u;
-    }
 
-    const char *action = NULL;
-    uint32_t action_len = 0u;
-    if (!json_string(json, json_len, "action", 6u, &action, &action_len))
-        return fail_task(HARNESS_ERR_PROTOCOL, rep);
-
-    if (bytes_equal(action, action_len, "tool", 4u)) {
-        if ((runtime_installed_caps & HARNESS_CAP_TOOL) == 0u
-            || runtime_tool_backend == NULL) {
-            current_task.denied_attempts++;
-            return fail_task(HARNESS_ERR_CAP_DENIED, rep);
-        }
-        if (req->max_steps < 2u) return fail_task(HARNESS_ERR_STEP_LIMIT, rep);
-
-        const char *tool = NULL, *input = NULL;
-        uint32_t tool_len = 0u, input_len = 0u;
-        if (!json_string(json, json_len, "tool", 4u, &tool, &tool_len)
-            || !json_string(json, json_len, "input", 5u,
-                            &input, &input_len))
-            return fail_task(HARNESS_ERR_PROTOCOL, rep);
-
-        char tool_name[TOOLSVC_TOOL_NAME_MAX];
-        uint32_t decoded_name_len = 0u, decoded_input_len = 0u;
-        char *tool_input = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
-        char *tool_output = (char *)(runtime_arena + HARNESS_TOOL_OUTPUT_OFFSET);
-        if (!decode_json_string(tool_name, sizeof(tool_name),
-                                tool, tool_len, &decoded_name_len)
-            || !decode_json_string(tool_input, HARNESS_TOOL_SCRATCH_CAP,
-                                   input, input_len, &decoded_input_len))
-            return fail_task(HARNESS_ERR_PROTOCOL, rep);
-
-        uint32_t tool_output_len = 0u;
-        current_task.state = HARNESS_STATE_TOOL;
-        status = runtime_tool_backend(
-            tool_name, decoded_name_len, tool_input, decoded_input_len,
-            tool_output, HARNESS_TOOL_SCRATCH_CAP, &tool_output_len,
-            runtime_tool_ctx);
-        current_task.tool_calls = 1u;
-        current_task.used_caps |= HARNESS_CAP_TOOL;
-        if (status != HARNESS_OK || tool_output_len >= HARNESS_TOOL_SCRATCH_CAP)
-            return fail_task(status == HARNESS_OK ? HARNESS_ERR_TOOL : status,
-                             rep);
-
+    for (uint32_t step = 1u; step <= req->max_steps; step++) {
         current_task.state = HARNESS_STATE_PLANNING;
-        current_task.step = 2u;
-        uint32_t more_in = 0u, more_out = 0u;
-        status = runtime_model_backend(
+        current_task.step = step;
+        uint32_t response_len = 0u, tokens_in = 0u, tokens_out = 0u;
+        uint32_t status = runtime_model_backend(
             harness_system_prompt,
             (uint32_t)(sizeof(harness_system_prompt) - 1u),
-            tool_output, tool_output_len,
+            next_prompt, next_prompt_len,
             req->model_id_len == 0u ? NULL
                 : (const char *)(runtime_arena + req->model_id_offset),
             req->model_id_len, response, req->result_capacity, &response_len,
-            &more_in, &more_out, runtime_model_ctx);
+            &tokens_in, &tokens_out, runtime_model_ctx);
         current_task.model_calls++;
-        current_task.tokens_in += more_in;
-        current_task.tokens_out += more_out;
+        current_task.tokens_in += tokens_in;
+        current_task.tokens_out += tokens_out;
         if (status != HARNESS_OK || response_len >= req->result_capacity)
-            return fail_task(status == HARNESS_OK ? HARNESS_ERR_MODEL : status,
-                             rep);
+            return fail_task(status == HARNESS_OK
+                                 ? HARNESS_ERR_MODEL : status, rep);
         response[response_len] = '\0';
-        json = response;
-        json_len = response_len;
+
+        const char *json = response;
+        uint32_t json_len = response_len;
         if (json_len >= sizeof(echo_prefix) - 1u
             && bytes_equal(json, sizeof(echo_prefix) - 1u,
                            echo_prefix, sizeof(echo_prefix) - 1u)) {
             json += sizeof(echo_prefix) - 1u;
             json_len -= sizeof(echo_prefix) - 1u;
         }
+
+        const char *action = NULL;
+        uint32_t action_len = 0u;
         if (!json_string(json, json_len, "action", 6u,
                          &action, &action_len))
             return fail_task(HARNESS_ERR_PROTOCOL, rep);
+
+        if (bytes_equal(action, action_len, "final", 5u)) {
+            const char *summary = NULL;
+            uint32_t summary_len = 0u, final_len = 0u;
+            if (!json_string(json, json_len, "summary", 7u,
+                             &summary, &summary_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            /* A final action cannot bypass a requested verification gate. */
+            if ((req->task_flags & HARNESS_TASK_REQUIRE_TEST) != 0u)
+                return fail_task(HARNESS_ERR_EXEC, rep);
+            if (!decode_json_string(action_input, HARNESS_TOOL_SCRATCH_CAP,
+                                    summary, summary_len, &final_len)
+                || final_len >= req->result_capacity)
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            bytes_copy(response, action_input, final_len + 1u);
+            current_task.result_len = final_len;
+            current_task.state = HARNESS_STATE_COMPLETE;
+            current_task.last_error = HARNESS_OK;
+            fill_submit_reply(rep, HARNESS_OK, req->task_id,
+                              current_task.state);
+            return HARNESS_OK;
+        }
+
+        if (bytes_equal(action, action_len, "tool", 4u)) {
+            if ((runtime_installed_caps & HARNESS_CAP_TOOL) == 0u
+                || runtime_tool_backend == NULL) {
+                current_task.denied_attempts++;
+                return fail_task(HARNESS_ERR_CAP_DENIED, rep);
+            }
+            const char *tool = NULL, *input = NULL;
+            uint32_t tool_len = 0u, input_len = 0u;
+            if (!json_string(json, json_len, "tool", 4u, &tool, &tool_len)
+                || !json_string(json, json_len, "input", 5u,
+                                &input, &input_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            char tool_name[TOOLSVC_TOOL_NAME_MAX];
+            uint32_t name_len = 0u, decoded_input_len = 0u;
+            if (!decode_json_string(tool_name, sizeof(tool_name),
+                                    tool, tool_len, &name_len)
+                || !decode_json_string(action_input, HARNESS_TOOL_SCRATCH_CAP,
+                                       input, input_len, &decoded_input_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            uint32_t observation_len = 0u;
+            current_task.state = HARNESS_STATE_TOOL;
+            status = runtime_tool_backend(
+                tool_name, name_len, action_input, decoded_input_len,
+                observation, HARNESS_TOOL_SCRATCH_CAP, &observation_len,
+                runtime_tool_ctx);
+            current_task.tool_calls++;
+            current_task.used_caps |= HARNESS_CAP_TOOL;
+            if (status != HARNESS_OK
+                || observation_len >= HARNESS_TOOL_SCRATCH_CAP)
+                return fail_task(status == HARNESS_OK
+                                     ? HARNESS_ERR_TOOL : status, rep);
+            next_prompt = observation;
+            next_prompt_len = observation_len;
+            continue;
+        }
+
+        bool memory_write = bytes_equal(action, action_len,
+                                        "memory_write", 12u);
+        bool memory_read = bytes_equal(action, action_len,
+                                       "memory_read", 11u);
+        if (memory_write || memory_read) {
+            if ((runtime_installed_caps & HARNESS_CAP_MEMORY) == 0u
+                || runtime_memory_backend == NULL) {
+                current_task.denied_attempts++;
+                return fail_task(HARNESS_ERR_CAP_DENIED, rep);
+            }
+            const char *path = NULL, *content = NULL;
+            uint32_t path_len = 0u, content_len = 0u;
+            if (!json_string(json, json_len, "path", 4u,
+                             &path, &path_len)
+                && !json_string(json, json_len, "object", 6u,
+                                &path, &path_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            if (memory_write
+                && !json_string(json, json_len, "content", 7u,
+                                &content, &content_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            char decoded_path[AGENTFS_PATH_MAX];
+            uint32_t decoded_path_len = 0u, decoded_content_len = 0u;
+            if (!decode_json_string(decoded_path, sizeof(decoded_path),
+                                    path, path_len, &decoded_path_len)
+                || (memory_write
+                    && !decode_json_string(action_input,
+                                           HARNESS_TOOL_SCRATCH_CAP,
+                                           content, content_len,
+                                           &decoded_content_len)))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            uint32_t observation_len = 0u;
+            current_task.state = HARNESS_STATE_MEMORY;
+            status = runtime_memory_backend(
+                memory_write, decoded_path, decoded_path_len,
+                memory_write ? action_input : NULL, decoded_content_len,
+                observation, HARNESS_TOOL_SCRATCH_CAP, &observation_len,
+                runtime_memory_ctx);
+            current_task.memory_ops++;
+            current_task.used_caps |= HARNESS_CAP_MEMORY;
+            if (status != HARNESS_OK
+                || observation_len >= HARNESS_TOOL_SCRATCH_CAP)
+                return fail_task(status == HARNESS_OK
+                                     ? HARNESS_ERR_MEMORY : status, rep);
+            next_prompt = observation;
+            next_prompt_len = observation_len;
+            continue;
+        }
+
+        return fail_task(HARNESS_ERR_PROTOCOL, rep);
     }
 
-    const char *summary = NULL;
-    uint32_t summary_len = 0u;
-    if (!bytes_equal(action, action_len, "final", 5u)
-        || !json_string(json, json_len, "summary", 7u,
-                        &summary, &summary_len))
-        return fail_task(HARNESS_ERR_PROTOCOL, rep);
-
-    /* A final action cannot bypass a requested verification gate. */
-    if ((req->task_flags & HARNESS_TASK_REQUIRE_TEST) != 0u)
-        return fail_task(HARNESS_ERR_EXEC, rep);
-
-    uint32_t final_len = 0u;
-    char *final_scratch = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
-    if (!decode_json_string(final_scratch, HARNESS_TOOL_SCRATCH_CAP,
-                            summary, summary_len, &final_len)
-        || final_len >= req->result_capacity)
-        return fail_task(HARNESS_ERR_PROTOCOL, rep);
-    bytes_copy(response, final_scratch, final_len + 1u);
-
-    current_task.result_len = final_len;
-    current_task.state = HARNESS_STATE_COMPLETE;
-    current_task.last_error = HARNESS_OK;
-    fill_submit_reply(rep, HARNESS_OK, req->task_id, current_task.state);
-    return HARNESS_OK;
+    return fail_task(HARNESS_ERR_STEP_LIMIT, rep);
 }
 
 uint32_t harness_runtime_status(uint32_t task_id,
@@ -599,6 +646,74 @@ static uint32_t target_tool_backend(
     return HARNESS_OK;
 }
 
+static uint32_t target_memory_backend(
+    bool write, const char *path, uint32_t path_len,
+    const char *content, uint32_t content_len,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx)
+{
+    (void)ctx;
+    const uint32_t path_rel = 0x100u;
+    const uint32_t data_rel = 0x400u;
+    const uint32_t output_rel = 0x2000u;
+    if (path_len == 0u || path_len >= AGENTFS_PATH_MAX
+        || content_len > AGENTFS_WORKSPACE_FILE_MAX
+        || output_capacity > AGENTFS_CLIENT_ARENA_SIZE - output_rel)
+        return HARNESS_ERR_MEMORY;
+
+    uint8_t *memory_arena = (uint8_t *)(uintptr_t)
+        AGENTFS_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    const uint32_t partition = AGENTFS_CLIENT_ARENA_OFFSET(
+        AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    bytes_copy(memory_arena + path_rel, path, path_len);
+
+    sel4_msg_t rep;
+    uint32_t status;
+    if (write) {
+        bytes_copy(memory_arena + data_rel, content, content_len);
+        struct agentfs_req_write wire;
+        bytes_zero(&wire, sizeof(wire));
+        wire.path_offset = partition + path_rel;
+        wire.path_len = path_len;
+        wire.data_offset = partition + data_rel;
+        wire.data_len = content_len;
+        wire.flags = AGENTFS_WRITE_CREATE | AGENTFS_WRITE_TRUNCATE;
+        status = sel4_client_call(PD_CNODE_SLOT_AGENTFS_EP,
+                                  MSG_AGENTFS_WRITE,
+                                  &wire, sizeof(wire), &rep);
+        if (status != AGENTFS_OK) {
+            return status == AGENTFS_ERR_DENIED
+                ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_MEMORY;
+        }
+        static const char updated[] =
+            "{\"observation\":\"memory_write\",\"status\":\"ok\"}";
+        if (sizeof(updated) > output_capacity) return HARNESS_ERR_MEMORY;
+        bytes_copy(output, updated, sizeof(updated));
+        *output_len = (uint32_t)sizeof(updated) - 1u;
+        return HARNESS_OK;
+    }
+
+    struct agentfs_req_read wire;
+    bytes_zero(&wire, sizeof(wire));
+    wire.path_offset = partition + path_rel;
+    wire.path_len = path_len;
+    wire.output_offset = partition + output_rel;
+    wire.output_capacity = output_capacity - 1u;
+    status = sel4_client_call(PD_CNODE_SLOT_AGENTFS_EP,
+                              MSG_AGENTFS_READ,
+                              &wire, sizeof(wire), &rep);
+    if (status != AGENTFS_OK || rep.length < 8u) {
+        return status == AGENTFS_ERR_DENIED
+            ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_MEMORY;
+    }
+    uint32_t len = rd32(rep.data, 4u);
+    if (len >= output_capacity) return HARNESS_ERR_MEMORY;
+    bytes_copy(output, memory_arena + output_rel, len);
+    output[len] = '\0';
+    *output_len = len;
+    return HARNESS_OK;
+}
+
 static uint32_t h_submit(sel4_badge_t badge, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx)
 {
@@ -686,16 +801,20 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     image_bytes = (image_bytes + 4095u) & ~4095u;
     harness_runtime_init((void *)(uintptr_t)HARNESS_SHMEM_VADDR,
                          HARNESS_SHMEM_SIZE,
-                         HARNESS_CAP_MODEL | HARNESS_CAP_TOOL, 1u,
+                         HARNESS_CAP_MODEL | HARNESS_CAP_TOOL
+                             | HARNESS_CAP_MEMORY, 1u,
                          target_model_backend, NULL);
     harness_runtime_set_tool_backend(target_tool_backend, NULL);
+    harness_runtime_set_memory_backend(target_memory_backend, NULL);
     /* Private charge: mapped image + 64 KiB stack + 4 KiB IPC page + a fixed
      * 128 KiB allowance for CNode/TCB/SC/page-table kernel objects. */
     harness_runtime_set_resources(image_bytes + 0x10000u + 0x1000u + 0x20000u,
                                   HARNESS_WORKER_DEFAULT_LIMIT_BYTES,
-                                  HARNESS_SHMEM_SIZE + TOOLSVC_CLIENT_ARENA_SIZE,
+                                  HARNESS_SHMEM_SIZE + TOOLSVC_CLIENT_ARENA_SIZE
+                                      + AGENTFS_CLIENT_ARENA_SIZE,
                                   HARNESS_SHARED_MODELSVC
-                                      | HARNESS_SHARED_TOOL_MCP);
+                                      | HARNESS_SHARED_TOOL_MCP
+                                      | HARNESS_SHARED_ARTIFACT_STORE);
     sel4_server_init(&harness_server, my_ep);
     (void)sel4_server_register(&harness_server, MSG_HARNESS_SUBMIT,
                                h_submit, NULL);

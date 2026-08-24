@@ -271,6 +271,7 @@ EVENTBUS_OBJS     := $(BUILD_DIR)/event_bus.o \
 INITAGENT_OBJS    := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_INITAGENT_SRCS))
 WORKER_OBJS       := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_WORKER_SRCS))
 AGENTFS_OBJS      := $(BUILD_DIR)/agentfs.o \
+                    $(BUILD_DIR)/agentfs_workspace_overlay.o \
                     $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_AGENTFS_SRCS))
 VIBEENGINE_OBJS   := $(BUILD_DIR)/vibe_engine.o \
                     $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_VIBEENGINE_SRCS))
@@ -400,6 +401,10 @@ build: $(IMAGE_FILE) $(BUILD_DIR)/root_task.elf
 src/agentfs.c src/event_bus.c src/vibe_engine.c src/serial_pd.c src/net_server.c src/net_pd.c:
 
 $(BUILD_DIR)/agentfs.o: $(SERVICES_DIR)/agentfs/agentfs.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/agentfs_workspace_overlay.o: $(SERVICES_DIR)/agentfs/workspace_overlay.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
 

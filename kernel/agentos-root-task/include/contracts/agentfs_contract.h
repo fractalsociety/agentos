@@ -21,26 +21,54 @@
 #pragma once
 #include "../agentos.h"
 
+#define AGENTFS_INTERFACE_VERSION 2u
+
+/* Singleton transfer arena. AgentFS owns all 4 MiB; an ordinary MemoryCap
+ * client maps only the badge-selected 48 KiB partition. File contents remain
+ * in AgentFS private storage and are copied through this bounded window. */
+#define AGENTFS_SHMEM_VADDR              0x62000000u
+#define AGENTFS_SHMEM_SIZE               (4u * 1024u * 1024u)
+#define AGENTFS_CLIENT_SLOT_COUNT        64u
+#define AGENTFS_CLIENT_ARENA_SIZE        (48u * 1024u)
+#define AGENTFS_CLIENT_REGION_SIZE       \
+    (AGENTFS_CLIENT_SLOT_COUNT * AGENTFS_CLIENT_ARENA_SIZE)
+#define AGENTFS_INTERNAL_ARENA_OFFSET    AGENTFS_CLIENT_REGION_SIZE
+#define AGENTFS_CLIENT_ARENA_OFFSET(client_id) \
+    ((uint32_t)(client_id) * AGENTFS_CLIENT_ARENA_SIZE)
+#define AGENTFS_CLIENT_ARENA_VADDR(client_id) \
+    (AGENTFS_SHMEM_VADDR + AGENTFS_CLIENT_ARENA_OFFSET(client_id))
+
+#define AGENTFS_PATH_MAX                 128u
+#define AGENTFS_WORKSPACE_MAX_FILES       64u
+#define AGENTFS_WORKSPACE_FILE_MAX      8192u
+#define AGENTFS_WRITE_CREATE        (1u << 0)
+#define AGENTFS_WRITE_TRUNCATE      (1u << 1)
+
 /* ─── Channel IDs ────────────────────────────────────────────────────────── */
 #define AGENTFS_CH_CONTROLLER   CH_VFS_SERVER   /* controller → agentfs */
 
 /* ─── Request structs ────────────────────────────────────────────────────── */
 
 struct agentfs_req_read {
-    uint32_t inode;             /* inode from a prior STAT call */
-    uint32_t offset;            /* byte offset into object */
-    uint32_t len;               /* bytes to read */
+    uint32_t path_offset;
+    uint32_t path_len;
+    uint32_t output_offset;
+    uint32_t output_capacity;
+    uint32_t file_offset;
 };
 
 struct agentfs_req_write {
-    uint32_t inode;             /* 0 = create new object at path in shmem */
-    uint32_t offset;
-    uint32_t len;
+    uint32_t path_offset;
+    uint32_t path_len;
+    uint32_t data_offset;
+    uint32_t data_len;
+    uint32_t file_offset;
+    uint32_t flags;
 };
 
 struct agentfs_req_stat {
-    /* NUL-terminated path string placed in shmem before call */
-    uint32_t path_len;          /* byte length of path (including NUL) */
+    uint32_t path_offset;
+    uint32_t path_len;
 };
 
 struct agentfs_req_list {
@@ -49,6 +77,7 @@ struct agentfs_req_list {
 };
 
 struct agentfs_req_delete {
+    uint32_t path_offset;
     uint32_t path_len;
 };
 
@@ -62,12 +91,16 @@ struct agentfs_req_search {
 struct agentfs_reply_read {
     uint32_t ok;
     uint32_t actual;            /* bytes actually read */
+    uint32_t file_size;
+    uint32_t version;
 };
 
 struct agentfs_reply_write {
     uint32_t ok;
     uint32_t inode;             /* inode of written object */
     uint32_t written;           /* bytes written */
+    uint32_t file_size;
+    uint32_t version;
 };
 
 struct agentfs_reply_stat {
@@ -116,4 +149,10 @@ enum agentfs_error {
     AGENTFS_ERR_READONLY    = 4,
     AGENTFS_ERR_TOO_LARGE   = 5,
     AGENTFS_ERR_BAD_INODE   = 6,
+    AGENTFS_ERR_DENIED      = 7,
 };
+
+_Static_assert(sizeof(struct agentfs_req_write) == 24u,
+               "AgentFS write wire must fit one seL4 payload");
+_Static_assert(sizeof(struct agentfs_req_read) == 20u,
+               "AgentFS read wire must fit one seL4 payload");

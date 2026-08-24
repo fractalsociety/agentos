@@ -43,6 +43,7 @@
 #include "agentos.h"
 #include "sel4_server.h"
 #include "contracts/agentfs_contract.h"
+#include "workspace_overlay.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -406,6 +407,15 @@ static uint32_t h_delete(sel4_badge_t b, const sel4_msg_t *req,
     return SEL4_ERR_OK;
 }
 
+static uint32_t h_workspace(sel4_badge_t badge, const sel4_msg_t *req,
+                            sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    return agentfs_workspace_dispatch((uint64_t)badge, req->opcode,
+                                      req->data, req->length,
+                                      rep->data, &rep->length);
+}
+
 /* ── Entry point ────────────────────────────────────────────────────────── */
 
 void agentfs_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
@@ -420,6 +430,8 @@ void agentfs_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     total_puts     = 0;
     total_gets     = 0;
     total_vectors  = 0;
+    agentfs_workspace_init((void *)(uintptr_t)AGENTFS_SHMEM_VADDR,
+                           AGENTFS_SHMEM_SIZE);
     log_drain_write(3, 3, "[agentfs] Capacity: 256 objects, 256KB blob store.\n");
     log_drain_write(3, 3, "[agentfs] Vector index: linear scan (HNSW in Phase 2).\n");
     log_drain_write(3, 3, "[agentfs] AgentFS ALIVE.\n");
@@ -433,6 +445,10 @@ void agentfs_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&srv, OP_AGENTFS_VECTOR, h_vector, (void *)0);
     sel4_server_register(&srv, OP_AGENTFS_STAT,   h_stat,   (void *)0);
     sel4_server_register(&srv, OP_AGENTFS_HEALTH, h_health, (void *)0);
+    sel4_server_register(&srv, MSG_AGENTFS_READ,   h_workspace, (void *)0);
+    sel4_server_register(&srv, MSG_AGENTFS_WRITE,  h_workspace, (void *)0);
+    sel4_server_register(&srv, MSG_AGENTFS_STAT,   h_workspace, (void *)0);
+    sel4_server_register(&srv, MSG_AGENTFS_DELETE, h_workspace, (void *)0);
     sel4_server_run(&srv);
 }
 

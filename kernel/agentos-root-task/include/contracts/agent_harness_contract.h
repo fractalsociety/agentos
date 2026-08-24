@@ -89,6 +89,7 @@ enum harness_state {
     HARNESS_STATE_COMPLETE = 4u,
     HARNESS_STATE_FAILED = 5u,
     HARNESS_STATE_CANCELLED = 6u,
+    HARNESS_STATE_MEMORY = 7u,
 };
 
 enum harness_error {

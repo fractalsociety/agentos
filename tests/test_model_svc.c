@@ -102,7 +102,7 @@ static void test_health_and_admin_registry(void)
                               MODELSVC_OP_HEALTH, NULL, 0u);
     assert(rep.opcode == MODELSVC_ERR_OK);
     assert(rd32(rep.data, 0u) == MODELSVC_ERR_OK);
-    assert(rd32(rep.data, 4u) == 4u); /* HTTP routes + native diagnostic */
+    assert(rd32(rep.data, 4u) == 5u); /* HTTP routes + native diagnostics */
     assert(rd32(rep.data, 8u) == MODELSVC_INTERFACE_VERSION);
 
     modelsvc_register_req_t *registration =
@@ -132,8 +132,8 @@ static void test_health_and_admin_registry(void)
     rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_LIST,
                    &list, sizeof(list));
     assert(rep.opcode == MODELSVC_ERR_OK);
-    assert(rd32(rep.data, 4u) == 5u);
-    assert(rd32(rep.data, 8u) == 5u * sizeof(modelsvc_model_info_t));
+    assert(rd32(rep.data, 4u) == 6u);
+    assert(rd32(rep.data, 8u) == 6u * sizeof(modelsvc_model_info_t));
 }
 
 static void test_bounds_and_capability_isolation(void)

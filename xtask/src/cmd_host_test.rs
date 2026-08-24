@@ -42,6 +42,16 @@ struct Suite {
 /// stable as new test files are added incrementally.
 const SUITES: &[Suite] = &[
     Suite {
+        name: "test_model_svc",
+        sources: &["tests/test_model_svc.c"],
+        extra_args: &[],
+    },
+    Suite {
+        name: "test_agentfs_workspace",
+        sources: &["tests/test_agentfs_workspace.c"],
+        extra_args: &[],
+    },
+    Suite {
         name: "test_tool_svc",
         sources: &["tests/test_tool_svc.c"],
         extra_args: &[],

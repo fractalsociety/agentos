@@ -54,8 +54,10 @@ static inline int sel4_server_register(sel4_server_t *srv, uint32_t opcode,
                                        sel4_handler_fn fn, void *ctx)
 {
     if (srv->handler_count >= SEL4_SERVER_MAX_HANDLERS) return -1;
-    srv->handlers[srv->handler_count++] =
-        (typeof(srv->handlers[0])){opcode, fn, ctx};
+    uint32_t index = srv->handler_count++;
+    srv->handlers[index].opcode = opcode;
+    srv->handlers[index].fn = fn;
+    srv->handlers[index].ctx = ctx;
     return 0;
 }
 static inline uint32_t sel4_server_dispatch(sel4_server_t *srv,
@@ -187,6 +189,15 @@ static void bytes_copy(void *dst, const void *src, uint32_t len)
     uint8_t *d = (uint8_t *)dst;
     const uint8_t *s = (const uint8_t *)src;
     for (uint32_t i = 0u; i < len; i++) d[i] = s[i];
+}
+
+static bool bytes_equal(const char *a, uint32_t a_len,
+                        const char *b, uint32_t b_len)
+{
+    if (a_len != b_len) return false;
+    for (uint32_t i = 0u; i < a_len; i++)
+        if (a[i] != b[i]) return false;
+    return true;
 }
 
 static uint32_t bounded_strlen(const char *value, uint32_t cap)
@@ -445,13 +456,57 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
         /* Dependency-free native fast path used for diagnostics and target
          * contract proof. Production model backends still route via transport. */
         static const char prefix[] = "agentos:";
-        if (sizeof(prefix) - 1u + wire->user_prompt_len + 1u > output_cap)
-            return MODELSVC_ERR_NOMEM;
-        bytes_copy(output, prefix, sizeof(prefix) - 1u);
-        bytes_copy(output + sizeof(prefix) - 1u,
-                   modelsvc_shmem + wire->user_prompt_offset,
-                   wire->user_prompt_len);
-        *response_len = (uint32_t)(sizeof(prefix) - 1u) + wire->user_prompt_len;
+        static const char smoke_model[] = "agentos-smoke-coder";
+        static const char smoke_task[] = "edit-and-readback-smoke";
+        static const char write_observation[] =
+            "{\"observation\":\"memory_write\",\"status\":\"ok\"}";
+        static const char readback[] = "after\n";
+        static const char write_action[] =
+            "{\"action\":\"memory_write\",\"path\":\"src/answer.txt\","
+            "\"content\":\"after\\n\"}";
+        static const char read_action[] =
+            "{\"action\":\"memory_read\",\"path\":\"src/answer.txt\"}";
+        static const char final_action[] =
+            "{\"action\":\"final\",\"summary\":\"edit-readback-verified\"}";
+        const char *user = (const char *)modelsvc_shmem
+            + wire->user_prompt_offset;
+        uint32_t id_len = bounded_strlen(model->info.model_id,
+                                         MODELSVC_MODEL_ID_MAX);
+        const char *local_response = NULL;
+        uint32_t local_response_len = 0u;
+        if (bytes_equal(model->info.model_id, id_len,
+                        smoke_model, sizeof(smoke_model) - 1u)) {
+            if (bytes_equal(user, wire->user_prompt_len,
+                            smoke_task, sizeof(smoke_task) - 1u)) {
+                local_response = write_action;
+                local_response_len = sizeof(write_action) - 1u;
+            } else if (bytes_equal(user, wire->user_prompt_len,
+                                   write_observation,
+                                   sizeof(write_observation) - 1u)) {
+                local_response = read_action;
+                local_response_len = sizeof(read_action) - 1u;
+            } else if (bytes_equal(user, wire->user_prompt_len,
+                                   readback, sizeof(readback) - 1u)) {
+                local_response = final_action;
+                local_response_len = sizeof(final_action) - 1u;
+            } else {
+                return MODELSVC_ERR_INVALID_ARG;
+            }
+        }
+        if (local_response != NULL) {
+            if (local_response_len + 1u > output_cap)
+                return MODELSVC_ERR_NOMEM;
+            bytes_copy(output, local_response, local_response_len);
+            *response_len = local_response_len;
+        } else {
+            if (sizeof(prefix) - 1u + wire->user_prompt_len + 1u > output_cap)
+                return MODELSVC_ERR_NOMEM;
+            bytes_copy(output, prefix, sizeof(prefix) - 1u);
+            bytes_copy(output + sizeof(prefix) - 1u, user,
+                       wire->user_prompt_len);
+            *response_len = (uint32_t)(sizeof(prefix) - 1u)
+                + wire->user_prompt_len;
+        }
         *tokens_in = (wire->system_prompt_len + wire->user_prompt_len + 3u) / 4u;
         *tokens_out = (*response_len + 3u) / 4u;
         *latency_us = 0u;
@@ -751,6 +806,8 @@ static void modelsvc_init_state(uint8_t *shmem, uint32_t shmem_size)
         16000u, 4096u, MODELSVC_FLAG_STREAMING);
     register_default("agentos-echo", "builtin://echo", "",
         16000u, 4096u, MODELSVC_FLAG_LOCAL | MODELSVC_FLAG_STREAMING);
+    register_default("agentos-smoke-coder", "builtin://smoke-coder", "",
+        16000u, 4096u, MODELSVC_FLAG_LOCAL);
 
     sel4_server_init(&server, 0u);
     (void)sel4_server_register(&server, MODELSVC_OP_QUERY, h_query, NULL);
