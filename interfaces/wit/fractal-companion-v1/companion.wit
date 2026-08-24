@@ -126,6 +126,22 @@ interface types {
         withheld,
     }
 
+    /// Freshness of the newest source used to build a projection. A stale or
+    /// offline source is reported explicitly; it is never represented as a
+    /// current empty daily bundle.
+    enum source-freshness {
+        fresh,
+        stale,
+        offline,
+    }
+
+    /// How divergent source heads were handled while building a daily root.
+    /// `preserve-conflicts` is required when no schema-authorized merge exists.
+    enum merge-policy {
+        preserve-conflicts,
+        schema-declared,
+    }
+
     // ── Honest proof state ───────────────────────────────────────────────
 
     /// The strongest evidence that actually exists for a claim. Never
@@ -203,6 +219,8 @@ interface types {
         conflict,
         /// A requested field's source-class is not exportable.
         redacted,
+        /// A contributing source exceeded the freshness window.
+        stale-source,
         /// Per-epoch request budget exhausted.
         rate-limited,
         /// Consent window or source freshness window has closed.
@@ -297,10 +315,19 @@ interface types {
         /// The projection this item points at.
         subject: object-id,
         /// Deterministic ordering key within the bundle.
+        /// Items sort by this key's UTF-8 bytes, then by ordinal.
+        ordering-key: string,
         ordinal: u32,
         event-seq: u64,
         /// Class of the ORIGINAL source. Must be `projection`.
         origin: source-class,
+        /// Hash of the authorized source summary and event evidence.
+        provenance: object-id,
+        /// Age of this item's contributing source at build time.
+        freshness-seconds: u32,
+        source-freshness: source-freshness,
+        /// Optional typed action reference; no command or raw record body.
+        intent: option<task-intent-reference>,
         redaction: redaction-class,
     }
 
@@ -323,9 +350,17 @@ interface types {
         built-at-unix: u64,
         /// Age in seconds of the FRESHEST contributing source.
         freshness-seconds: u32,
+        source-freshness: source-freshness,
         item-count: u32,
+        items: list<daily-item>,
+        /// Hash over the pinned roots, range, timezone, and projected items.
+        provenance: object-id,
         /// Divergent heads preserved rather than silently merged.
         conflict-heads: list<object-id>,
+        /// A merge is valid only when the schema explicitly declares it.
+        merge-policy: merge-policy,
+        /// Identifier of the schema that authorized `schema-declared`.
+        merge-schema: option<object-id>,
         redaction: redaction-class,
     }
 
@@ -430,6 +465,16 @@ interface types {
         request-proof,
         /// Withdraw a previously submitted intent.
         cancel,
+    }
+
+    /// A typed action reference embedded in a DailyItem. It can be rendered
+    /// or submitted only through `submit-task-intent`; it is never a command,
+    /// path, calendar record, message, health record, or file record.
+    record task-intent-reference {
+        intent-id: object-id,
+        kind: intent-kind,
+        subject: object-id,
+        expect-root: object-id,
     }
 
     /// A submitted intent. Compare-and-swap against `expect-root` makes a
