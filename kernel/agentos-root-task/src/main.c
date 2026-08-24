@@ -46,6 +46,7 @@
 #include "agentos.h"         /* sel4_dbg_puts                                    */
 #include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
 #include "contracts/agent_harness_contract.h"
+#include "contracts/net_device_contract.h"
 #include "cap_authority.h"
 #include "contracts/agentfs_contract.h"
 #include "../../../contracts/execsvc/interface.h"
@@ -590,6 +591,12 @@ static void boot_setup_irqs(const pd_desc_t *pd,
  */
 #define VIRTIO_MMIO_PAGE_PA  0x0A000000UL
 #define VIRTIO_MMIO_PAGE_VA  0x0A000000UL
+#define NET_PD_MMIO_VA       0x10010000UL
+#define NET_SHARED_ARENA_VA  NET_DMA_ARENA_VA
+#define NET_SHARED_ARENA_SIZE (1u << seL4_ARCH_LargePageBits)
+#define WG_STAGING_VA         0x08000000UL
+#define WG_STAGING_SIZE       0x00100000u
+#define WG_STAGING_PAGES      (WG_STAGING_SIZE / 4096u)
 #define FREEBSD_VIRTIO_MMIO_BUS31_PAGE_PA  0x0A003000UL
 #define FREEBSD_VIRTIO_MMIO_BUS31_PAGE_VA  0x0A003000UL
 
@@ -631,6 +638,8 @@ static seL4_CPtr g_agentfs_shmem_frames[AGENTFS_SHMEM_PAGES];
 #define EXECSVC_SHMEM_PAGES (EXECSVC_SHMEM_SIZE / 4096u)
 #define EXECSVC_CLIENT_ARENA_PAGES (EXECSVC_CLIENT_ARENA_SIZE / 4096u)
 static seL4_CPtr g_execsvc_shmem_frames[EXECSVC_SHMEM_PAGES];
+static seL4_CPtr g_net_shmem_frames[1];
+static seL4_CPtr g_wg_staging_frames[WG_STAGING_PAGES];
 
 static volatile uint32_t *g_uart_dr;  /* PL011 UARTDR (offset 0x00) */
 static volatile uint32_t *g_uart_fr;  /* PL011 UARTFR (offset 0x18) */
@@ -917,6 +926,41 @@ static seL4_Error provision_pd_startup_record(const pd_desc_t *pd,
 
     seL4_ARCH_Page_Unmap(frame);
     return pd_vspace_map_device_frame(pd_vspace, frame, PD_STARTUP_RECORD_VA);
+}
+
+/* Give only net_pd the physical address needed for device DMA. net_server
+ * shares the virtual packet arena but cannot program the NIC because it gets
+ * neither this record nor the MMIO frame capability. */
+static seL4_Error provision_net_dma_startup(seL4_CPtr pd_vspace)
+{
+    if (g_net_shmem_frames[0] == seL4_CapNull)
+        return seL4_InvalidCapability;
+
+    seL4_ARCH_Page_GetAddress_t address =
+        seL4_ARCH_Page_GetAddress(g_net_shmem_frames[0]);
+    if (address.paddr == 0u)
+        return seL4_InvalidCapability;
+
+    seL4_CPtr frame = seL4_CapNull;
+    seL4_Error err = ut_alloc_cap(seL4_ARM_SmallPageObject, 0u, &frame);
+    if (err != seL4_NoError) return err;
+
+    err = pd_vspace_map_device_frame(seL4_CapInitThreadVSpace, frame,
+                                     RT_VQ_SCRATCH_VA);
+    if (err != seL4_NoError) return err;
+
+    net_dma_startup_t *record = (net_dma_startup_t *)RT_VQ_SCRATCH_VA;
+    *record = (net_dma_startup_t){
+        .magic       = NET_DMA_STARTUP_MAGIC,
+        .version     = NET_DMA_STARTUP_VERSION,
+        .size        = (uint16_t)sizeof(*record),
+        .dma_base_pa = (uint64_t)address.paddr,
+        .dma_bytes   = NET_DMA_ARENA_BYTES,
+        .reserved    = 0u,
+    };
+    AGENTOS_MEMORY_FENCE();
+    seL4_ARCH_Page_Unmap(frame);
+    return pd_vspace_map_device_frame(pd_vspace, frame, NET_DMA_STARTUP_VA);
 }
 
 #ifdef CONFIG_KERNEL_MCS
@@ -1808,15 +1852,10 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts("\n");
         }
 
-        /* ── 4g.4.6c: Map QEMU virtio-mmio transport page for VMM guests ─── */
-        /*
-         * The guest DTB exposes virtio-mmio slots under 0x0A000000. Map the
-         * single backing page into the guest execution VSpace so Linux can
-         * probe QEMU's virtio-net and virtio-blk transports directly while
-         * IRQ delivery still flows through the VMM/vGIC path.
-         */
-        if (g_virtio_mmio_frame_cap != seL4_CapNull &&
-            (name_eq(pd->name, "linux_vmm") || name_eq(pd->name, "freebsd_vmm"))) {
+        /* net_pd is the sole writable owner of the VirtIO transport page.
+         * Guests fault on their virtual transports and are mediated by their
+         * VMM instead of mapping host NIC MMIO into a second protection domain. */
+        if (g_virtio_mmio_frame_cap != seL4_CapNull && name_eq(pd->name, "net_pd")) {
             seL4_Word virtio_copy = ut_alloc_slot();
             seL4_Error virtio_err = seL4_NotEnoughMemory;
             if (virtio_copy != seL4_CapNull) {
@@ -1827,10 +1866,10 @@ void root_task_main(const seL4_BootInfo *bi)
                 if (virtio_err == seL4_NoError) {
                     virtio_err = pd_vspace_map_device_frame(vspace,
                                                             (seL4_CPtr)virtio_copy,
-                                                            VIRTIO_MMIO_PAGE_VA);
+                                                            NET_PD_MMIO_VA);
                 }
             }
-            dbg_puts("[rt] VMM virtio-mmio map err=");
+            dbg_puts("[rt] net_pd exclusive virtio-mmio map err=");
             dbg_hex((seL4_Word)virtio_err);
             dbg_puts("\n");
         }
@@ -2198,6 +2237,43 @@ void root_task_main(const seL4_BootInfo *bi)
                                                  1            /* writable */);
             dbg_puts("[rt] event_bus ring map err=");
             dbg_hex((seL4_Word)re);
+            dbg_puts("\n");
+        }
+
+        /* Shared packet arena. Only net_pd owns device state; net_server sees
+         * packet buffers and ownership metadata but no writable NIC MMIO. */
+        if (name_eq(pd->name, "net_pd") || name_eq(pd->name, "net_server")
+            || name_eq(pd->name, "test_runner")) {
+            seL4_Error ne = pd_vspace_map_shared_region(
+                vspace, (seL4_Word)NET_SHARED_ARENA_VA,
+                NET_SHARED_ARENA_SIZE, 1,
+                g_net_shmem_frames, 1u);
+            dbg_puts("[rt] net shared arena map pd=");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)ne);
+            dbg_puts("\n");
+            if (ne == seL4_NoError && name_eq(pd->name, "net_pd")) {
+                seL4_Error nse = provision_net_dma_startup(vspace);
+                dbg_puts("[rt] net_pd DMA startup record err=");
+                dbg_hex((seL4_Word)nse);
+                dbg_puts("\n");
+            }
+        }
+
+        /* WireGuard key/packet staging is mapped only into wg_net and into the
+         * target contract runner. Ordinary workers and mesh identities never
+         * receive these frames. A production enrollment service will get a
+         * separate, narrowly partitioned provisioning window. */
+        if (name_eq(pd->name, "wg_net") || name_eq(pd->name, "test_runner")) {
+            seL4_Error we = pd_vspace_map_shared_pages(
+                vspace, (seL4_Word)WG_STAGING_VA,
+                WG_STAGING_SIZE, 1,
+                g_wg_staging_frames, WG_STAGING_PAGES);
+            dbg_puts("[rt] WireGuard staging map pd=");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)we);
             dbg_puts("\n");
         }
 

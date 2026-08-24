@@ -245,6 +245,7 @@ typedef struct {
 #define NET_ERR_PERM            3u   /* capability or ACL denied */
 #define NET_ERR_STUB            4u   /* feature not yet implemented */
 #define NET_ERR_INVAL           5u   /* invalid argument */
+#define NET_ERR_BACKPRESSURE    9u   /* driver queue full; caller must retry */
 
 /* ── virtio-net MMIO constants ───────────────────────────────────────────── */
 /*

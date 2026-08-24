@@ -167,6 +167,7 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 
 #define AGENTOS_DEBUG 1
 #include "agentos.h"
+#include "system_desc.h"
 #include "wg_net.h"
 #include "net_server.h"
 #include "monocypher.h"
@@ -818,17 +819,6 @@ static void register_with_nameserver(seL4_CPtr ns_ep,
 #ifndef AGENTOS_TEST_HOST
     sel4_call(ns_ep, &req, &rep);
 
-    /* Look up "net" endpoint so we can make outbound calls to net_server */
-    sel4_msg_t lreq = {0}, lrep = {0};
-    lreq.opcode = (uint32_t)OP_NS_LOOKUP;
-    lreq.data[0] = 'n'; lreq.data[1] = 'e'; lreq.data[2] = 't'; lreq.data[3] = '\0';
-    lreq.length = 4;
-    sel4_call(ns_ep, &lreq, &lrep);
-    if (lrep.opcode == 0u && data_rd32(lrep.data, 0) == 0u) {
-        /* Nameserver returns channel_id in data[4..7]; in seL4 this would
-         * be a minted cap.  Record as g_net_ep. */
-        g_net_ep = (seL4_CPtr)data_rd32(lrep.data, 4);
-    }
 #else
     (void)rep;
     g_net_ep = 0;  /* no outbound calls in test mode */
@@ -923,14 +913,19 @@ static void wg_net_timer_tick(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 #ifndef AGENTOS_TEST_HOST
 void wg_net_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
-                 seL4_CPtr controller_ntfn)
+                  seL4_CPtr controller_ntfn)
 {
+    wg_staging_vaddr = (uintptr_t)0x08000000u;
     agentos_log_boot("wg_net");
     log_drain_write(16, 16, "[wg_net] Initialising WireGuard PD (raw seL4 IPC)\n");
     log_drain_write(16, 16, "[wg_net]   priority ordering constraint ELIMINATED\n");
     log_drain_write(16, 16, "[wg_net]   transport_aead=rfc8439-chacha20-poly1305\n");
 
     wg_net_test_init();
+    /* Authority comes from the endpoint installed by root, never from a
+     * nameserver channel number or task-controlled metadata. Install it after
+     * state initialization so the common host reset cannot erase it. */
+    g_net_ep = (seL4_CPtr)PD_CNODE_SLOT_NET_SERVER_EP;
 
     if (wg_staging_vaddr) {
         volatile uint8_t *s = WG_STAGING;

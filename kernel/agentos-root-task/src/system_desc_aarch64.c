@@ -39,6 +39,7 @@
 
 #include "system_desc.h"
 #include "cap_authority.h"
+#include "contracts/net_device_contract.h"
 #include "../../../contracts/execsvc/interface.h"
 #include "../../../contracts/toolsvc/interface.h"
 
@@ -51,16 +52,16 @@
 
 /* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (28u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (29u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
-#define AOS_AARCH64_PD_COUNT (27u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (28u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (27u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (28u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #else
-#define AOS_AARCH64_PD_COUNT (26u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (27u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
@@ -255,10 +256,12 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 205u,
             .self_svc_id    = SVC_ID_NET_SERVER,
-            .init_ep_count  = 3u,
+            .init_ep_count  = 4u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_NET_PD,     PD_CNODE_SLOT_NET_PD_EP,
+                  NET_PD_RIGHT_FASTPATH },
                 { SVC_ID_MODEL_TRANSPORT, PD_CNODE_SLOT_MODEL_TRANSPORT_EP },
             },
         },
@@ -381,6 +384,10 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
             },
+            .irq_count = 1u,
+            .irqs = {
+                { .irq_number = 48u, .ntfn_badge = 0x1u, .name = "virtio-net" },
+            },
         },
 
         /* pd[13] — framebuffer_pd (prio 206; OS-neutral framebuffer API) */
@@ -419,7 +426,7 @@ const system_desc_t system_desc_aarch64 = {
          * Runs just below fault_handler (255) and above all services.
          *
          * IRQ assignments (QEMU virt AArch64 GIC SPI numbers):
-         *   virtio-net:  SPI 16 → INTID 48 → irq_number=48, badge 0x1
+         *   virtio-net INTID 48 is owned exclusively by net_pd.
          *   virtio-blk0: SPI 17 → INTID 49 → irq_number=49, badge 0x2
          *   virtio-blk1: SPI 19 → INTID 51 → irq_number=51, badge 0x4
          *                (used by ubuntu guest for cloud-init seed disk on bus.3)
@@ -437,16 +444,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
             },
-            .irq_count =
-#if defined(AGENTOS_GUEST_BOTH)
-                1u,
-#else
-                2u,
-#endif
+            .irq_count = 1u,
             .irqs = {
-#if !defined(AGENTOS_GUEST_BOTH)
-                { .irq_number = 48u, .ntfn_badge = 0x1u, .name = "virtio-net" },
-#endif
                 { .irq_number = 79u, .ntfn_badge = 0x2u, .name = "virtio-blk" },
             },
             .mr_count = 1u,
@@ -469,9 +468,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
             },
-            .irq_count = 3u,
+            .irq_count = 2u,
             .irqs = {
-                { .irq_number = 48u, .ntfn_badge = 0x1u, .name = "virtio-net"  },
                 { .irq_number = 49u, .ntfn_badge = 0x2u, .name = "virtio-blk0" },
                 { .irq_number = 51u, .ntfn_badge = 0x4u, .name = "virtio-blk1" },
             },
@@ -646,7 +644,7 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 10u,
+            .init_ep_count  = 13u,
             .init_eps = {
                 { SVC_ID_EXEC_SERVER, 200u, EXECSVC_RIGHT_ALL },
                 { SVC_ID_EXEC_SERVER, 201u, EXECSVC_RIGHT_C11_COMPILE },
@@ -659,6 +657,9 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_AGENTFS,   133u },   /* raw AgentFS contract cap       */
                 { SVC_ID_CONTROLLER, 134u,
                   CONTROLLER_RIGHT_CAP_ADMIN | CONTROLLER_RIGHT_AGENT_TASK },
+                { SVC_ID_WG_NET,    135u },   /* native WireGuard contract cap */
+                { SVC_ID_NET_PD,    136u, NET_PD_RIGHT_FASTPATH },
+                { SVC_ID_NET_PD,    137u, 0u }, /* negative authority probe */
             },
         },
 #endif
@@ -711,6 +712,24 @@ const system_desc_t system_desc_aarch64 = {
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+            },
+        },
+
+        /* Capability-native WireGuard overlay. The PD receives the packet
+         * service endpoint explicitly; it cannot manufacture a NetCap through
+         * nameserver metadata and has no model/tool/memory/exec authority. */
+        {
+            .name           = "wg_net",
+            .elf_path       = "wg_net.elf",
+            .stack_size     = 0x10000u,
+            .cnode_size_bits = 8u,
+            .priority       = 180u,
+            .self_svc_id    = SVC_ID_WG_NET,
+            .init_ep_count  = 3u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP },
             },
         },
     },

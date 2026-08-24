@@ -37,7 +37,7 @@
 #include <stdint.h>
 
 /* ── Interface version ──────────────────────────────────────────────────── */
-#define NET_SVC_INTERFACE_VERSION       1
+#define NET_SVC_INTERFACE_VERSION       2
 
 /* ── Geometry / limits ──────────────────────────────────────────────────── */
 #define NET_SVC_MAX_VNICS               16u
@@ -46,6 +46,18 @@
 #define NET_SVC_SLOT_SIZE               0x4000u    /* 16 KB per vNIC slot */
 #define NET_SVC_HDR_SIZE                1024u      /* ring header bytes */
 #define NET_SVC_DATA_SIZE               (NET_SVC_SLOT_SIZE - NET_SVC_HDR_SIZE)
+#define NET_SVC_QUEUE_COUNT             4u
+#define NET_SVC_BATCH_MAX              32u
+
+/* Ownership is monotonic for each packet generation:
+ * FREE -> CLIENT -> DRIVER -> DEVICE -> COMPLETE -> FREE.
+ * Only net_pd may perform DRIVER/DEVICE transitions. A full queue returns
+ * NET_SVC_ERR_BACKPRESSURE; callers must retain and retry the packet. */
+#define NET_SVC_OWNER_FREE              0u
+#define NET_SVC_OWNER_CLIENT            1u
+#define NET_SVC_OWNER_DRIVER            2u
+#define NET_SVC_OWNER_DEVICE            3u
+#define NET_SVC_OWNER_COMPLETE          4u
 
 /* ── Protocol identifiers (NET_SVC_OP_BIND / NET_SVC_OP_CONNECT) ────────── */
 #define NET_SVC_PROTO_TCP               0u
@@ -199,6 +211,7 @@ typedef struct __attribute__((packed)) {
 #define NET_SVC_ERR_NO_PORT             6u   /* port not bound or already in use */
 #define NET_SVC_ERR_CONN_REFUSED        7u   /* remote refused connection */
 #define NET_SVC_ERR_TIMEOUT             8u   /* operation timed out */
+#define NET_SVC_ERR_BACKPRESSURE        9u   /* bounded ring is full; retry */
 
 /* ── Request / reply structs ─────────────────────────────────────────────── */
 

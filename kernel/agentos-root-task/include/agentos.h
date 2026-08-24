@@ -898,6 +898,8 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_NET_SOCKET_LISTEN           0x210D  /* MR1=sock_handle → MR0=ok */
 #define MSG_NET_SOCKET_ACCEPT           0x210E  /* MR1=sock_handle → MR0=ok MR1=new_h MR2=ip MR3=port */
 #define MSG_NET_SOCKET_SET_OPT          0x210F  /* MR1=sock_handle MR2=opt MR3=val → MR0=ok */
+#define MSG_NET_FASTPATH_SEND           0x2110  /* internal: offset,len -> queued */
+#define MSG_NET_FASTPATH_STATUS         0x2111  /* internal: queue/link status */
 
 /* ─── Block device PD opcodes (0x2200) ──────────────────────────────────── */
 #define MSG_BLOCK_OPEN                  0x2201  /* MR1=dev_id MR2=part → MR0=ok MR1=handle */

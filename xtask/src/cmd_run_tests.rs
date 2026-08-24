@@ -6,7 +6,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -85,6 +87,8 @@ struct QemuTestProcess {
     mcp_proxy: Option<std::process::Child>,
     serial_events: Receiver<SerialEvent>,
     serial_reader: JoinHandle<()>,
+    network_injector: Option<JoinHandle<()>>,
+    network_injector_stop: Option<Arc<AtomicBool>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,6 +156,12 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     if let Some(mut proxy) = qemu.mcp_proxy.take() {
         let _ = proxy.kill();
         let _ = proxy.wait();
+    }
+    if let Some(stop) = qemu.network_injector_stop.take() {
+        stop.store(true, Ordering::Release);
+    }
+    if let Some(injector) = qemu.network_injector.take() {
+        let _ = injector.join();
     }
     let _ = qemu.serial_reader.join();
 
@@ -473,9 +483,24 @@ fn spawn_qemu_test_image(
     let model_socket_path = log_path.with_extension("model.sock");
     let exec_socket_path = log_path.with_extension("exec.sock");
     let mcp_socket_path = log_path.with_extension("mcp.sock");
+    let mut network_fixture = None;
 
     let mut cmd = match board {
         "qemu_virt_aarch64" => {
+            let injector = std::net::UdpSocket::bind("127.0.0.1:0")
+                .context("failed to bind target-test Ethernet injector")?;
+            let injector_port = injector
+                .local_addr()
+                .context("failed to inspect target-test injector address")?
+                .port();
+            let qemu_port_probe = std::net::UdpSocket::bind("127.0.0.1:0")
+                .context("failed to reserve target-test QEMU network port")?;
+            let qemu_port = qemu_port_probe
+                .local_addr()
+                .context("failed to inspect target-test QEMU network address")?
+                .port();
+            drop(qemu_port_probe);
+            network_fixture = Some((injector, qemu_port));
             let mut c = std::process::Command::new("qemu-system-aarch64");
             c.arg("-machine")
                 .arg("virt,virtualization=on,highmem=off,secure=off")
@@ -500,12 +525,14 @@ fn spawn_qemu_test_image(
                 .arg(format!(
                     "loader,file={},addr=0x48000000",
                     build_dir.join("agentos.img").display()
-                ));
+                ))
+                .arg("-netdev")
+                .arg(format!(
+                    "socket,id=agentos_test_net,udp=127.0.0.1:{injector_port},localaddr=127.0.0.1:{qemu_port}"
+                ))
+                .arg("-device")
+                .arg("virtio-net-device,netdev=agentos_test_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off");
             if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
-                c.arg("-netdev")
-                    .arg("user,id=agentos_model_net")
-                    .arg("-device")
-                    .arg("virtio-net-device,netdev=agentos_model_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off");
                 c.arg("-chardev")
                     .arg(format!(
                         "socket,id=model_pd_char,path={},server=on,wait=off",
@@ -571,6 +598,23 @@ fn spawn_qemu_test_image(
         .spawn()
         .context("failed to spawn QEMU")?;
     println!("[xtask:run-tests] QEMU pid={}", child.id());
+    let network_injector_stop = network_fixture.as_ref().map(|_| {
+        Arc::new(AtomicBool::new(false))
+    });
+    let network_injector = network_fixture.map(|(socket, qemu_port)| {
+        let stop = Arc::clone(network_injector_stop.as_ref().expect("stop flag"));
+        std::thread::spawn(move || {
+            let destination = (std::net::Ipv4Addr::LOCALHOST, qemu_port);
+            let mut frame = [0u8; 60];
+            frame[..6].fill(0xff);
+            frame[6..12].copy_from_slice(&[0x02, 0, 0, 0, 0, 0x7f]);
+            frame[12..14].copy_from_slice(&[0x88, 0xb5]);
+            while !stop.load(Ordering::Acquire) {
+                let _ = socket.send_to(&frame, destination);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        })
+    });
     let model_proxy = if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
         let bridge_url = std::env::var("AGENTOS_MODEL_BRIDGE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:8790/v1/chat/completions".to_string());
@@ -676,6 +720,8 @@ fn spawn_qemu_test_image(
         mcp_proxy,
         serial_events,
         serial_reader,
+        network_injector,
+        network_injector_stop,
     })
 }
 

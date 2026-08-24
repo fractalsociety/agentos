@@ -13,7 +13,7 @@
 #   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
 #   make clean        — remove build artifacts for current board
 
-.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-mesh-controller-role test-agentctl-mesh test-agentos-mcp validate-headscale-role test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-codex-agent e2e-mesh e2e-mesh-freebsd e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools perf-gate perf-gate-aarch64 perf-gate-x86_64
+.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-native-net test-mesh-controller-role test-agentctl-mesh test-agentos-mcp validate-headscale-role test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-codex-agent e2e-mesh e2e-mesh-freebsd e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools perf-gate perf-gate-aarch64 perf-gate-x86_64
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -507,7 +507,7 @@ gate: test-host gate-aarch64 gate-x86_64
 
 # test-host: alias for the host-only integration suite.  Named explicitly so
 # callers and CI cannot mistake host-only coverage for target/QEMU proof.
-test-host: test-integration test-agentctl-mesh test-agentos-mcp
+test-host: test-integration test-native-net test-agentctl-mesh test-agentos-mcp
 
 test-agentos-mcp:
 	@cargo test -p agentos-mcp
@@ -515,6 +515,9 @@ test-agentos-mcp:
 
 e2e-codex-agent:
 	@sh tests/e2e/test_codex_agent.sh
+
+test-native-net:
+	@python3 tests/test_net_topology.py
 
 test-agentctl-mesh: test-mesh-controller-role
 	@$(MAKE) -C tools/agentctl test
@@ -538,6 +541,27 @@ sel4-test-image:
 
 run-tests:
 	@cargo xtask run-tests --board $(BOARD) --timeout-secs $(QEMU_TEST_TIMEOUT)
+
+# Performance gates must invoke the target TAP runner with both the normalized
+# report and the checked-in thresholds. Keeping these as real recipes prevents
+# a phony, recipe-less target from silently passing CI without measurements.
+perf-gate-aarch64:
+	@cargo xtask run-tests \
+		--board qemu_virt_aarch64 \
+		--timeout-secs $(QEMU_TEST_TIMEOUT) \
+		--perf-output build/perf-qemu_virt_aarch64.json \
+		--perf-thresholds performance/thresholds.json \
+		--require-perf
+
+perf-gate-x86_64:
+	@cargo xtask run-tests \
+		--board x86_64_generic \
+		--timeout-secs $(QEMU_TEST_TIMEOUT) \
+		--perf-output build/perf-x86_64_generic.json \
+		--perf-thresholds performance/thresholds.json \
+		--require-perf
+
+perf-gate: perf-gate-aarch64 perf-gate-x86_64
 
 # Build and boot each supported full guest OS, then prove the CC-PD API can
 # drain the serial console to a login prompt and inject input that the guest
@@ -632,6 +656,7 @@ test-integration:
 	    tests/test_guest_contract.c \
 	    tests/test_vm_multi_guest.c \
 	    tests/test_model_svc.c \
+	    tests/test_net_fastpath.c \
 	    tests/test_e13_agent_boot.c \
 	    tests/vibe/test_vibeos_contract.c; do \
 	    if gcc -I tests \

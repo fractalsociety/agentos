@@ -49,6 +49,8 @@
 #include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
 #include "../../kernel/agentos-root-task/include/cap_authority.h"
+#include "../../kernel/agentos-root-task/include/wg_net.h"
+#include "../../kernel/agentos-root-task/include/contracts/net_device_contract.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
  *
@@ -147,6 +149,9 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_TOOLSVC_CAP 132u
 #define TARGET_AGENTFS_CAP 133u
 #define TARGET_CONTROLLER_CAP 134u
+#define TARGET_WG_NET_CAP 135u
+#define TARGET_NET_FASTPATH_CAP 136u
+#define TARGET_NET_UNPRIV_CAP 137u
 #define TARGET_EXECSVC_CAP 200u
 #define TARGET_COMPILE_ONLY_EXECSVC_CAP 201u
 #define TARGET_TEST_RUNNER_CLIENT_ID 23u
@@ -176,6 +181,188 @@ static bool tr_equal(const char *a, const char *b, uint32_t len)
 {
     for (uint32_t i = 0u; i < len; i++) if (a[i] != b[i]) return false;
     return true;
+}
+
+/* ── WireGuard PD boot and authority proof ─────────────────────────────── */
+#define TARGET_WG_STAGING_VA 0x08000000UL
+
+static void target_wg_net_contract(void)
+{
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = OP_WG_HEALTH;
+    sel4_call((seL4_CPtr)TARGET_WG_NET_CAP, &req, &rep);
+    bool cold = rep.opcode == SEL4_ERR_OK
+        && tr_rd32(rep.data, 0u) == WG_OK
+        && tr_rd32(rep.data, 8u) == 0u;
+
+    volatile uint8_t *staging =
+        (volatile uint8_t *)(uintptr_t)TARGET_WG_STAGING_VA;
+    for (uint32_t i = 0u; i < WG_KEY_LEN; i++)
+        staging[i] = (uint8_t)(i + 1u);
+
+    tr_zero(&req, sizeof(req));
+    req.opcode = OP_WG_SET_PRIVKEY;
+    req.length = 4u;
+    sel4_call((seL4_CPtr)TARGET_WG_NET_CAP, &req, &rep);
+    bool set = rep.opcode == SEL4_ERR_OK
+        && tr_rd32(rep.data, 0u) == WG_OK;
+
+    tr_zero(&req, sizeof(req));
+    req.opcode = OP_WG_HEALTH;
+    sel4_call((seL4_CPtr)TARGET_WG_NET_CAP, &req, &rep);
+    bool live = rep.opcode == SEL4_ERR_OK
+        && tr_rd32(rep.data, 8u) == 1u;
+    bool pubkey_nonzero = false;
+    for (uint32_t i = 0u; i < WG_KEY_LEN; i++)
+        pubkey_nonzero |= staging[0x20u + i] != 0u;
+
+    if (cold && set && live && pubkey_nonzero)
+        _tf_ok("WireGuard PD boots and derives its public key on target");
+    else
+        _tf_fail_point(
+            "WireGuard PD boots and derives its public key on target",
+            "health, staging, or X25519 initialization failed");
+}
+
+static void target_net_fastpath_contract(void)
+{
+    sel4_msg_t req, rep;
+    _tf_puts("# net-fastpath: checking denied badge\n");
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_NET_FASTPATH_STATUS;
+    sel4_call((seL4_CPtr)TARGET_NET_UNPRIV_CAP, &req, &rep);
+    bool denied = rep.opcode == SEL4_ERR_PERM;
+
+    _tf_puts("# net-fastpath: checking privileged status\n");
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_NET_FASTPATH_STATUS;
+    sel4_call((seL4_CPtr)TARGET_NET_FASTPATH_CAP, &req, &rep);
+    bool ready = rep.opcode == SEL4_ERR_OK && rep.length >= 16u
+        && tr_rd32(rep.data, 0u) == 1u
+        && tr_rd32(rep.data, 4u) == NET_DMA_QUEUE_DEPTH;
+    uint32_t irq_before = tr_rd32(rep.data, 12u);
+    uint32_t rx_before = tr_rd32(rep.data, 36u);
+    uint8_t mac[6];
+    for (uint32_t i = 0u; i < 6u; i++) mac[i] = rep.data[40u + i];
+
+    volatile uint8_t *frame = (volatile uint8_t *)(uintptr_t)
+        (NET_DMA_ARENA_VA + 0x3F000u);
+    for (uint32_t i = 0u; i < 60u; i++) frame[i] = 0u;
+    for (uint32_t i = 0u; i < 6u; i++) frame[i] = 0xFFu;
+    for (uint32_t i = 0u; i < 6u; i++) frame[6u + i] = mac[i];
+    frame[12] = 0x08u; frame[13] = 0x06u; /* ARP */
+    frame[14] = 0x00u; frame[15] = 0x01u; /* Ethernet */
+    frame[16] = 0x08u; frame[17] = 0x00u; /* IPv4 */
+    frame[18] = 6u; frame[19] = 4u;
+    frame[20] = 0x00u; frame[21] = 0x01u; /* request */
+    for (uint32_t i = 0u; i < 6u; i++) frame[22u + i] = mac[i];
+    frame[28] = 10u; frame[29] = 0u; frame[30] = 2u; frame[31] = 15u;
+    frame[38] = 10u; frame[39] = 0u; frame[40] = 2u; frame[41] = 2u;
+
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_NET_FASTPATH_SEND;
+    req.length = sizeof(net_fastpath_send_req_t);
+    req.data[0] = 0x00u; req.data[1] = 0xF0u; req.data[2] = 0x03u;
+    req.data[4] = 60u;
+    _tf_puts("# net-fastpath: submitting frame\n");
+    sel4_call((seL4_CPtr)TARGET_NET_FASTPATH_CAP, &req, &rep);
+    bool queued = rep.opcode == SEL4_ERR_OK
+        && tr_rd32(rep.data, 0u) == 1u;
+
+    bool completed = false;
+    bool received = false;
+    _tf_puts("# net-fastpath: awaiting IRQ completion\n");
+    for (uint32_t attempt = 0u; attempt < 64u; attempt++) {
+        tr_zero(&req, sizeof(req));
+        req.opcode = MSG_NET_FASTPATH_STATUS;
+        sel4_call((seL4_CPtr)TARGET_NET_FASTPATH_CAP, &req, &rep);
+        if (rep.opcode == SEL4_ERR_OK
+            && tr_rd32(rep.data, 8u) == 0u
+            && tr_rd32(rep.data, 12u) > irq_before) {
+            completed = true;
+        }
+        if (rep.opcode == SEL4_ERR_OK
+            && tr_rd32(rep.data, 36u) > rx_before)
+            received = true;
+        if (completed && received) break;
+        seL4_Yield();
+    }
+
+    _tf_puts("# net-fastpath result denied="); _tf_put_uint(denied);
+    _tf_puts(" ready="); _tf_put_uint(ready);
+    _tf_puts(" queued="); _tf_put_uint(queued);
+    _tf_puts(" completed="); _tf_put_uint(completed);
+    _tf_puts(" received="); _tf_put_uint(received);
+    _tf_puts(" in_flight="); _tf_put_uint(tr_rd32(rep.data, 8u));
+    _tf_puts(" irq_before="); _tf_put_uint(irq_before);
+    _tf_puts(" irq_after="); _tf_put_uint(tr_rd32(rep.data, 12u));
+    _tf_puts(" stage="); _tf_put_uint(tr_rd32(rep.data, 16u));
+    _tf_puts(" magic="); _tf_put_uint(tr_rd32(rep.data, 20u));
+    _tf_puts(" version="); _tf_put_uint(tr_rd32(rep.data, 24u));
+    _tf_puts(" device="); _tf_put_uint(tr_rd32(rep.data, 28u));
+    _tf_puts(" detail="); _tf_put_uint(tr_rd32(rep.data, 32u));
+    _tf_puts(" rx_before="); _tf_put_uint(rx_before);
+    _tf_puts(" rx_after="); _tf_put_uint(tr_rd32(rep.data, 36u));
+    volatile uint16_t *tx_used_idx = (volatile uint16_t *)(uintptr_t)
+        (NET_DMA_ARENA_VA + NET_DMA_TX_USED_OFFSET + 2u);
+    _tf_puts(" used_idx="); _tf_put_uint(*tx_used_idx);
+    _tf_puts("\n");
+
+    if (denied && ready && queued && completed && received)
+        _tf_ok("net_pd completes IRQ-driven DMA transmit and receive");
+    else
+        _tf_fail_point(
+            "net_pd completes IRQ-driven DMA transmit and receive",
+            "authority, queue readiness, TX completion, or ARP RX failed");
+}
+
+#define TARGET_NET_PERF_BATCHES 12u
+#define TARGET_NET_PERF_PACKETS 64u
+#define TARGET_NET_PERF_METRIC "virtio_net_tx_irq_roundtrip"
+
+static void target_benchmark_net_fastpath(void)
+{
+    volatile uint8_t *frame = (volatile uint8_t *)(uintptr_t)
+        (NET_DMA_ARENA_VA + 0x3F000u);
+    uint32_t errors = 0u;
+
+    for (uint32_t batch = 0u; batch < TARGET_NET_PERF_BATCHES; batch++) {
+        uint32_t batch_errors = 0u;
+        target_emit_batch_marker("BEGIN", TARGET_NET_PERF_METRIC,
+                                 TARGET_NET_PERF_PACKETS, 0u);
+        for (uint32_t packet = 0u; packet < TARGET_NET_PERF_PACKETS; packet++) {
+            frame[14] = (uint8_t)batch;
+            frame[15] = (uint8_t)packet;
+            sel4_msg_t req, rep;
+            tr_zero(&req, sizeof(req));
+            req.opcode = MSG_NET_FASTPATH_SEND;
+            req.length = sizeof(net_fastpath_send_req_t);
+            req.data[0] = 0x00u; req.data[1] = 0xF0u; req.data[2] = 0x03u;
+            req.data[4] = 60u;
+            sel4_call((seL4_CPtr)TARGET_NET_FASTPATH_CAP, &req, &rep);
+            if (rep.opcode != SEL4_ERR_OK) batch_errors++;
+        }
+
+        for (uint32_t attempt = 0u; attempt < 64u; attempt++) {
+            sel4_msg_t req, rep;
+            tr_zero(&req, sizeof(req));
+            req.opcode = MSG_NET_FASTPATH_STATUS;
+            sel4_call((seL4_CPtr)TARGET_NET_FASTPATH_CAP, &req, &rep);
+            if (rep.opcode == SEL4_ERR_OK
+                && tr_rd32(rep.data, 8u) == 0u)
+                break;
+            if (attempt == 63u) batch_errors++;
+            seL4_Yield();
+        }
+        target_emit_batch_marker("END", TARGET_NET_PERF_METRIC,
+                                 TARGET_NET_PERF_PACKETS, batch_errors);
+        errors += batch_errors;
+    }
+    if (errors == 0u)
+        _tf_puts("# perf: VirtIO NIC packet-rate window complete\n");
+    else
+        _tf_puts("# perf: VirtIO NIC packet-rate window recorded errors\n");
 }
 
 static bool tr_contains(const char *haystack, uint32_t haystack_len,
@@ -1387,6 +1574,9 @@ void target_contract_runner_main(void)
 #endif
     target_benchmark_agent_harness();
     target_cap_broker_remaining_denials();
+    target_net_fastpath_contract();
+    target_benchmark_net_fastpath();
+    target_wg_net_contract();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_log_drain_tests((microkit_channel)CH_LOG_DRAIN);

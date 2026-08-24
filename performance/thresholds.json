@@ -15,6 +15,13 @@
         "p95_max": 15000000,
         "p99_max": 15000000,
         "max_max": 20000000
+      },
+      "virtio_net_tx_irq_roundtrip": {
+        "min_samples": 9,
+        "p50_max": 5000000,
+        "p95_max": 25000000,
+        "p99_max": 25000000,
+        "max_max": 30000000
       }
     },
     "x86_64_generic": {

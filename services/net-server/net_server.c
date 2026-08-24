@@ -193,6 +193,7 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 
 /* ── Contract header (opcode constants, NET_OK etc.) ─────────────────────── */
 #include "net_server.h"
+#include "contracts/net_device_contract.h"
 
 /* ── virtio-MMIO register offsets ───────────────────────────────────────── */
 #define VIRTIO_MMIO_MAGIC_VALUE     0x000u
@@ -213,7 +214,9 @@ uintptr_t net_packet_shmem_vaddr;
 uintptr_t net_mmio_vaddr;
 uintptr_t log_drain_rings_vaddr;
 uintptr_t vibe_staging_vaddr;
+static seL4_CPtr g_net_pd_ep;
 static seL4_CPtr g_model_transport_ep;
+static uint32_t  g_net_pd_link;
 
 /* ── Module state ────────────────────────────────────────────────────────── */
 static net_vnic_t  vnics[NET_MAX_VNICS];
@@ -273,40 +276,42 @@ static volatile net_vnic_ring_t *slot_ring(uint32_t shmem_slot) {
                                         + NET_SLOT_OFFSET(shmem_slot));
 }
 
-/* ── virtio-net probe ────────────────────────────────────────────────────── */
+/* ── Capability-scoped driver probe ─────────────────────────────────────── */
 static void probe_virtio_net(void) {
-    if (!net_mmio_vaddr) {
-        log_drain_write(16, 16, "[net_server] virtio-net: MMIO vaddr not mapped, stub mode\n");
+#ifndef AGENTOS_TEST_HOST
+    sel4_msg_t rep = {0};
+    uint32_t rc = sel4_client_call(g_net_pd_ep, MSG_NET_FASTPATH_STATUS,
+                                   (const void *)0, 0u, &rep);
+    if (rc == SEL4_ERR_OK && rep.length >= 16u
+        && data_rd32(rep.data, 0) != 0u
+        && data_rd32(rep.data, 4) == NET_DMA_QUEUE_DEPTH) {
+        net_hw_present = true;
+        g_net_pd_link = 1u;
+        log_drain_write(16, 16,
+            "[net_server] net_pd capability reports RX/TX queues ready\n");
         return;
     }
+#endif
+    net_hw_present = false;
+    g_net_pd_link = 0u;
+    log_drain_write(16, 16, "[net_server] net_pd queues unavailable\n");
+}
 
-    uint32_t magic     = mmio_read32(net_mmio_vaddr, VIRTIO_MMIO_MAGIC_VALUE);
-    uint32_t version   = mmio_read32(net_mmio_vaddr, VIRTIO_MMIO_VERSION);
-    uint32_t device_id = mmio_read32(net_mmio_vaddr, VIRTIO_MMIO_DEVICE_ID);
-
-    if (magic != VIRTIO_MMIO_MAGIC || version != 2u
-            || device_id != VIRTIO_NET_DEVICE_ID) {
-        log_drain_write(16, 16, "[net_server] virtio-net not detected (magic=");
-        log_hex(magic);
-        log_drain_write(16, 16, " ver=");
-        log_dec(version);
-        log_drain_write(16, 16, " dev=");
-        log_dec(device_id);
-        log_drain_write(16, 16, "), stub mode\n");
-        return;
-    }
-
-    net_hw_present = true;
-
-    mmio_write32(net_mmio_vaddr, VIRTIO_MMIO_STATUS, VIRTIO_STATUS_ACKNOWLEDGE);
-    mmio_write32(net_mmio_vaddr, VIRTIO_MMIO_STATUS,
-                 VIRTIO_STATUS_ACKNOWLEDGE | VIRTIO_STATUS_DRIVER);
-
-    log_drain_write(16, 16, "[net_server] virtio-net detected at ");
-    log_hex((uint32_t)net_mmio_vaddr);
-    log_drain_write(16, 16, ", hw present\n");
-
-    net_server_lwip_init(net_mmio_vaddr, 0u, 0u);
+static uint32_t net_pd_submit(uint32_t packet_offset, uint32_t packet_len)
+{
+#ifndef AGENTOS_TEST_HOST
+    net_fastpath_send_req_t request = {
+        .packet_offset = packet_offset,
+        .packet_len = packet_len,
+    };
+    sel4_msg_t rep = {0};
+    return sel4_client_call(g_net_pd_ep, MSG_NET_FASTPATH_SEND,
+                            &request, sizeof(request), &rep);
+#else
+    (void)packet_offset;
+    (void)packet_len;
+    return SEL4_ERR_NOT_FOUND;
+#endif
 }
 
 /* ── vNIC slot allocation ────────────────────────────────────────────────── */
@@ -566,17 +571,15 @@ static uint32_t handle_vnic_send(sel4_badge_t badge __attribute__((unused)),
         }
     } else {
         if (net_hw_present) {
-#ifndef AGENTOS_TEST_HOST
-            const uint8_t *pkt = (const uint8_t *)(net_packet_shmem_vaddr + pkt_offset);
-            struct pbuf *p = pbuf_alloc(PBUF_LINK, (u16_t)pkt_len, PBUF_RAM);
-            if (p) {
-                uint8_t *dst = (uint8_t *)p->payload;
-                for (uint16_t i = 0; i < (uint16_t)pkt_len; i++)
-                    dst[i] = pkt[i];
-                g_netif.linkoutput(&g_netif, p);
-                pbuf_free(p);
+            uint32_t driver_rc = net_pd_submit(pkt_offset, pkt_len);
+            if (driver_rc != SEL4_ERR_OK) {
+                data_wr32(rep->data, 0,
+                          driver_rc == SEL4_ERR_NO_MEM
+                              ? NET_ERR_BACKPRESSURE : NET_ERR_NOT_FOUND);
+                data_wr32(rep->data, 4, 0u);
+                rep->length = 8u;
+                return driver_rc;
             }
-#endif
         } else {
             log_drain_write(16, 16, "[net_server] TX dropped (no hw): vnic=");
             log_dec(vnic_id);
@@ -1187,6 +1190,9 @@ void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     /* Root maps the same arena into ModelSvc and NetServer.  The historical
      * variable name is retained because OP_NET_HTTP_POST already uses it. */
     vibe_staging_vaddr = (uintptr_t)0x60000000u;
+    net_packet_shmem_vaddr = (uintptr_t)0x30000000u;
+    net_mmio_vaddr = 0u;
+    g_net_pd_ep = (seL4_CPtr)16u;
     g_model_transport_ep = (seL4_CPtr)21u;
     agentos_log_boot("net_server");
     log_drain_write(16, 16, "[net_server] Initialising NetServer PD (raw seL4 IPC)\n");
