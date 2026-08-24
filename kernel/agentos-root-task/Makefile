@@ -342,6 +342,10 @@ ifdef SEL4_TEST_IMAGE
   IMAGES += test_runner.elf
 endif
 
+ifdef AGENTOS_LIVE_MODEL_TEST
+  CFLAGS += -DAGENTOS_LIVE_MODEL_TEST=1
+endif
+
 # Guest OS selection: none (default) | linux/ubuntu | freebsd | both
 GUEST_OS ?= none
 GUEST_CONFIG_STAMP := $(BUILD_DIR)/guest_config.stamp
@@ -374,8 +378,8 @@ endif
 $(GUEST_CONFIG_STAMP): FORCE
 	@mkdir -p $(BUILD_DIR)
 	@tmp="$@.tmp"; \
-	printf 'ARCH=%s\nBOARD=%s\nGUEST_OS=%s\nFAULT_INJECT=%s\nSEL4_TEST_IMAGE=%s\n' \
-		'$(ARCH)' '$(AGENTOS_BOARD)' '$(GUEST_OS)' '$(FAULT_INJECT)' '$(SEL4_TEST_IMAGE)' > "$$tmp"; \
+	printf 'ARCH=%s\nBOARD=%s\nGUEST_OS=%s\nFAULT_INJECT=%s\nSEL4_TEST_IMAGE=%s\nLIVE_MODEL_TEST=%s\n' \
+		'$(ARCH)' '$(AGENTOS_BOARD)' '$(GUEST_OS)' '$(FAULT_INJECT)' '$(SEL4_TEST_IMAGE)' '$(AGENTOS_LIVE_MODEL_TEST)' > "$$tmp"; \
 	printf 'SEL4_PROFILE=%s\n' '$(SEL4_PROFILE)' >> "$$tmp"; \
 	if test -f "$@" && cmp -s "$$tmp" "$@"; then rm -f "$$tmp"; else mv "$$tmp" "$@"; fi
 
@@ -387,6 +391,7 @@ $(BUILD_DIR)/rt_system_desc_x86_64.o: $(GUEST_CONFIG_STAMP)
 endif
 $(BUILD_DIR)/cc_pd.o: $(GUEST_CONFIG_STAMP)
 $(BUILD_DIR)/vm_manager.o: $(GUEST_CONFIG_STAMP)
+$(BUILD_DIR)/target_contract_runner.o: $(GUEST_CONFIG_STAMP)
 
 IMAGE_FILE  := $(BUILD_DIR)/agentos.img
 

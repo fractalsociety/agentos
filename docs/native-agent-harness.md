@@ -105,6 +105,29 @@ offset validation, and per-worker object capabilities.
 
 ## Reproducible QEMU measurement
 
+For a live OpenAI-compatible model, keep the API credential on the host and
+run the bounded bridge. `AGENTOS_MODEL_NAME` is required because the native
+registry's `fast` route is a logical route name, not an upstream model name.
+
+```sh
+export OPENAI_API_KEY='...'
+export AGENTOS_MODEL_NAME='<upstream-model-id>'
+python3 tools/model_bridge.py
+```
+
+In another terminal, enable the opt-in live target assertion:
+
+```sh
+AGENTOS_LIVE_MODEL_TEST=1 cargo xtask run-tests \
+  --board qemu_virt_aarch64 --timeout-secs 300
+```
+
+The bridge binds to loopback by default, accepts only the chat-completions
+path, bounds request/response sizes, converts AgentOS's integer temperature
+encoding, rewrites the logical model route, and injects the bearer credential.
+The key never enters the guest or the worker CSpace. A non-HTTPS upstream is
+rejected unless explicitly allowed for a trusted local model server.
+
 Run:
 
 ```sh

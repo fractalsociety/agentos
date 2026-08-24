@@ -536,6 +536,63 @@ static void target_agent_harness_memory_loop(void)
                        "verified edit-loop metrics were incomplete");
 }
 
+#ifdef AGENTOS_LIVE_MODEL_TEST
+static void target_agent_harness_live_model(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "fast";
+    static const char prompt[] =
+        "Create src/live.txt containing exactly live-agentos followed by a newline. "
+        "Use memory_write, then verify that path with the exact expected text, "
+        "then return final only after verification succeeds.";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 4u;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY
+        | HARNESS_CAP_EXEC;
+    submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
+    submit.max_steps = 8u;
+    submit.authority_epoch = 1u;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 2048u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    bool completed = rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE;
+
+    struct harness_req_task result_req = {.task_id = 4u};
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_RESULT;
+    req.length = sizeof(result_req);
+    tr_copy(req.data, &result_req, sizeof(result_req));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (completed && rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 12u) > 0u
+        && tr_rd32(rep.data, 24u) >= 2u
+        && tr_rd32(rep.data, 28u) >= 1u
+        && (int32_t)tr_rd32(rep.data, 40u) == 0)
+        _tf_ok("AgentHarness completes live-model edit and ExecCap verification");
+    else
+        _tf_fail_point("AgentHarness completes live-model edit and ExecCap verification",
+                       "live model did not complete the capability-gated protocol");
+}
+#endif
+
 static void target_agentfs_workspace_contract(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)AGENTFS_SHMEM_VADDR;
@@ -769,6 +826,9 @@ void target_contract_runner_main(void)
     target_agentfs_workspace_contract();
     target_agent_harness_tool_loop();
     target_agent_harness_memory_loop();
+#ifdef AGENTOS_LIVE_MODEL_TEST
+    target_agent_harness_live_model();
+#endif
     target_benchmark_agent_harness();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);

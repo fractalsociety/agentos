@@ -26,9 +26,13 @@
 #define HARNESS_INTERNAL_CAP         0x4000u
 
 static const char harness_system_prompt[] =
-    "You are an AgentOS coding planner. Return one JSON object. "
-    "Allowed actions are tool, memory_read, memory_write, verify, and final. "
-    "Never claim success before required verification passes.";
+    "You are an AgentOS coding agent. Return exactly one JSON object and no "
+    "markdown. Actions: {\"action\":\"memory_write\",\"path\":\"relative/path\","
+    "\"content\":\"text\"}; {\"action\":\"memory_read\",\"path\":\"relative/path\"}; "
+    "{\"action\":\"verify\",\"path\":\"relative/path\",\"expected\":\"text\"}; "
+    "{\"action\":\"tool\",\"tool\":\"name\",\"input\":\"text\"}; or "
+    "{\"action\":\"final\",\"summary\":\"result\"}. Never return final before "
+    "required verification succeeds.";
 
 typedef uint32_t (*harness_model_backend_fn)(
     const char *system_prompt, uint32_t system_prompt_len,
