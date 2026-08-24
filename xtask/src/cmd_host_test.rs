@@ -54,6 +54,17 @@ const SUITES: &[Suite] = &[
         extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
+        // agentos-2th: generated mesh frames and RemoteGrant rejection cases.
+        name: "test_remote_grants",
+        sources: &[
+            "tests/security/test_remote_grants.c",
+            "kernel/agentos-root-task/src/auth_server.c",
+            "kernel/agentos-root-task/src/cap_broker.c",
+            "kernel/agentos-root-task/src/mesh_agent.c",
+        ],
+        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
+    },
+    Suite {
         // agentos-d02: companion v1.1 ABI, marshalling, grant, and cursor contract.
         name: "test_companion_export_contract",
         sources: &["tests/contracts/companion_export_test.c"],

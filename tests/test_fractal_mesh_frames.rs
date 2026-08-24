@@ -179,6 +179,13 @@ fn malformed_lengths_are_rejected_before_payload_access() {
     let mut truncated = frame(EVENT, 8, 2);
     truncated.truncate(HEADER_BYTES - 1);
     assert_eq!(decode(&truncated, false), Err(FrameError::MalformedLength));
+
+    let mut wrong_header = frame(TASK, 0, 3);
+    put_u32(&mut wrong_header, 8, (HEADER_BYTES - 1) as u32);
+    assert_eq!(
+        decode(&wrong_header, false),
+        Err(FrameError::MalformedLength)
+    );
 }
 
 #[test]

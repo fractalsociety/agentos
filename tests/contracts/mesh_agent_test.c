@@ -39,6 +39,33 @@ static void mesh_contract_tests(void)
                    MSG_MESH_REVOCATION_EPOCH != MSG_MESH_FRAME_ACK,
                "mesh: remote IPC opcodes are distinct");
 
+    mesh_check(sizeof(NodeID) == MESH_ID_BYTES &&
+                   sizeof(ServiceID) == MESH_ID_BYTES &&
+                   sizeof(SpaceID) == MESH_ID_BYTES &&
+                   sizeof(RemoteSessionHandle) == 16u,
+               "mesh: distributed IDs and async session handles are fixed width");
+    mesh_check(sizeof(ServiceAdvertisement) > MESH_SIGNATURE_BYTES &&
+                   sizeof(RemoteGrant) > MESH_SIGNATURE_BYTES &&
+                   sizeof(ExecutionLease) > MESH_SIGNATURE_BYTES,
+               "mesh: signed advertisements, grants, and leases are typed records");
+
+    struct mesh_agent_req_session_resume resume = {0};
+    resume.handle.session_id = 41u;
+    resume.handle.generation = 2u;
+    resume.last_received_sequence = 9u;
+    resume.last_completed_sequence = 7u;
+    mesh_check(resume.handle.generation != 0u &&
+                   resume.last_completed_sequence <= resume.last_received_sequence,
+               "mesh: reconnect resume carries an ordered async cursor");
+    struct mesh_agent_req_session_cancel cancel = {
+        .handle = resume.handle,
+        .cancellation_id = 8u,
+        .reason = MESH_CANCEL_REQUESTED,
+    };
+    mesh_check(cancel.cancellation_id != 0u &&
+                   cancel.reason == MESH_CANCEL_REQUESTED,
+               "mesh: cancellation is explicit and session-scoped");
+
     mesh_frame_header_t header = {
         .magic = MESH_FRAME_MAGIC,
         .schema_version = MESH_WIRE_SCHEMA_VERSION,
@@ -52,6 +79,9 @@ static void mesh_contract_tests(void)
     header.payload_bytes = MESH_MAX_FRAME_PAYLOAD + 1u;
     mesh_check(!mesh_frame_header_valid(&header, MESH_MAX_FRAME_BYTES + 1u),
                "mesh: malformed payload length rejected");
+    header.payload_bytes = 4u;
+    mesh_check(!mesh_frame_header_valid(&header, MESH_FRAME_HEADER_BYTES - 1u),
+               "mesh: truncated header is rejected before payload access");
 
     mesh_replay_cursor_t replay = { .highest_sequence = 7u };
     mesh_check(!mesh_sequence_accept(&replay, 7u),
@@ -87,7 +117,8 @@ static void mesh_contract_tests(void)
     mesh_check(!mesh_flow_allows(&flow, 1u),
                "mesh: bounded frame credit rejects overflow");
     mesh_check(mesh_frame_type_is_datagram_safe(MESH_FRAME_HINT) &&
-                   !mesh_frame_type_is_datagram_safe(MESH_FRAME_TASK),
+                   !mesh_frame_type_is_datagram_safe(MESH_FRAME_TASK) &&
+                   !mesh_frame_type_is_datagram_safe(MESH_FRAME_CONTROL),
                "mesh: datagrams restricted to disposable hints");
 }
 

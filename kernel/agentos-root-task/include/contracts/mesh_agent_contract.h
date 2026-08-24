@@ -19,151 +19,16 @@
 
 #pragma once
 #include "../agentos.h"
+#include "../remote_grant.h"
 #include "eventbus_contract.h"
 
 /* ─── Generated wire schema constants ───────────────────────────────────── */
 
-#define MESH_CONTRACT_VERSION          1u
-#define MESH_WIRE_SCHEMA_VERSION       1u
-#define MESH_WIRE_ENCODING_GENERATED   1u
-#define MESH_WIRE_LITTLE_ENDIAN        1u
-#define MESH_WIRE_LENGTH_DELIMITED     1u
-
-#define MESH_ID_BYTES                  32u
-#define MESH_SIGNATURE_BYTES           64u
-#define MESH_RESUME_TOKEN_BYTES        32u
-#define MESH_NONCE_BYTES               32u
-#define MESH_ENDPOINT_BYTES            64u
 #define MESH_FRAME_HEADER_BYTES        64u
 #define MESH_MAX_FRAME_PAYLOAD         (64u * 1024u)
 #define MESH_MAX_FRAME_BYTES           (MESH_FRAME_HEADER_BYTES + MESH_MAX_FRAME_PAYLOAD)
 #define MESH_MAX_INFLIGHT_FRAMES       64u
 #define MESH_MAX_INFLIGHT_BYTES        (1024u * 1024u)
-
-/* ─── Immutable distributed identities ──────────────────────────────────── */
-
-struct mesh_node_id {
-    uint8_t bytes[MESH_ID_BYTES];
-};
-typedef struct mesh_node_id mesh_node_id_t;
-
-struct mesh_service_id {
-    uint8_t bytes[MESH_ID_BYTES];
-};
-typedef struct mesh_service_id mesh_service_id_t;
-
-struct mesh_space_id {
-    uint8_t bytes[MESH_ID_BYTES];
-};
-typedef struct mesh_space_id mesh_space_id_t;
-
-struct mesh_object_id {
-    uint8_t bytes[MESH_ID_BYTES];
-};
-typedef struct mesh_object_id mesh_object_id_t;
-
-struct mesh_agent_id {
-    uint8_t bytes[MESH_ID_BYTES];
-};
-typedef struct mesh_agent_id mesh_agent_id_t;
-
-struct mesh_interface_hash {
-    uint8_t bytes[MESH_ID_BYTES];
-};
-typedef struct mesh_interface_hash mesh_interface_hash_t;
-
-struct mesh_remote_session_handle {
-    uint64_t session_id;
-    uint64_t generation;
-};
-typedef struct mesh_remote_session_handle mesh_remote_session_handle_t;
-
-struct mesh_resume_token {
-    uint8_t bytes[MESH_RESUME_TOKEN_BYTES];
-};
-typedef struct mesh_resume_token mesh_resume_token_t;
-
-/* A network message never contains a local endpoint badge.  A badge is
- * derived by the receiving CapBroker after grant validation and remains a
- * local capability in the receiving address space. */
-#define MESH_REMOTE_GRANT_HAS_LOCAL_BADGE 0u
-#define MESH_REMOTE_WIRE_HAS_BADGE        0u
-
-/* ─── Signed discovery and authority records ────────────────────────────── */
-
-#define MESH_ADVERTISEMENT_SIGNATURE_DOMAIN "agentos/fractal-service-ad/1"
-
-struct mesh_service_advertisement {
-    mesh_service_id_t service_id;
-    mesh_node_id_t provider_node;
-    mesh_interface_hash_t interface_hash;
-    uint8_t endpoint[MESH_ENDPOINT_BYTES];
-    uint64_t required_capability;
-    uint64_t health_epoch;
-    uint64_t expiry_unix_ms;
-    uint8_t signature[MESH_SIGNATURE_BYTES];
-};
-typedef struct mesh_service_advertisement mesh_service_advertisement_t;
-
-enum mesh_effect_class {
-    MESH_EFFECT_READ_ONLY = 0u,
-    MESH_EFFECT_LOCAL      = 1u,
-    MESH_EFFECT_SHARED     = 2u,
-    MESH_EFFECT_EXTERNAL   = 3u,
-};
-
-#define MESH_GRANT_SCOPE_OBJECTS      (1u << 0)
-#define MESH_GRANT_SCOPE_SPACE_ROOT  (1u << 1)
-#define MESH_GRANT_SCOPE_MAILBOX     (1u << 2)
-
-struct mesh_remote_grant {
-    mesh_node_id_t issuer;
-    mesh_node_id_t subject_node;
-    mesh_agent_id_t subject_agent;
-    mesh_node_id_t audience_node;
-    mesh_space_id_t space_id;
-    mesh_interface_hash_t interface_hash;
-    mesh_object_id_t object_scope;
-    uint64_t operation_mask;
-    uint32_t scope_flags;
-    uint32_t effect_class;
-    uint64_t budget_units;
-    uint64_t expiry_unix_ms;
-    uint64_t authority_epoch;
-    uint64_t revocation_epoch;
-    uint8_t nonce[MESH_NONCE_BYTES];
-    uint8_t signature[MESH_SIGNATURE_BYTES];
-};
-typedef struct mesh_remote_grant mesh_remote_grant_t;
-
-struct mesh_revocation_epoch {
-    uint64_t authority_epoch;
-    uint64_t revocation_epoch;
-};
-typedef struct mesh_revocation_epoch mesh_revocation_epoch_t;
-
-struct mesh_execution_lease {
-    uint64_t lease_id;
-    uint64_t fence_epoch;
-    uint64_t expires_unix_ms;
-    uint64_t authority_epoch;
-    uint64_t revocation_epoch;
-    mesh_node_id_t holder_node;
-    mesh_agent_id_t subject_agent;
-    mesh_space_id_t space_id;
-    uint8_t nonce[MESH_NONCE_BYTES];
-    uint8_t signature[MESH_SIGNATURE_BYTES];
-};
-typedef struct mesh_execution_lease mesh_execution_lease_t;
-
-/* Schema-facing names used by the language-neutral contract documentation. */
-typedef mesh_node_id_t NodeID;
-typedef mesh_service_id_t ServiceID;
-typedef mesh_space_id_t SpaceID;
-typedef mesh_remote_session_handle_t RemoteSessionHandle;
-typedef mesh_service_advertisement_t ServiceAdvertisement;
-typedef mesh_remote_grant_t RemoteGrant;
-typedef mesh_execution_lease_t ExecutionLease;
 
 /* ─── Typed, length-delimited semantic frames ───────────────────────────── */
 

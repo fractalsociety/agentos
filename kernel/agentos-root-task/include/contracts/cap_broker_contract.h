@@ -6,7 +6,8 @@
  * cap_audit_log for attestation.
  *
  * Channel: (controller → cap_broker; mapped via monitor dispatch)
- * Opcodes: MSG_CAP_GRANT, MSG_CAP_REVOKE_GRANT, MSG_CAP_GRANT_STATUS, MSG_CAP_LIST
+ * Opcodes: MSG_CAP_GRANT, MSG_CAP_REVOKE_GRANT, MSG_CAP_GRANT_STATUS, MSG_CAP_LIST,
+ *          MSG_CAP_REMOTE_DERIVE, MSG_CAP_REMOTE_REVOKE_EPOCH
  *          OP_CAP_BROKER_RELOAD, OP_CAP_STATUS (see agentos.h)
  *
  * Invariants:
@@ -57,6 +58,10 @@ struct cap_broker_req_remote_derive {
     uint32_t grant_length;
 };
 
+struct cap_broker_req_remote_revoke_epoch {
+    mesh_revocation_epoch_t epoch;
+};
+
 /* ─── Reply structs ──────────────────────────────────────────────────────── */
 
 struct cap_broker_reply_grant {
@@ -86,6 +91,11 @@ struct cap_broker_reply_remote_derive {
     uint64_t local_badge;       /* receiving-node CSpace only; never serialized */
 };
 
+struct cap_broker_reply_remote_revoke_epoch {
+    uint32_t ok;
+    uint32_t revoked_entries;
+};
+
 #define CAP_BROKER_REMOTE_MAX_BADGES 64u
 #define CAP_BROKER_REMOTE_BADGE_PREFIX UINT64_C(0xCB00000000000000)
 
@@ -110,6 +120,7 @@ struct cap_broker_remote_state {
     uint64_t mesh_agent_caller_badge;
     uint32_t next_slot;
     uint32_t generation;
+    mesh_revocation_epoch_t current_epoch;
 };
 typedef struct cap_broker_remote_state cap_broker_remote_state_t;
 
@@ -156,4 +167,7 @@ enum cap_broker_error {
     CAP_BROKER_ERR_REMOTE_CALLER = 9,
     CAP_BROKER_ERR_REMOTE_SCOPE = 10,
     CAP_BROKER_ERR_REMOTE_STALE = 11,
+    CAP_BROKER_ERR_REMOTE_REPLAY = 12,
+    CAP_BROKER_ERR_REMOTE_AUDIENCE = 13,
+    CAP_BROKER_ERR_REMOTE_MALFORMED = 14,
 };

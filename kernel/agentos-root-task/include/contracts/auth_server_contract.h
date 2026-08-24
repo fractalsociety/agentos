@@ -9,7 +9,8 @@
  *
  * Channel: CH_AUTH_SERVER = 29 (from controller perspective)
  * Opcodes: OP_AUTH_LOGIN, OP_AUTH_VERIFY, OP_AUTH_REVOKE,
- *          OP_AUTH_ADDUSER, OP_AUTH_STATUS
+ *          OP_AUTH_ADDUSER, OP_AUTH_STATUS, OP_AUTH_REMOTE_VERIFY,
+ *          OP_AUTH_REMOTE_ADVERTISEMENT_VERIFY, OP_AUTH_REMOTE_EPOCH
  *
  * Invariants:
  *   - User name for ADDUSER is a NUL-terminated string placed in shared
@@ -36,6 +37,9 @@
 #define OP_AUTH_REVOKE   0xF2u
 #define OP_AUTH_ADDUSER  0xF3u
 #define OP_AUTH_STATUS   0xF4u
+#define OP_AUTH_REMOTE_VERIFY 0xF5u
+#define OP_AUTH_REMOTE_ADVERTISEMENT_VERIFY 0xF6u
+#define OP_AUTH_REMOTE_EPOCH 0xF7u
 
 /* ─── Request structs ────────────────────────────────────────────────────── */
 
@@ -72,6 +76,16 @@ struct auth_server_req_remote_verify {
     uint32_t record_length;
 };
 
+struct auth_server_req_remote_epoch {
+    uint32_t op;                 /* OP_AUTH_REMOTE_EPOCH */
+};
+
+struct auth_server_req_remote_advertisement {
+    uint32_t op;                 /* OP_AUTH_REMOTE_ADVERTISEMENT_VERIFY */
+    uint32_t reserved;
+    mesh_service_advertisement_t advertisement;
+};
+
 /* ─── Reply structs ──────────────────────────────────────────────────────── */
 
 struct auth_server_reply_login {
@@ -102,6 +116,20 @@ struct auth_server_reply_status {
 struct auth_server_reply_remote_verify {
     uint32_t ok;                 /* AUTH_OK or AUTH_REMOTE_ERR_* */
     uint32_t issuer_slot;        /* local trust-store slot; never wire authority */
+    uint64_t authority_epoch;    /* current trust authority generation */
+    uint64_t revocation_epoch;   /* current remote revocation fence */
+};
+
+struct auth_server_reply_remote_epoch {
+    uint32_t ok;
+    uint32_t reserved;
+    mesh_revocation_epoch_t epoch;
+};
+
+struct auth_server_reply_remote_advertisement {
+    uint32_t ok;                 /* AUTH_OK or AUTH_REMOTE_ERR_* */
+    uint32_t issuer_slot;
+    uint64_t health_epoch;
 };
 
 /* ─── Error codes ────────────────────────────────────────────────────────── */
@@ -117,6 +145,7 @@ enum auth_server_error {
 enum auth_remote_record_kind {
     AUTH_REMOTE_RECORD_GRANT = 1u,
     AUTH_REMOTE_RECORD_LEASE = 2u,
+    AUTH_REMOTE_RECORD_ADVERTISEMENT = 3u,
 };
 
 enum auth_remote_error {
@@ -126,6 +155,8 @@ enum auth_remote_error {
     AUTH_REMOTE_ERR_SIGNATURE = 3u,
     AUTH_REMOTE_ERR_REVOKED_ISSUER = 4u,
     AUTH_REMOTE_ERR_TABLE_FULL = 5u,
+    AUTH_REMOTE_ERR_MALFORMED = 6u,
+    AUTH_REMOTE_ERR_STALE_EPOCH = 7u,
 };
 
 #define AUTH_REMOTE_MAX_ISSUERS 16u
@@ -162,3 +193,5 @@ uint32_t auth_server_verify_remote_grant(
 uint32_t auth_server_verify_execution_lease(
     const mesh_execution_lease_t *lease,
     const mesh_remote_grant_t *grant, void *authority);
+uint32_t auth_server_verify_service_advertisement(
+    const mesh_service_advertisement_t *advertisement, void *authority);

@@ -650,6 +650,8 @@ typedef struct __attribute__((packed)) {
 #define OP_AUTH_ADDUSER  0xF3u  /* MR1=uid, MR2=cap_mask → MR0=ok */
 #define OP_AUTH_STATUS   0xF4u  /* → MR0=ok, MR1=active_tokens, MR2=active_users */
 #define OP_AUTH_REMOTE_VERIFY 0xF5u /* verify signed remote authority from auth shmem */
+#define OP_AUTH_REMOTE_ADVERTISEMENT_VERIFY 0xF6u /* verify signed ServiceAdvertisement */
+#define OP_AUTH_REMOTE_EPOCH 0xF7u /* read current remote authority/revocation epochs */
 
 /* Channel ID for auth_server (from controller perspective) */
 #define CH_AUTH_SERVER      29u
@@ -907,6 +909,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_CAP_GRANT_STATUS            0x1A03  /* MR1=target_pd → MR0=cap_mask MR1=version */
 #define MSG_CAP_LIST                    0x1A04  /* → MR0=count; cap_entry_t[] in shmem */
 #define MSG_CAP_REMOTE_DERIVE           0x1A05  /* derive a narrow local-only endpoint badge */
+#define MSG_CAP_REMOTE_REVOKE_EPOCH     0x1A06  /* fence remote-derived badges by epoch */
 
 /* ─── OOMKiller contract opcodes (0x1B00) ───────────────────────────────── */
 #define MSG_OOM_STATUS                  0x1B01  /* → MR0=pressure MR1=candidates MR2=killed */
