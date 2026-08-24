@@ -44,6 +44,19 @@
 #define WG_MAX_PEERS        16u   /* maximum simultaneous WireGuard peers */
 #define WG_KEY_LEN          32u   /* Curve25519 key length in bytes */
 
+/* Shared staging geometry. NetServer receives only the page-aligned packet
+ * view beginning at WG_STAGING_TX_OFF; it never maps the key pages below it. */
+#define WG_STAGING_VA             0x08000000UL
+#define WG_STAGING_SIZE           0x00100000u
+#define WG_STAGING_PRIVKEY_OFF    0x000000u
+#define WG_STAGING_PUBKEY_OFF     0x000020u
+#define WG_STAGING_PEER_KEY_OFF   0x001000u
+#define WG_STAGING_TX_OFF         0x002000u
+#define WG_STAGING_RX_OFF         0x010000u
+#define WG_STAGING_TX_MAX         0x00E000u
+#define WG_STAGING_RX_MAX         0x00E000u
+#define WG_STAGING_INGRESS_OFF    0x011000u
+
 /* ── Keepalive interval (WireGuard spec §6.1) ────────────────────────────── */
 #define WG_KEEPALIVE_SECS   25u   /* send keepalive if no traffic for 25s */
 

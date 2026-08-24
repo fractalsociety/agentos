@@ -32,7 +32,13 @@
 #define NET_DMA_TX_USED_OFFSET      0x47000u
 #define NET_DMA_RX_BUFFER_OFFSET    0x50000u
 #define NET_DMA_TX_BUFFER_OFFSET    0x70000u
-#define NET_DMA_LAYOUT_END          0x90000u
+#define NET_DMA_DRIVER_LAYOUT_END   0x90000u
+
+/* NetServer-only frame scratch. This sits outside both the public client
+ * arena and net_pd's queue/packet storage. */
+#define NET_DMA_WG_FRAME_OFFSET     0x90000u
+#define NET_DMA_WG_FRAME_BYTES      2048u
+#define NET_DMA_LAYOUT_END          (NET_DMA_WG_FRAME_OFFSET + NET_DMA_WG_FRAME_BYTES)
 
 /* Low badge bits minted by the root task. Only NetServer receives this bit;
  * a tailnet identity or ordinary NetCap cannot invoke driver-internal DMA. */

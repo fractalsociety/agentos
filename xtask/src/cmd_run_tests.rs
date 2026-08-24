@@ -6,9 +6,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -89,6 +89,23 @@ struct QemuTestProcess {
     serial_reader: JoinHandle<()>,
     network_injector: Option<JoinHandle<()>>,
     network_injector_stop: Option<Arc<AtomicBool>>,
+    network_wg_seen: Option<Arc<AtomicBool>>,
+    network_frames_seen: Option<Arc<AtomicU64>>,
+    network_last_frame: Option<Arc<Mutex<Vec<u8>>>>,
+}
+
+fn is_wireguard_ipv4_udp_frame(received: &[u8]) -> bool {
+    if received.len() < 46 {
+        return false;
+    }
+    let max_prefix = received.len().saturating_sub(46).min(16);
+    (0..=max_prefix).any(|prefix| {
+        received[prefix + 12..prefix + 14] == [0x08, 0x00]
+            && received[prefix + 23] == 17
+            && (received[prefix + 34..prefix + 36] == [0xca, 0x6c]
+                || received[prefix + 36..prefix + 38] == [0xca, 0x6c])
+            && matches!(received[prefix + 42], 1 | 2 | 4)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -163,6 +180,27 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     if let Some(injector) = qemu.network_injector.take() {
         let _ = injector.join();
     }
+    let mut network_wg_seen = qemu
+        .network_wg_seen
+        .as_ref()
+        .map(|seen| seen.load(Ordering::Acquire));
+    let network_frames_seen = qemu
+        .network_frames_seen
+        .as_ref()
+        .map(|count| count.load(Ordering::Acquire));
+    let network_last_frame = qemu.network_last_frame.as_ref().and_then(|frame| {
+        frame.lock().ok().map(|bytes| {
+            if is_wireguard_ipv4_udp_frame(&bytes) {
+                network_wg_seen = Some(true);
+            }
+            bytes
+                .iter()
+                .take(64)
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+    });
     let _ = qemu.serial_reader.join();
 
     let text = std::fs::read_to_string(&log_path).unwrap_or_default();
@@ -171,6 +209,14 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     println!("=====================\n");
 
     let measured_records = wait?;
+    if args.board == "qemu_virt_aarch64" {
+        anyhow::ensure!(
+            network_wg_seen == Some(true),
+            "target fixture observed no outbound WireGuard IPv4/UDP frame ({} total Ethernet datagrams received; last={})",
+            network_frames_seen.unwrap_or(0),
+            network_last_frame.as_deref().unwrap_or("none")
+        );
+    }
     if args.board == "qemu_virt_aarch64" {
         validate_boot_health(&text)?;
     }
@@ -598,19 +644,56 @@ fn spawn_qemu_test_image(
         .spawn()
         .context("failed to spawn QEMU")?;
     println!("[xtask:run-tests] QEMU pid={}", child.id());
-    let network_injector_stop = network_fixture.as_ref().map(|_| {
-        Arc::new(AtomicBool::new(false))
-    });
+    let network_injector_stop = network_fixture
+        .as_ref()
+        .map(|_| Arc::new(AtomicBool::new(false)));
+    let network_wg_seen = network_fixture
+        .as_ref()
+        .map(|_| Arc::new(AtomicBool::new(false)));
+    let network_frames_seen = network_fixture
+        .as_ref()
+        .map(|_| Arc::new(AtomicU64::new(0)));
+    let network_last_frame = network_fixture
+        .as_ref()
+        .map(|_| Arc::new(Mutex::new(Vec::new())));
     let network_injector = network_fixture.map(|(socket, qemu_port)| {
         let stop = Arc::clone(network_injector_stop.as_ref().expect("stop flag"));
+        let wg_seen = Arc::clone(network_wg_seen.as_ref().expect("WG observation flag"));
+        let frames_seen = Arc::clone(
+            network_frames_seen
+                .as_ref()
+                .expect("Ethernet observation counter"),
+        );
+        let last_frame = Arc::clone(
+            network_last_frame
+                .as_ref()
+                .expect("Ethernet observation sample"),
+        );
         std::thread::spawn(move || {
             let destination = (std::net::Ipv4Addr::LOCALHOST, qemu_port);
             let mut frame = [0u8; 60];
             frame[..6].fill(0xff);
             frame[6..12].copy_from_slice(&[0x02, 0, 0, 0, 0, 0x7f]);
             frame[12..14].copy_from_slice(&[0x88, 0xb5]);
-            while !stop.load(Ordering::Acquire) {
-                let _ = socket.send_to(&frame, destination);
+            let _ = socket.set_nonblocking(true);
+            let mut received = [0u8; 2048];
+            loop {
+                if !stop.load(Ordering::Acquire) {
+                    let _ = socket.send_to(&frame, destination);
+                }
+                while let Ok((len, _)) = socket.recv_from(&mut received) {
+                    frames_seen.fetch_add(1, Ordering::Relaxed);
+                    if let Ok(mut sample) = last_frame.lock() {
+                        sample.clear();
+                        sample.extend_from_slice(&received[..len]);
+                    }
+                    if is_wireguard_ipv4_udp_frame(&received[..len]) {
+                        wg_seen.store(true, Ordering::Release);
+                    }
+                }
+                if stop.load(Ordering::Acquire) {
+                    break;
+                }
                 std::thread::sleep(Duration::from_millis(10));
             }
         })
@@ -722,6 +805,9 @@ fn spawn_qemu_test_image(
         serial_reader,
         network_injector,
         network_injector_stop,
+        network_wg_seen,
+        network_frames_seen,
+        network_last_frame,
     })
 }
 

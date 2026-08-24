@@ -214,9 +214,12 @@ uintptr_t net_packet_shmem_vaddr;
 uintptr_t net_mmio_vaddr;
 uintptr_t log_drain_rings_vaddr;
 uintptr_t vibe_staging_vaddr;
+uintptr_t wg_packet_view_vaddr;
 static seL4_CPtr g_net_pd_ep;
 static seL4_CPtr g_model_transport_ep;
 static uint32_t  g_net_pd_link;
+static uint8_t   g_net_mac[6];
+static uint16_t  g_ipv4_id;
 
 /* ── Module state ────────────────────────────────────────────────────────── */
 static net_vnic_t  vnics[NET_MAX_VNICS];
@@ -285,6 +288,8 @@ static void probe_virtio_net(void) {
     if (rc == SEL4_ERR_OK && rep.length >= 16u
         && data_rd32(rep.data, 0) != 0u
         && data_rd32(rep.data, 4) == NET_DMA_QUEUE_DEPTH) {
+        if (rep.length >= 46u)
+            for (uint32_t i = 0u; i < 6u; i++) g_net_mac[i] = rep.data[40u + i];
         net_hw_present = true;
         g_net_pd_link = 1u;
         log_drain_write(16, 16,
@@ -310,8 +315,47 @@ static uint32_t net_pd_submit(uint32_t packet_offset, uint32_t packet_len)
 #else
     (void)packet_offset;
     (void)packet_len;
-    return SEL4_ERR_NOT_FOUND;
+    return SEL4_ERR_OK;
 #endif
+}
+
+static bool net_badge_has(sel4_badge_t badge, uint32_t right)
+{
+    return (((uint32_t)(uint64_t)badge) & right) != 0u;
+}
+
+static bool net_require_badge(sel4_badge_t badge, uint32_t right,
+                              sel4_msg_t *rep, uint32_t reply_len)
+{
+    if (net_badge_has(badge, right)) return true;
+    for (uint32_t i = 0u; i < reply_len && i < sizeof(rep->data); i++)
+        rep->data[i] = 0u;
+    data_wr32(rep->data, 0, NET_ERR_PERM);
+    rep->length = reply_len;
+    return false;
+}
+
+static void net_wr16be(volatile uint8_t *dst, uint16_t value)
+{
+    dst[0] = (uint8_t)(value >> 8u);
+    dst[1] = (uint8_t)value;
+}
+
+static void net_wr32be(volatile uint8_t *dst, uint32_t value)
+{
+    dst[0] = (uint8_t)(value >> 24u);
+    dst[1] = (uint8_t)(value >> 16u);
+    dst[2] = (uint8_t)(value >> 8u);
+    dst[3] = (uint8_t)value;
+}
+
+static uint16_t net_ipv4_checksum(volatile const uint8_t *header)
+{
+    uint32_t sum = 0u;
+    for (uint32_t i = 0u; i < 20u; i += 2u)
+        sum += ((uint32_t)header[i] << 8u) | header[i + 1u];
+    while ((sum >> 16u) != 0u) sum = (sum & 0xffffu) + (sum >> 16u);
+    return (uint16_t)~sum;
 }
 
 /* ── vNIC slot allocation ────────────────────────────────────────────────── */
@@ -383,11 +427,13 @@ static void register_with_nameserver(seL4_CPtr ns_ep) {
  *   req.data[4..7]  = cap_classes
  *   req.data[8..11] = caller_pd
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_vnic_create(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_vnic_create(sel4_badge_t badge,
                                     const sel4_msg_t *req,
                                     sel4_msg_t *rep,
                                     void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
+        return SEL4_ERR_PERM;
     uint32_t requested_id = data_rd32(req->data, 0);
     uint32_t cap_classes  = data_rd32(req->data, 4);
     uint32_t caller_pd    = data_rd32(req->data, 8);
@@ -459,11 +505,13 @@ static uint32_t handle_vnic_create(sel4_badge_t badge __attribute__((unused)),
  * Handler: OP_NET_VNIC_DESTROY
  *   req.data[0..3] = vnic_id
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_vnic_destroy(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_vnic_destroy(sel4_badge_t badge,
                                      const sel4_msg_t *req,
                                      sel4_msg_t *rep,
                                      void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id = data_rd32(req->data, 0);
 
     net_vnic_t *v = find_vnic(vnic_id);
@@ -498,11 +546,13 @@ static uint32_t handle_vnic_destroy(sel4_badge_t badge __attribute__((unused)),
  *   req.data[4..7]  = pkt_offset
  *   req.data[8..11] = pkt_len
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_vnic_send(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_vnic_send(sel4_badge_t badge,
                                   const sel4_msg_t *req,
                                   sel4_msg_t *rep,
                                   void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 8u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id    = data_rd32(req->data, 0);
     uint32_t pkt_offset = data_rd32(req->data, 4);
     uint32_t pkt_len    = data_rd32(req->data, 8);
@@ -598,16 +648,116 @@ static uint32_t handle_vnic_send(sel4_badge_t badge __attribute__((unused)),
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Handler: OP_NET_WG_UDP_SEND
+ *
+ * Authority comes exclusively from the endpoint badge. The payload comes
+ * from the packet-only WireGuard mapping and is wrapped in an IPv4 UDP frame
+ * in NetServer's private DMA scratch before the sole NIC owner is invoked.
+ * The broadcast L2 destination makes the current socket-backed target fixture
+ * deterministic; routed endpoint/ARP resolution remains an underlay concern.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+#define NET_WG_IPV4_HEADER_BYTES 20u
+#define NET_WG_UDP_HEADER_BYTES   8u
+#define NET_WG_ETH_HEADER_BYTES  14u
+#define NET_WG_UDP_SOURCE_PORT   51820u
+#define NET_WG_LOCAL_IPV4_BE     0x0A00020Fu
+#define NET_WG_MAX_PAYLOAD       (1500u - NET_WG_IPV4_HEADER_BYTES \
+                                  - NET_WG_UDP_HEADER_BYTES)
+
+static uint32_t handle_wg_udp_send(sel4_badge_t badge,
+                                   const sel4_msg_t *req,
+                                   sel4_msg_t *rep,
+                                   void *ctx __attribute__((unused)))
+{
+    if (!net_badge_has(badge, NET_SERVER_RIGHT_WG_DATAGRAM)) {
+        data_wr32(rep->data, 0, NET_ERR_PERM);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8u;
+        return SEL4_ERR_PERM;
+    }
+
+    uint32_t packet_off = data_rd32(req->data, 0);
+    uint32_t payload_len = data_rd32(req->data, 4);
+    uint32_t endpoint_ip = data_rd32(req->data, 8);
+    uint32_t endpoint_port = data_rd32(req->data, 12);
+    if (!wg_packet_view_vaddr || payload_len == 0u
+        || payload_len > NET_WG_MAX_PAYLOAD
+        || packet_off < NET_WG_PACKET_BASE_OFF
+        || packet_off >= NET_WG_TX_LIMIT_OFF
+        || payload_len > NET_WG_TX_LIMIT_OFF - packet_off
+        || endpoint_ip == 0u || endpoint_port == 0u || endpoint_port > 65535u) {
+        data_wr32(rep->data, 0, NET_ERR_INVAL);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8u;
+        return SEL4_ERR_BAD_ARG;
+    }
+
+    volatile uint8_t *frame = NET_SHMEM + NET_DMA_WG_FRAME_OFFSET;
+    volatile const uint8_t *payload =
+        (volatile const uint8_t *)(wg_packet_view_vaddr
+            + packet_off - NET_WG_PACKET_BASE_OFF);
+    for (uint32_t i = 0u; i < 6u; i++) frame[i] = 0xffu;
+    for (uint32_t i = 0u; i < 6u; i++) frame[6u + i] = g_net_mac[i];
+    frame[12] = 0x08u;
+    frame[13] = 0x00u;
+
+    volatile uint8_t *ip = frame + NET_WG_ETH_HEADER_BYTES;
+    for (uint32_t i = 0u; i < NET_WG_IPV4_HEADER_BYTES; i++) ip[i] = 0u;
+    ip[0] = 0x45u;
+    uint16_t ip_len = (uint16_t)(NET_WG_IPV4_HEADER_BYTES
+        + NET_WG_UDP_HEADER_BYTES + payload_len);
+    net_wr16be(ip + 2u, ip_len);
+    net_wr16be(ip + 4u, ++g_ipv4_id);
+    ip[8] = 64u;
+    ip[9] = 17u;
+    net_wr32be(ip + 12u, NET_WG_LOCAL_IPV4_BE);
+    net_wr32be(ip + 16u, endpoint_ip);
+    net_wr16be(ip + 10u, net_ipv4_checksum(ip));
+
+    volatile uint8_t *udp = ip + NET_WG_IPV4_HEADER_BYTES;
+    net_wr16be(udp, NET_WG_UDP_SOURCE_PORT);
+    net_wr16be(udp + 2u, (uint16_t)endpoint_port);
+    net_wr16be(udp + 4u, (uint16_t)(NET_WG_UDP_HEADER_BYTES + payload_len));
+    net_wr16be(udp + 6u, 0u); /* valid for IPv4; AEAD authenticates WG payload */
+    for (uint32_t i = 0u; i < payload_len; i++)
+        udp[NET_WG_UDP_HEADER_BYTES + i] = payload[i];
+
+    uint32_t frame_len = NET_WG_ETH_HEADER_BYTES + (uint32_t)ip_len;
+    while (frame_len < 60u) frame[frame_len++] = 0u;
+    if (!net_hw_present) {
+        data_wr32(rep->data, 0, NET_ERR_NOT_FOUND);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8u;
+        return SEL4_ERR_NOT_FOUND;
+    }
+    uint32_t driver_rc = net_pd_submit(NET_DMA_WG_FRAME_OFFSET, frame_len);
+    if (driver_rc != SEL4_ERR_OK) {
+        data_wr32(rep->data, 0, driver_rc == SEL4_ERR_NO_MEM
+            ? NET_ERR_BACKPRESSURE : NET_ERR_NOT_FOUND);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8u;
+        return driver_rc;
+    }
+
+    data_wr32(rep->data, 0, NET_OK);
+    data_wr32(rep->data, 4, payload_len);
+    rep->length = 8u;
+    return SEL4_ERR_OK;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Handler: OP_NET_VNIC_RECV
  *   req.data[0..3]  = vnic_id
  *   req.data[4..7]  = buf_offset
  *   req.data[8..11] = max_len
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_vnic_recv(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_vnic_recv(sel4_badge_t badge,
                                   const sel4_msg_t *req,
                                   sel4_msg_t *rep,
                                   void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 8u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id    = data_rd32(req->data, 0);
     uint32_t buf_offset = data_rd32(req->data, 4);
     uint32_t max_len    = data_rd32(req->data, 8);
@@ -645,11 +795,13 @@ static uint32_t handle_vnic_recv(sel4_badge_t badge __attribute__((unused)),
  *   req.data[4..7]  = port
  *   req.data[8..11] = protocol
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_net_bind(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_bind(sel4_badge_t badge,
                                  const sel4_msg_t *req,
                                  sel4_msg_t *rep,
                                  void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id  = data_rd32(req->data, 0);
     uint32_t port     = data_rd32(req->data, 4);
     uint32_t protocol = data_rd32(req->data, 8);
@@ -696,11 +848,13 @@ static uint32_t handle_net_bind(sel4_badge_t badge __attribute__((unused)),
  *   req.data[8..11] = dest_port
  *   req.data[12..15]= protocol
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_net_connect(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_connect(sel4_badge_t badge,
                                     const sel4_msg_t *req,
                                     sel4_msg_t *rep,
                                     void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 8u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id   = data_rd32(req->data,  0);
     uint32_t dest_ip   = data_rd32(req->data,  4);
     uint32_t dest_port = data_rd32(req->data,  8);
@@ -736,11 +890,13 @@ static uint32_t handle_net_connect(sel4_badge_t badge __attribute__((unused)),
  * Handler: OP_NET_STATUS
  *   req.data[0..3] = vnic_id  (0xFFFFFFFF = global)
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_net_status(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_status(sel4_badge_t badge,
                                    const sel4_msg_t *req,
                                    sel4_msg_t *rep,
                                    void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id = data_rd32(req->data, 0);
 
     if (vnic_id == 0xFFFFFFFFu) {
@@ -779,11 +935,13 @@ static uint32_t handle_net_status(sel4_badge_t badge __attribute__((unused)),
  *   req.data[0..3] = vnic_id
  *   req.data[4..7] = acl_flags
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_net_set_acl(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_set_acl(sel4_badge_t badge,
                                     const sel4_msg_t *req,
                                     sel4_msg_t *rep,
                                     void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
+        return SEL4_ERR_PERM;
     uint32_t vnic_id   = data_rd32(req->data, 0);
     uint32_t acl_flags = data_rd32(req->data, 4);
 
@@ -829,11 +987,13 @@ static uint32_t handle_net_health(sel4_badge_t badge __attribute__((unused)),
  * Handler: OP_NET_CONN_STATE
  *   req.data[0] = vnic_id (uint8)
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_net_conn_state(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_conn_state(sel4_badge_t badge,
                                        const sel4_msg_t *req,
                                        sel4_msg_t *rep,
                                        void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 8u))
+        return SEL4_ERR_PERM;
     uint8_t vid = (uint8_t)data_rd32(req->data, 0);
     data_wr32(rep->data, 0, NET_OK);
     data_wr32(rep->data, 4, (uint32_t)lwip_conn_state(vid));
@@ -845,11 +1005,13 @@ static uint32_t handle_net_conn_state(sel4_badge_t badge __attribute__((unused))
  * Handler: OP_NET_TCP_CLOSE
  *   req.data[0] = vnic_id (uint8)
  * ═══════════════════════════════════════════════════════════════════════════ */
-static uint32_t handle_net_tcp_close(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_tcp_close(sel4_badge_t badge,
                                       const sel4_msg_t *req,
                                       sel4_msg_t *rep,
                                       void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
+        return SEL4_ERR_PERM;
     uint8_t vid = (uint8_t)data_rd32(req->data, 0);
 #ifndef AGENTOS_TEST_HOST
     if (vid < NET_MAX_VNICS && g_conns[vid].tcp) {
@@ -896,11 +1058,13 @@ static uint32_t buf_append_dec_h(uint8_t *dst, uint32_t pos, uint32_t cap, uint3
     return buf_append_h(dst, pos, cap, &tmp[i], (uint32_t)(11 - i));
 }
 
-static uint32_t handle_net_http_post(sel4_badge_t badge __attribute__((unused)),
+static uint32_t handle_net_http_post(sel4_badge_t badge,
                                       const sel4_msg_t *req,
                                       sel4_msg_t *rep,
                                       void *ctx __attribute__((unused)))
 {
+    if (!net_require_badge(badge, NET_SERVER_RIGHT_MODEL_HTTP, rep, 12u))
+        return SEL4_ERR_PERM;
     uint32_t url_offset  = data_rd32(req->data,  0);
     uint32_t url_len     = data_rd32(req->data,  4);
     uint32_t body_offset = data_rd32(req->data,  8);
@@ -1147,6 +1311,9 @@ static void net_server_test_init(void) {
     }
     active_vnic_count = 0;
     net_hw_present    = false;
+    g_ipv4_id         = 0u;
+    g_net_mac[0] = 0x52u; g_net_mac[1] = 0x54u; g_net_mac[2] = 0x00u;
+    g_net_mac[3] = 0x12u; g_net_mac[4] = 0x34u; g_net_mac[5] = 0x56u;
 
     sel4_server_init(&g_srv, 0u);
     sel4_server_register(&g_srv, OP_NET_VNIC_CREATE,  handle_vnic_create,    NULL);
@@ -1161,6 +1328,7 @@ static void net_server_test_init(void) {
     sel4_server_register(&g_srv, OP_NET_HTTP_POST,    handle_net_http_post,  NULL);
     sel4_server_register(&g_srv, OP_NET_CONN_STATE,   handle_net_conn_state, NULL);
     sel4_server_register(&g_srv, OP_NET_TCP_CLOSE,    handle_net_tcp_close,  NULL);
+    sel4_server_register(&g_srv, OP_NET_WG_UDP_SEND,  handle_wg_udp_send,     NULL);
 }
 
 /* ── dispatch helper for tests ───────────────────────────────────────────── */
@@ -1191,6 +1359,7 @@ void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
      * variable name is retained because OP_NET_HTTP_POST already uses it. */
     vibe_staging_vaddr = (uintptr_t)0x60000000u;
     net_packet_shmem_vaddr = (uintptr_t)0x30000000u;
+    wg_packet_view_vaddr = (uintptr_t)NET_WG_PACKET_VIEW_VADDR;
     net_mmio_vaddr = 0u;
     g_net_pd_ep = (seL4_CPtr)16u;
     g_model_transport_ep = (seL4_CPtr)21u;

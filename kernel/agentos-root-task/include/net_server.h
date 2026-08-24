@@ -66,6 +66,12 @@ typedef struct {
 #define NET_ACL_ALLOW_INBOUND   (1u << 1)  /* may receive inbound packets */
 #define NET_ACL_INTERNET        (1u << 2)  /* may reach non-loopback addresses */
 
+/* Immutable low badge bits minted by the root task. Network identity and
+ * packet contents are never accepted as authority. */
+#define NET_SERVER_RIGHT_VNIC_ADMIN    (1u << 0)
+#define NET_SERVER_RIGHT_MODEL_HTTP    (1u << 1)
+#define NET_SERVER_RIGHT_WG_DATAGRAM   (1u << 2)
+
 /* ── Protocol identifiers (OP_NET_BIND / OP_NET_CONNECT) ────────────────── */
 #define NET_PROTO_TCP           0u
 #define NET_PROTO_UDP           1u
@@ -106,6 +112,24 @@ typedef struct {
  *   MR0 = result
  */
 #define OP_NET_TCP_CLOSE        0xBAu
+
+/*
+ * OP_NET_WG_UDP_SEND (0xBB) — send one already-encrypted WireGuard datagram.
+ * Only an endpoint carrying NET_SERVER_RIGHT_WG_DATAGRAM may invoke it.
+ *   MR1 = packet_offset (absolute offset in wg staging packet window)
+ *   MR2 = packet_len    (WireGuard payload, max 1472 bytes)
+ *   MR3 = endpoint_ip_be
+ *   MR4 = endpoint_port (host byte order)
+ * Reply: MR0 = result; MR1 = encrypted payload bytes accepted.
+ */
+#define OP_NET_WG_UDP_SEND      0xBBu
+
+/* NetServer maps only these packet pages from wg staging. The first two pages
+ * containing private/static/ephemeral provisioning bytes are absent. */
+#define NET_WG_PACKET_VIEW_VADDR 0x31000000UL
+#define NET_WG_PACKET_BASE_OFF   0x00002000u
+#define NET_WG_PACKET_VIEW_BYTES 0x0001C000u
+#define NET_WG_TX_LIMIT_OFF      0x00010000u
 
 /* ── IPC Opcodes ─────────────────────────────────────────────────────────── */
 

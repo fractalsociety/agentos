@@ -795,10 +795,14 @@ static uint32_t handle_fastpath_send(sel4_badge_t badge,
     uint32_t len = data_rd32(req->data, 4);
     if (!hw_present || fastpath == (netfp_state_t *)0)
         return SEL4_ERR_NOT_FOUND;
+    bool client_frame = offset >= NETPD_SLOT_HDR_SIZE
+        && offset < NET_DMA_CLIENT_BYTES
+        && len <= NET_DMA_CLIENT_BYTES - offset;
+    bool wg_frame = offset >= NET_DMA_WG_FRAME_OFFSET
+        && offset < NET_DMA_WG_FRAME_OFFSET + NET_DMA_WG_FRAME_BYTES
+        && len <= NET_DMA_WG_FRAME_OFFSET + NET_DMA_WG_FRAME_BYTES - offset;
     if (len == 0u || len > NET_DMA_MAX_FRAME_BYTES
-        || offset < NETPD_SLOT_HDR_SIZE
-        || offset >= NET_DMA_CLIENT_BYTES
-        || len > NET_DMA_CLIENT_BYTES - offset)
+        || (!client_frame && !wg_frame))
         return SEL4_ERR_BAD_ARG;
     const uint8_t *frame = (const uint8_t *)(net_pd_shmem_vaddr + offset);
     if (virtio_submit_tx(frame, len) != 0) return SEL4_ERR_NO_MEM;

@@ -40,6 +40,7 @@
 #include "system_desc.h"
 #include "cap_authority.h"
 #include "contracts/net_device_contract.h"
+#include "net_server.h"
 #include "../../../contracts/execsvc/interface.h"
 #include "../../../contracts/toolsvc/interface.h"
 
@@ -279,7 +280,8 @@ const system_desc_t system_desc_aarch64 = {
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
-                { SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP },
+                { SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP,
+                  NET_SERVER_RIGHT_MODEL_HTTP },
             },
         },
 
@@ -664,7 +666,7 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 15u,
+            .init_ep_count  = 17u,
             .init_eps = {
                 { SVC_ID_EXEC_SERVER, 200u, EXECSVC_RIGHT_ALL },
                 { SVC_ID_EXEC_SERVER, 201u, EXECSVC_RIGHT_C11_COMPILE },
@@ -680,6 +682,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_WG_NET,    135u },   /* native WireGuard contract cap */
                 { SVC_ID_NET_PD,    136u, NET_PD_RIGHT_FASTPATH },
                 { SVC_ID_NET_PD,    137u, 0u }, /* negative authority probe */
+                { SVC_ID_NET_SERVER, 138u, NET_SERVER_RIGHT_WG_DATAGRAM },
+                { SVC_ID_NET_SERVER, 139u, 0u }, /* negative WG probe */
                 { SVC_ID_INIT_AGENT, 140u }, /* composition contract */
                 { SVC_ID_READ_ONLY_HARNESS, 141u }, /* minimal profile */
             },
@@ -751,7 +755,8 @@ const system_desc_t system_desc_aarch64 = {
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
-                { SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP },
+                { SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP,
+                  NET_SERVER_RIGHT_WG_DATAGRAM },
             },
         },
     },

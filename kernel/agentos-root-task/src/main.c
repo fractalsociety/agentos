@@ -47,6 +47,8 @@
 #include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
 #include "contracts/agent_harness_contract.h"
 #include "contracts/net_device_contract.h"
+#include "wg_net.h"
+#include "net_server.h"
 #include "cap_authority.h"
 #include "contracts/agentfs_contract.h"
 #include "../../../contracts/execsvc/interface.h"
@@ -594,8 +596,6 @@ static void boot_setup_irqs(const pd_desc_t *pd,
 #define NET_PD_MMIO_VA       0x10010000UL
 #define NET_SHARED_ARENA_VA  NET_DMA_ARENA_VA
 #define NET_SHARED_ARENA_SIZE (1u << seL4_ARCH_LargePageBits)
-#define WG_STAGING_VA         0x08000000UL
-#define WG_STAGING_SIZE       0x00100000u
 #define WG_STAGING_PAGES      (WG_STAGING_SIZE / 4096u)
 #define FREEBSD_VIRTIO_MMIO_BUS31_PAGE_PA  0x0A003000UL
 #define FREEBSD_VIRTIO_MMIO_BUS31_PAGE_VA  0x0A003000UL
@@ -2273,6 +2273,20 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts("[rt] WireGuard staging map pd=");
             dbg_puts(pd->name);
             dbg_puts(" err=");
+            dbg_hex((seL4_Word)we);
+            dbg_puts("\n");
+        }
+
+        /* NetServer receives only WireGuard packet pages 2..29. Pages 0..1
+         * contain static/private/ephemeral material and are deliberately not
+         * present in its VSpace. */
+        if (name_eq(pd->name, "net_server")) {
+            seL4_Error we = pd_vspace_map_shared_pages(
+                vspace, (seL4_Word)NET_WG_PACKET_VIEW_VADDR,
+                NET_WG_PACKET_VIEW_BYTES, 1,
+                &g_wg_staging_frames[NET_WG_PACKET_BASE_OFF / 4096u],
+                NET_WG_PACKET_VIEW_BYTES / 4096u);
+            dbg_puts("[rt] WireGuard packet-only map pd=net_server err=");
             dbg_hex((seL4_Word)we);
             dbg_puts("\n");
         }

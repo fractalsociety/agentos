@@ -172,8 +172,6 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 #define AGENTOS_DEBUG 1
 #include "agentos.h"
 #include "system_desc.h"
-#include "wg_net.h"
-#include "net_server.h"
 #include "monocypher.h"
 #include "sel4_ipc.h"
 #include "sel4_server.h"
@@ -198,76 +196,17 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 
 #endif /* AGENTOS_TEST_HOST */
 
+/* Host and production builds both take staging geometry, opcodes, and
+ * peer layout from wg_net.h so session tests stay aligned with the
+ * packet-only NetServer handoff (keys below WG_STAGING_TX_OFF). */
+#include "wg_net.h"
 #include "wireguard_counter.h"
 #include "wireguard_noise.h"
-
-/* ── WireGuard / wg_net constants (identical values to old version) ──────── */
-#ifndef WG_MAX_PEERS
-#define WG_MAX_PEERS        16u
-#define WG_KEY_LEN          32u
-#define WG_KEEPALIVE_SECS   25u
-#define OP_WG_ADD_PEER      0xD0u
-#define OP_WG_REMOVE_PEER   0xD1u
-#define OP_WG_SEND          0xD2u
-#define OP_WG_RECV          0xD3u
-#define OP_WG_STATUS        0xD4u
-#define OP_WG_SET_PRIVKEY   0xD5u
-#define OP_WG_HEALTH        0xD6u
-#define OP_WG_HANDSHAKE_START 0xD7u
-#define OP_WG_INGEST          0xD8u
-#define WG_OK               0u
-#define WG_ERR_NOPEER       1u
-#define WG_ERR_NOKEY        2u
-#define WG_ERR_FULL         3u
-#define WG_ERR_CRYPTO       4u
-#define WG_ERR_NOSESSION    5u
-typedef struct {
-    uint8_t   peer_id;
-    bool      active;
-    uint8_t   pubkey[WG_KEY_LEN];
-    uint8_t   preshared_key[WG_KEY_LEN];
-    uint32_t  endpoint_ip;
-    uint16_t  endpoint_port;
-    uint8_t   _ep_pad[2];
-    uint32_t  allowed_ip;
-    uint32_t  allowed_mask;
-    uint64_t  tx_bytes;
-    uint64_t  rx_bytes;
-    uint64_t  tx_counter;
-    wg_replay_window_t rx_replay;
-    wg_noise_handshake_t handshake;
-    uint8_t   send_key[WG_KEY_LEN];
-    uint8_t   receive_key[WG_KEY_LEN];
-    uint32_t  send_index;
-    uint32_t  receive_index;
-    bool      session_established;
-    uint8_t   _session_pad[3];
-    uint8_t   last_timestamp[WG_NOISE_TIMESTAMP_LEN];
-    uint32_t  last_handshake;
-    uint8_t   _pad[4];
-} wg_peer_t;
-#endif
-
-/* ── net_server OP constants needed for outbound calls ───────────────────── */
-#ifndef OP_NET_VNIC_SEND
-#define OP_NET_VNIC_SEND   0xB2u
-#define OP_NET_VNIC_RECV   0xB3u
-#define NET_OK             0u
-#endif
+#include "net_server.h"
 
 /* ── Staging region virtual address ──────────────────────────────────────── */
 uintptr_t wg_staging_vaddr;
 #define WG_STAGING ((volatile uint8_t *)wg_staging_vaddr)
-
-/* Staging sub-region offsets */
-#define WG_STAGING_PRIVKEY_OFF   0x000000UL
-#define WG_STAGING_PUBKEY_OFF    0x000020UL
-#define WG_STAGING_PEER_KEY_OFF  0x001000UL
-#define WG_STAGING_TX_OFF        0x002000UL
-#define WG_STAGING_RX_OFF        0x010000UL
-#define WG_STAGING_TX_MAX        0x00E000UL
-#define WG_STAGING_RX_MAX        0x00E000UL
-#define WG_STAGING_INGRESS_OFF   0x011000UL
 
 #define WG_AEAD_TAG_LEN      16u
 #define WG_TRANSPORT_HDR_LEN 16u
@@ -456,8 +395,8 @@ static void wg_derive_pubkey(const uint8_t *privkey, uint8_t *pubkey) {
 /* ── Outbound call to net_server via sel4_call ───────────────────────────── */
 
 /*
- * Forward an encrypted WireGuard transport packet to net_server via
- * OP_NET_VNIC_SEND.  Replaces the old microkit_ppcall(WG_CH_NET_SERVER, ...).
+ * Forward an encrypted WireGuard packet through NetServer's dedicated,
+ * capability-scoped UDP path. NetServer maps packet pages, never key pages.
  *
  * E5-S4: g_net_ep is the nameserver-resolved endpoint for "net".
  */
@@ -467,14 +406,17 @@ static void wg_forward_to_net(uint32_t tx_offset, uint32_t pkt_len,
     if (!g_net_ep) return;
 
     sel4_msg_t req = {0}, rep = {0};
-    req.opcode = OP_NET_VNIC_SEND;
-    data_wr32(req.data, 0, 0u);          /* vnic_id = 0 (wg_net's own vNIC) */
-    data_wr32(req.data, 4, tx_offset);
-    data_wr32(req.data, 8, pkt_len);
-    req.length = 12;
+    req.opcode = OP_NET_WG_UDP_SEND;
+    data_wr32(req.data, 0, tx_offset);
+    data_wr32(req.data, 4, pkt_len);
+    data_wr32(req.data, 8, p ? p->endpoint_ip : 0u);
+    data_wr32(req.data, 12, p ? (uint32_t)p->endpoint_port : 0u);
+    req.length = 16;
     sel4_call(g_net_ep, &req, &rep);
 
-    if (p) p->tx_bytes += pkt_len;
+    if (p && rep.opcode == SEL4_ERR_OK && rep.length >= 8u
+        && data_rd32(rep.data, 0) == NET_OK)
+        p->tx_bytes += data_rd32(rep.data, 4);
 }
 
 /* ── Keepalive sender ─────────────────────────────────────────────────────── */
