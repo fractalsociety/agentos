@@ -25,6 +25,9 @@ pub const MAX_INFLIGHT_FRAMES: u32 = 64;
 pub const MAX_INFLIGHT_BYTES: u64 = 1024 * 1024;
 pub const MAX_PEER_BYTES: u64 = 4 * MAX_INFLIGHT_BYTES;
 pub const MAX_RESUMABLE_PEERS: usize = 64;
+pub const MAX_REPLAY_STREAMS: usize = MAX_INFLIGHT_FRAMES as usize * 2;
+pub const MAX_SESSIONS_PER_PEER: usize = 256;
+pub const MAX_DISCOVERED_PEERS: usize = 256;
 pub const DEFAULT_KEEPALIVE: Duration = Duration::from_secs(15);
 const MAX_FRAME_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD;
 
@@ -177,6 +180,10 @@ impl Frame {
         out
     }
 
+    pub fn wire_len(&self) -> usize {
+        HEADER_BYTES + self.payload.len()
+    }
+
     pub fn decode(bytes: &[u8], datagram: bool) -> Result<Self, FrameError> {
         if bytes.len() < HEADER_BYTES {
             return Err(FrameError::MalformedLength);
@@ -255,12 +262,12 @@ impl Manifest {
         }
         cbor_text(&mut out, "chunk-size");
         cbor_uint(&mut out, self.chunk_size as u64);
-        cbor_text(&mut out, "resume-token");
-        cbor_bytes(&mut out, &self.resume_token);
         cbor_text(&mut out, "session-id");
         cbor_text(&mut out, &self.session);
         cbor_text(&mut out, "total-bytes");
         cbor_uint(&mut out, self.total_bytes);
+        cbor_text(&mut out, "resume-token");
+        cbor_bytes(&mut out, &self.resume_token);
         Ok(out)
     }
 }
@@ -331,6 +338,12 @@ impl Default for Limits {
     }
 }
 
+impl Limits {
+    pub fn keepalive_seconds(&self) -> u32 {
+        self.keepalive.as_secs().min(u32::MAX as u64) as u32
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FlowWindow {
     pub frames_in_flight: u32,
@@ -348,7 +361,7 @@ impl FlowWindow {
     }
 
     pub fn allows(&self, frame_bytes: usize) -> bool {
-        frame_bytes <= self.limits.max_payload_bytes
+        frame_bytes <= self.limits.max_payload_bytes.min(MAX_PAYLOAD)
             && self.frames_in_flight < self.limits.max_inflight_frames
             && (frame_bytes as u64)
                 <= self
@@ -392,6 +405,20 @@ pub struct SessionStatus {
     pub resume_token: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskRequest {
+    pub session: String,
+    pub payload: Vec<u8>,
+    pub resume_token: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CancelRequest {
+    pub session: String,
+    pub reason: String,
+    pub deadline_unix_ms: Option<u64>,
+}
+
 #[derive(Debug, Error)]
 pub enum GatewayError {
     #[error("peer already has an active connection")]
@@ -408,6 +435,12 @@ pub enum GatewayError {
     DuplicateSequence,
     #[error("frame sequence is outside the bounded receive window")]
     SequenceWindowExceeded,
+    #[error("frame belongs to an older migrated path")]
+    StalePathEpoch,
+    #[error("peer has reached the bounded stream limit")]
+    StreamLimitExceeded,
+    #[error("peer has reached the bounded session limit")]
+    SessionLimitExceeded,
     #[error("frame type is not valid for this QUIC stream direction")]
     InvalidStreamKind,
     #[error("flow-control limit exceeded")]
@@ -418,6 +451,8 @@ pub enum GatewayError {
     InvalidResumeToken,
     #[error("invalid peer identity: {0}")]
     InvalidPeer(String),
+    #[error("invalid session identity: {0}")]
+    InvalidSession(String),
     #[error("QUIC: {0}")]
     Quic(String),
     #[error("I/O: {0}")]
@@ -614,6 +649,28 @@ impl MeshGateway {
     }
 
     pub fn set_discovery(&self, advertisements: Vec<PeerAdvertisement>) {
+        let mut advertisements: Vec<_> = advertisements
+            .into_iter()
+            .filter(|advertisement| {
+                !advertisement.peer.is_empty() && advertisement.peer.len() <= 255
+            })
+            .map(|mut advertisement| {
+                advertisement.node_id = advertisement.node_id.filter(|value| value.len() <= 255);
+                advertisement.node_key = advertisement.node_key.filter(|value| value.len() <= 255);
+                advertisement
+                    .endpoints
+                    .retain(|value| !value.is_empty() && value.len() <= 255);
+                advertisement
+                    .tags
+                    .retain(|value| !value.is_empty() && value.len() <= 255);
+                advertisement.endpoints.truncate(64);
+                advertisement.tags.truncate(64);
+                advertisement
+            })
+            .collect();
+        advertisements.sort_by(|left, right| left.peer.cmp(&right.peer));
+        advertisements.dedup_by(|left, right| left.peer == right.peer);
+        advertisements.truncate(MAX_DISCOVERED_PEERS);
         self.inner
             .lock()
             .expect("gateway mutex poisoned")
@@ -628,6 +685,10 @@ impl MeshGateway {
             .clone()
     }
 
+    pub fn discover_peers(&self) -> Vec<PeerAdvertisement> {
+        self.discovered_peers()
+    }
+
     pub fn connect_peer(
         &self,
         peer: &str,
@@ -636,6 +697,11 @@ impl MeshGateway {
     ) -> Result<(), GatewayError> {
         if peer.is_empty() || peer.len() > 255 {
             return Err(GatewayError::InvalidPeer(peer.into()));
+        }
+        if connection_id.len() > 255 || path.len() > 255 {
+            return Err(GatewayError::InvalidPeer(
+                "connection metadata too large".into(),
+            ));
         }
         let mut inner = self.inner.lock().expect("gateway mutex poisoned");
         if inner.peers.contains_key(peer) {
@@ -671,21 +737,28 @@ impl MeshGateway {
     }
 
     pub fn observe_path(&self, peer: &str, path: &str) -> Result<u64, GatewayError> {
+        if path.len() > 255 {
+            return Err(GatewayError::InvalidPeer("path too large".into()));
+        }
         let mut inner = self.inner.lock().expect("gateway mutex poisoned");
         let state = inner.peers.get_mut(peer).ok_or(GatewayError::UnknownPeer)?;
         if state.path != path {
             state.path = path.into();
-            state.path_epoch += 1;
+            state.path_epoch = state.path_epoch.saturating_add(1);
         }
         state.last_activity = Instant::now();
         Ok(state.path_epoch)
     }
 
     pub fn open_session(&self, peer: &str, session: &str) -> Result<SessionStatus, GatewayError> {
+        validate_session(session)?;
         let mut inner = self.inner.lock().expect("gateway mutex poisoned");
         let state = inner.peers.get_mut(peer).ok_or(GatewayError::UnknownPeer)?;
         if state.sessions.contains_key(session) {
             return Err(GatewayError::DuplicateSession);
+        }
+        if state.sessions.len() >= MAX_SESSIONS_PER_PEER {
+            return Err(GatewayError::SessionLimitExceeded);
         }
         state.sessions.insert(session.into(), Session::new());
         Ok(status_for(
@@ -694,6 +767,24 @@ impl MeshGateway {
             session,
             state.sessions.get(session).unwrap(),
         ))
+    }
+
+    /// Implements mesh.open-task as one bounded state transition. A supplied
+    /// token resumes the prior session cursor before the task is sequenced;
+    /// without one, the session must be new.
+    pub fn open_task(
+        &self,
+        peer: &str,
+        request: TaskRequest,
+    ) -> Result<SessionStatus, GatewayError> {
+        validate_session(&request.session)?;
+        if let Some(token) = request.resume_token.as_deref() {
+            self.resume(peer, &request.session, token)?;
+        } else {
+            self.open_session(peer, &request.session)?;
+        }
+        self.submit_task(peer, &request.session, request.payload)?;
+        self.session_status(peer, &request.session)
     }
 
     pub fn session_status(&self, peer: &str, session: &str) -> Result<SessionStatus, GatewayError> {
@@ -732,16 +823,17 @@ impl MeshGateway {
         ) {
             return Err(GatewayError::SessionNotActive);
         }
-        if payload.len() > self.config.limits.max_payload_bytes {
+        let payload_len = payload.len();
+        if payload_len > self.config.limits.max_payload_bytes {
             return Err(GatewayError::FlowControlExceeded);
         }
-        state.window.reserve(payload.len())?;
-        let new_memory = state
-            .memory_bytes
-            .checked_add(payload.len() as u64)
-            .ok_or(GatewayError::PeerMemoryExceeded)?;
+        state.window.reserve(payload_len)?;
+        let Some(new_memory) = state.memory_bytes.checked_add(payload_len as u64) else {
+            state.window.release(payload_len);
+            return Err(GatewayError::PeerMemoryExceeded);
+        };
         if new_memory > self.config.limits.max_peer_bytes {
-            state.window.release(payload.len());
+            state.window.release(payload_len);
             return Err(GatewayError::PeerMemoryExceeded);
         }
         state.memory_bytes = new_memory;
@@ -757,7 +849,11 @@ impl MeshGateway {
             state.path_epoch,
             payload,
         )
-        .map_err(|_| GatewayError::FlowControlExceeded)
+        .map_err(|_| {
+            state.window.release(payload_len);
+            state.memory_bytes = state.memory_bytes.saturating_sub(payload_len as u64);
+            GatewayError::FlowControlExceeded
+        })
     }
 
     pub fn submit_event(
@@ -797,16 +893,17 @@ impl MeshGateway {
         ) {
             return Err(GatewayError::SessionNotActive);
         }
-        if payload.len() > self.config.limits.max_payload_bytes {
+        let payload_len = payload.len();
+        if payload_len > self.config.limits.max_payload_bytes {
             return Err(GatewayError::FlowControlExceeded);
         }
-        state.window.reserve(payload.len())?;
-        let new_memory = state
-            .memory_bytes
-            .checked_add(payload.len() as u64)
-            .ok_or(GatewayError::PeerMemoryExceeded)?;
+        state.window.reserve(payload_len)?;
+        let Some(new_memory) = state.memory_bytes.checked_add(payload_len as u64) else {
+            state.window.release(payload_len);
+            return Err(GatewayError::PeerMemoryExceeded);
+        };
         if new_memory > self.config.limits.max_peer_bytes {
-            state.window.release(payload.len());
+            state.window.release(payload_len);
             return Err(GatewayError::PeerMemoryExceeded);
         }
         state.memory_bytes = new_memory;
@@ -821,7 +918,11 @@ impl MeshGateway {
                 session_state.next_object += 1;
                 (2, sequence)
             }
-            _ => return Err(GatewayError::InvalidStreamKind),
+            _ => {
+                state.window.release(payload_len);
+                state.memory_bytes = state.memory_bytes.saturating_sub(payload_len as u64);
+                return Err(GatewayError::InvalidStreamKind);
+            }
         };
         state.last_activity = Instant::now();
         Frame::with_metadata(
@@ -832,7 +933,19 @@ impl MeshGateway {
             state.path_epoch,
             payload,
         )
-        .map_err(|_| GatewayError::FlowControlExceeded)
+        .map_err(|_| {
+            state.window.release(payload_len);
+            state.memory_bytes = state.memory_bytes.saturating_sub(payload_len as u64);
+            GatewayError::FlowControlExceeded
+        })
+    }
+
+    /// Release the flow-control reservation after a frame returned by one of
+    /// the submit methods has been handed to Quinn. The reservation is kept
+    /// until this explicit acknowledgement so a slow peer cannot grow an
+    /// unbounded application queue.
+    pub fn release_sent(&self, peer: &str, bytes: usize) -> Result<(), GatewayError> {
+        self.release_received(peer, bytes)
     }
 
     pub fn receive(&self, peer: &str, frame: Frame) -> Result<Vec<Frame>, GatewayError> {
@@ -840,6 +953,9 @@ impl MeshGateway {
         let state = inner.peers.get_mut(peer).ok_or(GatewayError::UnknownPeer)?;
         if frame.header.frame_type.is_datagram_only() {
             return Err(GatewayError::InvalidStreamKind);
+        }
+        if frame.header.path_epoch < state.path_epoch {
+            return Err(GatewayError::StalePathEpoch);
         }
         let bytes = frame.payload.len();
         state.window.reserve(bytes)?;
@@ -850,6 +966,12 @@ impl MeshGateway {
         if new_memory > self.config.limits.max_peer_bytes {
             state.window.release(bytes);
             return Err(GatewayError::PeerMemoryExceeded);
+        }
+        if !state.replay.contains_key(&frame.header.stream_id)
+            && state.replay.len() >= MAX_REPLAY_STREAMS
+        {
+            state.window.release(bytes);
+            return Err(GatewayError::StreamLimitExceeded);
         }
         let stream = state
             .replay
@@ -896,6 +1018,17 @@ impl MeshGateway {
             session,
             session_state,
         ))
+    }
+
+    pub fn cancel_request(
+        &self,
+        peer: &str,
+        request: CancelRequest,
+    ) -> Result<SessionStatus, GatewayError> {
+        // A deadline is carried by the WIT contract for the policy layer. The
+        // transport records cancellation immediately; deadline enforcement is
+        // intentionally owned by the task service rather than QUIC.
+        self.cancel(peer, &request.session, &request.reason)
     }
 
     pub fn mark_cancelled(&self, peer: &str, session: &str) -> Result<SessionStatus, GatewayError> {
@@ -951,7 +1084,7 @@ impl MeshGateway {
     pub fn keepalive_due(&self, peer: &str, now: Instant) -> Result<bool, GatewayError> {
         let inner = self.inner.lock().expect("gateway mutex poisoned");
         let state = inner.peers.get(peer).ok_or(GatewayError::UnknownPeer)?;
-        Ok(now.duration_since(state.last_activity) >= self.config.limits.keepalive)
+        Ok(now.saturating_duration_since(state.last_activity) >= self.config.limits.keepalive)
     }
 
     pub fn peer_memory(&self, peer: &str) -> Result<u64, GatewayError> {
@@ -986,6 +1119,15 @@ fn status_for(secret: &[u8; 32], peer: &str, session: &str, state: &Session) -> 
     };
     status.resume_token = ResumeToken::mint(secret, peer, session, &status).0;
     status
+}
+
+fn validate_session(session: &str) -> Result<(), GatewayError> {
+    if session.is_empty() || session.len() > 255 {
+        return Err(GatewayError::InvalidSession(
+            session.chars().take(64).collect(),
+        ));
+    }
+    Ok(())
 }
 
 fn hash_id(value: &str) -> u64 {
@@ -1025,7 +1167,9 @@ impl InMemoryTransport {
         if self.disconnected {
             return Err(GatewayError::UnknownPeer);
         }
-        if self.queued_bytes.saturating_add(size) > self.capacity_bytes {
+        if self.queued_bytes.saturating_add(size) > self.capacity_bytes
+            || self.queue.len() >= self.capacity_bytes.max(1)
+        {
             return Err(GatewayError::PeerMemoryExceeded);
         }
         self.queued_bytes += size;
@@ -1038,6 +1182,12 @@ impl InMemoryTransport {
             return Err(GatewayError::UnknownPeer);
         };
         self.send(frame)
+    }
+
+    pub fn drop_front(&mut self) -> Option<FixtureEvent> {
+        let frame = self.queue.pop_front()?;
+        self.queued_bytes = self.queued_bytes.saturating_sub(frame.payload.len());
+        Some(FixtureEvent::Dropped(frame))
     }
 
     pub fn reorder(&mut self) {
@@ -1072,6 +1222,10 @@ impl InMemoryTransport {
 pub enum DiscoveryError {
     #[error("Headscale discovery JSON must contain an array of nodes")]
     InvalidNodes,
+    #[error("Headscale discovery returned too many nodes")]
+    TooManyPeers,
+    #[error("Headscale discovery contains an oversized field")]
+    FieldTooLarge,
     #[error("Headscale discovery JSON: {0}")]
     Json(#[from] serde_json::Error),
     #[error("Headscale discovery I/O: {0}")]
@@ -1105,6 +1259,9 @@ impl HeadscaleDiscovery {
             Some(Value::Null) => &[],
             _ => return Err(DiscoveryError::InvalidNodes),
         };
+        if nodes.len() > MAX_DISCOVERED_PEERS {
+            return Err(DiscoveryError::TooManyPeers);
+        }
         let mut peers = Vec::with_capacity(nodes.len());
         for node in nodes {
             let peer = node
@@ -1116,13 +1273,33 @@ impl HeadscaleDiscovery {
             let Some(peer) = peer else {
                 continue;
             };
-            let strings = |key: &str| {
-                node.get(key)
-                    .and_then(Value::as_array)
+            if peer.is_empty() || peer.len() > 255 {
+                return Err(DiscoveryError::FieldTooLarge);
+            }
+            let node_id = node
+                .get("node_id")
+                .or_else(|| node.get("nodeId"))
+                .filter(|value| !value.is_null())
+                .map(value_string);
+            let node_key = node
+                .get("node_key")
+                .or_else(|| node.get("nodeKey"))
+                .filter(|value| !value.is_null())
+                .map(value_string);
+            if node_id.as_ref().is_some_and(|value| value.len() > 255)
+                || node_key.as_ref().is_some_and(|value| value.len() > 255)
+            {
+                return Err(DiscoveryError::FieldTooLarge);
+            }
+            let strings = |keys: &[&str]| {
+                keys.iter()
+                    .find_map(|key| node.get(key).and_then(Value::as_array))
                     .map(|items| {
                         items
                             .iter()
+                            .take(64)
                             .filter_map(Value::as_str)
+                            .filter(|value| !value.is_empty() && value.len() <= 255)
                             .map(str::to_owned)
                             .collect()
                     })
@@ -1130,18 +1307,10 @@ impl HeadscaleDiscovery {
             };
             peers.push(PeerAdvertisement {
                 peer,
-                node_id: node
-                    .get("node_id")
-                    .or_else(|| node.get("nodeId"))
-                    .filter(|value| !value.is_null())
-                    .map(value_string),
-                node_key: node
-                    .get("node_key")
-                    .or_else(|| node.get("nodeKey"))
-                    .filter(|value| !value.is_null())
-                    .map(value_string),
-                endpoints: strings("endpoints"),
-                tags: strings("authenticated_tags"),
+                node_id,
+                node_key,
+                endpoints: strings(&["endpoints", "addresses"]),
+                tags: strings(&["authenticated_tags", "tags"]),
             });
         }
         peers.sort_by(|left, right| left.peer.cmp(&right.peer));
@@ -1181,6 +1350,7 @@ impl QuicService {
                     .connect_peer(&peer, &connection_id, &connection_id)
                     .is_err()
                 {
+                    connection.close(quinn::VarInt::from_u32(1), b"duplicate peer");
                     return;
                 }
                 let _ = serve_connection(gateway.clone(), peer.clone(), connection).await;
@@ -1199,39 +1369,95 @@ async fn serve_connection(
     loop {
         tokio::select! {
             result = connection.accept_bi() => {
-                let (mut send, mut receive) = result.map_err(|error| GatewayError::Quic(error.to_string()))?;
-                gateway.observe_path(&peer, &connection.remote_address().to_string())?;
-                let bytes = receive.read_to_end(MAX_FRAME_BYTES + 4).await.map_err(|error| GatewayError::Quic(error.to_string()))?;
-                let frame = decode_record(&bytes)?;
-                if !matches!(frame.header.frame_type, FrameType::Task | FrameType::Control) {
-                    return Err(GatewayError::InvalidStreamKind);
-                }
-                let ready = gateway.receive(&peer, frame)?;
-                for frame in ready {
-                    let encoded = encode_record(&frame);
-                    send.write_all(&encoded).await.map_err(|error| GatewayError::Quic(error.to_string()))?;
-                }
-                send.finish().map_err(|error| GatewayError::Quic(error.to_string()))?;
+                let (send, receive) = result.map_err(|error| GatewayError::Quic(error.to_string()))?;
+                let gateway = gateway.clone();
+                let peer = peer.clone();
+                let connection = connection.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = handle_bi(gateway, peer, connection.clone(), send, receive).await {
+                        connection.close(quinn::VarInt::from_u32(2), error.to_string().as_bytes());
+                    }
+                });
             }
             result = connection.accept_uni() => {
-                let mut receive = result.map_err(|error| GatewayError::Quic(error.to_string()))?;
-                gateway.observe_path(&peer, &connection.remote_address().to_string())?;
-                let bytes = receive.read_to_end(MAX_FRAME_BYTES + 4).await.map_err(|error| GatewayError::Quic(error.to_string()))?;
-                let frame = decode_record(&bytes)?;
-                if !matches!(frame.header.frame_type, FrameType::Event | FrameType::Object) {
-                    return Err(GatewayError::InvalidStreamKind);
-                }
-                let _ = gateway.receive(&peer, frame)?;
+                let receive = result.map_err(|error| GatewayError::Quic(error.to_string()))?;
+                let gateway = gateway.clone();
+                let peer = peer.clone();
+                let connection = connection.clone();
+                tokio::spawn(async move {
+                    if let Err(error) = handle_uni(gateway, peer, connection.clone(), receive).await {
+                        connection.close(quinn::VarInt::from_u32(3), error.to_string().as_bytes());
+                    }
+                });
             }
             result = connection.read_datagram() => {
                 let bytes = result.map_err(|error| GatewayError::Quic(error.to_string()))?;
                 gateway.observe_path(&peer, &connection.remote_address().to_string())?;
                 // Datagrams are disposable hints only; they never enter
                 // replay, flow, or session state.
-                let _ = Frame::decode(&bytes, true).map_err(|error| GatewayError::Quic(error.to_string()))?;
+                if bytes.len() <= MAX_FRAME_BYTES {
+                    let _ = Frame::decode(&bytes, true);
+                }
             }
         }
     }
+}
+
+async fn handle_bi(
+    gateway: MeshGateway,
+    peer: String,
+    connection: Connection,
+    mut send: quinn::SendStream,
+    mut receive: quinn::RecvStream,
+) -> Result<(), GatewayError> {
+    gateway.observe_path(&peer, &connection.remote_address().to_string())?;
+    let bytes = receive
+        .read_to_end(MAX_FRAME_BYTES + 4)
+        .await
+        .map_err(|error| GatewayError::Quic(error.to_string()))?;
+    let frame = decode_record(&bytes)?;
+    if !matches!(
+        frame.header.frame_type,
+        FrameType::Task | FrameType::Control
+    ) {
+        return Err(GatewayError::InvalidStreamKind);
+    }
+    let ready = gateway.receive(&peer, frame)?;
+    for frame in ready {
+        let frame_bytes = frame.payload.len();
+        let encoded = encode_record(&frame);
+        send.write_all(&encoded)
+            .await
+            .map_err(|error| GatewayError::Quic(error.to_string()))?;
+        gateway.release_received(&peer, frame_bytes)?;
+    }
+    send.finish()
+        .map_err(|error| GatewayError::Quic(error.to_string()))?;
+    Ok(())
+}
+
+async fn handle_uni(
+    gateway: MeshGateway,
+    peer: String,
+    connection: Connection,
+    mut receive: quinn::RecvStream,
+) -> Result<(), GatewayError> {
+    gateway.observe_path(&peer, &connection.remote_address().to_string())?;
+    let bytes = receive
+        .read_to_end(MAX_FRAME_BYTES + 4)
+        .await
+        .map_err(|error| GatewayError::Quic(error.to_string()))?;
+    let frame = decode_record(&bytes)?;
+    if !matches!(
+        frame.header.frame_type,
+        FrameType::Event | FrameType::Object
+    ) {
+        return Err(GatewayError::InvalidStreamKind);
+    }
+    for frame in gateway.receive(&peer, frame)? {
+        gateway.release_received(&peer, frame.payload.len())?;
+    }
+    Ok(())
 }
 
 fn encode_record(frame: &Frame) -> Vec<u8> {
@@ -1247,7 +1473,10 @@ fn decode_record(bytes: &[u8]) -> Result<Frame, GatewayError> {
         return Err(GatewayError::FlowControlExceeded);
     }
     let length = u32::from_le_bytes(bytes[..4].try_into().expect("four bytes checked")) as usize;
-    if length > MAX_FRAME_BYTES || length + 4 != bytes.len() {
+    let Some(record_bytes) = length.checked_add(4) else {
+        return Err(GatewayError::FlowControlExceeded);
+    };
+    if length > MAX_FRAME_BYTES || record_bytes != bytes.len() {
         return Err(GatewayError::FlowControlExceeded);
     }
     Frame::decode(&bytes[4..], false).map_err(|_| GatewayError::FlowControlExceeded)
