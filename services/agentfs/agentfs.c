@@ -220,6 +220,45 @@ static eventbus_event_hash_t agentfs_hash_bytes(const uint8_t *bytes,
     return result;
 }
 
+/* Canonical object events authenticate the operation and the immutable
+ * reference together.  Hashing only the object id would make PUT/GET/DELETE
+ * indistinguishable in the replay projection. */
+static uint32_t emit_canonical_reference(uint32_t event_type,
+                                         sel4_badge_t badge,
+                                         const uint8_t *reference,
+                                         uint32_t reference_len)
+{
+    uint8_t payload[4u + 1u + OBJECT_ID_BYTES];
+    struct eventbus_agent_event event = {0};
+    eventbus_event_hash_t scope;
+    eventbus_event_hash_t payload_root;
+    uint8_t scope_seed[12] = {'a', 'f', 's', 0u, 0u, 0u,
+                              0u, 0u, 0u, 0u, 0u, 0u};
+    uint32_t i;
+
+    if (reference_len > OBJECT_ID_BYTES)
+        reference_len = OBJECT_ID_BYTES;
+    for (i = 0u; i < 8u; i++)
+        scope_seed[4u + i] = (uint8_t)(badge >> (i * 8u));
+    scope = agentfs_hash_bytes(scope_seed, (uint32_t)sizeof(scope_seed));
+
+    payload[0] = (uint8_t)event_type;
+    payload[1] = (uint8_t)(event_type >> 8u);
+    payload[2] = (uint8_t)(event_type >> 16u);
+    payload[3] = (uint8_t)(event_type >> 24u);
+    payload[4] = (uint8_t)reference_len;
+    for (i = 0u; i < reference_len; i++) payload[5u + i] = reference[i];
+    payload_root = agentfs_hash_bytes(payload, 5u + reference_len);
+
+    event.event_type = EVENTBUS_EVENT_OBJECT_TRANSITION;
+    event.authority_epoch = agentos_eventbus_canonical_epoch != (void *)0
+        ? agentos_eventbus_canonical_epoch() : 0u;
+    event.flags = EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+    event.scope_id = scope;
+    event.payload_root = payload_root;
+    return agentos_eventbus_record(&event);
+}
+
 static uint32_t emit_event(uint32_t event_type, sel4_badge_t badge,
                            const object_id_t *id) {
     uint32_t canonical_status = EVENTBUS_AGENT_EVENT_OK;
@@ -250,32 +289,12 @@ static uint32_t emit_event(uint32_t event_type, sel4_badge_t badge,
 #endif
 
     if (agentos_eventbus_record != (void *)0) {
-        uint8_t scope_seed[12] = {'a', 'f', 's', 0u, 0u, 0u,
-                                  0u, 0u, 0u, 0u, 0u, 0u};
-        uint8_t payload_seed[8] = {'a', 'f', 's', 'e', 0u, 0u, 0u, 0u};
-        struct eventbus_agent_event event = {0};
-        eventbus_event_hash_t scope;
-        eventbus_event_hash_t payload;
-        uint32_t i;
-
-        for (i = 0u; i < 8u; i++) {
-            scope_seed[4u + i] = (uint8_t)(badge >> (i * 8u));
-            if (i < 4u) payload_seed[4u + i] =
-                (uint8_t)(event_type >> (i * 8u));
-        }
-        scope = agentfs_hash_bytes(scope_seed, (uint32_t)sizeof(scope_seed));
-        if (id != (const object_id_t *)0)
-            payload = agentfs_hash_bytes(id->bytes, OBJECT_ID_BYTES);
-        else
-            payload = agentfs_hash_bytes(payload_seed,
-                                         (uint32_t)sizeof(payload_seed));
-        event.event_type = EVENTBUS_EVENT_OBJECT_TRANSITION;
-        event.authority_epoch = agentos_eventbus_canonical_epoch != (void *)0
-            ? agentos_eventbus_canonical_epoch() : 0u;
-        event.flags = EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
-        event.scope_id = scope;
-        event.payload_root = payload;
-        canonical_status = agentos_eventbus_record(&event);
+        const uint8_t *reference = id != (const object_id_t *)0
+            ? id->bytes : (const uint8_t *)0;
+        uint32_t reference_len = id != (const object_id_t *)0
+            ? OBJECT_ID_BYTES : 0u;
+        canonical_status = emit_canonical_reference(event_type, badge,
+                                                     reference, reference_len);
     }
     return canonical_status;
 }
@@ -509,10 +528,41 @@ static uint32_t h_delete(sel4_badge_t b, const sel4_msg_t *req,
 static uint32_t h_workspace(sel4_badge_t badge, const sel4_msg_t *req,
                             sel4_msg_t *rep, void *ctx)
 {
+    uint8_t descriptor[4u + SEL4_MSG_DATA_BYTES + SEL4_MSG_DATA_BYTES];
+    eventbus_event_hash_t request_root;
+    uint32_t request_len;
+    uint32_t reply_len;
+    uint32_t status;
     (void)ctx;
-    return agentfs_workspace_dispatch((uint64_t)badge, req->opcode,
-                                      req->data, req->length,
-                                      rep->data, &rep->length);
+    rep->length = SEL4_MSG_DATA_BYTES;
+    status = agentfs_workspace_dispatch((uint64_t)badge, req->opcode,
+                                         req->data, req->length,
+                                         rep->data, &rep->length);
+    if (status != AGENTFS_OK)
+        return status;
+
+    /* Workspace writes, reads, deletes, and exports all change or expose a
+     * mutable root.  Bind the bounded IPC request and reply to that root so
+     * replay cannot observe a state transition without its event. */
+    request_len = req->length;
+    if (request_len > SEL4_MSG_DATA_BYTES) request_len = SEL4_MSG_DATA_BYTES;
+    reply_len = rep->length;
+    if (reply_len > SEL4_MSG_DATA_BYTES) reply_len = SEL4_MSG_DATA_BYTES;
+    descriptor[0] = (uint8_t)req->opcode;
+    descriptor[1] = (uint8_t)(req->opcode >> 8u);
+    descriptor[2] = (uint8_t)(req->opcode >> 16u);
+    descriptor[3] = (uint8_t)(req->opcode >> 24u);
+    for (uint32_t i = 0u; i < request_len; i++)
+        descriptor[4u + i] = req->data[i];
+    for (uint32_t i = 0u; i < reply_len; i++)
+        descriptor[4u + request_len + i] = rep->data[i];
+    eventbus_event_hash_bytes(descriptor, 4u + request_len + reply_len,
+                              &request_root);
+    if (emit_canonical_reference(req->opcode, badge, request_root.bytes,
+                                 EVENTBUS_AGENT_EVENT_HASH_BYTES)
+            != EVENTBUS_AGENT_EVENT_OK)
+        return SEL4_ERR_INVALID_OP;
+    return status;
 }
 
 /* ── Entry point ────────────────────────────────────────────────────────── */

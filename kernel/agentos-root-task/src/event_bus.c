@@ -50,6 +50,33 @@ static void eventbus_zero(void *dst, uint32_t length)
     for (i = 0u; i < length; i++) bytes[i] = 0u;
 }
 
+/* Reject an epoch fork before changing the append-only stream.  Replay also
+ * checks this invariant, but doing it at the writer boundary keeps an
+ * invalid authority transition from becoming temporarily observable. */
+static uint32_t eventbus_check_authority(
+    const struct eventbus_agent_event *event)
+{
+    uint32_t current;
+    if (event == (const struct eventbus_agent_event *)0)
+        return EVENTBUS_AGENT_EVENT_ERR_INVALID;
+    if (event->event_type < EVENTBUS_EVENT_TASK
+            || event->event_type > EVENTBUS_EVENT_RECONNECT)
+        return EVENTBUS_AGENT_EVENT_ERR_INVALID;
+    if (g_agent_stream.event_count == 0u)
+        return event->authority_epoch
+                    == g_agent_stream.initial_authority_epoch
+            ? EVENTBUS_AGENT_EVENT_OK : EVENTBUS_AGENT_EVENT_ERR_AUTHORITY;
+
+    current = g_agent_stream.events[g_agent_stream.event_count - 1u]
+        .authority_epoch;
+    if (event->event_type == EVENTBUS_EVENT_AUTHORITY_CHANGE)
+        return current != UINT32_MAX
+            && event->authority_epoch == current + 1u
+            ? EVENTBUS_AGENT_EVENT_OK : EVENTBUS_AGENT_EVENT_ERR_AUTHORITY;
+    return event->authority_epoch == current
+        ? EVENTBUS_AGENT_EVENT_OK : EVENTBUS_AGENT_EVENT_ERR_AUTHORITY;
+}
+
 /*
  * Initialise the candidate-visible stream.  This is deliberately explicit:
  * an authority epoch and scope are pinned before the first model-visible
@@ -123,6 +150,9 @@ uint32_t agentos_eventbus_record(struct eventbus_agent_event *event)
     if ((event->flags & EVENTBUS_EVENT_FLAG_PROMOTION_INTERNAL) != 0u
             || event->event_type == EVENTBUS_EVENT_PROMOTION_VERIFY)
         return EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN;
+    status = eventbus_check_authority(event);
+    if (status != EVENTBUS_AGENT_EVENT_OK)
+        return status;
 
     saved_event = *event;
     saved_count = g_agent_stream.event_count;
