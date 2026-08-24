@@ -431,6 +431,12 @@ fn spawn_qemu_test_image(
                     "loader,file={},addr=0x48000000",
                     build_dir.join("agentos.img").display()
                 ));
+            if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
+                c.arg("-netdev")
+                    .arg("user,id=agentos_model_net")
+                    .arg("-device")
+                    .arg("virtio-net-device,netdev=agentos_model_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off");
+            }
             c
         }
         "x86_64_generic" => {

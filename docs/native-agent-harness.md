@@ -132,6 +132,28 @@ export AGENTOS_MODEL_NAME='<upstream-model-id>'
 python3 tools/model_bridge.py
 ```
 
+If the official Codex CLI is already authenticated, it can instead act as the
+single shared model client without an API key:
+
+```sh
+python3 tools/model_bridge.py --codex-cli
+```
+
+This backend launches Codex in a temporary read-only, tool-less workspace and
+returns only its final message through the OpenAI-compatible response shape.
+It permits one Codex process at a time by default, bounding the shared backend
+memory independently of worker count. The native worker still has no NetCap or
+credential; the heavier model client belongs to shared ModelSvc infrastructure
+rather than being duplicated into each worker.
+
+The CLI backend has been exercised locally against the authenticated official
+Codex installation. The native live target gate is still open: its 2026-08-24
+run correctly failed before contacting the bridge because the in-progress
+exclusive-NIC split gives VirtIO ownership to `net_pd`, while the HTTP client
+in `net_server` does not yet receive a working fastpath. The normal hermetic
+target suite remains 34/34. Do not cite the local bridge check as native V2
+live-model proof.
+
 In another terminal, enable the opt-in live target assertion:
 
 ```sh

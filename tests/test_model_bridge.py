@@ -32,6 +32,18 @@ class ModelBridgeTests(unittest.TestCase):
             MODEL_BRIDGE.rewrite_request(
                 b"x" * (MODEL_BRIDGE.MAX_REQUEST_BYTES + 1), None)
 
+    def test_renders_messages_for_toolless_codex_backend(self):
+        body = json.dumps({
+            "messages": [
+                {"role": "system", "content": "Return JSON."},
+                {"role": "user", "content": "Write the file."},
+            ],
+        }).encode()
+        prompt = MODEL_BRIDGE.render_codex_prompt(body)
+        self.assertIn("[system]\nReturn JSON.", prompt)
+        self.assertIn("[user]\nWrite the file.", prompt)
+        self.assertIn("Do not use shell", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()
