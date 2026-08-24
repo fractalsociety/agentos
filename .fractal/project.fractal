@@ -5434,6 +5434,92 @@
         "eventual_effect": {}
       }
     ],
+    "outcome": {
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-10",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-11",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-12",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-13",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-14",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-15",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-2",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-3",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-4",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-5",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-6",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-7",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-8",
+          "passed": false,
+          "evidence_refs": []
+        },
+        {
+          "id": "AC-9",
+          "passed": false,
+          "evidence_refs": []
+        }
+      ],
+      "maximum_parallelism": 0,
+      "retry_count": 74,
+      "reopened_node_count": 31,
+      "dead_or_unused_node_count": 1,
+      "human_intervention_count": 0,
+      "verification_coverage": 0.0,
+      "verification_coverage_denominator": 34
+    },
     "acceptance_criteria": [
       "AC-1",
       "AC-10",
@@ -7363,5 +7449,5 @@
     "cross_project_links": {},
     "failure_graph_hash": "sha256:54d4fb5dcfc45dbfef50a9a053cbfe0f67149ea77efa333a9ff59c71ff8947c5"
   },
-  "updated_at": "2026-08-24T19:38:21Z"
+  "updated_at": "2026-08-24T19:38:48Z"
 }
