@@ -231,10 +231,11 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
 AgentFS, ExecSvc, and both transport PDs passed all 41 live target assertions.
-The repository-discovery run measured 499.868 ms from QEMU spawn to root-task
-readiness, a 4.006 ms cold native planner turn, and 12 warm turns with 0.175 ms
-p50 and 0.518 ms p95. ModelSvc cached queries measured 0.057 ms p50 and
-0.381 ms p95. The worker reported 274,432 bytes of private committed memory
+The exact detached clean-worktree repository-discovery run measured 445.583 ms
+from QEMU spawn to root-task readiness, a 4.136 ms cold native planner turn,
+and 12 warm turns with 0.160 ms p50 and 0.463 ms p95. ModelSvc cached queries
+measured 0.046 ms p50 and 0.367 ms p95. The worker reported 274,432 bytes of
+private committed memory
 and 196,608 bytes of shared client mappings under its 64 MiB private limit;
 its shared-component bitmap now includes the singleton repository index.
 Host-side proxy memory is shared system infrastructure and is intentionally not
