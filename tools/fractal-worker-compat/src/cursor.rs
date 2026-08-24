@@ -116,7 +116,8 @@ impl CursorLauncher {
             Self::discover_version_live(manifest)?
         };
 
-        let isolated = materialize_isolated_workspace(workspace, opts.seed_dir.as_deref())?;
+        let isolated =
+            materialize_isolated_workspace("fractal-cursor", workspace, opts.seed_dir.as_deref())?;
         let session_id = format!("cursor-{}", workspace.workspace_id);
         let secret = opts.secret.clone().or_else(secret_handle_from_env);
 
@@ -183,15 +184,8 @@ impl CursorLauncher {
             }
         };
 
-        let mut result = map_terminal_result(
-            manifest,
-            &session_id,
-            version,
-            events,
-            files,
-            usage,
-            secret,
-        );
+        let mut result =
+            map_terminal_result(manifest, &session_id, version, events, files, usage, secret);
         // Redact any residual summaries
         for ev in &mut result.events {
             let (summary, class) = redact_text(manifest, &ev.summary);
@@ -281,9 +275,7 @@ impl CursorLauncher {
 
         let mut cancelled = false;
         loop {
-            if cancel
-                .as_ref()
-                .is_some_and(|c| c.load(Ordering::SeqCst))
+            if cancel.as_ref().is_some_and(|c| c.load(Ordering::SeqCst))
                 || Instant::now() >= deadline
             {
                 cancelled = true;
@@ -315,7 +307,11 @@ fn secret_handle_from_env() -> Option<SecretHandle> {
     })
 }
 
-fn apply_sanitized_env(cmd: &mut Command, manifest: &WorkerManifest, secret: &Option<SecretHandle>) {
+fn apply_sanitized_env(
+    cmd: &mut Command,
+    manifest: &WorkerManifest,
+    secret: &Option<SecretHandle>,
+) {
     cmd.env_clear();
     if let Some(path) = std::env::var_os("PATH") {
         cmd.env("PATH", path);
@@ -348,22 +344,24 @@ fn apply_sanitized_env(cmd: &mut Command, manifest: &WorkerManifest, secret: &Op
     }
 }
 
-fn materialize_isolated_workspace(
+pub(crate) fn materialize_isolated_workspace(
+    prefix: &str,
     workspace: &WorkspaceInput,
     seed_dir: Option<&Path>,
 ) -> Result<PathBuf> {
+    static WORKSPACE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = WORKSPACE_SEQ.fetch_add(1, Ordering::SeqCst);
     let base = std::env::temp_dir().join(format!(
-        "fractal-cursor-{}-{}",
+        "{prefix}-{}-{}-{}-{}",
         sanitize_id(&workspace.workspace_id),
+        std::process::id(),
+        seq,
         unix_now_ms()
     ));
     std::fs::create_dir_all(&base)?;
     run_git(&base, &["init", "-q"])?;
-    run_git(&base, &["config", "user.name", "Fractal Cursor Worker"])?;
-    run_git(
-        &base,
-        &["config", "user.email", "fractal-cursor-worker@invalid"],
-    )?;
+    run_git(&base, &["config", "user.name", "Fractal Worker"])?;
+    run_git(&base, &["config", "user.email", "fractal-worker@invalid"])?;
 
     for rel in &workspace.allowed_files {
         crate::validate_relative_path(rel)?;
@@ -387,7 +385,7 @@ fn materialize_isolated_workspace(
     Ok(base)
 }
 
-fn run_git(cwd: &Path, args: &[&str]) -> Result<()> {
+pub(crate) fn run_git(cwd: &Path, args: &[&str]) -> Result<()> {
     let status = Command::new("git")
         .args(args)
         .current_dir(cwd)
@@ -400,7 +398,7 @@ fn run_git(cwd: &Path, args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn git_changed_paths(cwd: &Path) -> Result<Vec<String>> {
+pub(crate) fn git_changed_paths(cwd: &Path) -> Result<Vec<String>> {
     let output = Command::new("git")
         .args(["diff", "--name-only", "HEAD"])
         .current_dir(cwd)
@@ -425,8 +423,10 @@ fn git_changed_paths(cwd: &Path) -> Result<Vec<String>> {
     Ok(paths)
 }
 
-fn file_size_in(root: &Path, rel: &str) -> Result<u64> {
-    Ok(std::fs::metadata(root.join(rel)).map(|m| m.len()).unwrap_or(0))
+pub(crate) fn file_size_in(root: &Path, rel: &str) -> Result<u64> {
+    Ok(std::fs::metadata(root.join(rel))
+        .map(|m| m.len())
+        .unwrap_or(0))
 }
 
 fn normalize_cursor_stream(raw: &str) -> Result<Vec<SessionEvent>> {
@@ -453,7 +453,9 @@ fn normalize_cursor_stream(raw: &str) -> Result<Vec<SessionEvent>> {
                 kind: SessionEventKind::Message,
                 summary: trimmed.chars().take(200).collect(),
                 redaction: RedactionClass::None,
-                payload_json: Some(serde_json::json!({"type":"assistant","text":trimmed}).to_string()),
+                payload_json: Some(
+                    serde_json::json!({"type":"assistant","text":trimmed}).to_string(),
+                ),
             }];
             events.push(SessionEvent {
                 sequence: 1,
@@ -469,8 +471,11 @@ fn normalize_cursor_stream(raw: &str) -> Result<Vec<SessionEvent>> {
     }
 }
 
-fn ensure_cancel_terminal(events: &mut Vec<SessionEvent>) {
-    if events.iter().any(|e| e.kind == SessionEventKind::Cancellation) {
+pub(crate) fn ensure_cancel_terminal(events: &mut Vec<SessionEvent>) {
+    if events
+        .iter()
+        .any(|e| e.kind == SessionEventKind::Cancellation)
+    {
         return;
     }
     events.push(SessionEvent {
@@ -491,7 +496,7 @@ fn ensure_cancel_terminal(events: &mut Vec<SessionEvent>) {
     });
 }
 
-fn resource_limit_result(
+pub(crate) fn resource_limit_result(
     manifest: &WorkerManifest,
     session_id: &str,
     version: VersionRecord,
@@ -500,7 +505,8 @@ fn resource_limit_result(
     secret: Option<SecretHandle>,
     peak: u64,
 ) -> TerminalResult {
-    let mut result = map_terminal_result(manifest, session_id, version, events, vec![], usage, secret);
+    let mut result =
+        map_terminal_result(manifest, session_id, version, events, vec![], usage, secret);
     result.state = SessionState::Failed;
     result.exit = ExitClass::ResourceLimit;
     result.exit_status = 137;
@@ -511,7 +517,11 @@ fn resource_limit_result(
     result
 }
 
-fn monitor_peak_rss(pid: u32, peak: Arc<std::sync::atomic::AtomicU64>, deadline: Instant) {
+pub(crate) fn monitor_peak_rss(
+    pid: u32,
+    peak: Arc<std::sync::atomic::AtomicU64>,
+    deadline: Instant,
+) {
     while Instant::now() < deadline {
         if let Some(rss) = sample_rss_bytes(pid) {
             peak.fetch_max(rss, Ordering::SeqCst);
@@ -531,7 +541,7 @@ fn sample_rss_bytes(pid: u32) -> Option<u64> {
             .ok()?;
         let text = String::from_utf8_lossy(&output.stdout);
         let kb: u64 = text.trim().parse().ok()?;
-        return Some(kb.saturating_mul(1024));
+        Some(kb.saturating_mul(1024))
     }
     #[cfg(target_os = "linux")]
     {
@@ -551,14 +561,18 @@ fn sample_rss_bytes(pid: u32) -> Option<u64> {
     }
 }
 
-fn terminate_child(child: &mut Child) -> Result<()> {
+pub(crate) fn terminate_child(child: &mut Child) -> Result<()> {
     let _ = child.kill();
     let _ = child.wait();
     Ok(())
 }
 
 fn which(name: &str) -> Result<PathBuf> {
-    if let Ok(path) = std::env::var("FRACTAL_CURSOR_EXECUTABLE") {
+    which_env_override("FRACTAL_CURSOR_EXECUTABLE", name)
+}
+
+pub(crate) fn which_env_override(env_var: &str, name: &str) -> Result<PathBuf> {
+    if let Ok(path) = std::env::var(env_var) {
         let p = PathBuf::from(&path);
         if p.is_file() {
             return Ok(p);
@@ -575,16 +589,22 @@ fn which(name: &str) -> Result<PathBuf> {
     Ok(PathBuf::from(path))
 }
 
-fn unix_now_ms() -> u64 {
+pub(crate) fn unix_now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
 }
 
-fn sanitize_id(id: &str) -> String {
+pub(crate) fn sanitize_id(id: &str) -> String {
     id.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(64)
         .collect()
 }
@@ -603,7 +623,8 @@ mod local_tests {
             allowed_files: vec!["src/health.c".into()],
             verify_command: None,
         };
-        let jsonl = std::fs::read_to_string(crate::cursor_fixture_dir().join("session.jsonl")).unwrap();
+        let jsonl =
+            std::fs::read_to_string(crate::cursor_fixture_dir().join("session.jsonl")).unwrap();
         let result = CursorLauncher::open_session(
             &manifest,
             &ws,

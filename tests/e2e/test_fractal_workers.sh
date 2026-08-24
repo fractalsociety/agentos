@@ -126,13 +126,90 @@ PY
 
 run_cursor_live
 
+# --- Live Claude opt-in -------------------------------------------------------
+# Non-skipping live case: with FRACTAL_CLAUDE_LIVE=1 (and `claude` on PATH, or
+# FRACTAL_CLAUDE_EXECUTABLE pointing at a real CLI), this branch performs the
+# full live session — version preflight, isolated Git workspace spawn, stream
+# translation, redaction, RSS and allowlist checks. Exit 2 only when opted-in
+# prerequisites are genuinely unavailable.
+run_claude_live() {
+    [ "${FRACTAL_CLAUDE_LIVE:-0}" = "1" ] || {
+        echo "SKIP: set FRACTAL_CLAUDE_LIVE=1 to run live Claude worker"
+        return 0
+    }
+    if [ -n "${FRACTAL_CLAUDE_EXECUTABLE:-}" ]; then
+        [ -x "${FRACTAL_CLAUDE_EXECUTABLE}" ] || skip "FRACTAL_CLAUDE_EXECUTABLE not executable"
+    else
+        command -v claude >/dev/null 2>&1 || skip "claude CLI not installed"
+    fi
+    [ -n "${FRACTAL_CLAUDE_SECRET_HANDLE:-}" ] || skip "FRACTAL_CLAUDE_SECRET_HANDLE unset"
+
+    echo "== fractal-worker live: claude =="
+    cargo build -p fractal-worker-compat --bin fractal-claude-worker \
+        || fail "build fractal-claude-worker"
+    CBIN="$ROOT/target/debug/fractal-claude-worker"
+
+    "$CBIN" discover-version >"$OUT" || fail "live claude discover-version"
+    python3 - "$OUT" <<'PY' || fail "live claude version schema"
+import json, pathlib, sys
+v = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert v.get("provider") == "claude", v
+assert v.get("protocol_version") == "fractal-worker/v1", v
+assert v.get("cli_version"), v
+assert "stub" not in v["cli_version"].lower(), v
+print("claude version", v["cli_version"])
+PY
+
+    SEED=$(mktemp -d "${TMPDIR:-/tmp}/fractal-claude-seed.XXXXXX")
+    mkdir -p "$SEED/src"
+    printf '%s\n' 'int health(void) { return -1; }' >"$SEED/src/health.c"
+    PROMPT='Edit only src/health.c so health() returns 0. Do not touch any other file.'
+
+    "$CBIN" open-session \
+        --workspace-id e2e-claude-live \
+        --root-object-id root \
+        --allowed-file src/health.c \
+        --seed-dir "$SEED" \
+        --secret-handle "$FRACTAL_CLAUDE_SECRET_HANDLE" \
+        --prompt "$PROMPT" \
+        >"$OUT" || fail "live claude open-session"
+
+    python3 - "$OUT" "$FIXTURE/canary_secrets.txt" <<'PY' || fail "live claude result validation"
+import json, pathlib, sys
+result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+canary = pathlib.Path(sys.argv[2]).read_text()
+assert result.get("schema") == "fractal.worker.terminal-result.v1", result
+assert result.get("provider") == "claude", result
+peak = result.get("usage", {}).get("peak_rss_bytes", 0)
+assert 0 <= peak <= 157286400, result
+assert result.get("exit") in ("success", "failure", "cancelled"), result
+for f in result.get("changed_files") or []:
+    assert f.get("within_allowlist"), f
+    assert f.get("path") == "src/health.c", f
+blob = json.dumps(result)
+for line in canary.splitlines():
+    if "sk-CANARY" in line:
+        tok = line.split("=", 1)[-1].strip()
+        assert tok not in blob, f"canary leaked: {tok}"
+for needle in ["sk-CANARY", "/Users/someone"]:
+    assert needle not in blob, needle
+# Handle id may appear; raw canary secret values must not.
+assert result.get("secret_handle"), result
+print("claude live envelope ok exit=", result.get("exit"), "status=", result.get("exit_status"))
+PY
+    rm -rf "$SEED"
+    pass "claude live worker"
+}
+
+run_claude_live
+
 # Placeholders for sibling workers (implemented by parallel tasks).
-for worker in claude hermes codex; do
+for worker in hermes codex; do
     flag=$(echo "FRACTAL_${worker}_LIVE" | tr '[:lower:]' '[:upper:]')
     # shellcheck disable=SC2086
     eval "live=\${$flag:-0}"
     if [ "$live" = "1" ]; then
-        echo "SKIP: $worker live branch not provided by this Cursor adapter task"
+        echo "SKIP: $worker live branch not provided by this Claude adapter task"
     else
         echo "SKIP: set $flag=1 when the $worker adapter is available"
     fi

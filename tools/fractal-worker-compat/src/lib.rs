@@ -1,7 +1,9 @@
 //! Fractal worker compatibility helpers for `fractal-worker/v1`.
 
+mod claude;
 mod cursor;
 
+pub use claude::ClaudeLauncher;
 pub use cursor::{CursorLauncher, OpenSessionOpts};
 
 use std::path::{Path, PathBuf};
@@ -305,6 +307,10 @@ pub fn repo_root() -> PathBuf {
 
 pub fn cursor_manifest_path() -> PathBuf {
     repo_root().join("manifests/workers/cursor.toml")
+}
+
+pub fn claude_manifest_path() -> PathBuf {
+    repo_root().join("manifests/workers/claude.toml")
 }
 
 pub fn worker_wit_path() -> PathBuf {
@@ -648,4 +654,3 @@ pub fn map_terminal_result(
         error_message: None,
     }
 }
-

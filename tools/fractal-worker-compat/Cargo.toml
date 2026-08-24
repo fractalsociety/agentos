@@ -17,6 +17,10 @@ regex = "1"
 name = "fractal-cursor-worker"
 path = "src/bin/fractal_cursor_worker.rs"
 
+[[bin]]
+name = "fractal-claude-worker"
+path = "src/bin/fractal_claude_worker.rs"
+
 [[test]]
 name = "test_cursor_worker"
 path = "../../tests/compat/test_cursor_worker.rs"
