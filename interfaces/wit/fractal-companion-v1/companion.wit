@@ -175,7 +175,8 @@ interface types {
         item-bytes: u32,
         /// True iff more items remain after `next-cursor`.
         more: bool,
-        next-cursor: event-cursor,
+        /// Absent on the terminal page. Present only when `more` is true.
+        next-cursor: option<event-cursor>,
         range: event-range,
     }
 
@@ -230,12 +231,18 @@ interface types {
     // ── Project and progress ─────────────────────────────────────────────
 
     enum progress-state {
+        /// A Beads issue exists but is not yet eligible to run.
+        open,
         proposed,
         ready,
+        /// Canonical Fractal execution is currently in progress.
+        in-progress,
         active,
         blocked,
         review,
         done,
+        superseded,
+        closed,
         dormant,
     }
 
@@ -263,17 +270,19 @@ interface types {
         redaction: redaction-class,
     }
 
-    /// A pinned, immutable snapshot of one project. Carries opaque issue
-    /// references, never writable issue-tracker internals.
-    record project {
+    /// A pinned, immutable ProjectSnapshot of one project. Beads contributes
+    /// only its stable opaque reference and Fractal contributes the canonical
+    /// event range. Replaying the same inputs must produce byte-identical
+    /// output; no writable tracker handle or tracker credential crosses this
+    /// boundary.
+    record project-snapshot {
         schema: schema-version,
         project-id: object-id,
         /// Root the snapshot was built from.
         snapshot-root: object-id,
+        /// Stable opaque Beads reference; never a mutable issue object.
+        beads-reference: string,
         range: event-range,
-        /// Opaque tracker reference, e.g. "agentos-gz0.5". Bounded by
-        /// limits.max-ref-bytes. Never a path or URL.
-        reference: string,
         /// Human-readable title, bounded by limits.max-label-bytes.
         title: string,
         node-count: u32,
@@ -284,22 +293,29 @@ interface types {
         redaction: redaction-class,
     }
 
-    /// One node of the dependency graph. Ordering is deterministic:
-    /// ascending `depth`, then ascending `reference` byte order.
-    record progress {
+    /// One immutable ProgressNode of the dependency graph. Ordering is
+    /// deterministic: ascending `depth`, then ascending Beads reference byte
+    /// order. Dependencies are immutable object identifiers, never writable
+    /// Beads internals.
+    record progress-node {
         schema: schema-version,
         node-id: object-id,
         project-id: object-id,
-        reference: string,
+        /// Stable opaque Beads issue reference, bounded by max-ref-bytes.
+        beads-reference: string,
         title: string,
         state: progress-state,
         proof: proof-level,
-        /// Topological rank; dependencies always have a lower depth.
+        /// Topological depth; dependencies always have a lower depth.
         depth: u32,
+        /// Object IDs of direct prerequisites in the pinned snapshot.
+        depends-on: list<object-id>,
         depends-on-count: u32,
         /// Completion in hundredths of a percent, 0 ..= 10000.
         percent-x100: u32,
         event-seq: u64,
+        /// Canonical Fractal events supporting this node's current state.
+        range: event-range,
         blocker: blocker-evidence,
         assignment: option<worker-assignment>,
         redaction: redaction-class,
@@ -524,18 +540,21 @@ interface types {
 interface companion-export {
     use types.{
         schema-version, object-id, event-cursor, export-error, page-request,
-        page-info, session, project, progress, daily-root, health-adapter,
+        page-info, session, project-snapshot, progress-node, daily-root, health-adapter,
         worker-memory, task-intent, task-intent-receipt,
     };
 
-    record project-page {
+    /// A typed page of immutable ProjectSnapshot records. The page cursor is
+    /// bound to its authority epoch, stream, schema major, and root.
+    record project-snapshot-page {
         page: page-info,
-        items: list<project>,
+        items: list<project-snapshot>,
     }
 
-    record progress-page {
+    /// A typed page of dependency-ordered ProgressNode records.
+    record progress-node-page {
         page: page-info,
-        items: list<progress>,
+        items: list<progress-node>,
     }
 
     record worker-memory-page {
@@ -552,14 +571,14 @@ interface companion-export {
     list-projects: func(
         epoch: u64,
         page: page-request,
-    ) -> result<project-page, export-error>;
+    ) -> result<project-snapshot-page, export-error>;
 
     /// Bounded, dependency-ordered progress nodes for one project.
     list-progress: func(
         epoch: u64,
         project-id: object-id,
         page: page-request,
-    ) -> result<progress-page, export-error>;
+    ) -> result<progress-node-page, export-error>;
 
     /// The immutable bundle for one local day. Deterministic: identical
     /// inputs must produce an identical `bundle-id`.
