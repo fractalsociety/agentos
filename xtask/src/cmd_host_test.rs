@@ -42,6 +42,18 @@ struct Suite {
 /// stable as new test files are added incrementally.
 const SUITES: &[Suite] = &[
     Suite {
+        // agentos-pkh: RemoteGrant validation and execution-lease fencing.
+        name: "test_remote_authority",
+        sources: &[
+            "tests/security/test_remote_authority.c",
+            "kernel/agentos-root-task/src/auth_server.c",
+            "kernel/agentos-root-task/src/cap_broker.c",
+            "kernel/agentos-root-task/src/mesh_agent.c",
+            "kernel/agentos-root-task/src/agent_task_gateway.c",
+        ],
+        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
+    },
+    Suite {
         // agentos-d02: companion v1.1 ABI, marshalling, grant, and cursor contract.
         name: "test_companion_export_contract",
         sources: &["tests/contracts/companion_export_test.c"],
@@ -52,8 +64,9 @@ const SUITES: &[Suite] = &[
         sources: &[
             "tests/test_agent_task_gateway.c",
             "kernel/agentos-root-task/src/agent_task_gateway.c",
+            "kernel/agentos-root-task/src/mesh_agent.c",
         ],
-        extra_args: &[],
+        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
         // agentos-gz0.14.11: FractalOS capabilities v1 contract boundary.
@@ -72,8 +85,9 @@ const SUITES: &[Suite] = &[
         sources: &[
             "tests/api/test_controller.c",
             "kernel/agentos-root-task/src/agent_task_gateway.c",
+            "kernel/agentos-root-task/src/mesh_agent.c",
         ],
-        extra_args: &[],
+        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
         name: "test_cc_contract",

@@ -15,9 +15,149 @@
 
 #define AGENTOS_DEBUG 1
 #include "agentos.h"
+#include "contracts/cap_broker_contract.h"
+#include <stddef.h>
+
+static bool cap_remote_bytes_equal(const uint8_t *a, const uint8_t *b,
+                                   uint32_t length)
+{
+    uint8_t difference = 0u;
+    for (uint32_t i = 0u; i < length; i++) difference |= (uint8_t)(a[i] ^ b[i]);
+    return difference == 0u;
+}
+
+void cap_broker_remote_init(cap_broker_remote_state_t *state,
+                            uint64_t mesh_agent_caller_badge)
+{
+    if (state == NULL) return;
+    uint8_t *bytes = (uint8_t *)state;
+    for (uint32_t i = 0u; i < (uint32_t)sizeof(*state); i++) bytes[i] = 0u;
+    state->mesh_agent_caller_badge = mesh_agent_caller_badge;
+    state->generation = 1u;
+}
+
+static bool cap_remote_entry_matches_grant(
+    const struct cap_broker_remote_badge_entry *entry,
+    const mesh_remote_grant_t *grant)
+{
+    return entry->active != 0u &&
+        cap_remote_bytes_equal(entry->issuer.bytes, grant->issuer.bytes,
+                               MESH_ID_BYTES) &&
+        cap_remote_bytes_equal(entry->subject_agent.bytes,
+                               grant->subject_agent.bytes, MESH_ID_BYTES) &&
+        cap_remote_bytes_equal(entry->space_id.bytes, grant->space_id.bytes,
+                               MESH_ID_BYTES) &&
+        cap_remote_bytes_equal(entry->nonce, grant->nonce, MESH_NONCE_BYTES);
+}
+
+uint32_t cap_broker_derive_remote_endpoint_badge(
+    cap_broker_remote_state_t *state, uint64_t caller_badge,
+    const mesh_remote_grant_t *grant, uint64_t requested_operations,
+    uint32_t requested_effect_class, uint64_t requested_budget_units,
+    uint64_t *out_local_badge)
+{
+    if (out_local_badge != NULL) *out_local_badge = 0u;
+    if (state == NULL || grant == NULL || out_local_badge == NULL ||
+        state->mesh_agent_caller_badge == 0u)
+        return CAP_BROKER_ERR_BAD_ARG;
+    if (caller_badge != state->mesh_agent_caller_badge)
+        return CAP_BROKER_ERR_REMOTE_CALLER;
+    if (requested_operations == 0u ||
+        (requested_operations & ~grant->operation_mask) != 0u ||
+        requested_effect_class > grant->effect_class ||
+        requested_budget_units == 0u ||
+        requested_budget_units > grant->budget_units)
+        return CAP_BROKER_ERR_REMOTE_SCOPE;
+
+    for (uint32_t i = 0u; i < CAP_BROKER_REMOTE_MAX_BADGES; i++) {
+        struct cap_broker_remote_badge_entry *entry = &state->entries[i];
+        if (cap_remote_entry_matches_grant(entry, grant) &&
+            entry->operations == requested_operations &&
+            entry->effect_class == requested_effect_class &&
+            entry->budget_units == requested_budget_units) {
+            *out_local_badge = entry->badge;
+            return CAP_BROKER_OK;
+        }
+    }
+
+    uint32_t slot = state->next_slot++ % CAP_BROKER_REMOTE_MAX_BADGES;
+    struct cap_broker_remote_badge_entry *entry = &state->entries[slot];
+    uint32_t generation = state->generation++;
+    if (generation == 0u) generation = state->generation++;
+    *entry = (struct cap_broker_remote_badge_entry){0};
+    entry->badge = CAP_BROKER_REMOTE_BADGE_PREFIX |
+        ((uint64_t)generation << 16u) | (uint64_t)(slot + 1u);
+    entry->issuer = grant->issuer;
+    entry->subject_agent = grant->subject_agent;
+    entry->space_id = grant->space_id;
+    for (uint32_t i = 0u; i < MESH_NONCE_BYTES; i++)
+        entry->nonce[i] = grant->nonce[i];
+    entry->operations = requested_operations;
+    entry->effect_class = requested_effect_class;
+    entry->budget_units = requested_budget_units;
+    entry->expiry_unix_ms = grant->expiry_unix_ms;
+    entry->authority_epoch = grant->authority_epoch;
+    entry->revocation_epoch = grant->revocation_epoch;
+    entry->generation = generation;
+    entry->active = 1u;
+    *out_local_badge = entry->badge;
+    return CAP_BROKER_OK;
+}
+
+uint32_t cap_broker_remote_badge_recheck(
+    const cap_broker_remote_state_t *state, uint64_t local_badge,
+    const mesh_remote_grant_t *grant, uint64_t requested_operations,
+    uint32_t requested_effect_class, uint64_t requested_budget_units,
+    uint64_t now_unix_ms, uint64_t authority_epoch,
+    uint64_t revocation_epoch)
+{
+    if (state == NULL || grant == NULL || local_badge == 0u ||
+        (local_badge & UINT64_C(0xff00000000000000)) !=
+            CAP_BROKER_REMOTE_BADGE_PREFIX)
+        return CAP_BROKER_ERR_BAD_ARG;
+    for (uint32_t i = 0u; i < CAP_BROKER_REMOTE_MAX_BADGES; i++) {
+        const struct cap_broker_remote_badge_entry *entry = &state->entries[i];
+        if (entry->active == 0u || entry->badge != local_badge) continue;
+        if (!cap_remote_entry_matches_grant(entry, grant))
+            return CAP_BROKER_ERR_REMOTE_SCOPE;
+        if (requested_operations == 0u ||
+            (requested_operations & ~entry->operations) != 0u ||
+            requested_effect_class > entry->effect_class ||
+            requested_budget_units == 0u ||
+            requested_budget_units > entry->budget_units)
+            return CAP_BROKER_ERR_REMOTE_SCOPE;
+        if (entry->expiry_unix_ms <= now_unix_ms ||
+            entry->authority_epoch != authority_epoch ||
+            entry->revocation_epoch != revocation_epoch ||
+            grant->authority_epoch != authority_epoch ||
+            grant->revocation_epoch != revocation_epoch)
+            return CAP_BROKER_ERR_REMOTE_STALE;
+        return CAP_BROKER_OK;
+    }
+    return CAP_BROKER_ERR_NOT_FOUND;
+}
+
+uint32_t cap_broker_remote_revoke_epoch(
+    cap_broker_remote_state_t *state, uint64_t authority_epoch,
+    uint64_t revocation_epoch)
+{
+    if (state == NULL) return CAP_BROKER_ERR_BAD_ARG;
+    uint32_t revoked = 0u;
+    for (uint32_t i = 0u; i < CAP_BROKER_REMOTE_MAX_BADGES; i++) {
+        struct cap_broker_remote_badge_entry *entry = &state->entries[i];
+        if (entry->active != 0u &&
+            (entry->authority_epoch != authority_epoch ||
+             entry->revocation_epoch != revocation_epoch)) {
+            entry->active = 0u;
+            revoked++;
+        }
+    }
+    return revoked;
+}
+
+#ifndef AGENTOS_REMOTE_AUTHORITY_HOST_TEST
 #include "sel4_server.h"
 #include "sel4_client.h"
-#include "contracts/cap_broker_contract.h"
 #include "contracts/agent_harness_contract.h"
 #include "cap_authority.h"
 #include "system_desc.h"
@@ -815,3 +955,4 @@ uint32_t cap_broker_handle_policy_reload_ppc(void)
     rep->length = 16;
         return SEL4_ERR_OK;
 }
+#endif /* !AGENTOS_REMOTE_AUTHORITY_HOST_TEST */

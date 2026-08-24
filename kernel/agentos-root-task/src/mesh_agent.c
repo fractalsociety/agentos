@@ -40,12 +40,268 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#include "agentos.h"
-#include "sel4_server.h"
 #include "contracts/mesh_agent_contract.h"
 #include <stdint.h>
-#include <string.h>
 #include <stdbool.h>
+
+static bool mesh_remote_bytes_equal(const uint8_t *a, const uint8_t *b,
+                                    uint32_t length)
+{
+    uint8_t difference = 0u;
+    for (uint32_t i = 0u; i < length; i++) difference |= (uint8_t)(a[i] ^ b[i]);
+    return difference == 0u;
+}
+
+static bool mesh_remote_bytes_zero(const uint8_t *bytes, uint32_t length)
+{
+    uint8_t combined = 0u;
+    for (uint32_t i = 0u; i < length; i++) combined |= bytes[i];
+    return combined == 0u;
+}
+
+bool mesh_grant_audience_matches(const mesh_remote_grant_t *grant,
+                                 const mesh_node_id_t *local_node)
+{
+    return grant != NULL && local_node != NULL &&
+        mesh_remote_bytes_equal(grant->audience_node.bytes,
+                                local_node->bytes, MESH_ID_BYTES);
+}
+
+bool mesh_epochs_current(const mesh_remote_grant_t *grant,
+                         mesh_revocation_epoch_t current)
+{
+    return grant != NULL && grant->authority_epoch == current.authority_epoch &&
+        grant->revocation_epoch == current.revocation_epoch;
+}
+
+bool mesh_remote_badge_accepted(uint64_t remote_badge)
+{
+    (void)remote_badge;
+    return false;
+}
+
+static uint32_t mesh_remote_emit(
+    const mesh_remote_authority_context_t *ctx, uint32_t status,
+    const mesh_remote_grant_t *grant, const mesh_execution_lease_t *lease,
+    uint64_t local_badge)
+{
+    if (ctx == NULL || ctx->emit_event == NULL) return MESH_AUTHZ_ERR_EVENT;
+    uint32_t event_status = ctx->emit_event(
+        EVENTBUS_EVENT_AUTHORITY_CHANGE,
+        status == MESH_AUTHZ_OK ? MESH_AUTHZ_DECISION_ALLOW
+                                : MESH_AUTHZ_DECISION_DENY,
+        status, grant, lease, local_badge, ctx->callback_ctx);
+    return event_status == EVENTBUS_AGENT_EVENT_OK ? status
+                                                    : MESH_AUTHZ_ERR_EVENT;
+}
+
+void mesh_agent_remote_authority_init(mesh_remote_authority_state_t *state)
+{
+    if (state == NULL) return;
+    uint8_t *bytes = (uint8_t *)state;
+    for (uint32_t i = 0u; i < (uint32_t)sizeof(*state); i++) bytes[i] = 0u;
+}
+
+static uint32_t mesh_remote_authn_status(uint32_t authn)
+{
+    switch (authn) {
+    case MESH_REMOTE_AUTHN_OK: return MESH_AUTHZ_OK;
+    case MESH_REMOTE_AUTHN_UNTRUSTED_ISSUER: return MESH_AUTHZ_ERR_ISSUER;
+    case MESH_REMOTE_AUTHN_REVOKED_ISSUER: return MESH_AUTHZ_ERR_REVOKED;
+    default: return MESH_AUTHZ_ERR_SIGNATURE;
+    }
+}
+
+static uint32_t mesh_remote_grant_fields_validate(
+    const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx)
+{
+    if (grant == NULL || ctx == NULL || ctx->verify_grant == NULL ||
+        ctx->derive_local_badge == NULL || ctx->emit_event == NULL)
+        return MESH_AUTHZ_ERR_BAD_ARG;
+    if (!mesh_remote_bytes_equal(grant->subject_node.bytes,
+                                 ctx->authenticated_tailnet_peer.bytes,
+                                 MESH_ID_BYTES))
+        return MESH_AUTHZ_ERR_PEER_SUBJECT;
+    uint32_t authn = mesh_remote_authn_status(
+        ctx->verify_grant(grant, ctx->callback_ctx));
+    if (authn != MESH_AUTHZ_OK) return authn;
+    if (!mesh_remote_bytes_equal(grant->audience_node.bytes,
+                                 ctx->local_node.bytes, MESH_ID_BYTES))
+        return MESH_AUTHZ_ERR_AUDIENCE;
+    if (!mesh_remote_bytes_equal(grant->subject_agent.bytes,
+                                 ctx->expected_agent.bytes, MESH_ID_BYTES))
+        return MESH_AUTHZ_ERR_AGENT;
+    if (!mesh_remote_bytes_equal(grant->space_id.bytes,
+                                 ctx->expected_space.bytes, MESH_ID_BYTES))
+        return MESH_AUTHZ_ERR_SPACE;
+    if (!mesh_remote_bytes_equal(grant->interface_hash.bytes,
+                                 ctx->expected_interface.bytes, MESH_ID_BYTES))
+        return MESH_AUTHZ_ERR_INTERFACE;
+    if (ctx->requested_operations == 0u ||
+        (ctx->requested_operations & ~grant->operation_mask) != 0u)
+        return MESH_AUTHZ_ERR_OPERATION;
+    if ((ctx->required_scope_flags & ~grant->scope_flags) != 0u ||
+        !mesh_remote_bytes_equal(grant->object_scope.bytes,
+                                 ctx->expected_object_scope.bytes,
+                                 MESH_ID_BYTES))
+        return MESH_AUTHZ_ERR_OBJECT_SCOPE;
+    if (ctx->requested_effect_class > grant->effect_class ||
+        grant->effect_class > ctx->max_effect_class ||
+        ctx->max_effect_class > MESH_EFFECT_EXTERNAL)
+        return MESH_AUTHZ_ERR_EFFECT;
+    if (ctx->requested_budget_units == 0u ||
+        ctx->requested_budget_units > grant->budget_units)
+        return MESH_AUTHZ_ERR_BUDGET;
+    if (grant->expiry_unix_ms <= ctx->now_unix_ms)
+        return MESH_AUTHZ_ERR_EXPIRED;
+    if (mesh_remote_bytes_zero(grant->nonce, MESH_NONCE_BYTES))
+        return MESH_AUTHZ_ERR_NONCE;
+    if (grant->authority_epoch != ctx->authority_epoch)
+        return MESH_AUTHZ_ERR_STALE_AUTHORITY;
+    if (grant->revocation_epoch != ctx->revocation_epoch)
+        return MESH_AUTHZ_ERR_REVOKED;
+    return MESH_AUTHZ_OK;
+}
+
+static int32_t mesh_remote_nonce_find(
+    const mesh_remote_authority_state_t *state,
+    const mesh_remote_grant_t *grant, uint64_t now_unix_ms)
+{
+    if (state == NULL || grant == NULL) return -1;
+    for (uint32_t i = 0u; i < MESH_REMOTE_NONCE_CACHE_CAP; i++) {
+        const struct mesh_remote_nonce_entry *entry = &state->nonces[i];
+        if (entry->active != 0u && entry->expiry_unix_ms > now_unix_ms &&
+            mesh_remote_bytes_equal(entry->issuer.bytes, grant->issuer.bytes,
+                                    MESH_ID_BYTES) &&
+            mesh_remote_bytes_equal(entry->nonce, grant->nonce,
+                                    MESH_NONCE_BYTES))
+            return (int32_t)i;
+    }
+    return -1;
+}
+
+static void mesh_remote_nonce_remember(mesh_remote_authority_state_t *state,
+                                       const mesh_remote_grant_t *grant)
+{
+    uint32_t slot = state->next_nonce++ % MESH_REMOTE_NONCE_CACHE_CAP;
+    struct mesh_remote_nonce_entry *entry = &state->nonces[slot];
+    *entry = (struct mesh_remote_nonce_entry){0};
+    entry->issuer = grant->issuer;
+    for (uint32_t i = 0u; i < MESH_NONCE_BYTES; i++)
+        entry->nonce[i] = grant->nonce[i];
+    entry->expiry_unix_ms = grant->expiry_unix_ms;
+    entry->authority_epoch = grant->authority_epoch;
+    entry->revocation_epoch = grant->revocation_epoch;
+    entry->active = 1u;
+}
+
+uint32_t mesh_agent_admit_remote_grant(
+    mesh_remote_authority_state_t *state, const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx, uint64_t serialized_badge,
+    uint64_t *out_local_badge)
+{
+    if (out_local_badge != NULL) *out_local_badge = 0u;
+    uint32_t status = mesh_remote_grant_fields_validate(grant, ctx);
+    if (status == MESH_AUTHZ_OK && (state == NULL || out_local_badge == NULL))
+        status = MESH_AUTHZ_ERR_BAD_ARG;
+    if (status == MESH_AUTHZ_OK && serialized_badge != 0u)
+        status = MESH_AUTHZ_ERR_REMOTE_BADGE;
+    if (status == MESH_AUTHZ_OK &&
+        mesh_remote_nonce_find(state, grant, ctx->now_unix_ms) >= 0)
+        status = MESH_AUTHZ_ERR_REPLAY;
+    uint64_t badge = 0u;
+    if (status == MESH_AUTHZ_OK) {
+        badge = ctx->derive_local_badge(
+            grant, ctx->requested_operations, ctx->requested_effect_class,
+            ctx->requested_budget_units, ctx->callback_ctx);
+        if (badge == 0u) status = MESH_AUTHZ_ERR_CAPBROKER;
+    }
+    uint32_t emitted = mesh_remote_emit(ctx, status, grant, NULL,
+                                        status == MESH_AUTHZ_OK ? badge : 0u);
+    if (emitted != status) status = emitted;
+    if (status == MESH_AUTHZ_OK) {
+        mesh_remote_nonce_remember(state, grant);
+        *out_local_badge = badge;
+    }
+    return status;
+}
+
+uint32_t mesh_agent_recheck_remote_grant(
+    const mesh_remote_authority_state_t *state,
+    const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx, uint64_t *out_local_badge)
+{
+    if (out_local_badge != NULL) *out_local_badge = 0u;
+    uint32_t status = mesh_remote_grant_fields_validate(grant, ctx);
+    if (status == MESH_AUTHZ_OK && (state == NULL || out_local_badge == NULL))
+        status = MESH_AUTHZ_ERR_BAD_ARG;
+    if (status == MESH_AUTHZ_OK &&
+        mesh_remote_nonce_find(state, grant, ctx->now_unix_ms) < 0)
+        status = MESH_AUTHZ_ERR_NOT_ADMITTED;
+    uint64_t badge = 0u;
+    if (status == MESH_AUTHZ_OK) {
+        badge = ctx->derive_local_badge(
+            grant, ctx->requested_operations, ctx->requested_effect_class,
+            ctx->requested_budget_units, ctx->callback_ctx);
+        if (badge == 0u) status = MESH_AUTHZ_ERR_CAPBROKER;
+    }
+    uint32_t emitted = mesh_remote_emit(ctx, status, grant, NULL,
+                                        status == MESH_AUTHZ_OK ? badge : 0u);
+    if (emitted != status) status = emitted;
+    if (status == MESH_AUTHZ_OK) *out_local_badge = badge;
+    return status;
+}
+
+uint32_t mesh_agent_validate_execution_lease(
+    const mesh_execution_lease_t *lease, const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx)
+{
+    uint32_t status = MESH_AUTHZ_OK;
+    if (lease == NULL || grant == NULL || ctx == NULL ||
+        ctx->verify_lease == NULL || ctx->emit_event == NULL) {
+        status = MESH_AUTHZ_ERR_BAD_ARG;
+    } else {
+        uint32_t authn = mesh_remote_authn_status(
+            ctx->verify_lease(lease, grant, ctx->callback_ctx));
+        if (authn == MESH_AUTHZ_ERR_SIGNATURE)
+            status = MESH_AUTHZ_ERR_LEASE_SIGNATURE;
+        else if (authn != MESH_AUTHZ_OK)
+            status = authn;
+        else if (mesh_remote_bytes_zero(lease->nonce, MESH_NONCE_BYTES))
+            status = MESH_AUTHZ_ERR_NONCE;
+        else if (lease->expires_unix_ms <= ctx->now_unix_ms ||
+                 lease->expires_unix_ms > grant->expiry_unix_ms)
+            status = MESH_AUTHZ_ERR_EXPIRED;
+        else if (lease->authority_epoch != ctx->authority_epoch ||
+                 lease->authority_epoch != grant->authority_epoch)
+            status = MESH_AUTHZ_ERR_STALE_AUTHORITY;
+        else if (lease->revocation_epoch != ctx->revocation_epoch ||
+                 lease->revocation_epoch != grant->revocation_epoch)
+            status = MESH_AUTHZ_ERR_REVOKED;
+        else if (lease->fence_epoch != ctx->expected_lease_fence_epoch)
+            status = MESH_AUTHZ_ERR_LEASE_PARTITIONED;
+        else if (!mesh_remote_bytes_equal(
+                     lease->holder_node.bytes, grant->subject_node.bytes,
+                     MESH_ID_BYTES) ||
+                 !mesh_remote_bytes_equal(
+                     lease->holder_node.bytes,
+                     ctx->authenticated_tailnet_peer.bytes, MESH_ID_BYTES) ||
+                 !mesh_remote_bytes_equal(
+                     lease->subject_agent.bytes, grant->subject_agent.bytes,
+                     MESH_ID_BYTES) ||
+                 !mesh_remote_bytes_equal(
+                     lease->space_id.bytes, grant->space_id.bytes,
+                     MESH_ID_BYTES))
+            status = MESH_AUTHZ_ERR_LEASE_SUBJECT;
+    }
+    return mesh_remote_emit(ctx, status, grant, lease, 0u);
+}
+
+#if !defined(AGENTOS_REMOTE_AUTHORITY_HOST_TEST) && \
+    !defined(AGENTOS_REMOTE_AUTHORITY_ONLY)
+#include "sel4_server.h"
+#include <string.h>
 
 /* ── Channel IDs ───────────────────────────────────────────────────────────── */
 #define CH_CONTROLLER        1   /* controller <-> mesh_agent */
@@ -156,8 +412,7 @@ static void mesh_announce_self(uint32_t worker_total, uint32_t worker_free,
     rep_u32(rep, 16, gpu_free);
     rep_u32(rep, 20, nid_lo);
     rep_u32(rep, 24, nid_hi);
-    sel4_dbg_puts("[E5-S8] notify-stub
-");
+    sel4_dbg_puts("[E5-S8] notify-stub\n");
 
     log_drain_write(15, 15, "[mesh_agent] Announced self to SquirrelBus mesh channel\n");
 }
@@ -357,8 +612,7 @@ static uint32_t mesh_agent_pd_dispatch(sel4_badge_t b, const sel4_msg_t *req, se
             rep_u32(rep, 16, flags);
             rep_u32(rep, 20, nid_lo);
             rep_u32(rep, 24, nid_hi);
-            sel4_dbg_puts("[E5-S8] notify-stub
-");
+            sel4_dbg_puts("[E5-S8] notify-stub\n");
         }
 
         /* Decrement peer's free slot count optimistically */
@@ -498,6 +752,7 @@ static void mesh_agent_pd_init(void) {
     log_drain_write(15, 15, "[mesh_agent] Distributed Agent Mesh PD online\n[mesh_agent]   node_id=" AGENTOS_NODE_ID "\n[mesh_agent]   max_peers=8, timeout=30 ticks\n[mesh_agent]   spawn_policy=least-loaded, GPU-affinity\n");
 
     /* Signal controller: mesh_agent ready */
-    sel4_dbg_puts("[E5-S8] notify-stub
-");
+    sel4_dbg_puts("[E5-S8] notify-stub\n");
 }
+
+#endif /* full legacy MeshAgent PD body */

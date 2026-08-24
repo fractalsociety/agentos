@@ -19,6 +19,7 @@
 
 #pragma once
 #include "../agentos.h"
+#include "eventbus_contract.h"
 
 /* ─── Generated wire schema constants ───────────────────────────────────── */
 
@@ -395,6 +396,128 @@ struct mesh_flow_window {
 };
 typedef struct mesh_flow_window mesh_flow_window_t;
 
+/* ─── Remote authority validation contract ──────────────────────────────── */
+
+#define MESH_REMOTE_GRANT_SIGNATURE_DOMAIN \
+    "agentos/fractal-remote-grant/1"
+#define MESH_EXECUTION_LEASE_SIGNATURE_DOMAIN \
+    "agentos/fractal-execution-lease/1"
+#define MESH_REMOTE_GRANT_SIGNING_BYTES 304u
+#define MESH_EXECUTION_LEASE_SIGNING_BYTES 168u
+#define MESH_REMOTE_NONCE_CACHE_CAP 64u
+
+enum mesh_authorization_decision {
+    MESH_AUTHZ_DECISION_DENY = 0u,
+    MESH_AUTHZ_DECISION_ALLOW = 1u,
+};
+
+enum mesh_remote_authn_status {
+    MESH_REMOTE_AUTHN_OK = 0u,
+    MESH_REMOTE_AUTHN_UNTRUSTED_ISSUER = 1u,
+    MESH_REMOTE_AUTHN_BAD_SIGNATURE = 2u,
+    MESH_REMOTE_AUTHN_REVOKED_ISSUER = 3u,
+};
+
+enum mesh_authorization_status {
+    MESH_AUTHZ_OK = 0u,
+    MESH_AUTHZ_ERR_BAD_ARG = 1u,
+    MESH_AUTHZ_ERR_PEER_SUBJECT = 2u,
+    MESH_AUTHZ_ERR_ISSUER = 3u,
+    MESH_AUTHZ_ERR_SIGNATURE = 4u,
+    MESH_AUTHZ_ERR_AUDIENCE = 5u,
+    MESH_AUTHZ_ERR_AGENT = 6u,
+    MESH_AUTHZ_ERR_SPACE = 7u,
+    MESH_AUTHZ_ERR_INTERFACE = 8u,
+    MESH_AUTHZ_ERR_OPERATION = 9u,
+    MESH_AUTHZ_ERR_OBJECT_SCOPE = 10u,
+    MESH_AUTHZ_ERR_EFFECT = 11u,
+    MESH_AUTHZ_ERR_BUDGET = 12u,
+    MESH_AUTHZ_ERR_EXPIRED = 13u,
+    MESH_AUTHZ_ERR_NONCE = 14u,
+    MESH_AUTHZ_ERR_REPLAY = 15u,
+    MESH_AUTHZ_ERR_STALE_AUTHORITY = 16u,
+    MESH_AUTHZ_ERR_REVOKED = 17u,
+    MESH_AUTHZ_ERR_REMOTE_BADGE = 18u,
+    MESH_AUTHZ_ERR_CAPBROKER = 19u,
+    MESH_AUTHZ_ERR_LEASE_PARTITIONED = 20u,
+    MESH_AUTHZ_ERR_LEASE_SUBJECT = 21u,
+    MESH_AUTHZ_ERR_LEASE_SIGNATURE = 22u,
+    MESH_AUTHZ_ERR_NOT_ADMITTED = 23u,
+    MESH_AUTHZ_ERR_DUPLICATE_COMPLETION = 24u,
+    MESH_AUTHZ_ERR_EVENT = 25u,
+};
+
+typedef uint32_t (*mesh_remote_grant_verify_fn)(
+    const mesh_remote_grant_t *grant, void *ctx);
+typedef uint32_t (*mesh_execution_lease_verify_fn)(
+    const mesh_execution_lease_t *lease,
+    const mesh_remote_grant_t *grant, void *ctx);
+typedef uint64_t (*mesh_capbroker_derive_fn)(
+    const mesh_remote_grant_t *grant, uint64_t requested_operations,
+    uint32_t requested_effect_class, uint64_t requested_budget_units,
+    void *ctx);
+typedef uint32_t (*mesh_authz_event_fn)(
+    uint32_t canonical_event_type, uint32_t decision, uint32_t status,
+    const mesh_remote_grant_t *grant,
+    const mesh_execution_lease_t *lease, uint64_t local_badge, void *ctx);
+
+struct mesh_remote_nonce_entry {
+    mesh_node_id_t issuer;
+    uint8_t nonce[MESH_NONCE_BYTES];
+    uint64_t expiry_unix_ms;
+    uint64_t authority_epoch;
+    uint64_t revocation_epoch;
+    uint8_t active;
+};
+
+struct mesh_remote_authority_state {
+    struct mesh_remote_nonce_entry nonces[MESH_REMOTE_NONCE_CACHE_CAP];
+    uint32_t next_nonce;
+};
+typedef struct mesh_remote_authority_state mesh_remote_authority_state_t;
+
+struct mesh_remote_authority_context {
+    /* Transport identity is authentication input only.  In particular, a
+     * Headscale/tailnet identity is never an Agent ISA authority grant. */
+    mesh_node_id_t authenticated_tailnet_peer;
+    mesh_node_id_t local_node;
+    mesh_agent_id_t expected_agent;
+    mesh_space_id_t expected_space;
+    mesh_interface_hash_t expected_interface;
+    mesh_object_id_t expected_object_scope;
+    uint64_t requested_operations;
+    uint32_t required_scope_flags;
+    uint32_t requested_effect_class;
+    uint32_t max_effect_class;
+    uint64_t requested_budget_units;
+    uint64_t now_unix_ms;
+    uint64_t authority_epoch;
+    uint64_t revocation_epoch;
+    uint64_t expected_lease_fence_epoch;
+    mesh_remote_grant_verify_fn verify_grant;
+    mesh_execution_lease_verify_fn verify_lease;
+    mesh_capbroker_derive_fn derive_local_badge;
+    mesh_authz_event_fn emit_event;
+    void *callback_ctx;
+};
+typedef struct mesh_remote_authority_context mesh_remote_authority_context_t;
+
+void mesh_agent_remote_authority_init(mesh_remote_authority_state_t *state);
+uint32_t mesh_agent_admit_remote_grant(
+    mesh_remote_authority_state_t *state,
+    const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx,
+    uint64_t serialized_badge, uint64_t *out_local_badge);
+uint32_t mesh_agent_recheck_remote_grant(
+    const mesh_remote_authority_state_t *state,
+    const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx,
+    uint64_t *out_local_badge);
+uint32_t mesh_agent_validate_execution_lease(
+    const mesh_execution_lease_t *lease,
+    const mesh_remote_grant_t *grant,
+    const mesh_remote_authority_context_t *ctx);
+
 static inline bool mesh_frame_type_is_datagram_safe(uint8_t frame_type)
 {
     return frame_type == MESH_FRAME_HINT;
@@ -431,28 +554,11 @@ static inline bool mesh_sequence_accept(mesh_replay_cursor_t *cursor,
     return true;
 }
 
-static inline bool mesh_grant_audience_matches(const mesh_remote_grant_t *grant,
-                                               const mesh_node_id_t *local_node)
-{
-    if (grant == NULL || local_node == NULL) return false;
-    for (uint32_t i = 0; i < MESH_ID_BYTES; i++) {
-        if (grant->audience_node.bytes[i] != local_node->bytes[i]) return false;
-    }
-    return true;
-}
-
-static inline bool mesh_epochs_current(const mesh_remote_grant_t *grant,
-                                       mesh_revocation_epoch_t current)
-{
-    return grant != NULL && grant->authority_epoch == current.authority_epoch &&
-           grant->revocation_epoch == current.revocation_epoch;
-}
-
-static inline bool mesh_remote_badge_accepted(uint64_t remote_badge)
-{
-    (void)remote_badge;
-    return false;
-}
+bool mesh_grant_audience_matches(const mesh_remote_grant_t *grant,
+                                 const mesh_node_id_t *local_node);
+bool mesh_epochs_current(const mesh_remote_grant_t *grant,
+                         mesh_revocation_epoch_t current);
+bool mesh_remote_badge_accepted(uint64_t remote_badge);
 
 static inline bool mesh_completion_accept(mesh_completion_guard_t *guard,
                                           uint64_t completion_sequence)
@@ -480,6 +586,13 @@ _Static_assert(sizeof(mesh_remote_session_handle_t) == 16u,
                "remote session handle wire size");
 _Static_assert(sizeof(mesh_frame_header_t) == MESH_FRAME_HEADER_BYTES,
                "generated frame header wire size");
+_Static_assert(MESH_REMOTE_GRANT_SIGNING_BYTES ==
+                   (7u * MESH_ID_BYTES + 5u * 8u + 2u * 4u +
+                    MESH_NONCE_BYTES),
+               "RemoteGrant canonical signing size");
+_Static_assert(MESH_EXECUTION_LEASE_SIGNING_BYTES ==
+                   (5u * 8u + 3u * MESH_ID_BYTES + MESH_NONCE_BYTES),
+               "ExecutionLease canonical signing size");
 _Static_assert(MESH_REMOTE_GRANT_HAS_LOCAL_BADGE == 0u,
                "remote grants never carry local badges");
 _Static_assert(MESH_REMOTE_WIRE_HAS_BADGE == 0u,

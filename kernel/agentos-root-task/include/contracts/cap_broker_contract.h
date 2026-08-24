@@ -20,6 +20,7 @@
 
 #pragma once
 #include "../agentos.h"
+#include "mesh_agent_contract.h"
 
 /* ─── Request structs ────────────────────────────────────────────────────── */
 
@@ -47,6 +48,15 @@ struct cap_broker_req_list {
     uint32_t max_entries;       /* max cap_grant_entry_t entries in shmem */
 };
 
+struct cap_broker_req_remote_derive {
+    uint32_t target_pd;
+    uint32_t requested_effect_class;
+    uint64_t requested_operations;
+    uint64_t requested_budget_units;
+    uint32_t grant_offset;      /* RemoteGrant in CapBroker/MeshAgent shmem */
+    uint32_t grant_length;
+};
+
 /* ─── Reply structs ──────────────────────────────────────────────────────── */
 
 struct cap_broker_reply_grant {
@@ -69,6 +79,56 @@ struct cap_broker_reply_list {
     uint32_t ok;
     uint32_t count;             /* entries written to shmem */
 };
+
+struct cap_broker_reply_remote_derive {
+    uint32_t ok;
+    uint32_t reserved;
+    uint64_t local_badge;       /* receiving-node CSpace only; never serialized */
+};
+
+#define CAP_BROKER_REMOTE_MAX_BADGES 64u
+#define CAP_BROKER_REMOTE_BADGE_PREFIX UINT64_C(0xCB00000000000000)
+
+struct cap_broker_remote_badge_entry {
+    uint64_t badge;
+    mesh_node_id_t issuer;
+    mesh_agent_id_t subject_agent;
+    mesh_space_id_t space_id;
+    uint8_t nonce[MESH_NONCE_BYTES];
+    uint64_t operations;
+    uint64_t budget_units;
+    uint64_t expiry_unix_ms;
+    uint64_t authority_epoch;
+    uint64_t revocation_epoch;
+    uint32_t effect_class;
+    uint32_t generation;
+    uint8_t active;
+};
+
+struct cap_broker_remote_state {
+    struct cap_broker_remote_badge_entry entries[CAP_BROKER_REMOTE_MAX_BADGES];
+    uint64_t mesh_agent_caller_badge;
+    uint32_t next_slot;
+    uint32_t generation;
+};
+typedef struct cap_broker_remote_state cap_broker_remote_state_t;
+
+void cap_broker_remote_init(cap_broker_remote_state_t *state,
+                            uint64_t mesh_agent_caller_badge);
+uint32_t cap_broker_derive_remote_endpoint_badge(
+    cap_broker_remote_state_t *state, uint64_t caller_badge,
+    const mesh_remote_grant_t *grant, uint64_t requested_operations,
+    uint32_t requested_effect_class, uint64_t requested_budget_units,
+    uint64_t *out_local_badge);
+uint32_t cap_broker_remote_badge_recheck(
+    const cap_broker_remote_state_t *state, uint64_t local_badge,
+    const mesh_remote_grant_t *grant, uint64_t requested_operations,
+    uint32_t requested_effect_class, uint64_t requested_budget_units,
+    uint64_t now_unix_ms, uint64_t authority_epoch,
+    uint64_t revocation_epoch);
+uint32_t cap_broker_remote_revoke_epoch(
+    cap_broker_remote_state_t *state, uint64_t authority_epoch,
+    uint64_t revocation_epoch);
 
 /* ─── Shmem layout: grant entry ─────────────────────────────────────────── */
 
@@ -93,4 +153,7 @@ enum cap_broker_error {
     CAP_BROKER_ERR_SYNC        = 6,  /* harness epoch update failed */
     CAP_BROKER_ERR_FORBIDDEN   = 7,  /* caller lacks CapAdmin badge right */
     CAP_BROKER_ERR_BAD_ARG     = 8,
+    CAP_BROKER_ERR_REMOTE_CALLER = 9,
+    CAP_BROKER_ERR_REMOTE_SCOPE = 10,
+    CAP_BROKER_ERR_REMOTE_STALE = 11,
 };

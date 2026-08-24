@@ -224,7 +224,7 @@ PD_WG_NET_SRCS           := src/wg_net.c src/wireguard_noise.c src/monocypher.c 
 PD_APP_MANAGER_SRCS      := src/app_manager.c src/m3_bare_metal.c src/log.c
 PD_HTTP_SVC_SRCS         := src/http_svc.c src/m3_bare_metal.c src/log.c
 PD_VM_MANAGER_SRCS       := src/vm_manager.c src/vmm_mux_stub.c src/m3_bare_metal.c src/log.c
-PD_AUTH_SERVER_SRCS      := src/auth_server.c src/m3_bare_metal.c src/log.c
+PD_AUTH_SERVER_SRCS      := src/auth_server.c src/ed25519_verify.c src/monocypher.c src/m3_bare_metal.c src/log.c
 PD_EXT2FS_SRCS           := src/ext2fs.c src/m3_bare_metal.c src/log.c
 PD_PROC_SERVER_SRCS      := src/proc_server.c src/m3_bare_metal.c src/log.c
 PD_VM_SNAPSHOT_SRCS      := src/vm_snapshot.c src/m3_bare_metal.c src/log.c
@@ -269,6 +269,11 @@ WASM3_SRCS := wasm3/m3_core.c wasm3/m3_env.c wasm3/m3_code.c wasm3/m3_compile.c 
               wasm3/m3_function.c wasm3/m3_info.c
 
 CONTROLLER_OBJS   := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_MONITOR_SRCS))
+# The controller-side task gateway performs the final dispatch/completion
+# recheck using MeshAgent's source-owned validator.  Build only that validator
+# from mesh_agent.c here; the legacy MeshAgent PD body remains independently
+# owned and is not folded into the controller image.
+CONTROLLER_OBJS   += $(BUILD_DIR)/mesh_remote_authority.o
 EVENTBUS_OBJS     := $(BUILD_DIR)/event_bus.o \
                     $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_EVENTBUS_SRCS))
 INITAGENT_OBJS    := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_INITAGENT_SRCS))
@@ -519,6 +524,10 @@ VIBEOS_OBJS := $(BUILD_DIR)/vibeos_main.o \
                $(BUILD_DIR)/sel4_crt.o \
                $(BUILD_DIR)/pd_entry.o
 
+$(BUILD_DIR)/mesh_remote_authority.o: src/mesh_agent.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) -DAGENTOS_REMOTE_AUTHORITY_ONLY $< -o $@
+
 $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
@@ -594,8 +603,8 @@ $(BUILD_DIR)/target_contract_runner.o: $(REPO_ROOT)/tests/harness/target_contrac
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -I$(REPO_ROOT)/tests -I$(REPO_ROOT)/tests/harness $< -o $@
 
-$(BUILD_DIR)/test_runner.elf: $(BUILD_DIR)/target_contract_runner.o
-	$(LD) $(LDFLAGS) $^ $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(LIBS) -o $@
+$(BUILD_DIR)/test_runner.elf: $(BUILD_DIR)/target_contract_runner.o $(BUILD_DIR)/mesh_remote_authority.o
+	$(LD) $(LDFLAGS) $^ $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(LIBS) -o $@
 
 $(BUILD_DIR)/swap_slot.elf: $(SWAPSLOT_OBJS) $(WASM3_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@

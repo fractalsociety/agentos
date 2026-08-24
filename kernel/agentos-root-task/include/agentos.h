@@ -194,6 +194,9 @@ typedef enum {
     MSG_MESH_LEASE_RELEASE_REPLY = 0x0A17,
     MSG_MESH_REVOCATION_EPOCH = 0x0A18,
     MSG_MESH_FRAME_ACK         = 0x0A19,
+    MSG_MESH_REMOTE_AUTHORIZE  = 0x0A1A,
+    MSG_MESH_REMOTE_DISPATCH   = 0x0A1B,
+    MSG_MESH_REMOTE_COMPLETE   = 0x0A1C,
 
     /* GPU Scheduler PD (agents -> gpu_sched) */
     MSG_GPU_SUBMIT             = 0x0901,  /* Submit GPU task: hash_lo, hash_hi, priority, flags */
@@ -646,6 +649,7 @@ typedef struct __attribute__((packed)) {
 #define OP_AUTH_REVOKE   0xF2u  /* MR1=token_id → MR0=ok */
 #define OP_AUTH_ADDUSER  0xF3u  /* MR1=uid, MR2=cap_mask → MR0=ok */
 #define OP_AUTH_STATUS   0xF4u  /* → MR0=ok, MR1=active_tokens, MR2=active_users */
+#define OP_AUTH_REMOTE_VERIFY 0xF5u /* verify signed remote authority from auth shmem */
 
 /* Channel ID for auth_server (from controller perspective) */
 #define CH_AUTH_SERVER      29u
@@ -902,6 +906,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_CAP_REVOKE_GRANT            0x1A02  /* MR1=target_pd MR2=cap_class → MR0=ok */
 #define MSG_CAP_GRANT_STATUS            0x1A03  /* MR1=target_pd → MR0=cap_mask MR1=version */
 #define MSG_CAP_LIST                    0x1A04  /* → MR0=count; cap_entry_t[] in shmem */
+#define MSG_CAP_REMOTE_DERIVE           0x1A05  /* derive a narrow local-only endpoint badge */
 
 /* ─── OOMKiller contract opcodes (0x1B00) ───────────────────────────────── */
 #define MSG_OOM_STATUS                  0x1B01  /* → MR0=pressure MR1=candidates MR2=killed */

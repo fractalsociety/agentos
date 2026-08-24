@@ -1,5 +1,6 @@
 #include "contracts/agent_harness_contract.h"
 #include "contracts/eventbus_contract.h"
+#include "contracts/mesh_agent_contract.h"
 #include "agent_task_gateway.h"
 
 #include <stdbool.h>
@@ -406,4 +407,60 @@ uint32_t agent_task_gateway_metrics(uint32_t task_id,
         return AGENT_TASK_ERR_NOT_FOUND;
     *reply = g_task.last_metrics;
     return AGENT_TASK_OK;
+}
+
+static uint32_t gateway_remote_emit_denial(
+    const mesh_remote_authority_context_t *ctx, uint32_t status,
+    const mesh_remote_grant_t *grant, const mesh_execution_lease_t *lease)
+{
+    if (ctx == NULL || ctx->emit_event == NULL) return MESH_AUTHZ_ERR_EVENT;
+    return ctx->emit_event(EVENTBUS_EVENT_AUTHORITY_CHANGE,
+                           MESH_AUTHZ_DECISION_DENY, status, grant, lease, 0u,
+                           ctx->callback_ctx) == EVENTBUS_AGENT_EVENT_OK
+        ? status : MESH_AUTHZ_ERR_EVENT;
+}
+
+uint32_t agent_task_gateway_remote_dispatch_recheck(
+    const mesh_remote_authority_state_t *authority_state,
+    const mesh_remote_grant_t *grant, const mesh_execution_lease_t *lease,
+    const mesh_remote_authority_context_t *ctx, uint64_t admitted_local_badge,
+    uint64_t *out_local_badge)
+{
+    if (out_local_badge != NULL) *out_local_badge = 0u;
+    if (out_local_badge == NULL || admitted_local_badge == 0u)
+        return gateway_remote_emit_denial(ctx, MESH_AUTHZ_ERR_BAD_ARG,
+                                          grant, lease);
+
+    uint64_t rechecked_badge = 0u;
+    uint32_t status = mesh_agent_recheck_remote_grant(
+        authority_state, grant, ctx, &rechecked_badge);
+    if (status != MESH_AUTHZ_OK) return status;
+    if (rechecked_badge != admitted_local_badge)
+        return gateway_remote_emit_denial(ctx, MESH_AUTHZ_ERR_CAPBROKER,
+                                          grant, lease);
+
+    status = mesh_agent_validate_execution_lease(lease, grant, ctx);
+    if (status != MESH_AUTHZ_OK) return status;
+    *out_local_badge = rechecked_badge;
+    return MESH_AUTHZ_OK;
+}
+
+uint32_t agent_task_gateway_remote_completion_recheck(
+    const mesh_remote_authority_state_t *authority_state,
+    const mesh_remote_grant_t *grant, const mesh_execution_lease_t *lease,
+    const mesh_remote_authority_context_t *ctx, uint64_t admitted_local_badge,
+    mesh_completion_guard_t *completion, uint64_t completion_sequence)
+{
+    if (completion == NULL)
+        return gateway_remote_emit_denial(ctx, MESH_AUTHZ_ERR_BAD_ARG,
+                                          grant, lease);
+    uint64_t rechecked_badge = 0u;
+    uint32_t status = agent_task_gateway_remote_dispatch_recheck(
+        authority_state, grant, lease, ctx, admitted_local_badge,
+        &rechecked_badge);
+    if (status != MESH_AUTHZ_OK) return status;
+    if (!mesh_completion_accept(completion, completion_sequence))
+        return gateway_remote_emit_denial(
+            ctx, MESH_AUTHZ_ERR_DUPLICATE_COMPLETION, grant, lease);
+    return MESH_AUTHZ_OK;
 }

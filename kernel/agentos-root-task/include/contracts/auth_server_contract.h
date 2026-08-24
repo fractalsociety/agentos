@@ -23,16 +23,19 @@
 
 #pragma once
 #include "../agentos.h"
+#include "mesh_agent_contract.h"
 
 /* ─── Channel IDs ────────────────────────────────────────────────────────── */
-#define CH_AUTH_SERVER   29      /* controller → auth_server */
+#ifndef CH_AUTH_SERVER
+#define CH_AUTH_SERVER   29u     /* controller → auth_server */
+#endif
 
 /* ─── Opcodes ─────────────────────────────────────────────────────────────── */
-#define OP_AUTH_LOGIN    0x01
-#define OP_AUTH_VERIFY   0x02
-#define OP_AUTH_REVOKE   0x03
-#define OP_AUTH_ADDUSER  0x04
-#define OP_AUTH_STATUS   0x05
+#define OP_AUTH_LOGIN    0xF0u
+#define OP_AUTH_VERIFY   0xF1u
+#define OP_AUTH_REVOKE   0xF2u
+#define OP_AUTH_ADDUSER  0xF3u
+#define OP_AUTH_STATUS   0xF4u
 
 /* ─── Request structs ────────────────────────────────────────────────────── */
 
@@ -62,6 +65,13 @@ struct auth_server_req_status {
     uint32_t op;                 /* OP_AUTH_STATUS */
 };
 
+struct auth_server_req_remote_verify {
+    uint32_t op;                 /* OP_AUTH_REMOTE_VERIFY */
+    uint32_t record_kind;        /* AUTH_REMOTE_RECORD_* */
+    uint32_t record_offset;      /* byte offset in auth shmem */
+    uint32_t record_length;
+};
+
 /* ─── Reply structs ──────────────────────────────────────────────────────── */
 
 struct auth_server_reply_login {
@@ -89,6 +99,11 @@ struct auth_server_reply_status {
     uint32_t active_users;       /* number of registered users */
 };
 
+struct auth_server_reply_remote_verify {
+    uint32_t ok;                 /* AUTH_OK or AUTH_REMOTE_ERR_* */
+    uint32_t issuer_slot;        /* local trust-store slot; never wire authority */
+};
+
 /* ─── Error codes ────────────────────────────────────────────────────────── */
 
 enum auth_server_error {
@@ -98,3 +113,52 @@ enum auth_server_error {
     AUTH_ERR_NOTOKENS   = 0xFE,  /* token not found / invalid */
     AUTH_ERR_NOUSER     = 0xFF,  /* uid not found */
 };
+
+enum auth_remote_record_kind {
+    AUTH_REMOTE_RECORD_GRANT = 1u,
+    AUTH_REMOTE_RECORD_LEASE = 2u,
+};
+
+enum auth_remote_error {
+    AUTH_REMOTE_OK = 0u,
+    AUTH_REMOTE_ERR_BAD_ARG = 1u,
+    AUTH_REMOTE_ERR_UNTRUSTED_ISSUER = 2u,
+    AUTH_REMOTE_ERR_SIGNATURE = 3u,
+    AUTH_REMOTE_ERR_REVOKED_ISSUER = 4u,
+    AUTH_REMOTE_ERR_TABLE_FULL = 5u,
+};
+
+#define AUTH_REMOTE_MAX_ISSUERS 16u
+
+typedef int (*auth_server_signature_verify_fn)(
+    const uint8_t signature[MESH_SIGNATURE_BYTES], const uint8_t *message,
+    uint32_t message_len, const uint8_t public_key[MESH_ID_BYTES], void *ctx);
+
+struct auth_remote_issuer {
+    mesh_node_id_t issuer;
+    uint8_t public_key[MESH_ID_BYTES];
+    uint8_t active;
+    uint8_t revoked;
+    uint16_t reserved;
+};
+
+struct auth_remote_authority {
+    struct auth_remote_issuer issuers[AUTH_REMOTE_MAX_ISSUERS];
+    auth_server_signature_verify_fn verify_signature;
+    void *verify_ctx;
+};
+typedef struct auth_remote_authority auth_remote_authority_t;
+
+void auth_server_remote_authority_init(
+    auth_remote_authority_t *authority,
+    auth_server_signature_verify_fn verify_signature, void *verify_ctx);
+uint32_t auth_server_remote_trust_issuer(
+    auth_remote_authority_t *authority, const mesh_node_id_t *issuer,
+    const uint8_t public_key[MESH_ID_BYTES]);
+uint32_t auth_server_remote_revoke_issuer(
+    auth_remote_authority_t *authority, const mesh_node_id_t *issuer);
+uint32_t auth_server_verify_remote_grant(
+    const mesh_remote_grant_t *grant, void *authority);
+uint32_t auth_server_verify_execution_lease(
+    const mesh_execution_lease_t *lease,
+    const mesh_remote_grant_t *grant, void *authority);
