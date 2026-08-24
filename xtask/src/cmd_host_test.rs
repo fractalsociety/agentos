@@ -136,6 +136,12 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
+        // agentos-gz0.5: nonce uniqueness and authenticated RX replay window.
+        name: "test_wireguard_counter",
+        sources: &["tests/test_wireguard_counter.c"],
+        extra_args: &[],
+    },
+    Suite {
         // agentos-681 / agentos-vsi: CC-PD polecat occupancy + log-slot model.
         // agent_pool.c pulls in the Microkit IPC layer, so force-include the
         // host shim that stubs microkit_mr_get/set.

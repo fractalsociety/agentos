@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include "wireguard_counter.h"
 
 /* ── Limits ──────────────────────────────────────────────────────────────── */
 #define WG_MAX_PEERS        16u   /* maximum simultaneous WireGuard peers */
@@ -154,6 +155,8 @@ typedef struct {
     uint32_t  allowed_mask;             /* subnet mask, host byte order */
     uint64_t  tx_bytes;                 /* encrypted bytes sent to this peer */
     uint64_t  rx_bytes;                 /* decrypted bytes received from this peer */
+    uint64_t  tx_counter;               /* next transport nonce counter */
+    wg_replay_window_t rx_replay;       /* authenticated RX counter window */
     uint32_t  last_handshake;           /* monotonic tick of last successful handshake */
     uint8_t   _pad[4];                  /* explicit pad to 8-byte alignment */
-} wg_peer_t;                            /* ~112 bytes */
+} wg_peer_t;                            /* includes a 1 KiB replay bitmap */

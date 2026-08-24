@@ -193,6 +193,8 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 
 #endif /* AGENTOS_TEST_HOST */
 
+#include "wireguard_counter.h"
+
 /* ── WireGuard / wg_net constants (identical values to old version) ──────── */
 #ifndef WG_MAX_PEERS
 #define WG_MAX_PEERS        16u
@@ -222,6 +224,8 @@ typedef struct {
     uint32_t  allowed_mask;
     uint64_t  tx_bytes;
     uint64_t  rx_bytes;
+    uint64_t  tx_counter;
+    wg_replay_window_t rx_replay;
     uint32_t  last_handshake;
     uint8_t   _pad[4];
 } wg_peer_t;
@@ -407,9 +411,10 @@ static void send_keepalives(void) {
         volatile uint8_t *tx = WG_STAGING + WG_STAGING_TX_OFF;
         tx[0] = 4; tx[1] = 0; tx[2] = 0; tx[3] = 0;
         tx[4] = p->peer_id; tx[5] = 0; tx[6] = 0; tx[7] = 0;
-        for (int b = 8; b < 16; b++) tx[b] = 0;
+        uint8_t nonce[12];
+        if (!wg_transport_next_counter(&p->tx_counter, nonce)) continue;
+        for (int b = 0; b < 8; b++) tx[8 + b] = nonce[4 + b];
 
-        uint8_t  nonce[12]  = {0};
         uint8_t  cipher[WG_AEAD_TAG_LEN];
         uint32_t cipher_len = 0;
         uint8_t  session_key[WG_KEY_LEN];
@@ -498,6 +503,8 @@ static uint32_t handle_add_peer(sel4_badge_t badge __attribute__((unused)),
     p->allowed_mask  = allowed_mask;
     p->tx_bytes      = 0;
     p->rx_bytes      = 0;
+    p->tx_counter    = 0u;
+    wg_replay_window_reset(&p->rx_replay);
     p->last_handshake= 0;
     wg_zero(p->preshared_key, WG_KEY_LEN);
 
@@ -606,7 +613,12 @@ static uint32_t handle_send(sel4_badge_t badge __attribute__((unused)),
     uint8_t session_key[WG_KEY_LEN];
     uint8_t nonce[12];
     wg_zero(session_key, WG_KEY_LEN);
-    wg_zero(nonce, 12);
+    if (!wg_transport_next_counter(&p->tx_counter, nonce)) {
+        data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8;
+        return SEL4_ERR_INTERNAL;
+    }
     /* CRYPTO_INTEGRATION_POINT: derive session key via ECDH + KDF */
 
     const uint8_t *plain = (const uint8_t *)(wg_staging_vaddr
@@ -615,7 +627,7 @@ static uint32_t handle_send(sel4_badge_t badge __attribute__((unused)),
     volatile uint8_t *out = WG_STAGING + WG_STAGING_TX_OFF;
     out[0] = 4; out[1] = 0; out[2] = 0; out[3] = 0;
     out[4] = p->peer_id; out[5] = 0; out[6] = 0; out[7] = 0;
-    for (int b = 8; b < 16; b++) out[b] = 0;
+    for (int b = 0; b < 8; b++) out[8 + b] = nonce[4 + b];
 
     uint8_t *cipher_dst = (uint8_t *)(wg_staging_vaddr
                                        + WG_STAGING_TX_OFF
@@ -845,6 +857,8 @@ static void wg_net_test_init(void)
         wg_zero(peers[i].preshared_key, WG_KEY_LEN);
         peers[i].tx_bytes       = 0;
         peers[i].rx_bytes       = 0;
+        peers[i].tx_counter     = 0u;
+        wg_replay_window_reset(&peers[i].rx_replay);
         peers[i].last_handshake = 0;
     }
     active_peer_count = 0;
