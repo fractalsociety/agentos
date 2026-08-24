@@ -116,10 +116,10 @@ pub fn fetch(output_dir: &Path) -> Result<()> {
     let overlay = build_overlay(&codex, &ca)?;
     let mut initrd = base_rootfs;
     initrd.extend_from_slice(&gzip_deterministic(&overlay)?);
-    // The VMM reserves 0x50000000..0x5f000000 for initrd data.
+    // The Codex VMM reserves 0x90000000..0xaf000000 for initrd data.
     anyhow::ensure!(
-        initrd.len() < 0x0f000000,
-        "Codex initrd is too large for the 512 MiB guest layout: {} bytes",
+        initrd.len() < 0x1f000000,
+        "Codex initrd is too large for its reserved guest window: {} bytes",
         initrd.len()
     );
 
@@ -526,5 +526,15 @@ mod tests {
             gzip_deterministic(b"hello").unwrap(),
             gzip_deterministic(b"hello").unwrap()
         );
+    }
+
+    #[test]
+    fn codex_guest_layout_has_unpack_headroom_and_avoids_agentos_image() {
+        let dts = include_str!("../../kernel/agentos-root-task/codex-overlay.dts.in");
+        let vmm = include_str!("../../kernel/agentos-root-task/src/linux_vmm.c");
+        assert!(dts.contains("reg = <0x00 0x80000000 0x00 0x30000000>"));
+        assert!(dts.contains("linux,initrd-start = <0x00 0x90000000>"));
+        assert!(vmm.contains("#define GUEST_RAM_SIZE          0x30000000"));
+        assert!(vmm.contains("#define LINUX_GUEST_RAM_VADDR      0x80000000UL"));
     }
 }

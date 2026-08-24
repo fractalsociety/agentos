@@ -52,8 +52,8 @@ UBUNTU_BOOTARGS := earlycon=pl011,0x9000000 console=ttyAMA0,115200n8 rdinit=/ini
 CODEX_INITRD := $(AGENTOS_IMAGES)/agentos-codex-0.149.1-aarch64-initrd.cpio.gz
 CODEX_MANIFEST := $(AGENTOS_IMAGES)/agentos-codex-0.149.1-aarch64.json
 CODEX_DTS_OVERLAY := $(BUILD_DIR)/agentos-codex-overlay.dts
-CODEX_INITRD_START := 0x50000000
-CODEX_INITRD_LIMIT := 0x5f000000
+CODEX_INITRD_START := 0x90000000
+CODEX_INITRD_LIMIT := 0xaf000000
 
 ifeq ($(GUEST_OS),ubuntu)
 LINUX_IMAGE  := $(UBUNTU_KERNEL)
@@ -105,6 +105,9 @@ VMM_CFLAGS := \
 
 ifeq ($(VMM_DUAL_GUEST),1)
 VMM_CFLAGS += -DAGENTOS_GUEST_BOTH=1
+endif
+ifeq ($(GUEST_OS),codex)
+VMM_CFLAGS += -DAGENTOS_GUEST_CODEX=1
 endif
 
 VMM_CONFIG_STAMP := $(BUILD_DIR)/vmm-$(GUEST_OS).stamp

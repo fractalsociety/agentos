@@ -360,6 +360,10 @@ ifeq ($(ARCH),aarch64)
     CFLAGS += -DAGENTOS_GUEST_FREEBSD=1
     CFLAGS_ROOT_TASK += -DAGENTOS_GUEST_FREEBSD=1
     IMAGES += freebsd_vmm.elf
+  else ifeq ($(GUEST_OS),codex)
+    CFLAGS += -DAGENTOS_GUEST_LINUX=1 -DAGENTOS_GUEST_CODEX=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_GUEST_CODEX=1
+    IMAGES += linux_vmm.elf
   else
     ifneq ($(GUEST_OS),none)
       CFLAGS += -DAGENTOS_GUEST_LINUX=1

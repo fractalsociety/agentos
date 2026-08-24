@@ -220,8 +220,9 @@ Run `./tools/agentctl/agentctl --help` for the full command reference.
 
 ### Run an official Codex agent
 
-AgentOS can be used by the official Codex CLI today through a narrow,
-read-only MCP bridge. The model-generated shell remains in Codex's
+There are now two boot-proven compatibility paths for the official Codex CLI.
+For host-side development, use the narrow, read-only MCP bridge. The
+model-generated shell remains in Codex's
 `workspace-write` sandbox; a separate host process owns CC-PD socket access and
 exposes only pool status, guest listing, and guest status.
 
@@ -236,8 +237,22 @@ target/release/codex-agentos \
 ```
 
 See [`tools/agentos-mcp/README.md`](tools/agentos-mcp/README.md) for the threat
-boundary, exact setup, metrics, and live E2E command. Codex currently runs on
-the external host, not inside the minimal Linux guest fixture.
+boundary, exact setup, metrics, and live E2E command.
+
+For compatibility testing, build a credential-free initramfs containing the
+hash-pinned official AArch64 Codex CLI and boot it under the AgentOS VMM:
+
+```sh
+cargo xtask fetch-guest --os codex --output-dir build/guest-images
+cargo xtask qemu-test --board qemu_virt_aarch64 \
+  --guest-os codex --timeout-secs 300
+```
+
+The automated gate waits for Codex's own version preflight. Its passing marker
+starts with `AGENTOS_CODEX_PREFLIGHT status=0` and reports `codex-cli 0.149.1`.
+No API credential is stored in the image; authenticated in-guest model work
+still requires the capability-gated network and runtime-secret handoff. The
+native capability-scoped harness remains the production target.
 
 ## Project Structure
 
@@ -298,7 +313,8 @@ below is labeled by **proof level**, not by "done / not done".
 | timer-service | host-tested | Host contract tests (`tests/contracts/timer_test.c`) |
 | entropy-service | host-tested | `services/entropy-service/entropy_svc.c` + contract; not target-validated |
 | CC-PD host API (list/status/console) | boot-proven | Unix socket bridge at `build/cc_pd.sock`; list/status/console-drain proven by guest-login E2E |
-| Official Codex external agent loop | boot-proven | `AGENTOS_CODEX_LIVE=1 make e2e-codex-agent` requires official Codex to query a booted CC-PD through the read-only MCP bridge, edit one C file in an isolated Git worktree, and pass its test; Codex-in-guest remains planned |
+| Official Codex external agent loop | boot-proven | `AGENTOS_CODEX_LIVE=1 make e2e-codex-agent` requires official Codex to query a booted CC-PD through the read-only MCP bridge, edit one C file in an isolated Git worktree, and pass its test |
+| Official Codex compatibility guest | boot-proven | `cargo xtask qemu-test --guest-os codex --timeout-secs 300` boots the pinned official AArch64 CLI and requires `AGENTOS_CODEX_PREFLIGHT status=0`; authenticated in-guest inference is not yet wired |
 | CC-PD snapshot relay | stubbed | Returns `CC_ERR_RELAY_FAULT` for the boot guest (snapshot not implemented) |
 | VibeOS lifecycle API (`VOS_*`) | host-tested | Contract tests build with `-DAGENTOS_TEST_HOST` (`make test-vibeos-contract`, `tests/api/test_vibeos*.c`); create/destroy/list/status logic proven on host, not on target |
 | vibe-engine WASM hot-swap | host-tested | `tests/integration/vibe_hotswap_test.c` exercises read/probe paths only; actual WASM propose+swap needs a mapped staging region (hardware-dependent) |

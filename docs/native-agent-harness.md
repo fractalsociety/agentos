@@ -39,6 +39,15 @@ authority.
 The V0 task stays valuable as an interoperability and performance test. V2 is
 the default runtime target.
 
+V0 is now boot-proven for the pinned official AArch64 `codex-cli 0.149.1`.
+`cargo xtask qemu-test --guest-os codex --timeout-secs 300` builds AgentOS,
+boots the CLI in a credential-free 768 MiB compatibility guest, runs the
+binary's version preflight, and records boot time plus host QEMU RSS. The
+larger allocation is isolated to this compatibility VM: it does not change the
+native worker budget or duplicate shared ModelSvc/ToolSvc/AgentFS/ExecServer
+state. Runtime credential delivery and authenticated in-guest inference remain
+unimplemented.
+
 ## Implementation status
 
 The native C bootstrap harness now builds as its own protection domain, boots

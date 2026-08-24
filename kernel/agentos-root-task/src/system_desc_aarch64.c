@@ -465,16 +465,23 @@ const system_desc_t system_desc_aarch64 = {
                 { .irq_number = 49u, .ntfn_badge = 0x2u, .name = "virtio-blk0" },
                 { .irq_number = 51u, .ntfn_badge = 0x4u, .name = "virtio-blk1" },
             },
-            /* 512 MB guest RAM. */
+            /* Codex needs 768 MiB while its large static binary is unpacked;
+             * other Linux guests retain the proven 512 MiB allocation. */
             .mr_count = 1u,
             .memory_regions = {
                 { .vaddr    =
 #if defined(AGENTOS_GUEST_BOTH)
                               0xc0000000ULL,
+#elif defined(AGENTOS_GUEST_CODEX)
+                              0x80000000ULL,
 #else
                               0x40000000ULL,
 #endif
-                  .size     = 0x20000000u,  /* 512 MB */
+#if defined(AGENTOS_GUEST_CODEX)
+                  .size     = 0x30000000u,  /* 768 MiB compatibility guest */
+#else
+                  .size     = 0x20000000u,  /* 512 MiB */
+#endif
                   .writable = 1u,
                   .name     = "guest_ram" },
             },

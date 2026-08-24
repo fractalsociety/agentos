@@ -499,16 +499,25 @@ static uint32_t vmm_affinity[VMM_MAX_SLOTS];
 
 /* ─── Guest Configuration ─────────────────────────────────────────────── */
 
-/* 512MB guest RAM is the largest mapping currently proven by the root-task
- * allocator for qemu_virt_aarch64. The Ubuntu 26.04 initrd still fits when
- * placed below the DTB. */
-#define GUEST_RAM_SIZE          0x20000000
+/* The pinned official Codex binary expands to more than 200 MiB. During
+ * initramfs extraction Linux must retain both that data and the compressed
+ * 88 MiB archive, so the compatibility guest needs additional boot-only
+ * headroom. Native AgentOS workers do not use this VM allocation. */
+#if defined(AGENTOS_GUEST_CODEX)
+#define GUEST_RAM_SIZE          0x30000000  /* 768 MiB */
+#else
+#define GUEST_RAM_SIZE          0x20000000  /* 512 MiB */
+#endif
 
 /* Guest RAM, DTB, and initrd placement addresses (must match DTS). */
 #if defined(AGENTOS_GUEST_BOTH)
 #define LINUX_GUEST_RAM_VADDR      0xc0000000UL
 #define GUEST_DTB_VADDR            0xdf000000UL
 #define GUEST_INIT_RAM_DISK_VADDR  0xd0000000UL
+#elif defined(AGENTOS_GUEST_CODEX)
+#define LINUX_GUEST_RAM_VADDR      0x80000000UL
+#define GUEST_DTB_VADDR            0xaf000000UL
+#define GUEST_INIT_RAM_DISK_VADDR  0x90000000UL
 #else
 #define LINUX_GUEST_RAM_VADDR      0x40000000UL
 #define GUEST_DTB_VADDR            0x5f000000UL
