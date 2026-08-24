@@ -35,6 +35,9 @@
   Linux VMM channels:
     50: controller <-> linux_vmm    (agent-to-linux bridge commands)
     51: linux_vmm  -> serial_pd     (UART proxy; guest_contract.h compliance)
+
+  Reserved contract-first endpoints (no capability minted yet):
+    77: controller -> companion_export (CH_COMPANION_EXPORT; implementation pending)
 -->
 <system>
     <!-- ═══════════════════════════════════════════════════════════════════

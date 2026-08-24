@@ -1,242 +1,203 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 const WIT: &str = include_str!("../../interfaces/wit/fractal-companion-v1/companion.wit");
 
-fn lower_wit() -> String {
-    WIT.to_ascii_lowercase()
-}
-
-fn body_after(header: &str) -> &str {
-    let start = WIT
-        .find(header)
-        .unwrap_or_else(|| panic!("missing WIT section: {header}"));
-    let open = WIT[start..]
-        .find('{')
-        .map(|idx| start + idx + 1)
-        .unwrap_or_else(|| panic!("missing opening brace for {header}"));
-    let mut depth = 1usize;
-    for (offset, ch) in WIT[open..].char_indices() {
+fn block(kind: &str, name: &str) -> String {
+    let clean = WIT
+        .lines()
+        .map(|line| line.split("//").next().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let start = clean
+        .find(&format!("{kind} {name}"))
+        .unwrap_or_else(|| panic!("missing {kind} {name}"));
+    let open = start + clean[start..].find('{').expect("opening brace");
+    let mut depth = 0usize;
+    for (offset, ch) in clean[open..].char_indices() {
         match ch {
             '{' => depth += 1,
             '}' => {
                 depth -= 1;
                 if depth == 0 {
-                    return &WIT[open..open + offset];
+                    return clean[open + 1..open + offset].to_owned();
                 }
             }
             _ => {}
         }
     }
-    panic!("missing closing brace for {header}");
+    panic!("unbalanced {kind} {name}");
 }
 
-fn assert_record_has_fields(record: &str, fields: &[&str]) {
-    let header = format!("record {record}");
-    let body = body_after(&header);
-    for field in fields {
-        assert!(
-            body.contains(field),
-            "record {record} must include field {field}; body was:\n{body}"
-        );
-    }
+fn fields(name: &str) -> BTreeMap<String, String> {
+    block("record", name)
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.ends_with(','))
+        .map(|line| {
+            let (name, ty) = line.trim_end_matches(',').split_once(':').expect("field");
+            (name.trim().to_owned(), ty.trim().to_owned())
+        })
+        .collect()
 }
 
-fn assert_record_omits_terms(record: &str, terms: &[&str]) {
-    let header = format!("record {record}");
-    let body = body_after(&header).to_ascii_lowercase();
-    for term in terms {
-        assert!(
-            !body.contains(term),
-            "record {record} must not expose raw or credential term {term:?}; body was:\n{body}"
-        );
+fn variants(name: &str) -> Vec<String> {
+    block("enum", name)
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.ends_with(','))
+        .map(|line| line.trim_end_matches(',').to_owned())
+        .collect()
+}
+
+#[test]
+fn health_projection_is_coarse_consent_scoped_and_provenance_bound() {
+    let signal = fields("health-signal");
+    assert_eq!(
+        signal.get("source").map(String::as_str),
+        Some("health-source")
+    );
+    assert_eq!(
+        signal.get("status").map(String::as_str),
+        Some("health-status")
+    );
+    assert_eq!(
+        signal.get("provenance").map(String::as_str),
+        Some("object-id")
+    );
+    assert_eq!(
+        signal.get("redaction").map(String::as_str),
+        Some("redaction-class")
+    );
+
+    let adapter = fields("health-adapter");
+    for (name, ty) in [
+        ("source", "source-handle"),
+        ("consent-scope", "list<health-source>"),
+        ("consent-expires-unix", "u64"),
+        ("revoked", "bool"),
+        ("status", "health-status"),
+        ("signals", "list<health-signal>"),
+        ("provenance", "object-id"),
+        ("range", "event-range"),
+        ("redaction", "redaction-class"),
+    ] {
+        assert_eq!(adapter.get(name).map(String::as_str), Some(ty), "{name}");
     }
 }
 
 #[test]
-fn health_projection_records_have_required_privacy_fields() {
-    let required = [
-        "source: source-class",
-        "consent: consent-scope",
-        "freshness: freshness",
-        "status: coarse-status",
-        "provenance-hash: string",
-        "redaction: redaction-state",
-    ];
-
-    assert_record_has_fields("health-adapter-summary", &required);
-    assert_record_has_fields("health-signal", &required);
-}
-
-#[test]
-fn canonical_health_records_exclude_raw_medical_record_fields() {
-    let forbidden = [
+fn health_enums_cannot_carry_measurements_or_source_records() {
+    assert_eq!(
+        variants("health-source"),
+        ["unknown", "activity", "sleep", "readiness", "workload"]
+    );
+    assert_eq!(
+        variants("health-status"),
+        ["unknown", "ok", "attention", "stale"]
+    );
+    let combined = fields("health-signal")
+        .into_keys()
+        .chain(fields("health-adapter").into_keys())
+        .collect::<Vec<_>>();
+    for forbidden in [
         "diagnosis",
         "condition",
-        "procedure",
         "medication",
-        "prescription",
-        "lab-value",
-        "lab_value",
-        "result-value",
-        "result_value",
-        "observation-value",
-        "observation_value",
-        "clinical-note",
-        "clinical_note",
-        "note-text",
-        "note_text",
+        "measurement",
+        "value",
         "patient-name",
-        "patient_name",
-        "date-of-birth",
-        "date_of_birth",
         "medical-record-number",
-        "medical_record_number",
-        "mrn",
-    ];
-
-    assert_record_omits_terms("health-adapter-summary", &forbidden);
-    assert_record_omits_terms("health-signal", &forbidden);
-}
-
-#[test]
-fn adapter_contract_requires_explicit_bounded_authorization_before_projection() {
-    let wit = lower_wit();
-    assert!(
-        wit.contains("authorize-health-source: func"),
-        "adapter must expose an explicit authorization operation"
-    );
-    assert!(
-        wit.contains("record health-authorization"),
-        "authorization must be represented as a bounded grant"
-    );
-    assert!(
-        wit.contains("expires-at-unix-ms"),
-        "authorization and projections must carry expiry"
-    );
-    assert!(
-        wit.contains("authorization-required") && wit.contains("consent-scope-denied"),
-        "projection must be able to fail without explicit consent"
-    );
-
-    let summary_line = wit
-        .lines()
-        .find(|line| line.trim_start().starts_with("project-health-summary:"))
-        .expect("missing project-health-summary function");
-    let signal_line = wit
-        .lines()
-        .find(|line| line.trim_start().starts_with("project-health-signal:"))
-        .expect("missing project-health-signal function");
-    assert!(summary_line.contains("auth: health-authorization"));
-    assert!(signal_line.contains("auth: health-authorization"));
-}
-
-#[test]
-fn adapter_contract_requires_minimum_necessary_aggregation() {
-    let wit = lower_wit();
-    assert!(wit.contains("enum coarse-status"));
-    assert!(wit.contains("enum freshness"));
-    assert!(wit.contains("enum consent-scope"));
-    assert!(wit.contains("aggregate-status"));
-    assert!(wit.contains("trend-summary"));
-    assert!(wit.contains("safety-signal"));
-
-    let summary = body_after("record health-adapter-summary").to_ascii_lowercase();
-    let signal = body_after("record health-signal").to_ascii_lowercase();
-    for field in [
-        "status: coarse-status",
-        "freshness: freshness",
-        "consent: consent-scope",
+        "credential",
+        "secret",
+        "calendar-body",
+        "message-body",
+        "note-text",
+        "canary",
     ] {
         assert!(
-            summary.contains(field),
-            "summary must aggregate with {field}"
-        );
-        assert!(signal.contains(field), "signal must aggregate with {field}");
-    }
-}
-
-#[test]
-fn expiry_deletion_and_revocation_are_first_class_contract_paths() {
-    let wit = lower_wit();
-    assert!(wit.contains("authorization-expired"));
-    assert!(wit.contains("authorization-revoked"));
-    assert!(wit.contains("subject-deleted"));
-    assert!(wit.contains("revoke-health-authorization: func"));
-    assert!(wit.contains("delete-health-subject: func"));
-
-    let redaction = body_after("enum redaction-state").to_ascii_lowercase();
-    assert!(
-        redaction.contains("revoked"),
-        "revoked projections must be redacted"
-    );
-    assert!(
-        redaction.contains("deleted"),
-        "deleted subjects must be redacted"
-    );
-}
-
-#[test]
-fn projection_contract_is_deterministic_and_provenance_bound() {
-    let wit = lower_wit();
-    assert!(wit.contains("deterministic-projection-required"));
-    assert_record_has_fields("health-adapter-summary", &["provenance-hash: string"]);
-    assert_record_has_fields("health-signal", &["provenance-hash: string"]);
-
-    let canonical = format!(
-        "{}\n{}",
-        body_after("record health-adapter-summary"),
-        body_after("record health-signal")
-    )
-    .to_ascii_lowercase();
-    for nondeterministic in [
-        "nonce",
-        "random",
-        "uuid",
-        "source-event-id",
-        "source_event_id",
-    ] {
-        assert!(
-            !canonical.contains(nondeterministic),
-            "canonical health projections must not depend on nondeterministic/source ids: {nondeterministic}"
+            !combined.iter().any(|field| field == forbidden),
+            "{forbidden}"
         );
     }
 }
 
 #[test]
-fn canary_records_have_an_explicit_non_disclosure_path() {
-    let wit = lower_wit();
-    assert!(
-        wit.contains("canary-record-blocked"),
-        "adapter must be able to block canary records instead of projecting them"
+fn revocation_expiry_and_denial_are_typed_fail_closed_paths() {
+    let errors = variants("export-error");
+    for expected in ["denied", "redacted", "expired", "stale-source"] {
+        assert!(
+            errors.iter().any(|variant| variant == expected),
+            "{expected}"
+        );
+    }
+    let adapter = fields("health-adapter");
+    assert_eq!(adapter.get("revoked").map(String::as_str), Some("bool"));
+    assert_eq!(
+        adapter.get("consent-expires-unix").map(String::as_str),
+        Some("u64")
     );
-
-    assert_record_omits_terms("health-adapter-summary", &["canary"]);
-    assert_record_omits_terms("health-signal", &["canary"]);
 }
 
 #[test]
-fn source_credentials_are_opaque_and_never_part_of_canonical_health_events() {
-    let wit = lower_wit();
-    assert!(
-        wit.contains("record credential-handle") && wit.contains("opaque-ref: string"),
-        "source credentials must be represented only by an opaque boundary handle"
+fn source_identity_is_only_an_opaque_fixed_semantic_handle() {
+    let aliases = WIT
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("type "))
+        .collect::<Vec<_>>();
+    assert!(aliases.contains(&"type source-handle = list<u8>;"));
+    assert_eq!(
+        fields("health-adapter").get("source").map(String::as_str),
+        Some("source-handle")
     );
+    assert!(!fields("health-adapter").contains_key("source-id"));
+}
 
-    for record in ["health-adapter-summary", "health-signal"] {
-        assert_record_omits_terms(
-            record,
-            &[
-                "credential",
-                "opaque-ref",
-                "token",
-                "secret",
-                "password",
-                "api-key",
-                "api_key",
-                "workspace",
-                "path",
-                "url",
-            ],
+#[test]
+fn freshness_is_explicit_and_never_an_empty_current_result() {
+    let adapter = fields("health-adapter");
+    assert_eq!(
+        adapter.get("freshness-seconds").map(String::as_str),
+        Some("u32")
+    );
+    assert!(variants("health-status").contains(&"stale".to_owned()));
+    assert!(variants("export-error").contains(&"stale-source".to_owned()));
+}
+
+#[test]
+fn consent_and_signal_lists_have_negotiated_bounds() {
+    let limits = fields("limits");
+    assert_eq!(
+        limits.get("max-consent-scopes").map(String::as_str),
+        Some("u32")
+    );
+    assert_eq!(
+        limits.get("max-health-signals").map(String::as_str),
+        Some("u32")
+    );
+}
+
+#[test]
+fn health_operation_has_one_typed_projection_result() {
+    let operation = WIT
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("get-health-adapter:"))
+        .expect("health operation");
+    assert_eq!(
+        operation,
+        "get-health-adapter: func(epoch: u64) -> result<health-adapter, export-error>;"
+    );
+}
+
+#[test]
+fn canary_material_has_no_semantic_export_field() {
+    for record in ["health-signal", "health-adapter"] {
+        assert!(
+            fields(record).keys().all(|field| !field.contains("canary")),
+            "{record}"
         );
     }
 }

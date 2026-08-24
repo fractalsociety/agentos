@@ -54,6 +54,7 @@ void run_vm_manager_tests(microkit_channel ch);
 void run_serial_pd_tests(microkit_channel ch);
 void run_net_pd_tests(microkit_channel ch);
 void run_block_pd_tests(microkit_channel ch);
+void run_companion_export_contract_tests(microkit_channel ch);
 
 /* ── Forward declarations for integration test suites ────────────────────── */
 
@@ -95,6 +96,7 @@ void init(void)
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_net_pd_tests((microkit_channel)CH_NET_PD);
     run_block_pd_tests((microkit_channel)CH_BLOCK_PD);
+    run_companion_export_contract_tests((microkit_channel)CH_COMPANION_EXPORT);
 
     /* ── Integration tests ───────────────────────────────────────────────── */
     run_guest_binding_tests();

@@ -23,6 +23,47 @@
 
 version = "1"
 
+# ── Fractal companion export PD ──────────────────────────────────────── #
+# Controller endpoint 77 is reserved in every system description.  The
+# contract lands before the PD by design; no capability is minted until the
+# companion_export implementation is added in its follow-up bead.
+[[pd]]
+name = "companion_export"
+
+  [[pd.opcode]]
+  name = "DESCRIBE"
+  value = 0x2F01
+  legacy = "MSG_COMPANION_DESCRIBE"
+  [[pd.opcode]]
+  name = "LIST_PROJECTS"
+  value = 0x2F02
+  legacy = "MSG_COMPANION_LIST_PROJECTS"
+  [[pd.opcode]]
+  name = "LIST_PROGRESS"
+  value = 0x2F03
+  legacy = "MSG_COMPANION_LIST_PROGRESS"
+  [[pd.opcode]]
+  name = "GET_DAILY_ROOT"
+  value = 0x2F04
+  legacy = "MSG_COMPANION_GET_DAILY_ROOT"
+  [[pd.opcode]]
+  name = "GET_HEALTH_ADAPTER"
+  value = 0x2F05
+  legacy = "MSG_COMPANION_GET_HEALTH_ADAPTER"
+  [[pd.opcode]]
+  name = "LIST_WORKER_MEMORY"
+  value = 0x2F06
+  legacy = "MSG_COMPANION_LIST_WORKER_MEMORY"
+  [[pd.opcode]]
+  name = "SUBMIT_TASK_INTENT"
+  value = 0x2F07
+  legacy = "MSG_COMPANION_SUBMIT_TASK_INTENT"
+
+  [[pd.channel]]
+  name = "CONTROLLER"
+  id = 77
+  legacy = "CH_COMPANION_EXPORT"
+
 # ── EventBus PD ───────────────────────────────────────────────────────── #
 [[pd]]
 name = "event_bus"

@@ -19,6 +19,18 @@ path = "../tests/test_fractal_mesh_frames.rs"
 name = "health_adapter_contract"
 path = "../tests/contract/test_health_adapter.rs"
 
+[[test]]
+name = "project_progress_contract"
+path = "../tests/contract/test_project_progress.rs"
+
+[[test]]
+name = "daily_root_contract"
+path = "../tests/contract/test_daily_root.rs"
+
+[[test]]
+name = "companion_schema_contract"
+path = "../tests/contract/test_companion_schema.rs"
+
 [dependencies]
 clap       = { version = "4", features = ["derive", "env"] }
 anyhow     = "1"

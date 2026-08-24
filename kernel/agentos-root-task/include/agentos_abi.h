@@ -16,6 +16,18 @@
  * generator (gen-abi fails the build on any duplicate).
  */
 
+/* ── PD: companion_export ─────────────────────────────────────────── */
+#define ABI_COMPANION_EXPORT_OPCODE_COUNT 7u
+#define ABI_COMPANION_EXPORT_CHANNEL_COUNT 1u
+#define ABI_COMPANION_EXPORT_OP_DESCRIBE 0x2F01u
+#define ABI_COMPANION_EXPORT_OP_LIST_PROJECTS 0x2F02u
+#define ABI_COMPANION_EXPORT_OP_LIST_PROGRESS 0x2F03u
+#define ABI_COMPANION_EXPORT_OP_GET_DAILY_ROOT 0x2F04u
+#define ABI_COMPANION_EXPORT_OP_GET_HEALTH_ADAPTER 0x2F05u
+#define ABI_COMPANION_EXPORT_OP_LIST_WORKER_MEMORY 0x2F06u
+#define ABI_COMPANION_EXPORT_OP_SUBMIT_TASK_INTENT 0x2F07u
+#define ABI_COMPANION_EXPORT_CH_CONTROLLER 77u
+
 /* ── PD: event_bus ─────────────────────────────────────────── */
 #define ABI_EVENT_BUS_TRACE_PD 1u
 /* contract: contracts/event-bus/ (coverage verified by gen-abi) */
@@ -137,6 +149,14 @@
  * (Skipped for the gen-abi unit tests / standalone preprocessing.)
  */
 #ifdef AGENTOS_ABI_CHECK_LEGACY
+_Static_assert((uint32_t)(MSG_COMPANION_DESCRIBE) == ABI_COMPANION_EXPORT_OP_DESCRIBE, "agentos.h MSG_COMPANION_DESCRIBE drifted from abi_spec.toml");
+_Static_assert((uint32_t)(MSG_COMPANION_LIST_PROJECTS) == ABI_COMPANION_EXPORT_OP_LIST_PROJECTS, "agentos.h MSG_COMPANION_LIST_PROJECTS drifted from abi_spec.toml");
+_Static_assert((uint32_t)(MSG_COMPANION_LIST_PROGRESS) == ABI_COMPANION_EXPORT_OP_LIST_PROGRESS, "agentos.h MSG_COMPANION_LIST_PROGRESS drifted from abi_spec.toml");
+_Static_assert((uint32_t)(MSG_COMPANION_GET_DAILY_ROOT) == ABI_COMPANION_EXPORT_OP_GET_DAILY_ROOT, "agentos.h MSG_COMPANION_GET_DAILY_ROOT drifted from abi_spec.toml");
+_Static_assert((uint32_t)(MSG_COMPANION_GET_HEALTH_ADAPTER) == ABI_COMPANION_EXPORT_OP_GET_HEALTH_ADAPTER, "agentos.h MSG_COMPANION_GET_HEALTH_ADAPTER drifted from abi_spec.toml");
+_Static_assert((uint32_t)(MSG_COMPANION_LIST_WORKER_MEMORY) == ABI_COMPANION_EXPORT_OP_LIST_WORKER_MEMORY, "agentos.h MSG_COMPANION_LIST_WORKER_MEMORY drifted from abi_spec.toml");
+_Static_assert((uint32_t)(MSG_COMPANION_SUBMIT_TASK_INTENT) == ABI_COMPANION_EXPORT_OP_SUBMIT_TASK_INTENT, "agentos.h MSG_COMPANION_SUBMIT_TASK_INTENT drifted from abi_spec.toml");
+_Static_assert((uint32_t)(CH_COMPANION_EXPORT) == ABI_COMPANION_EXPORT_CH_CONTROLLER, "agentos.h CH_COMPANION_EXPORT drifted from abi_spec.toml");
 _Static_assert((uint32_t)(MSG_EVENTBUS_INIT) == ABI_EVENT_BUS_OP_INIT, "agentos.h MSG_EVENTBUS_INIT drifted from abi_spec.toml");
 _Static_assert((uint32_t)(MSG_EVENTBUS_SUBSCRIBE) == ABI_EVENT_BUS_OP_SUBSCRIBE, "agentos.h MSG_EVENTBUS_SUBSCRIBE drifted from abi_spec.toml");
 _Static_assert((uint32_t)(MSG_EVENTBUS_UNSUBSCRIBE) == ABI_EVENT_BUS_OP_UNSUBSCRIBE, "agentos.h MSG_EVENTBUS_UNSUBSCRIBE drifted from abi_spec.toml");

@@ -1079,6 +1079,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define CH_IPC_HARNESS        74u   /* controller -> ipc_harness (PPC, test builds only) */
 #define CH_GUEST_PD           75u   /* controller -> guest_pd (PPC) */
 #define CH_VMM_KERNEL         76u   /* vmm_pd -> root-task internal protocol (PPC) */
+#define CH_COMPANION_EXPORT   77u   /* controller -> companion_export (PPC, reserved until PD lands) */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Generated per-PD ABI tables

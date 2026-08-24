@@ -53,6 +53,9 @@
     63: controller   <-> net_isolator  (pp=true: CONNECT check, STATUS query)
     64: init_agent   <-> net_isolator  (pp=true: ACL_SET on spawn, ACL_CLEAR on teardown)
     65: net_isolator <-> event_bus     (deny event notifications)
+
+  Reserved contract-first endpoints (no capability minted yet):
+    77: controller -> companion_export (CH_COMPANION_EXPORT; implementation pending)
 -->
 <system>
     <!-- Controller: system coordinator, priority raised above passive servers to prevent

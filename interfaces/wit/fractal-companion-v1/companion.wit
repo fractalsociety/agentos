@@ -1,4 +1,4 @@
-// Fractal Companion export interface, version 1.
+// Fractal Companion export interface, version 1.1.
 //
 // This is the ONLY typed surface a local companion application may consume.
 // It is a read-mostly projection of canonical agentOS state (AgentFS objects
@@ -11,7 +11,9 @@
 //   1. Every projection is pinned to an `event-range` and a root `object-id`.
 //      A projection with no pin is invalid, not merely undocumented.
 //   2. Every response carries the `authority-epoch` it was produced under.
-//      A cursor minted under an older epoch is stale and must be rejected.
+//      A cursor is bound to schema, projection, stream, root, epoch, canonical
+//      event sequence, and deterministic projection position. A mismatch in
+//      any dimension is `stale-cursor`.
 //   3. Every field carries a `redaction-class`. A field whose source data is
 //      not `source-class.projection` may never be emitted verbatim.
 //   4. The following NEVER appear in this interface, in any encoding, at any
@@ -23,10 +25,21 @@
 //      `limits.max-result-bytes` returns `export-error.result-too-large`
 //      rather than truncating silently.
 //
-// Schema compatibility: `schema-version.major` must match exactly; a client
-// minor below the server minor is accepted and served at the client's minor.
+// Schema compatibility: `schema-version.major` must match exactly. Version
+// 1.1 is additive over 1.0: the v1.0 ProjectSnapshot/ProgressNode operations
+// and request layouts remain accepted while session.min-schema-minor is zero.
+// A client minor below the server minor is served at the client's minor.
+//
+// seL4 lowering: MR0 is the opcode and MR1/MR2 are the aligned request-arena
+// offset/byte length. Every operation is marshalled through the versioned
+// request records in companion_export_contract.h. Every successful result is
+// encoded into the request's checked, non-overlapping result-arena slice.
+// Records and list elements are
+// 8-byte aligned; scalars are little-endian; string/list slices are relative
+// {offset,length} pairs and are zero padded to 8 bytes. The inline reply only
+// carries typed status, result slice, count, epoch, and optional next cursor.
 
-package agentos:fractal-companion@1.0.0;
+package agentos:fractal-companion@1.1.0;
 
 interface types {
     // ── Versioning ───────────────────────────────────────────────────────
@@ -63,6 +76,17 @@ interface types {
         head: object-id,
     }
 
+    /// Projection identity is part of every cursor so a token minted for one
+    /// operation can never be replayed against another operation.
+    enum projection-kind {
+        project,
+        progress,
+        daily-root,
+        health,
+        worker-memory,
+        task-intent,
+    }
+
     /// Resume token for paginated reads. Minted by the server, opaque in
     /// meaning but transparent in structure so a client can detect staleness
     /// locally before spending a round trip.
@@ -75,6 +99,13 @@ interface types {
         stream-id: u32,
         /// Schema major the cursor was minted for.
         schema-major: u32,
+        /// Negotiated schema minor the cursor was minted for.
+        schema-minor: u32,
+        projection: projection-kind,
+        /// Zero-based next position in the projection's canonical ordering.
+        /// For progress this is the deterministic depth/reference ordering,
+        /// never arrival order or an implementation iterator address.
+        position: u64,
         /// Root the page was pinned to when the cursor was minted.
         root: object-id,
     }
@@ -157,9 +188,9 @@ interface types {
 
     // ── Pagination ───────────────────────────────────────────────────────
 
-    /// Client-supplied page bounds. Both fields are clamped by the server to
-    /// `limits`; a request above the ceiling is rejected, not clamped
-    /// silently, so a client can never believe it saw a complete page.
+    /// Client-supplied page bounds. Both fields are bounded by `limits`; a
+    /// request above the ceiling is rejected, never clamped silently, so a
+    /// client can never believe it saw a complete page.
     record page-request {
         /// 1 ..= limits.max-page-items.
         max-items: u32,
@@ -190,9 +221,15 @@ interface types {
         max-label-bytes: u32,
         max-ref-bytes: u32,
         max-note-bytes: u32,
+        max-date-bytes: u32,
+        max-timezone-bytes: u32,
+        max-worker-kind-bytes: u32,
+        max-ordering-key-bytes: u32,
         max-daily-items: u32,
         max-conflict-heads: u32,
         max-health-signals: u32,
+        max-progress-dependencies: u32,
+        max-consent-scopes: u32,
     }
 
     // ── Typed errors ─────────────────────────────────────────────────────
@@ -266,7 +303,7 @@ interface types {
     record worker-assignment {
         worker: source-handle,
         /// Stable worker family: "codex", "cursor", "claude", "hermes".
-        /// At most limits.max-ref-bytes.
+        /// At most limits.max-worker-kind-bytes.
         kind: string,
         assigned-event-seq: u64,
         redaction: redaction-class,
@@ -320,7 +357,6 @@ interface types {
     /// only its stable opaque reference and Fractal contributes the canonical
     /// event range. Replaying the same inputs must produce byte-identical
     /// output; no writable tracker handle or tracker credential crosses this
-    /// boundary.
     record project-snapshot {
         schema: schema-version,
         authority-epoch: u64,
@@ -349,14 +385,15 @@ interface types {
         authority-epoch: u64,
         node-id: object-id,
         project-id: object-id,
-        /// Stable opaque Beads issue reference, bounded by max-ref-bytes.
+        /// Stable opaque Beads issue reference, bounded by limits.max-ref-bytes.
         beads-reference: string,
         title: string,
         state: progress-state,
         proof: proof-level,
         /// Topological depth; dependencies always have a lower depth.
         depth: u32,
-        /// Object IDs of direct prerequisites in the pinned snapshot.
+        /// Object IDs of direct prerequisites, bounded by
+        /// limits.max-progress-dependencies.
         depends-on: list<object-id>,
         depends-on-count: u32,
         /// Completion in hundredths of a percent, 0 ..= 10000.
@@ -378,7 +415,8 @@ interface types {
         item-id: object-id,
         /// The projection this item points at.
         subject: object-id,
-        /// Deterministic ordering key within the bundle.
+        /// Deterministic ordering key within the bundle, bounded by
+        /// limits.max-ordering-key-bytes.
         /// Items sort by this key's UTF-8 bytes, then by ordinal.
         ordering-key: string,
         ordinal: u32,
@@ -408,7 +446,7 @@ interface types {
         /// Local civil date, exactly "YYYY-MM-DD".
         date-key: string,
         /// IANA zone key, e.g. "America/Los_Angeles". Bounded by
-        /// limits.max-ref-bytes.
+        /// limits.max-timezone-bytes.
         tz-key: string,
         /// Offset actually used for the rollover decision, -1440 ..= 1440.
         utc-offset-minutes: s32,
@@ -417,10 +455,12 @@ interface types {
         freshness-seconds: u32,
         source-freshness: source-freshness,
         item-count: u32,
+        /// Bounded by limits.max-daily-items.
         items: list<daily-item>,
         /// Hash over the pinned roots, range, timezone, and projected items.
         provenance: object-id,
         /// Divergent heads preserved rather than silently merged.
+        /// Bounded by limits.max-conflict-heads.
         conflict-heads: list<object-id>,
         /// A merge is valid only when the schema explicitly declares it.
         merge-policy: merge-policy,
@@ -467,6 +507,7 @@ interface types {
         source: source-handle,
         /// Families the user explicitly consented to. Empty means no
         /// consent, which is distinct from `revoked`.
+        /// Bounded by limits.max-consent-scopes.
         consent-scope: list<health-source>,
         consent-expires-unix: u64,
         /// True once the user revoked or the source was deleted. A revoked
@@ -475,6 +516,7 @@ interface types {
         /// Rolled-up status across `signals`.
         status: health-status,
         freshness-seconds: u32,
+        /// Bounded by limits.max-health-signals.
         signals: list<health-signal>,
         provenance: object-id,
         range: event-range,
@@ -498,6 +540,7 @@ interface types {
         schema: schema-version,
         authority-epoch: u64,
         worker: source-handle,
+        /// Bounded by limits.max-worker-kind-bytes.
         kind: string,
         state: worker-state,
         /// Resident and in use right now.
@@ -596,20 +639,22 @@ interface companion-export {
         worker-memory, task-intent, task-intent-receipt,
     };
 
-    /// Compatibility page for the canonical Project type.
+    /// v1.1 page for the canonical Project type. Result serialization is
+    /// companion-wire-project-page in the bounded C result arena.
     record project-page {
         page: page-info,
         items: list<project>,
     }
 
-    /// Compatibility page for the canonical Progress type.
+    /// v1.1 page for the canonical Progress type. Result serialization is
+    /// companion-wire-progress-page in the bounded C result arena.
     record progress-page {
         page: page-info,
         items: list<progress>,
     }
 
-    /// A typed page of immutable ProjectSnapshot records. The page cursor is
-    /// bound to its authority epoch, stream, schema major, and root.
+    /// v1.0 compatibility page. New clients use project-page. Its cursor is
+    /// still checked against all v1.1 binding dimensions after legacy decode.
     record project-snapshot-page {
         page: page-info,
         items: list<project-snapshot>,

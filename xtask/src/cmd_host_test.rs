@@ -42,6 +42,12 @@ struct Suite {
 /// stable as new test files are added incrementally.
 const SUITES: &[Suite] = &[
     Suite {
+        // agentos-d02: companion v1.1 ABI, marshalling, grant, and cursor contract.
+        name: "test_companion_export_contract",
+        sources: &["tests/contracts/companion_export_test.c"],
+        extra_args: &[],
+    },
+    Suite {
         name: "test_agent_task_gateway",
         sources: &[
             "tests/test_agent_task_gateway.c",

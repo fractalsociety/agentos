@@ -77,6 +77,7 @@
 #include "../contracts/serial_pd_test.c"
 #include "../contracts/log_drain_test.c"
 #include "../contracts/agent_task_test.c"
+#include "../contracts/companion_export_test.c"
 
 /* ── Target performance probe (agentos-gz0.1) ──────────────────────────────
  *
@@ -1790,6 +1791,7 @@ void target_contract_runner_main(void)
     target_harness_composition_contract();
     target_harness_profile_footprints();
     run_agent_task_contract_tests((microkit_channel)TARGET_CONTROLLER_CAP);
+    run_companion_export_contract_tests((microkit_channel)CH_COMPANION_EXPORT);
     target_agent_task_gateway_denial();
     target_toolsvc_contract();
     target_agentfs_workspace_contract();

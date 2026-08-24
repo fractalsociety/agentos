@@ -234,6 +234,7 @@ typedef struct {
 #define SVC_ID_FAULT_HANDLER  32u   /* fault policy and history service               */
 #define SVC_ID_WG_NET         33u   /* capability-scoped WireGuard overlay PD          */
 #define SVC_ID_READ_ONLY_HARNESS 34u /* minimal ModelCap + ToolCap AgentHarness profile */
+#define SVC_ID_COMPANION_EXPORT 35u /* reserved companion projection endpoint; not minted pre-implementation */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -276,3 +277,4 @@ typedef struct {
 #define PD_CNODE_SLOT_EXEC_TRANSPORT_EP 22u
 #define PD_CNODE_SLOT_MCP_TRANSPORT_EP  23u
 #define PD_CNODE_SLOT_WG_NET_EP         24u
+#define PD_CNODE_SLOT_COMPANION_EXPORT_EP 25u /* reserved; capability absent until the PD is implemented */
