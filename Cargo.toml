@@ -6,6 +6,7 @@ members = [
     # Userspace SDK + agents
     "userspace/sdk",
     "userspace/agents/init-agent",
+    "userspace/agents/codex-harness",
     # Userspace servers
     "userspace/servers/http-gateway",
     "userspace/servers/event-bus",

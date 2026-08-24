@@ -77,6 +77,7 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
 
     println!("[xtask:test] Launching QEMU for board={}...", args.board);
     let cc_sock = log_path.with_extension("cc_pd.sock");
+    let boot_started = Instant::now();
     let mut qemu = spawn_qemu_with_guest(
         &args.board,
         &repo_root,
@@ -124,6 +125,14 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
                 &mut qemu,
             )
         }
+        "codex" => {
+            println!("[xtask:test] Waiting for official in-guest Codex preflight...");
+            wait_for_markers(
+                &log_path,
+                &["AGENTOS_CODEX_PREFLIGHT status=0"],
+                Duration::from_secs(args.timeout_secs),
+            )
+        }
         _ => {
             /* Success markers: any match is a pass.
              * "agentOS boot complete" = root task + all PDs launched.
@@ -141,6 +150,27 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
             }
         }
     };
+
+    let boot_ms = boot_started.elapsed().as_millis() as u64;
+    let (qemu_rss_bytes, qemu_cpu_percent) = process_snapshot(qemu.id());
+    let image_bytes = std::fs::metadata(
+        repo_root
+            .join("build")
+            .join(&args.board)
+            .join("agentos.img"),
+    )
+    .map(|meta| meta.len())
+    .unwrap_or(0);
+    println!(
+        "AGENTOS_QEMU_METRICS {}",
+        serde_json::json!({
+            "guest_os": args.guest_os,
+            "boot_to_marker_ms": boot_ms,
+            "qemu_rss_bytes": qemu_rss_bytes,
+            "qemu_cpu_percent_at_marker": qemu_cpu_percent,
+            "image_bytes": image_bytes,
+        })
+    );
 
     let _ = qemu.kill();
     let _ = qemu.wait();
@@ -164,6 +194,26 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
             anyhow::bail!("test failed for board {}: {}", args.board, e);
         }
     }
+}
+
+fn process_snapshot(pid: u32) -> (u64, f64) {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-o", "%cpu=", "-p", &pid.to_string()])
+        .output();
+    let Ok(output) = output else {
+        return (0, 0.0);
+    };
+    let rendered = String::from_utf8_lossy(&output.stdout);
+    let mut fields = rendered.split_whitespace();
+    let rss_kib = fields
+        .next()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+    let cpu = fields
+        .next()
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    (rss_kib.saturating_mul(1024), cpu)
 }
 
 fn effective_ssh_port(args: &TestArgs) -> u16 {

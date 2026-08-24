@@ -766,6 +766,12 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_VIBE_COMMIT                 0x2903  /* MR1=proposal_id → MR0=ok */
 #define MSG_VIBE_ROLLBACK_REQ           0x2904  /* MR1=proposal_id → MR0=ok */
 
+/* ─── Native agent harness contract opcodes (0x2A00) ───────────────────── */
+#define MSG_HARNESS_SUBMIT               0x2A01  /* task descriptor in harness shmem */
+#define MSG_HARNESS_CANCEL               0x2A02  /* MR1=task_id → MR0=ok */
+#define MSG_HARNESS_STATUS               0x2A03  /* MR1=task_id → status record */
+#define MSG_HARNESS_RESULT               0x2A04  /* MR1=task_id → result record */
+
 /* ─── AgentFS contract opcodes (0x1000) ─────────────────────────────────── */
 #define MSG_AGENTFS_READ                0x1001  /* MR1=inode MR2=offset MR3=len → actual in shmem */
 #define MSG_AGENTFS_WRITE               0x1002  /* MR1=inode MR2=offset MR3=len; data in shmem */

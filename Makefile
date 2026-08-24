@@ -324,6 +324,8 @@ build-tools:
 fetch-guest:
 ifeq ($(GUEST_OS),freebsd)
 	@cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES)
+else ifeq ($(GUEST_OS),codex)
+	@cargo xtask fetch-guest --os codex --output-dir $(AGENTOS_IMAGES)
 else ifeq ($(GUEST_OS),ubuntu)
 	@cargo xtask fetch-guest --os ubuntu --output-dir $(AGENTOS_IMAGES)
 else ifeq ($(GUEST_OS),both)
@@ -753,7 +755,7 @@ clean-all:
 clean-images:
 	@echo "Removing guest OS image cache: $(AGENTOS_IMAGES)"
 	@rm -rf $(AGENTOS_IMAGES)
-	@echo "✓ Done. Re-fetch with: make fetch-guest GUEST_OS=ubuntu|freebsd"
+	@echo "✓ Done. Re-fetch with: make fetch-guest GUEST_OS=codex|ubuntu|freebsd"
 
 # =============================================================================
 # release: tag + GitHub release (requires gh CLI and clean working tree)
@@ -775,7 +777,7 @@ help:
 	@echo "agentOS - top-level make targets"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=buildroot|ubuntu|freebsd|both|none]"
+	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=codex|buildroot|ubuntu|freebsd|both|none]"
 	@echo ""
 	@echo "Current defaults:"
 	@echo "  TARGET_ARCH     $(TARGET_ARCH)"
@@ -805,6 +807,7 @@ help:
 	@echo "  make test-guest-login Boot Ubuntu and FreeBSD to an interactive serial prompt"
 	@echo ""
 	@echo "Guest images:"
+	@echo "  make fetch-guest GUEST_OS=codex      Build pinned official Codex ARM64 initramfs"
 	@echo "  make fetch-guest GUEST_OS=ubuntu     Stage Ubuntu 26.04 assets in build/guest-images"
 	@echo "  make fetch-guest GUEST_OS=freebsd    Stage FreeBSD 15.0 assets in build/guest-images"
 	@echo "  make fetch-guest GUEST_OS=both       Stage both Ubuntu and FreeBSD assets"
@@ -842,6 +845,7 @@ help:
 	@echo "  make install && make run"
 	@echo ""
 	@echo "Common examples:"
+	@echo "  make run-fast GUEST_OS=codex       # boot official Codex inside agentOS"
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu"
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=both"
 	@echo "  make run GUEST_OS=freebsd"

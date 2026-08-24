@@ -115,6 +115,7 @@ pub fn run(args: &FetchGuestArgs) -> anyhow::Result<()> {
         .with_context(|| format!("failed to create output dir: {}", output_dir.display()))?;
 
     match args.os {
+        GuestOs::Codex => crate::cmd_codex_guest::fetch(&output_dir),
         GuestOs::Ubuntu => fetch_ubuntu(&output_dir),
         GuestOs::Freebsd => fetch_freebsd(&output_dir),
     }

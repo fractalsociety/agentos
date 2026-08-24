@@ -1,0 +1,25 @@
+/* AgentOS official Codex guest overlay; generated with the actual initrd end. */
+/ {
+    dma-coherent;
+
+    memory@40000000 {
+        device_type = "memory";
+        reg = <0x00 0x40000000 0x00 0x20000000>;
+    };
+
+    flash@0 {
+        status = "disabled";
+    };
+
+    aliases {
+        serial0 = "/pl011@9000000";
+    };
+
+    chosen {
+        stdout-path = "serial0:115200n8";
+        bootargs = "earlycon=pl011,0x9000000 console=ttyAMA0,115200n8 rdinit=/sbin/init panic=-1";
+        linux,stdout-path = "serial0:115200n8";
+        linux,initrd-start = <0x00 0x50000000>;
+        linux,initrd-end = <0x00 @CODEX_INITRD_END@>;
+    };
+};

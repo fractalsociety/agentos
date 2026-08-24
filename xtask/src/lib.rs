@@ -2,6 +2,7 @@
 // The binary entry point (src/main.rs) re-uses everything from here.
 
 pub mod cmd_ci_matrix;
+pub mod cmd_codex_guest;
 pub mod cmd_fault_inject;
 pub mod cmd_fetch_guest;
 pub mod cmd_gen_abi;
@@ -112,6 +113,7 @@ pub struct FetchGuestArgs {
 
 #[derive(clap::ValueEnum, Clone)]
 pub enum GuestOs {
+    Codex,
     Ubuntu,
     Freebsd,
 }
