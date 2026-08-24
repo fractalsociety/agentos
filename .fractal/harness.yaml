@@ -1,0 +1,39 @@
+schema: fractal.harness_policy.v1
+mode: deny_by_default
+
+# Project-sized implementation nodes still run in isolated worktrees and are
+# restricted to their declared ownership paths. These bounds prevent valid
+# cross-PD changes from being rejected solely because the generic starter
+# policy was sized for small, single-module edits.
+workspace:
+  isolation: git_worktree
+  clean_start_required: false
+  writable: []
+  readonly: ["**"]
+  forbidden: [".env", ".env.*", "**/secrets/**"]
+  max_files_changed: 24
+  max_diff_lines: 4000
+
+limits:
+  max_steps: 80
+  max_minutes: 60
+  max_attempts: 3
+  max_files_changed: 24
+  max_diff_lines: 4000
+  max_repeated_identical_failure: 2
+  max_tool_errors: 10
+  max_input_tokens: 500000
+  max_output_tokens: 100000
+  max_cost_usd: 40
+
+capabilities:
+  code.edit:
+    enabled: true
+  code.generate:
+    enabled: true
+  project.tests.execute:
+    enabled: true
+  control.plan:
+    enabled: true
+  control.closeout:
+    enabled: true

@@ -628,11 +628,11 @@
       }
     },
     {
-      "id": "implement_fractal_controlplane",
-      "title": "Implement the asynchronous Fractal control-plane bridge",
+      "id": "implement_fractal_controlplane_host",
+      "title": "Complete the asynchronous Fractal host bridge",
       "capability": "code.edit",
       "agent": "codex-luna",
-      "instruction": "Implement the approved Fractal task contract in kernel/agentos-root-task/src/agent_task_gateway.c and the existing monitor and EventBus adapter files after the canonical-event implementation is present. Submission must validate badge, capability subset, authority epoch, ObjectIDs, budget, and bounds, enqueue work, and return a handle before long execution; completion, cancellation, failure, TASK_VERIFY evidence, and resource metrics must arrive through authenticated events. Generate Rust bindings under userspace/sdk from the WIT source, register the SDK dependency and module, and update both system descriptions and topology without creating a second contract for any PD or redefining predecessor contract headers. Make tests/contracts/agent_task_test.c and tests/test_agent_task_gateway.c pass on host while retaining target assertions.",
+      "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the freestanding C host bridge and its focused tests. Validate badge, capability subset, authority epoch, ObjectIDs, budget, and bounds; enqueue submission before long execution; and emit authenticated completion, cancellation, failure, TASK_VERIFY, and resource events. Do not edit WIT, Rust SDK, system descriptions, topology, or lower contract headers. Make the agent-task contract and gateway suites pass while retaining target assertions.",
       "depends_on": [
         "fractal_controlplane_contract_tests",
         "implement_canonical_event_verify",
@@ -644,44 +644,115 @@
         "parallel_group": "wave-5"
       },
       "efficiency": {
-        "estimated_remaining_tokens": 26000,
+        "estimated_remaining_tokens": 12000,
         "dependencies": [
           "fractal_controlplane_contract_tests",
           "implement_canonical_event_verify",
           "finish_native_network"
         ],
-        "expected_artifact": "A nonblocking capability-authorized Fractal bridge with generated SDK bindings and passing host contract tests",
+        "expected_artifact": "A tested nonblocking capability-authorized C gateway and canonical EventBus adapter",
         "files_or_systems_affected": [
+          "kernel/agentos-root-task/include/agent_task_gateway.h",
           "kernel/agentos-root-task/src/agent_task_gateway.c",
           "kernel/agentos-root-task/src/event_bus.c",
           "kernel/agentos-root-task/src/monitor.c",
-          "kernel/agentos-root-task/src/system_desc_aarch64.c",
-          "kernel/agentos-root-task/include/agent_task_gateway.h",
+          "tests/contracts/agent_task_test.c",
+          "tests/test_agent_task_gateway.c"
+        ],
+        "verification_plan": "Run test_agent_task_contract and test_agent_task_gateway, compile the touched freestanding C for both target architectures, and prove submission returns a handle before delayed completion.",
+        "current_assumptions": [
+          "The preserved checkpoint is the starting implementation, not work to recreate",
+          "Existing shared services remain singleton PDs"
+        ],
+        "similarity_to_other_active_nodes": {
+          "fractal_controlplane_contract_tests": 0.72,
+          "implement_canonical_event_verify": 0.38
+        },
+        "confidence_still_useful": 0.99
+      }
+    },
+    {
+      "id": "implement_fractal_controlplane_sdk",
+      "title": "Complete generated Fractal WIT and Rust SDK bindings",
+      "capability": "code.edit",
+      "agent": "opencode",
+      "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests and WIT validation pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
+      "depends_on": [
+        "fractal_controlplane_contract_tests",
+        "implement_canonical_event_verify"
+      ],
+      "execution": {
+        "mode": "parallel",
+        "wave": 5,
+        "parallel_group": "wave-5"
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 10000,
+        "dependencies": [
+          "fractal_controlplane_contract_tests",
+          "implement_canonical_event_verify"
+        ],
+        "expected_artifact": "One validated WIT-derived Rust SDK surface for asynchronous Fractal tasks",
+        "files_or_systems_affected": [
+          "interfaces/wit/fractalos-capabilities-v1/capabilities.wit",
+          "userspace/sdk/Cargo.toml",
+          "userspace/sdk/src/lib.rs",
+          "userspace/sdk/src/fractal.rs",
+          "userspace/sdk/src/fractalos_capabilities.rs"
+        ],
+        "verification_plan": "Run WIT parsing or generation checks, cargo test -p agentos-sdk, no_std compilation where supported, formatting, Clippy, and duplicate-binding checks.",
+        "current_assumptions": [
+          "The WIT contract completed by the predecessor test node is authoritative",
+          "OpenCode uses the configured Z.ai GLM model"
+        ],
+        "similarity_to_other_active_nodes": {
+          "fractal_controlplane_contract_tests": 0.61,
+          "implement_agentlang_runtime": 0.31
+        },
+        "confidence_still_useful": 0.99
+      }
+    },
+    {
+      "id": "implement_fractal_controlplane",
+      "title": "Integrate and verify the Fractal control-plane bridge",
+      "capability": "code.edit",
+      "agent": "codex-luna",
+      "instruction": "Integrate the completed C host bridge and generated Rust SDK into the existing AgentOS build only. Update the two system descriptions, root-task manifest, topology, existing EventBus service adapter, compatibility harness binding, and controller integration test without creating another PD contract or service implementation. Run the focused host suites plus both target-architecture compile checks and leave the canonical branch in a verified buildable state.",
+      "depends_on": [
+        "implement_fractal_controlplane_host",
+        "implement_fractal_controlplane_sdk"
+      ],
+      "execution": {
+        "mode": "sequential",
+        "wave": 6
+      },
+      "efficiency": {
+        "estimated_remaining_tokens": 12000,
+        "dependencies": [
+          "implement_fractal_controlplane_host",
+          "implement_fractal_controlplane_sdk"
+        ],
+        "expected_artifact": "A build-integrated and target-checked Fractal control-plane bridge",
+        "files_or_systems_affected": [
           "kernel/agentos-root-task/agentos.toml",
           "kernel/agentos-root-task/agentos.system",
           "kernel/agentos-root-task/agentos-aarch64.system",
           "tools/topology.yaml",
           "services/event-bus/event_bus.c",
           "userspace/agents/codex-harness/codex_harness_pd.c",
-          "userspace/sdk/Cargo.toml",
-          "userspace/sdk/src/lib.rs",
-          "userspace/sdk/src/fractal.rs",
-          "userspace/sdk/src/fractal_capabilities.rs",
-          "userspace/sdk/src/generated",
-          "tests/contracts/agent_task_test.c",
-          "tests/test_agent_task_gateway.c"
+          "tests/api/test_controller.c"
         ],
-        "verification_plan": "Run focused contract and integration tests, cargo test for userspace/sdk, and an instrumented async flow proving submission returns before delayed completion and revocation prevents dispatch.",
+        "verification_plan": "Run the focused gateway and controller suites, cargo test -p agentos-sdk, topology validation, and AArch64 plus x86_64 target compile checks.",
         "current_assumptions": [
-          "Existing EventBus, AgentFS, QuotaPD, CapBroker, ModelSvc, ToolSvc, and ExecServer remain shared services",
-          "Workers never mint capabilities or create PDs"
+          "Host and SDK predecessor nodes have independently passed their focused gates",
+          "Workers never create PDs or mint capabilities"
         ],
         "similarity_to_other_active_nodes": {
-          "fractal_controlplane_contract_tests": 0.82,
-          "implement_canonical_event_verify": 0.44,
-          "implement_agentlang_runtime": 0.34
+          "implement_fractal_controlplane_host": 0.52,
+          "implement_fractal_controlplane_sdk": 0.42,
+          "implement_agentlang_runtime": 0.25
         },
-        "confidence_still_useful": 0.98
+        "confidence_still_useful": 0.99
       }
     },
     {
@@ -948,8 +1019,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 6,
-        "parallel_group": "wave-6"
+        "wave": 7,
+        "parallel_group": "wave-7"
       },
       "efficiency": {
         "estimated_remaining_tokens": 23000,
@@ -1003,8 +1074,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 7,
-        "parallel_group": "wave-7"
+        "wave": 8,
+        "parallel_group": "wave-8"
       },
       "efficiency": {
         "estimated_remaining_tokens": 22000,
@@ -1047,8 +1118,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 6,
-        "parallel_group": "wave-6"
+        "wave": 7,
+        "parallel_group": "wave-7"
       },
       "efficiency": {
         "estimated_remaining_tokens": 15000,
@@ -1090,8 +1161,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 7,
-        "parallel_group": "wave-7"
+        "wave": 8,
+        "parallel_group": "wave-8"
       },
       "efficiency": {
         "estimated_remaining_tokens": 13000,
@@ -1131,8 +1202,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 8,
-        "parallel_group": "wave-8"
+        "wave": 9,
+        "parallel_group": "wave-9"
       },
       "efficiency": {
         "estimated_remaining_tokens": 15000,
@@ -1175,8 +1246,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 7,
-        "parallel_group": "wave-7"
+        "wave": 8,
+        "parallel_group": "wave-8"
       },
       "efficiency": {
         "estimated_remaining_tokens": 32000,
@@ -1233,8 +1304,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 8,
-        "parallel_group": "wave-8"
+        "wave": 9,
+        "parallel_group": "wave-9"
       },
       "efficiency": {
         "estimated_remaining_tokens": 29000,
@@ -1295,8 +1366,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 9,
-        "parallel_group": "wave-9"
+        "wave": 10,
+        "parallel_group": "wave-10"
       },
       "efficiency": {
         "estimated_remaining_tokens": 22000,
@@ -1346,8 +1417,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 7,
-        "parallel_group": "wave-7"
+        "wave": 8,
+        "parallel_group": "wave-8"
       },
       "efficiency": {
         "estimated_remaining_tokens": 28000,
@@ -1390,8 +1461,8 @@
       ],
       "execution": {
         "mode": "parallel",
-        "wave": 9,
-        "parallel_group": "wave-9"
+        "wave": 10,
+        "parallel_group": "wave-10"
       },
       "efficiency": {
         "estimated_remaining_tokens": 22000,
@@ -1484,7 +1555,7 @@
       ],
       "execution": {
         "mode": "sequential",
-        "wave": 10
+        "wave": 11
       },
       "efficiency": {
         "estimated_remaining_tokens": 14000,
@@ -1545,7 +1616,7 @@
       ],
       "execution": {
         "mode": "sequential",
-        "wave": 11
+        "wave": 12
       },
       "efficiency": {
         "estimated_remaining_tokens": 16000,
@@ -1598,7 +1669,7 @@
       ],
       "execution": {
         "mode": "sequential",
-        "wave": 12
+        "wave": 13
       },
       "efficiency": {
         "estimated_remaining_tokens": 20000,
@@ -1643,7 +1714,7 @@
       ],
       "execution": {
         "mode": "sequential",
-        "wave": 13
+        "wave": 14
       },
       "efficiency": {
         "estimated_remaining_tokens": 12000,
