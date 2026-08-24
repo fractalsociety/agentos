@@ -384,9 +384,12 @@ typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {
 
 typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {
     uint32_t source;
+    uint32_t origin;
+    uint32_t consent_scope;
     uint32_t status;
+    uint32_t freshness_seconds;
+    uint32_t source_freshness;
     companion_object_id_t provenance;
-    uint64_t observed_unix;
     uint32_t redaction;
     uint32_t reserved;
 } companion_wire_health_signal_t;
@@ -395,18 +398,21 @@ typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {
     companion_schema_version_t schema;
     uint64_t authority_epoch;
     companion_source_handle_t source;
+    uint32_t origin;
+    uint32_t reserved;
     companion_wire_list_t consent_scope;
     uint64_t consent_expires_unix;
     uint8_t revoked;
-    uint8_t reserved[3];
+    uint8_t reserved2[3];
     uint32_t status;
     uint32_t freshness_seconds;
-    uint32_t reserved2;
+    uint32_t source_freshness;
+    uint32_t reserved3;
     companion_wire_list_t signals;
     companion_object_id_t provenance;
     companion_event_range_t range;
     uint32_t redaction;
-    uint32_t reserved3;
+    uint32_t reserved4;
 } companion_wire_health_adapter_t;
 
 typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {

@@ -546,23 +546,57 @@ interface types {
         stale,
     }
 
+    /// Health adapter binding rules (normative).
+    ///
+    ///   H1. Explicit authorization. `get-health-adapter` is denied unless the
+    ///       caller holds the health grant, the source has a non-empty
+    ///       `consent-scope`, the requested families are included in that scope,
+    ///       and the consent window is still open.
+    ///   H2. Minimum necessary. Raw medical records, values, units, diagnoses,
+    ///       notes, record identifiers, timestamp series, credentials, account
+    ///       names, and source-specific device identities never enter canonical
+    ///       events, immutable shared workspaces, logs, or this interface. The
+    ///       adapter exports only coarse statuses and provenance hashes over the
+    ///       minimum aggregate needed to produce those statuses.
+    ///   H3. Expiry, deletion, and revocation fail closed. Expired consent
+    ///       returns `expired`; deleted or revoked sources return `denied` and
+    ///       MUST NOT serve a cached summary.
+    ///   H4. Deterministic projection. Replaying the same authorized aggregate,
+    ///       consent scope, source handle, event range, and status inputs
+    ///       produces byte-identical `health-adapter-summary` and `health-signal`
+    ///       records. Observation state is represented only as freshness.
+    ///   H5. Canary non-disclosure. Canary medical records are treated exactly
+    ///       like all other raw medical records: no canary body, identifier,
+    ///       value, diagnosis, note, credential, or source record field can be
+    ///       emitted semantically or by fallback debug formatting.
+
     /// A single coarse, consented signal. Carries no measurement value, no
     /// timestamp series, and no record identifier from the source system.
     record health-signal {
+        /// Coarse source family, never an account, device, credential, or
+        /// source record identifier.
         source: health-source,
+        /// Class of the ORIGINAL source. A health adapter may summarize or
+        /// hash personal records, but never emits them verbatim.
+        origin: source-class,
+        /// Consent family that allowed this signal to be projected.
+        consent-scope: health-source,
         status: health-status,
+        freshness-seconds: u32,
+        source-freshness: source-freshness,
         /// Hash over the minimum-necessary aggregate that produced `status`.
         provenance: object-id,
-        observed-unix: u64,
         redaction: redaction-class,
     }
 
     /// The whole health surface available to the companion. Source
     /// credentials live behind `source` and never leave the adapter.
-    record health-adapter {
+    record health-adapter-summary {
         schema: schema-version,
         authority-epoch: u64,
         source: source-handle,
+        /// Class of the ORIGINAL source. The record itself is only a summary.
+        origin: source-class,
         /// Families the user explicitly consented to. Empty means no
         /// consent, which is distinct from `revoked`.
         /// Bounded by limits.max-consent-scopes.
@@ -574,7 +608,28 @@ interface types {
         /// Rolled-up status across `signals`.
         status: health-status,
         freshness-seconds: u32,
+        source-freshness: source-freshness,
         /// Bounded by limits.max-health-signals.
+        signals: list<health-signal>,
+        provenance: object-id,
+        range: event-range,
+        redaction: redaction-class,
+    }
+
+    /// Compatibility spelling retained for existing v1.1 generated clients and
+    /// the C wire mirror. It is byte-for-byte the same projected summary shape;
+    /// new prose and tests use `health-adapter-summary`.
+    record health-adapter {
+        schema: schema-version,
+        authority-epoch: u64,
+        source: source-handle,
+        origin: source-class,
+        consent-scope: list<health-source>,
+        consent-expires-unix: u64,
+        revoked: bool,
+        status: health-status,
+        freshness-seconds: u32,
+        source-freshness: source-freshness,
         signals: list<health-signal>,
         provenance: object-id,
         range: event-range,
