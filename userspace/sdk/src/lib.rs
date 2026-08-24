@@ -23,6 +23,7 @@ pub mod agent_context;
 pub mod capability;
 pub mod context;
 pub mod cuda;
+pub mod daily_root;
 pub mod event;
 pub mod identity;
 pub mod message;
