@@ -43,6 +43,21 @@ int main(void)
               MSG_HARNESS_CANCEL != MSG_HARNESS_STATUS &&
               MSG_HARNESS_STATUS != MSG_HARNESS_RESULT,
           "harness opcodes are unique");
+    check(sizeof(struct harness_req_submit) == 48u,
+          "submit wire record fits one seL4 payload");
+    check(HARNESS_CH_NETSERVER != HARNESS_CH_MODELSVC,
+          "NetCap uses a distinct channel from ModelCap");
+    check(HARNESS_SHMEM_SIZE == MODELSVC_CLIENT_ARENA_SIZE,
+          "harness maps one badge-isolated ModelSvc client partition");
+    check(MSG_HARNESS_RESOURCES != MSG_HARNESS_RESULT,
+          "resource accounting has a distinct opcode");
+    check(HARNESS_WORKER_TARGET_LOW_BYTES == 20u * 1024u * 1024u &&
+              HARNESS_WORKER_MAX_BYTES == 150u * 1024u * 1024u,
+          "worker memory target is 20-150 MiB");
+    check(HARNESS_WORKER_DEFAULT_LIMIT_BYTES <= HARNESS_WORKER_MAX_BYTES,
+          "default worker budget is below the hard ceiling");
+    check(sizeof(struct harness_reply_resources) <= 48u,
+          "resource accounting reply fits one seL4 payload");
     printf("1..%u\n", tests);
     return failures == 0u ? 0 : 1;
 }

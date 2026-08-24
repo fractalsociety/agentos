@@ -81,13 +81,21 @@ seL4_Error ep_mint_badge(seL4_CPtr  src_ep,
                          seL4_Word  dest_slot,
                          uint32_t   dest_depth)
 {
+#ifdef AGENTOS_TEST_HOST
+    seL4_Word call_rights = seL4_CanWrite | seL4_CanGrantReply;
+#else
+    seL4_CapRights_t call_rights = seL4_CapRights_new(1u, 0u, 0u, 1u);
+#endif
     return seL4_CNode_Mint(dest_cnode,
                             dest_slot,
                             (uint8_t)dest_depth,
                             g_root_cnode,   /* source root: root task CNode */
                             src_ep,          /* source index: the endpoint cap */
                             64u,             /* source depth */
-                            seL4_CanWrite,  /* client may send only */
+                            /* Synchronous MCS calls require GrantReply so the
+                             * receiver can answer through its reply object.
+                             * Do not grant read or general cap-transfer rights. */
+                            call_rights,
                             badge);
 }
 

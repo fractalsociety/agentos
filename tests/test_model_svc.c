@@ -73,11 +73,16 @@ static sel4_msg_t dispatch(uint64_t raw_badge, uint32_t opcode,
     return rep;
 }
 
-static modelsvc_query_wire_t make_query(const char *prompt,
+static uint32_t client_offset(uint16_t client, uint32_t relative)
+{
+    return MODELSVC_CLIENT_ARENA_OFFSET(client) + relative;
+}
+
+static modelsvc_query_wire_t make_query(uint16_t client, const char *prompt,
                                         uint32_t response_offset,
                                         uint32_t response_cap)
 {
-    const uint32_t prompt_offset = 0x1000u;
+    const uint32_t prompt_offset = client_offset(client, 0x1000u);
     uint32_t prompt_len = (uint32_t)strlen(prompt);
     memcpy(&shmem[prompt_offset], prompt, prompt_len + 1u);
     return (modelsvc_query_wire_t){
@@ -101,7 +106,8 @@ static void test_health_and_admin_registry(void)
     assert(rd32(rep.data, 8u) == MODELSVC_INTERFACE_VERSION);
 
     modelsvc_register_req_t *registration =
-        (modelsvc_register_req_t *)&shmem[0x2000u];
+        (modelsvc_register_req_t *)&shmem[client_offset(
+            MODELSVC_ADMIN_CONTROLLER_PD, 0x2000u)];
     memset(registration, 0, sizeof(*registration));
     registration->opcode = MODELSVC_OP_REGISTER;
     registration->context_window = 32768u;
@@ -109,7 +115,7 @@ static void test_health_and_admin_registry(void)
     strcpy(registration->model_id, "private");
     strcpy(registration->endpoint_url, "http://127.0.0.1/v1/chat/completions");
     modelsvc_shmem_object_wire_t object = {
-        .offset = 0x2000u,
+        .offset = client_offset(MODELSVC_ADMIN_CONTROLLER_PD, 0x2000u),
         .length = sizeof(*registration),
     };
 
@@ -121,7 +127,8 @@ static void test_health_and_admin_registry(void)
                    MODELSVC_OP_REGISTER, &object, sizeof(object));
     assert(rep.opcode == MODELSVC_ERR_OK);
 
-    modelsvc_list_wire_t list = {.buf_offset = 0x4000u, .max_count = 8u};
+    modelsvc_list_wire_t list = {
+        .buf_offset = client_offset(9u, 0x4000u), .max_count = 8u};
     rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_LIST,
                    &list, sizeof(list));
     assert(rep.opcode == MODELSVC_ERR_OK);
@@ -131,14 +138,29 @@ static void test_health_and_admin_registry(void)
 
 static void test_bounds_and_capability_isolation(void)
 {
-    modelsvc_query_wire_t query = make_query("hello", 0x8000u, 256u);
+    modelsvc_query_wire_t query = make_query(
+        9u, "hello", client_offset(9u, 0x8000u), 256u);
     query.user_prompt_offset = MODELSVC_SHMEM_SIZE - 2u;
     query.user_prompt_len = 16u;
     sel4_msg_t rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_QUERY,
                               &query, sizeof(query));
     assert(rep.opcode == MODELSVC_ERR_INVALID_ARG);
 
-    query = make_query("hello", 0x8000u, 256u);
+    /* A globally valid offset in a different caller's partition is still
+     * invalid for this badge. */
+    query = make_query(9u, "hello", client_offset(9u, 0x8000u), 256u);
+    memcpy(&shmem[client_offset(10u, 0x1000u)], "hello", 6u);
+    query.user_prompt_offset = client_offset(10u, 0x1000u);
+    rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_QUERY,
+                   &query, sizeof(query));
+    assert(rep.opcode == MODELSVC_ERR_INVALID_ARG);
+
+    query = make_query(9u, "hello", client_offset(10u, 0x8000u), 256u);
+    rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_QUERY,
+                   &query, sizeof(query));
+    assert(rep.opcode == MODELSVC_ERR_INVALID_ARG);
+
+    query = make_query(9u, "hello", client_offset(9u, 0x8000u), 256u);
     rep = dispatch(badge(0xFFFFu, 9u), MODELSVC_OP_QUERY,
                    &query, sizeof(query));
     assert(rep.opcode == MODELSVC_ERR_DENIED);
@@ -146,8 +168,8 @@ static void test_bounds_and_capability_isolation(void)
 
 static void test_query_cache_and_stats(void)
 {
-    const uint32_t response_offset = 0x8000u;
-    modelsvc_query_wire_t query = make_query("hello", response_offset, 256u);
+    const uint32_t response_offset = client_offset(9u, 0x8000u);
+    modelsvc_query_wire_t query = make_query(9u, "hello", response_offset, 256u);
     sel4_msg_t rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_QUERY,
                               &query, sizeof(query));
     assert(rep.opcode == MODELSVC_ERR_OK);
@@ -162,8 +184,9 @@ static void test_query_cache_and_stats(void)
     assert(strcmp((char *)&shmem[response_offset], "answer:hello") == 0);
     assert(transport_calls == 1u); /* exact result cache hit */
 
-    memcpy(&shmem[0x3000u], "default", 8u);
-    modelsvc_shmem_object_wire_t name = {.offset = 0x3000u, .length = 7u};
+    uint32_t name_offset = client_offset(9u, 0x3000u);
+    memcpy(&shmem[name_offset], "default", 8u);
+    modelsvc_shmem_object_wire_t name = {.offset = name_offset, .length = 7u};
     rep = dispatch(badge(SVC_ID_MODELSVC, 9u), MODELSVC_OP_STATS,
                    &name, sizeof(name));
     assert(rep.opcode == MODELSVC_ERR_OK);
@@ -172,8 +195,9 @@ static void test_query_cache_and_stats(void)
 
 static void test_stream_poll_and_cancel(void)
 {
-    const uint32_t response_offset = 0x9000u;
-    modelsvc_query_wire_t query = make_query("stream-me", response_offset, 256u);
+    const uint32_t response_offset = client_offset(10u, 0x9000u);
+    modelsvc_query_wire_t query = make_query(
+        10u, "stream-me", response_offset, 256u);
     query.flags = MODELSVC_FLAG_STREAMING;
     sel4_msg_t rep = dispatch(badge(SVC_ID_MODELSVC, 10u),
                               MODELSVC_OP_STREAM_BEGIN,
@@ -194,7 +218,7 @@ static void test_stream_poll_and_cancel(void)
     } while (rd32(rep.data, 4u) != MODELSVC_STREAM_COMPLETE);
     assert(collected == strlen("answer:stream-me"));
 
-    query = make_query("cancel-me", response_offset, 256u);
+    query = make_query(10u, "cancel-me", response_offset, 256u);
     rep = dispatch(badge(SVC_ID_MODELSVC, 10u), MODELSVC_OP_STREAM_BEGIN,
                    &query, sizeof(query));
     request_id = rd32(rep.data, 4u);

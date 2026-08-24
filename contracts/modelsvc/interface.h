@@ -36,6 +36,21 @@
 #define MODELSVC_AGENT_ID_BYTES     32
 #define MODELSVC_SHMEM_SIZE          (4u * 1024u * 1024u)
 #define MODELSVC_SHMEM_VADDR         0x60000000u
+/* The lower 3 MiB is divided into page-aligned, badge-selected client
+ * partitions.  The final 1 MiB is private transport workspace mapped only
+ * into ModelSvc and NetServer. */
+#define MODELSVC_CLIENT_SLOT_COUNT    64u
+#define MODELSVC_CLIENT_ARENA_SIZE    (48u * 1024u)
+#define MODELSVC_CLIENT_ARENA_TOTAL   (MODELSVC_CLIENT_SLOT_COUNT * MODELSVC_CLIENT_ARENA_SIZE)
+#define MODELSVC_INTERNAL_ARENA_OFFSET MODELSVC_CLIENT_ARENA_TOTAL
+#define MODELSVC_CLIENT_ARENA_OFFSET(client_id) \
+    ((uint32_t)(client_id) * MODELSVC_CLIENT_ARENA_SIZE)
+#define MODELSVC_CLIENT_ARENA_VADDR(client_id) \
+    (MODELSVC_SHMEM_VADDR + MODELSVC_CLIENT_ARENA_OFFSET(client_id))
+_Static_assert(MODELSVC_CLIENT_ARENA_TOTAL == (3u * 1024u * 1024u),
+               "ModelSvc client partitions occupy the lower 3 MiB");
+_Static_assert(MODELSVC_INTERNAL_ARENA_OFFSET < MODELSVC_SHMEM_SIZE,
+               "ModelSvc reserves transport-only shared memory");
 #define MODELSVC_MAX_INFLIGHT        16u
 #define MODELSVC_CACHE_ENTRIES       64u
 #define MODELSVC_STREAM_CHUNK_MAX    (64u * 1024u)

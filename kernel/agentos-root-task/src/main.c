@@ -45,6 +45,7 @@
 #include "system_desc.h"     /* system_desc_t, pd_desc_t, SVC_ID_*, PD_IRQHANDLER_SLOT_BASE */
 #include "agentos.h"         /* sel4_dbg_puts                                    */
 #include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
+#include "contracts/agent_harness_contract.h"
 #include "../../../contracts/modelsvc/interface.h"
 #include <stdint.h>
 
@@ -122,6 +123,17 @@ static seL4_Word g_cap_base;  /* set to bi->empty.start in root_task_main */
  */
 #define PD_DEFAULT_SC_BUDGET_US   10000u
 #define PD_DEFAULT_SC_PERIOD_US   1000000u
+/* Interactive agent turns are short bursts that cross several service PDs.
+ * A one-second refill period creates nearly one-second tail latency after a
+ * worker consumes its initial 10 ms budget. Give the native harness and its
+ * shared execution services a 20%/100 ms scheduling class. Idle servers still
+ * block in seL4_Wait and consume no CPU. */
+#define AGENT_SC_BUDGET_US        20000u
+#define AGENT_SC_PERIOD_US       100000u
+/* The target runner timestamps serial batch boundaries and must not inject a
+ * refill stall into the workload it is measuring. This PD is test-image-only. */
+#define TEST_RUNNER_SC_BUDGET_US  50000u
+#define TEST_RUNNER_SC_PERIOD_US 100000u
 /*
  * Each VMM gets one sched context for the VMM PD and one for the guest vCPU.
  * A 90% budget works for a single guest but overcommits the single-core QEMU
@@ -592,9 +604,9 @@ static seL4_CPtr g_virtio_mmio_frame_cap = seL4_CapNull;
 static seL4_CPtr g_freebsd_virtio31_frame_cap = seL4_CapNull;
 static seL4_CPtr g_gic_vcpu_frame_cap = seL4_CapNull;
 
-#define MODELSVC_SHMEM_LARGE_PAGES \
-    (MODELSVC_SHMEM_SIZE / (1u << seL4_ARCH_LargePageBits))
-static seL4_CPtr g_modelsvc_shmem_frames[MODELSVC_SHMEM_LARGE_PAGES];
+#define MODELSVC_SHMEM_PAGES (MODELSVC_SHMEM_SIZE / 4096u)
+#define MODELSVC_CLIENT_ARENA_PAGES (MODELSVC_CLIENT_ARENA_SIZE / 4096u)
+static seL4_CPtr g_modelsvc_shmem_frames[MODELSVC_SHMEM_PAGES];
 
 static volatile uint32_t *g_uart_dr;  /* PL011 UARTDR (offset 0x00) */
 static volatile uint32_t *g_uart_fr;  /* PL011 UARTFR (offset 0x18) */
@@ -713,6 +725,18 @@ static int name_has_prefix(const char *name, const char *prefix)
         name++; prefix++;
     }
     return 1;
+}
+
+/* A shared service arena is mapped only into PDs that hold that service's
+ * initial endpoint capability. Service and transport PDs are handled by the
+ * caller because they own the backing implementation rather than a client
+ * capability. */
+static int pd_has_init_service(const pd_desc_t *pd, uint16_t service_id)
+{
+    for (uint32_t i = 0u; i < pd->init_ep_count; i++) {
+        if (pd->init_eps[i].service_id == service_id) return 1;
+    }
+    return 0;
 }
 
 /*
@@ -1391,6 +1415,34 @@ void root_task_main(const seL4_BootInfo *bi)
          */
 #ifdef CONFIG_KERNEL_MCS
         {
+            /* Give every child a distinct fault-endpoint badge.  Without this,
+             * a VM fault only reports badge zero and the root task cannot name
+             * the failed PD, which made target bring-up failures needlessly
+             * ambiguous.  The badge is the stable system-descriptor index + 1
+             * (zero remains reserved for an unbadged/root-originated fault). */
+            seL4_CPtr pd_fault_ep = g_fault_ep;
+            seL4_Word fault_ep_slot = ut_alloc_slot();
+            if (fault_ep_slot == seL4_CapNull) {
+                dbg_puts("[rt] pd fault badge slot alloc failed\n");
+                continue;
+            }
+            seL4_Error fault_ep_err = seL4_CNode_Mint(
+                seL4_CapInitThreadCNode,
+                fault_ep_slot,
+                seL4_WordBits,
+                seL4_CapInitThreadCNode,
+                g_fault_ep,
+                seL4_WordBits,
+                seL4_AllRights,
+                (seL4_Word)i + 1u);
+            if (fault_ep_err != seL4_NoError) {
+                dbg_puts("[rt] pd fault badge mint failed err=");
+                dbg_hex((seL4_Word)fault_ep_err);
+                dbg_puts("\n");
+                continue;
+            }
+            pd_fault_ep = (seL4_CPtr)fault_ep_slot;
+
             seL4_Error sc_err = ut_alloc(seL4_SchedContextObject,
                                           seL4_MinSchedContextBits,
                                           seL4_CapInitThreadCNode,
@@ -1408,6 +1460,16 @@ void root_task_main(const seL4_BootInfo *bi)
             if (name_eq(pd->name, "linux_vmm") || name_eq(pd->name, "freebsd_vmm")) {
                 sc_budget = VMM_SC_BUDGET_US;
                 sc_period = VMM_SC_PERIOD_US;
+            } else if (name_eq(pd->name, "codex_harness")
+                       || name_eq(pd->name, "model_svc")
+                       || name_eq(pd->name, "tool_svc")
+                       || name_eq(pd->name, "agentfs")
+                       || name_eq(pd->name, "exec_server")) {
+                sc_budget = AGENT_SC_BUDGET_US;
+                sc_period = AGENT_SC_PERIOD_US;
+            } else if (name_eq(pd->name, "test_runner")) {
+                sc_budget = TEST_RUNNER_SC_BUDGET_US;
+                sc_period = TEST_RUNNER_SC_PERIOD_US;
             }
 
             sc_err = seL4_SchedControl_ConfigureFlags(
@@ -1439,7 +1501,7 @@ void root_task_main(const seL4_BootInfo *bi)
                          255u,                  /* mcp */
                          (seL4_Word)pd->priority,
                          (seL4_CPtr)PD_SLOT_SC(i),
-                         g_fault_ep);
+                         pd_fault_ep);
             if (sc_err != seL4_NoError) {
                 dbg_puts("[rt] pd SetSchedParams fail err=");
                 dbg_hex((seL4_Word)sc_err);
@@ -1829,22 +1891,54 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts("\n");
         }
 
-        /* One physical 4 MiB inference arena is mapped into the model proxy,
-         * its network transport, and the target contract runner.  Endpoint
-         * badges still isolate callers; offsets are validated by ModelSvc. */
-        if (name_eq(pd->name, "model_svc") || name_eq(pd->name, "net_server")
-#ifdef AGENTOS_SEL4_TEST_IMAGE
-            || name_eq(pd->name, "test_runner")
-#endif
-        ) {
-            seL4_Error me = pd_vspace_map_shared_region(
+        /* ModelSvc and its network transport map the complete arena. A client
+         * maps only the 48 KiB partition selected by its immutable endpoint
+         * badge, so sharing physical service memory does not confer authority
+         * over another worker's prompt/result pages. */
+        if (name_eq(pd->name, "model_svc") || name_eq(pd->name, "net_server")) {
+            seL4_Error me = pd_vspace_map_shared_pages(
                 vspace, (seL4_Word)MODELSVC_SHMEM_VADDR,
                 MODELSVC_SHMEM_SIZE, 1,
-                g_modelsvc_shmem_frames, MODELSVC_SHMEM_LARGE_PAGES);
+                g_modelsvc_shmem_frames, MODELSVC_SHMEM_PAGES);
             dbg_puts("[rt] ModelSvc shared arena map pd=");
             dbg_puts(pd->name);
             dbg_puts(" err=");
             dbg_hex((seL4_Word)me);
+            dbg_puts("\n");
+        } else if (pd_has_init_service(pd, SVC_ID_MODELSVC)
+                   && i < MODELSVC_CLIENT_SLOT_COUNT) {
+            uint32_t client_offset = MODELSVC_CLIENT_ARENA_OFFSET(i);
+            seL4_Error me = pd_vspace_map_shared_pages(
+                vspace,
+                (seL4_Word)MODELSVC_SHMEM_VADDR + client_offset,
+                MODELSVC_CLIENT_ARENA_SIZE, 1,
+                &g_modelsvc_shmem_frames[client_offset / 4096u],
+                MODELSVC_CLIENT_ARENA_PAGES);
+            dbg_puts("[rt] ModelSvc client partition map pd=");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)me);
+            dbg_puts("\n");
+        }
+
+        /* A coordinator holding HarnessCap receives an explicit mapping of
+         * the bootstrap harness partition for task submission/result pickup.
+         * This is a memory capability granted by topology, not ambient access. */
+        if (pd_has_init_service(pd, SVC_ID_AGENT_HARNESS)) {
+            const uint32_t harness_pd_index =
+                AGENT_HARNESS_BOOTSTRAP_CLIENT_ID;
+            const uint32_t harness_offset =
+                MODELSVC_CLIENT_ARENA_OFFSET(harness_pd_index);
+            seL4_Error he = pd_vspace_map_shared_pages(
+                vspace,
+                (seL4_Word)MODELSVC_SHMEM_VADDR + harness_offset,
+                MODELSVC_CLIENT_ARENA_SIZE, 1,
+                &g_modelsvc_shmem_frames[harness_offset / 4096u],
+                MODELSVC_CLIENT_ARENA_PAGES);
+            dbg_puts("[rt] AgentHarness task partition map pd=");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)he);
             dbg_puts("\n");
         }
 

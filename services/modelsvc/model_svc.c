@@ -101,8 +101,8 @@ static inline uint32_t sel4_server_dispatch(sel4_server_t *srv,
 
 #define MODELSVC_CACHE_RESPONSE_MAX (8u * 1024u)
 #define MODELSVC_STREAM_RESPONSE_MAX MODELSVC_STREAM_CHUNK_MAX
-#define MODELSVC_HTTP_URL_OFFSET    0x2ff000u
-#define MODELSVC_HTTP_BODY_OFFSET   0x300000u
+#define MODELSVC_HTTP_URL_OFFSET    MODELSVC_INTERNAL_ARENA_OFFSET
+#define MODELSVC_HTTP_BODY_OFFSET   (MODELSVC_INTERNAL_ARENA_OFFSET + 0x1000u)
 #define MODELSVC_HTTP_BODY_CAP      (MODELSVC_SHMEM_SIZE - MODELSVC_HTTP_BODY_OFFSET)
 
 typedef uint32_t (*modelsvc_transport_fn)(
@@ -204,11 +204,21 @@ static void copy_string(char *dst, uint32_t cap, const char *src, uint32_t len)
     dst[len] = '\0';
 }
 
-static bool shmem_range(uint32_t offset, uint32_t len)
+static bool __attribute__((unused)) shmem_range(uint32_t offset, uint32_t len)
 {
     return modelsvc_shmem != NULL
         && offset <= modelsvc_shmem_size
         && len <= modelsvc_shmem_size - offset;
+}
+
+static bool client_shmem_range(uint16_t client, uint32_t offset, uint32_t len)
+{
+    if (client >= MODELSVC_CLIENT_SLOT_COUNT) return false;
+    uint32_t base = MODELSVC_CLIENT_ARENA_OFFSET(client);
+    return modelsvc_shmem != NULL
+        && offset >= base
+        && offset <= base + MODELSVC_CLIENT_ARENA_SIZE
+        && len <= base + MODELSVC_CLIENT_ARENA_SIZE - offset;
 }
 
 static uint16_t badge_service(sel4_badge_t badge)
@@ -245,9 +255,13 @@ static uint64_t hash_bytes(uint64_t hash, const void *data, uint32_t len)
 }
 
 static uint64_t query_cache_key(const modelsvc_query_wire_t *wire,
-                                const model_slot_t *model)
+                                const model_slot_t *model,
+                                uint16_t client)
 {
     uint64_t hash = UINT64_C(1469598103934665603);
+    /* Cache storage is shared once, but entries remain caller-scoped so a
+     * guessed prompt cannot retrieve another worker's cached response. */
+    hash = hash_bytes(hash, &client, sizeof(client));
     hash = hash_bytes(hash, model->info.model_id,
                       bounded_strlen(model->info.model_id, MODELSVC_MODEL_ID_MAX));
     hash = hash_bytes(hash, &wire->max_tokens, sizeof(wire->max_tokens));
@@ -364,17 +378,22 @@ static void cache_store(uint64_t key, const char *response, uint32_t len)
 }
 
 static uint32_t validate_query(const modelsvc_query_wire_t *wire,
+                               uint16_t client,
                                model_slot_t **model_out)
 {
     if (wire->temperature_milli > 2000u || wire->user_prompt_len == 0u
         || wire->response_buf_len < 2u
         || wire->model_id_len >= MODELSVC_MODEL_ID_MAX
-        || !shmem_range(wire->user_prompt_offset, wire->user_prompt_len)
-        || !shmem_range(wire->response_offset, wire->response_buf_len)
+        || !client_shmem_range(client, wire->user_prompt_offset,
+                               wire->user_prompt_len)
+        || !client_shmem_range(client, wire->response_offset,
+                               wire->response_buf_len)
         || (wire->system_prompt_len != 0u
-            && !shmem_range(wire->system_prompt_offset, wire->system_prompt_len))
+            && !client_shmem_range(client, wire->system_prompt_offset,
+                                   wire->system_prompt_len))
         || (wire->model_id_len != 0u
-            && !shmem_range(wire->model_id_offset, wire->model_id_len)))
+            && !client_shmem_range(client, wire->model_id_offset,
+                                   wire->model_id_len)))
         return MODELSVC_ERR_INVALID_ARG;
 
     model_slot_t *model = wire->model_id_len == 0u
@@ -395,17 +414,18 @@ static uint32_t validate_query(const modelsvc_query_wire_t *wire,
 }
 
 static uint32_t execute_query(const modelsvc_query_wire_t *wire,
+                              uint16_t client,
                               char *output, uint32_t output_cap,
                               uint32_t *response_len,
                               uint32_t *tokens_in, uint32_t *tokens_out,
                               uint64_t *latency_us, bool *cache_hit)
 {
     model_slot_t *model = NULL;
-    uint32_t status = validate_query(wire, &model);
+    uint32_t status = validate_query(wire, client, &model);
     if (status != MODELSVC_ERR_OK) return status;
     if (output_cap < 2u) return MODELSVC_ERR_INVALID_ARG;
 
-    uint64_t key = query_cache_key(wire, model);
+    uint64_t key = query_cache_key(wire, model, client);
     cache_slot_t *cached = cache_lookup(key);
     model->info.total_requests++;
     if (cached != NULL && cached->response_len + 1u <= output_cap) {
@@ -482,7 +502,8 @@ static uint32_t h_register(sel4_badge_t badge, const sel4_msg_t *req,
     uint32_t offset = rd32(req->data, 0u);
     uint32_t length = rd32(req->data, 4u);
     if (length != sizeof(modelsvc_register_req_t)
-        || !shmem_range(offset, length)) return MODELSVC_ERR_INVALID_ARG;
+        || !client_shmem_range(badge_client(badge), offset, length))
+        return MODELSVC_ERR_INVALID_ARG;
     uint32_t status = register_model(
         (const modelsvc_register_req_t *)(modelsvc_shmem + offset));
     wr32(rep->data, 0u, status);
@@ -499,7 +520,8 @@ static uint32_t h_unregister(sel4_badge_t badge, const sel4_msg_t *req,
         return MODELSVC_ERR_INVALID_ARG;
     uint32_t offset = rd32(req->data, 0u), length = rd32(req->data, 4u);
     if (length == 0u || length >= MODELSVC_MODEL_ID_MAX
-        || !shmem_range(offset, length)) return MODELSVC_ERR_INVALID_ARG;
+        || !client_shmem_range(badge_client(badge), offset, length))
+        return MODELSVC_ERR_INVALID_ARG;
     model_slot_t *model = find_model((const char *)modelsvc_shmem + offset, length);
     if (model == NULL) return MODELSVC_ERR_NOT_FOUND;
     model->active = false;
@@ -519,7 +541,8 @@ static uint32_t h_list(sel4_badge_t badge, const sel4_msg_t *req,
     uint32_t offset = rd32(req->data, 0u), max_count = rd32(req->data, 4u);
     if (max_count > MODELSVC_MAX_MODELS) max_count = MODELSVC_MAX_MODELS;
     uint64_t bytes64 = (uint64_t)max_count * sizeof(modelsvc_model_info_t);
-    if (bytes64 > UINT32_MAX || !shmem_range(offset, (uint32_t)bytes64))
+    if (bytes64 > UINT32_MAX
+        || !client_shmem_range(badge_client(badge), offset, (uint32_t)bytes64))
         return MODELSVC_ERR_INVALID_ARG;
     uint32_t written = 0u;
     for (uint32_t i = 0u; i < MODELSVC_MAX_MODELS && written < max_count; i++) {
@@ -545,7 +568,8 @@ static uint32_t h_stats(sel4_badge_t badge, const sel4_msg_t *req,
         return MODELSVC_ERR_INVALID_ARG;
     uint32_t offset = rd32(req->data, 0u), length = rd32(req->data, 4u);
     if (length == 0u || length >= MODELSVC_MODEL_ID_MAX
-        || !shmem_range(offset, length)) return MODELSVC_ERR_INVALID_ARG;
+        || !client_shmem_range(badge_client(badge), offset, length))
+        return MODELSVC_ERR_INVALID_ARG;
     model_slot_t *model = find_model((const char *)modelsvc_shmem + offset, length);
     if (model == NULL) return MODELSVC_ERR_NOT_FOUND;
     wr32(rep->data, 0u, MODELSVC_ERR_OK);
@@ -568,12 +592,13 @@ static uint32_t h_query(sel4_badge_t badge, const sel4_msg_t *req,
         return MODELSVC_ERR_INVALID_ARG;
     modelsvc_query_wire_t wire;
     bytes_copy(&wire, req->data, sizeof(wire));
-    if (!shmem_range(wire.response_offset, wire.response_buf_len))
+    uint16_t client = badge_client(badge);
+    if (!client_shmem_range(client, wire.response_offset, wire.response_buf_len))
         return MODELSVC_ERR_INVALID_ARG;
     uint32_t response_len = 0u, tokens_in = 0u, tokens_out = 0u;
     uint64_t latency_us = 0u;
     bool cache_hit = false;
-    uint32_t status = execute_query(&wire,
+    uint32_t status = execute_query(&wire, client,
         (char *)modelsvc_shmem + wire.response_offset, wire.response_buf_len,
         &response_len, &tokens_in, &tokens_out, &latency_us, &cache_hit);
     wr32(rep->data, 0u, status);
@@ -608,7 +633,8 @@ static uint32_t h_stream_begin(sel4_badge_t badge, const sel4_msg_t *req,
     modelsvc_query_wire_t wire;
     bytes_copy(&wire, req->data, sizeof(wire));
     model_slot_t *model = NULL;
-    uint32_t status = validate_query(&wire, &model);
+    uint16_t client = badge_client(badge);
+    uint32_t status = validate_query(&wire, client, &model);
     (void)model;
     if (status != MODELSVC_ERR_OK) return status;
 
@@ -622,7 +648,8 @@ static uint32_t h_stream_begin(sel4_badge_t badge, const sel4_msg_t *req,
     slot->response_cap = wire.response_buf_len;
     bool cache_hit = false;
     uint64_t latency = 0u;
-    status = execute_query(&wire, slot->response, sizeof(slot->response),
+    status = execute_query(&wire, client,
+                           slot->response, sizeof(slot->response),
                            &slot->response_len, &slot->tokens_in,
                            &slot->tokens_out, &latency, &cache_hit);
     if (status != MODELSVC_ERR_OK) {

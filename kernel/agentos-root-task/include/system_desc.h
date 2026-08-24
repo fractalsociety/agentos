@@ -222,6 +222,9 @@ typedef struct {
 #define SVC_ID_FAULT_INJECT   23u   /* fault-injection test PD                */
 #define SVC_ID_CONTROLLER     24u   /* controller (monitor) inbound server EP  */
 #define SVC_ID_MODELSVC       25u   /* capability-gated model inference proxy  */
+#define SVC_ID_AGENT_HARNESS  26u   /* native Codex-style AgentHarness PD       */
+#define SVC_ID_TOOLSVC        27u   /* shared MCP-compatible tool registry       */
+#define SVC_ID_EXEC_SERVER    28u   /* isolated execution service                */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -255,3 +258,7 @@ typedef struct {
 #define PD_CNODE_SLOT_CONTROLLER_EP   13u
 #define PD_CNODE_SLOT_NET_SERVER_EP   14u
 #define PD_CNODE_SLOT_MODELSVC_EP     15u
+#define PD_CNODE_SLOT_TOOLSVC_EP      17u
+#define PD_CNODE_SLOT_AGENTFS_EP      18u
+#define PD_CNODE_SLOT_EXEC_SERVER_EP  19u
+#define PD_CNODE_SLOT_AGENT_HARNESS_EP 20u

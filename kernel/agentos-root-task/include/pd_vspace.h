@@ -113,6 +113,16 @@ seL4_Error pd_vspace_map_shared_region(seL4_CPtr  vspace,
                                         seL4_CPtr *backing_frames,
                                         size_t    backing_frame_count);
 
+/* Map a page-aligned slice backed by persistent 4 KiB frame caps.  Passing a
+ * pointer into a larger backing-frame array lets the root task expose only a
+ * caller's partition while a service maps the complete physical arena. */
+seL4_Error pd_vspace_map_shared_pages(seL4_CPtr  vspace,
+                                      seL4_Word va_start,
+                                      size_t    size,
+                                      int       writable,
+                                      seL4_CPtr *backing_frames,
+                                      size_t    backing_frame_count);
+
 /*
  * pd_vspace_map_device_frame — map a device MMIO frame into a VSpace.
  *

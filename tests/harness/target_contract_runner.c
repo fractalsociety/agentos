@@ -42,6 +42,7 @@
 #include "../../kernel/agentos-root-task/include/agentos.h"
 #include "../../kernel/agentos-root-task/include/sel4_ipc.h"
 #include "../../contracts/modelsvc/interface.h"
+#include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
  *
@@ -136,6 +137,9 @@ static void target_benchmark_eventbus_ipc(void)
 
 /* ── ModelSvc real-IPC + shared-arena proof (agentos-gz0.2) ──────── */
 #define TARGET_MODELSVC_CAP 130u
+#define TARGET_AGENT_HARNESS_CAP 131u
+#define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
+#define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
 
 static uint32_t tr_rd32(const uint8_t *p, uint32_t off)
 {
@@ -168,7 +172,10 @@ static void target_modelsvc_contract(void)
     static const char model[] = "agentos-echo";
     static const char prompt[] = "hello";
     static const char expected[] = "agentos:hello";
-    const uint32_t model_off = 0x100u, prompt_off = 0x200u, response_off = 0x400u;
+    const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(21u);
+    const uint32_t model_off = client_base + 0x100u;
+    const uint32_t prompt_off = client_base + 0x200u;
+    const uint32_t response_off = client_base + 0x400u;
     for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
     for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
 
@@ -245,6 +252,147 @@ static void target_modelsvc_contract(void)
                        "stream did not complete with expected chunks");
 }
 
+static void target_agent_harness_contract(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] =
+        "{\"action\":\"final\",\"summary\":\"native-smoke\"}";
+    static const char expected[] = "native-smoke";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+    for (uint32_t i = 0u; i < 256u; i++) arena[result_off + i] = 0u;
+
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    tr_zero(&rep, sizeof(rep));
+    req.opcode = MSG_HARNESS_RESOURCES;
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    _tf_puts("AGENT_RESOURCE_JSON:{\"schema\":1,\"worker\":\"codex_harness\","
+             "\"private_committed_bytes\":");
+    _tf_put_uint(tr_rd32(rep.data, 4u));
+    _tf_puts(",\"private_limit_bytes\":");
+    _tf_put_uint(tr_rd32(rep.data, 8u));
+    _tf_puts(",\"shared_mapped_bytes\":");
+    _tf_put_uint(tr_rd32(rep.data, 12u));
+    _tf_puts(",\"target_low_bytes\":");
+    _tf_put_uint(tr_rd32(rep.data, 16u));
+    _tf_puts(",\"target_high_bytes\":");
+    _tf_put_uint(tr_rd32(rep.data, 20u));
+    _tf_puts(",\"shared_components\":");
+    _tf_put_uint(tr_rd32(rep.data, 24u));
+    _tf_puts("}\n");
+    if (rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 4u) > 0u
+        && tr_rd32(rep.data, 4u) <= HARNESS_WORKER_MAX_BYTES
+        && tr_rd32(rep.data, 8u) == HARNESS_WORKER_DEFAULT_LIMIT_BYTES
+        && tr_rd32(rep.data, 12u) == HARNESS_SHMEM_SIZE)
+        _tf_ok("AgentHarness reports private and shared memory separately");
+    else
+        _tf_fail_point("AgentHarness reports private and shared memory separately",
+                       "resource accounting was missing or exceeded budget");
+
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 1u;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL;
+    submit.max_steps = 4u;
+    submit.authority_epoch = 1u;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 256u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    target_emit_batch_marker("BEGIN", AGENT_HARNESS_COLD_TURN_METRIC, 1u, 0u);
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    bool submit_ok = rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 8u) == HARNESS_CAP_MODEL
+        && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
+        && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
+                    expected, sizeof(expected) - 1u);
+    target_emit_batch_marker("END", AGENT_HARNESS_COLD_TURN_METRIC, 1u,
+                             submit_ok ? 0u : 1u);
+    if (submit_ok)
+        _tf_ok("AgentHarness completes a native ModelSvc planner action");
+    else
+        _tf_fail_point("AgentHarness completes a native ModelSvc planner action",
+                       "submit failed, authority broadened, or result mismatched");
+
+    struct harness_req_task result_req = {.task_id = 1u};
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_RESULT;
+    req.length = sizeof(result_req);
+    tr_copy(req.data, &result_req, sizeof(result_req));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 8u) == HARNESS_STATE_COMPLETE
+        && tr_rd32(rep.data, 16u) == 1u
+        && tr_rd32(rep.data, 44u) == HARNESS_CAP_MODEL)
+        _tf_ok("AgentHarness exports task and capability metrics");
+    else
+        _tf_fail_point("AgentHarness exports task and capability metrics",
+                       "result metrics were incomplete");
+}
+
+static void target_benchmark_agent_harness(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] =
+        "{\"action\":\"final\",\"summary\":\"native-warm\"}";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+
+    uint32_t errors = 0u;
+    for (uint32_t batch = 0u; batch < TARGET_PERF_BATCHES; batch++) {
+        struct harness_req_submit submit;
+        tr_zero(&submit, sizeof(submit));
+        submit.task_id = 100u + batch;
+        submit.harness_kind = HARNESS_KIND_CODEX;
+        submit.required_caps = HARNESS_CAP_MODEL;
+        submit.max_steps = 4u;
+        submit.authority_epoch = 1u;
+        submit.prompt_offset = prompt_off;
+        submit.prompt_len = sizeof(prompt) - 1u;
+        submit.result_offset = result_off;
+        submit.result_capacity = 256u;
+        submit.model_id_offset = model_off;
+        submit.model_id_len = sizeof(model) - 1u;
+
+        sel4_msg_t req, rep;
+        tr_zero(&req, sizeof(req));
+        tr_zero(&rep, sizeof(rep));
+        req.opcode = MSG_HARNESS_SUBMIT;
+        req.length = sizeof(submit);
+        tr_copy(req.data, &submit, sizeof(submit));
+        target_emit_batch_marker("BEGIN", AGENT_HARNESS_WARM_TURN_METRIC,
+                                 1u, 0u);
+        sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+        uint32_t batch_errors = rep.opcode == HARNESS_OK
+            && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE ? 0u : 1u;
+        target_emit_batch_marker("END", AGENT_HARNESS_WARM_TURN_METRIC,
+                                 1u, batch_errors);
+        errors += batch_errors;
+    }
+    if (errors == 0u)
+        _tf_ok("target perf: native AgentHarness warm turns completed");
+    else
+        _tf_fail_point("target perf: native AgentHarness warm turns completed",
+                       "one or more harness turns failed");
+}
+
 #define MODELSVC_PERF_METRIC "modelsvc_cached_query"
 #define MODELSVC_PERF_CALLS 256u
 
@@ -253,7 +401,10 @@ static void target_benchmark_modelsvc_cache(void)
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)MODELSVC_SHMEM_VADDR;
     static const char model[] = "agentos-echo";
     static const char prompt[] = "benchmark-cache";
-    const uint32_t model_off = 0x100u, prompt_off = 0x200u, response_off = 0x400u;
+    const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(21u);
+    const uint32_t model_off = client_base + 0x100u;
+    const uint32_t prompt_off = client_base + 0x200u;
+    const uint32_t response_off = client_base + 0x400u;
     for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
     for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
 
@@ -352,6 +503,10 @@ void target_contract_runner_main(void)
 {
     tf_tap_init("agentOS-target-contracts");
 
+    /* Prove the native agent path first.  A failure in an unrelated legacy
+     * contract must not hide whether the booted image can run an agent turn. */
+    target_agent_harness_contract();
+    target_benchmark_agent_harness();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);
     run_log_drain_tests((microkit_channel)CH_LOG_DRAIN);

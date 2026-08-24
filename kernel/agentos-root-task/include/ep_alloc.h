@@ -11,7 +11,7 @@
  *   ep_alloc_init(root_cnode, first_slot, pool_size);
  *
  *   seL4_CPtr ep = ep_alloc();          // create raw endpoint
- *   // Client: badged send-only endpoint.
+ *   // Client: badged synchronous-call endpoint (no receive/grant authority).
  *   ep_mint_badge(ep, badge, client_cnode, client_slot, client_depth);
  *
  *   // Service: unbadged receive-only endpoint.
@@ -56,11 +56,11 @@ seL4_CPtr ep_alloc(void);
 /*
  * ep_mint_badge — derive a badged copy of an endpoint capability.
  *
- * Creates a send-only copy of src_ep in dest_cnode[dest_slot] with the given
+ * Creates a synchronous-call-only copy of src_ep in dest_cnode[dest_slot] with the given
  * badge value.  The badge value encodes the sender's identity; the receiver
  * reads it from seL4_MessageInfo_get_badge().  The minted cap has only
- * seL4_CanWrite: it cannot receive from, grant, or grant-reply on the service
- * endpoint.
+ * seL4_CanWrite plus the narrow seL4_CanGrantReply right: it cannot receive
+ * from the service endpoint or transfer arbitrary capabilities.
  *
  * Parameters:
  *   src_ep       source endpoint capability to badge

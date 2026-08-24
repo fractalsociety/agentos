@@ -41,13 +41,59 @@ the default runtime target.
 
 ## Implementation status
 
-The planner loop and IPC contract exist. Root-task endpoint distribution now
-mints badged client capabilities with send-only rights and installs a distinct
-receive-only capability in each service PD. Static boot topology can therefore
-enforce a least-privilege harness CSpace without trusting capability masks.
+The native C bootstrap harness now builds as its own protection domain, boots
+under seL4 on QEMU AArch64, and completes a Codex-style planner/final action
+through ModelSvc. Root-task endpoint distribution mints badged, call-only
+client capabilities (`Write + GrantReply`) and distinct receive-only service
+capabilities. The harness receives ModelSvc and LogDrain endpoints, but no
+ToolSvc, AgentFS, ExecServer, or direct NetServer endpoint.
 
-The native seL4 adapter is not runnable yet. ToolSvc is still a target stub,
-ExecServer does not yet execute a command, and the monitor's dynamic
-CapabilityBroker records policy metadata without performing CNode mint/delete
-operations. Until those pieces are replaced and proven on target, the project
-must not claim a completed native Codex agent.
+ModelSvc's 4 MiB shared arena is physically divided into 64 badge-selected
+48 KiB client partitions plus a 1 MiB service-only transport workspace.
+Ordinary workers map only their own partition. ModelSvc checks every supplied
+offset against the caller's partition and keys cached results by client, so a
+worker cannot address or retrieve another worker's model data.
+
+This is a runnable native planner bootstrap, not yet a completed coding agent.
+ToolSvc is still a target stub, ExecServer does not yet execute a command, and
+the monitor's dynamic CapabilityBroker records policy metadata without
+performing CNode mint/delete/revoke operations. Until those pieces and a real
+edit/test/result workflow are proven on target, the project must not claim a
+completed native Codex agent.
+
+## Shared services and worker memory
+
+A worker owns only its agent loop, bounded task/context state, a small writable
+workspace overlay, and capability handles. The model client, MCP connections,
+repository index, semantic cache, execution graph, and artifact store live in
+shared service PDs and are charged once at system scope.
+
+The harness resource contract reports private committed memory separately from
+shared mapped arenas. The mature worker target is 20–150 MiB, with a 64 MiB
+default private budget and a hard 150 MiB ceiling. A bootstrap worker may be
+smaller than 20 MiB. Shared arenas do not become private merely because they
+are mapped into several workers; access remains limited by endpoint badges,
+offset validation, and per-worker object capabilities.
+
+## Reproducible QEMU measurement
+
+Run:
+
+```sh
+cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
+  --perf-output build/agent-harness-qemu-perf.json --require-perf
+```
+
+The 2026-08-23 AArch64 QEMU run passed all 24 target assertions. Host monotonic
+timestamps measured 319.65 ms from QEMU spawn to root-task readiness, a 2.86 ms
+cold native planner turn, and 12 warm turns with 0.228 ms p50 and 0.457 ms p95.
+The bootstrap worker reported 241,664 bytes of private committed memory and a
+49,152-byte shared ModelSvc mapping under its 64 MiB private limit. These are
+QEMU/host-arrival measurements, not bare-metal cycle counts.
+
+The same test originally exposed a roughly 992 ms tail caused by the generic
+10 ms/one-second MCS scheduling class. Native agent and shared agent-service
+PDs now use a 20 ms/100 ms interactive class; the repeated warm-turn p95 fell
+to 0.457 ms in the subsequent run. The 241,664-byte bootstrap is intentionally
+below the mature 20 MiB target floor; future context, overlay, and tool state
+must remain below the 150 MiB ceiling rather than padding the worker.

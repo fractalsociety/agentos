@@ -27,16 +27,43 @@
 #pragma once
 
 #include "../agentos.h"
+#include "../../../../contracts/modelsvc/interface.h"
 #include <stdbool.h>
 #include <stdint.h>
 
-#define HARNESS_INTERFACE_VERSION 1u
+#define HARNESS_INTERFACE_VERSION 2u
 #define HARNESS_CH_CONTROL         1u
 #define HARNESS_CH_MODELSVC        2u
 #define HARNESS_CH_TOOLSVC         3u
 #define HARNESS_CH_AGENTFS         4u
 #define HARNESS_CH_EXECSERVER      5u
 #define HARNESS_CH_NETSERVER       6u /* absent from ordinary coding harnesses */
+
+/* Static-topology bootstrap identity. Offsets in AgentHarness messages are
+ * relative to this worker-local mapping; ModelSvc translates them into the
+ * badge-selected global partition. */
+#define AGENT_HARNESS_BOOTSTRAP_CLIENT_ID 11u
+#define HARNESS_SHMEM_VADDR \
+    MODELSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID)
+#define HARNESS_SHMEM_SIZE MODELSVC_CLIENT_ARENA_SIZE
+
+/* Per-worker memory policy. Shared services are charged once at system scope,
+ * not once per harness. A mature worker should ordinarily land in the
+ * 20–150 MiB band; the bootstrap worker may be smaller. */
+#define HARNESS_WORKER_TARGET_LOW_BYTES   (20u * 1024u * 1024u)
+#define HARNESS_WORKER_DEFAULT_LIMIT_BYTES (64u * 1024u * 1024u)
+#define HARNESS_WORKER_MAX_BYTES          (150u * 1024u * 1024u)
+
+#define HARNESS_SHARED_MODELSVC       (1u << 0)
+#define HARNESS_SHARED_TOOL_MCP       (1u << 1)
+#define HARNESS_SHARED_REPO_INDEX     (1u << 2)
+#define HARNESS_SHARED_SEMANTIC_CACHE (1u << 3)
+#define HARNESS_SHARED_EXEC_GRAPH     (1u << 4)
+#define HARNESS_SHARED_ARTIFACT_STORE (1u << 5)
+#define HARNESS_SHARED_COMPONENT_MASK (HARNESS_SHARED_MODELSVC | \
+    HARNESS_SHARED_TOOL_MCP | HARNESS_SHARED_REPO_INDEX | \
+    HARNESS_SHARED_SEMANTIC_CACHE | HARNESS_SHARED_EXEC_GRAPH | \
+    HARNESS_SHARED_ARTIFACT_STORE)
 
 #define HARNESS_CAP_MODEL          (1u << 0)
 #define HARNESS_CAP_TOOL           (1u << 1)
@@ -78,7 +105,9 @@ enum harness_error {
     HARNESS_ERR_PROTOCOL = 10u,
 };
 
-/* Stored in harness shmem before MSG_HARNESS_SUBMIT. */
+/* Authoritative 48-byte on-wire payload for MSG_HARNESS_SUBMIT. Text fields
+ * live in the capability-mapped harness arena and are referenced by checked
+ * offsets. A zero model_id_len selects ModelSvc's default model. */
 struct harness_req_submit {
     uint32_t task_id;
     uint32_t harness_kind;
@@ -90,7 +119,12 @@ struct harness_req_submit {
     uint32_t prompt_len;
     uint32_t result_offset;
     uint32_t result_capacity;
+    uint32_t model_id_offset;
+    uint32_t model_id_len;
 };
+
+_Static_assert(sizeof(struct harness_req_submit) == 48u,
+               "harness submit request must fit one seL4 payload");
 
 struct harness_reply_submit {
     uint32_t status;
@@ -128,6 +162,24 @@ struct harness_reply_result {
     int32_t verification_exit_code;
     uint32_t used_caps;
 };
+
+/* Reply for MSG_HARNESS_RESOURCES. private_committed_bytes accounts for the
+ * worker image, stack, IPC page, and fixed kernel-object allowance. Shared
+ * arenas are reported separately so fleet sizing does not multiply them by
+ * worker count. */
+struct harness_reply_resources {
+    uint32_t status;
+    uint32_t private_committed_bytes;
+    uint32_t private_limit_bytes;
+    uint32_t shared_mapped_bytes;
+    uint32_t target_low_bytes;
+    uint32_t target_high_bytes;
+    uint32_t shared_components;
+    uint32_t authority_epoch;
+};
+
+_Static_assert(sizeof(struct harness_reply_resources) == 32u,
+               "harness resource reply must fit one seL4 payload");
 
 /* Policy preflight only. Real enforcement remains the CSpace/VSpace layout. */
 static inline bool harness_authority_satisfies(uint32_t required,

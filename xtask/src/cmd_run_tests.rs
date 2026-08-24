@@ -31,12 +31,25 @@ pub struct TargetPerfRecord {
     pub errors: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct AgentResourceRecord {
+    pub schema: u32,
+    pub worker: String,
+    pub private_committed_bytes: u64,
+    pub private_limit_bytes: u64,
+    pub shared_mapped_bytes: u64,
+    pub target_low_bytes: u64,
+    pub target_high_bytes: u64,
+    pub shared_components: u64,
+}
+
 #[derive(Debug, Serialize)]
 struct TargetPerfReport<'a> {
     schema: u32,
     board: &'a str,
     source: &'static str,
     metrics: &'a [TargetPerfRecord],
+    resources: &'a [AgentResourceRecord],
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,12 +155,21 @@ pub fn parse_perf_records(output: &str) -> Result<Vec<TargetPerfRecord>> {
         .collect()
 }
 
+pub fn parse_agent_resource_records(output: &str) -> Result<Vec<AgentResourceRecord>> {
+    output
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("AGENT_RESOURCE_JSON:"))
+        .map(|json| serde_json::from_str(json).context("invalid AGENT_RESOURCE_JSON record"))
+        .collect()
+}
+
 fn process_perf_records(
     output: &str,
     args: &RunTestsArgs,
     mut measured_records: Vec<TargetPerfRecord>,
 ) -> Result<()> {
     let mut records = parse_perf_records(output)?;
+    let resources = parse_agent_resource_records(output)?;
     records.append(&mut measured_records);
     if args.require_perf {
         anyhow::ensure!(!records.is_empty(), "target emitted no PERF_JSON records");
@@ -163,6 +185,27 @@ fn process_perf_records(
             "{} reported {} errors",
             record.metric,
             record.errors
+        );
+    }
+    for resource in &resources {
+        anyhow::ensure!(
+            resource.schema == 1,
+            "unsupported AGENT_RESOURCE_JSON schema {}",
+            resource.schema
+        );
+        anyhow::ensure!(
+            resource.private_committed_bytes <= resource.private_limit_bytes,
+            "{} private memory {} exceeds limit {}",
+            resource.worker,
+            resource.private_committed_bytes,
+            resource.private_limit_bytes
+        );
+        anyhow::ensure!(
+            resource.private_limit_bytes <= resource.target_high_bytes,
+            "{} private limit {} exceeds target ceiling {}",
+            resource.worker,
+            resource.private_limit_bytes,
+            resource.target_high_bytes
         );
     }
 
@@ -184,6 +227,7 @@ fn process_perf_records(
             board: &args.board,
             source: "sel4-target-qemu",
             metrics: &records,
+            resources: &resources,
         };
         std::fs::write(path, serde_json::to_vec_pretty(&report)?)
             .with_context(|| format!("failed to write {}", path.display()))?;
@@ -467,6 +511,7 @@ fn wait_for_tap_done(
 ) -> Result<Vec<TargetPerfRecord>> {
     let start = Instant::now();
     let mut perf = PerfBatchTracker::default();
+    let mut boot_ready_ns = None;
 
     loop {
         if start.elapsed() >= timeout {
@@ -479,11 +524,35 @@ fn wait_for_tap_done(
         let remaining = timeout.saturating_sub(start.elapsed());
         match serial_events.recv_timeout(remaining.min(Duration::from_millis(100))) {
             Ok(event) => {
+                if boot_ready_ns.is_none() && event.line.contains("[rt] boot complete") {
+                    boot_ready_ns = Some(
+                        event
+                            .received_at
+                            .saturating_duration_since(start)
+                            .as_nanos() as u64,
+                    );
+                }
                 if let Some(marker) = parse_perf_batch_marker(&event.line)? {
                     perf.observe(marker, event.received_at)?;
                 }
                 if parse_tap_done(&event.line).is_some() {
-                    return perf.finish();
+                    let mut records = perf.finish()?;
+                    if let Some(elapsed) = boot_ready_ns {
+                        records.push(TargetPerfRecord {
+                            schema: 1,
+                            metric: "qemu_spawn_to_agentos_ready".to_string(),
+                            unit: "ns/boot".to_string(),
+                            samples: 1,
+                            counter_hz: 1_000_000_000,
+                            min: elapsed,
+                            p50: elapsed,
+                            p95: elapsed,
+                            p99: elapsed,
+                            max: elapsed,
+                            errors: 0,
+                        });
+                    }
+                    return Ok(records);
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -567,6 +636,26 @@ mod tests {
     #[test]
     fn parser_rejects_malformed_target_perf_json() {
         assert!(parse_perf_records("PERF_JSON:{bad}\n").is_err());
+    }
+
+    #[test]
+    fn parser_accepts_agent_resource_json() {
+        let resources = parse_agent_resource_records(concat!(
+            "AGENT_RESOURCE_JSON:{\"schema\":1,\"worker\":\"codex_harness\",",
+            "\"private_committed_bytes\":241664,\"private_limit_bytes\":67108864,",
+            "\"shared_mapped_bytes\":49152,\"target_low_bytes\":20971520,",
+            "\"target_high_bytes\":157286400,\"shared_components\":1}\n",
+        ))
+        .unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].worker, "codex_harness");
+        assert_eq!(resources[0].private_committed_bytes, 241_664);
+        assert_eq!(resources[0].shared_mapped_bytes, 49_152);
+    }
+
+    #[test]
+    fn parser_rejects_malformed_agent_resource_json() {
+        assert!(parse_agent_resource_records("AGENT_RESOURCE_JSON:{bad}\n").is_err());
     }
 
     #[test]

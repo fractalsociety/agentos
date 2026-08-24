@@ -100,6 +100,7 @@ typedef uint32_t   seL4_Error;
 #define seL4_AllRights              ((seL4_Word)0x0Fu)
 #define seL4_CanRead                ((seL4_Word)0x02u)
 #define seL4_CanWrite               ((seL4_Word)0x01u)
+#define seL4_CanGrantReply          ((seL4_Word)0x08u)
 
 /*
  * seL4_UserContext — unified register layout for test-host builds.

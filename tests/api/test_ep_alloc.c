@@ -141,8 +141,8 @@ static void test_mint_badge_args(void)
     ASSERT_EQ(g_mint.dest_depth, 6u, "ep_mint_badge: destination depth");
     ASSERT_EQ(g_mint.src_root, 99u, "ep_mint_badge: source root is allocator CNode");
     ASSERT_EQ(g_mint.src_index, 80u, "ep_mint_badge: source endpoint cap");
-    ASSERT_EQ(g_mint.rights, seL4_CanWrite,
-              "ep_mint_badge: client capability is send-only");
+    ASSERT_EQ(g_mint.rights, seL4_CanWrite | seL4_CanGrantReply,
+              "ep_mint_badge: client capability can send and receive only its reply");
     ASSERT_EQ(g_mint.badge, 0xABCDu, "ep_mint_badge: propagates badge");
 }
 

@@ -99,6 +99,10 @@ name = "model_svc"
 priority = 190
 
 [[pd]]
+name = "codex_harness"
+priority = 120
+
+[[pd]]
 name = "net_pd"
 priority = 160
 
