@@ -42,6 +42,7 @@
 #include "../../kernel/agentos-root-task/include/agentos.h"
 #include "../../kernel/agentos-root-task/include/sel4_ipc.h"
 #include "../../contracts/modelsvc/interface.h"
+#include "../../contracts/execsvc/interface.h"
 #include "../../contracts/toolsvc/interface.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
@@ -142,7 +143,7 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_AGENT_HARNESS_CAP 131u
 #define TARGET_TOOLSVC_CAP 132u
 #define TARGET_AGENTFS_CAP 133u
-#define TARGET_TEST_RUNNER_CLIENT_ID 22u
+#define TARGET_TEST_RUNNER_CLIENT_ID 23u
 #define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
 #define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
 
@@ -297,9 +298,11 @@ static void target_agent_harness_contract(void)
         && tr_rd32(rep.data, 8u) == HARNESS_WORKER_DEFAULT_LIMIT_BYTES
         && tr_rd32(rep.data, 12u) == HARNESS_SHMEM_SIZE
             + TOOLSVC_CLIENT_ARENA_SIZE + AGENTFS_CLIENT_ARENA_SIZE
+            + EXECSVC_CLIENT_ARENA_SIZE
         && tr_rd32(rep.data, 24u)
             == (HARNESS_SHARED_MODELSVC | HARNESS_SHARED_TOOL_MCP
-                | HARNESS_SHARED_ARTIFACT_STORE))
+                | HARNESS_SHARED_ARTIFACT_STORE
+                | HARNESS_SHARED_EXEC_GRAPH))
         _tf_ok("AgentHarness reports private and shared memory separately");
     else
         _tf_fail_point("AgentHarness reports private and shared memory separately",
@@ -326,7 +329,8 @@ static void target_agent_harness_contract(void)
     sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
     bool submit_ok = rep.opcode == HARNESS_OK
         && tr_rd32(rep.data, 8u)
-            == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL | HARNESS_CAP_MEMORY)
+            == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL | HARNESS_CAP_MEMORY
+                | HARNESS_CAP_EXEC)
         && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
         && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
                     expected, sizeof(expected) - 1u);
@@ -487,7 +491,9 @@ static void target_agent_harness_memory_loop(void)
     tr_zero(&submit, sizeof(submit));
     submit.task_id = 3u;
     submit.harness_kind = HARNESS_KIND_CODEX;
-    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY
+        | HARNESS_CAP_EXEC;
+    submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
     submit.max_steps = 5u;
     submit.authority_epoch = 1u;
     submit.prompt_offset = prompt_off;
@@ -506,10 +512,10 @@ static void target_agent_harness_memory_loop(void)
         && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
         && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
                     expected, sizeof(expected) - 1u))
-        _tf_ok("AgentHarness edits and reads back AgentFS through MemoryCap");
+        _tf_ok("AgentHarness edits AgentFS and verifies through ExecCap");
     else
-        _tf_fail_point("AgentHarness edits and reads back AgentFS through MemoryCap",
-                       "model-memory-model loop did not complete");
+        _tf_fail_point("AgentHarness edits AgentFS and verifies through ExecCap",
+                       "model-memory-exec-model loop did not complete");
 
     struct harness_req_task result_req = {.task_id = 3u};
     tr_zero(&req, sizeof(req));
@@ -520,11 +526,14 @@ static void target_agent_harness_memory_loop(void)
     if (rep.opcode == HARNESS_OK
         && tr_rd32(rep.data, 16u) == 3u
         && tr_rd32(rep.data, 24u) == 2u
-        && tr_rd32(rep.data, 44u) == (HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY))
-        _tf_ok("AgentHarness accounts isolated model and memory capabilities");
+        && tr_rd32(rep.data, 28u) == 1u
+        && (int32_t)tr_rd32(rep.data, 40u) == 0
+        && tr_rd32(rep.data, 44u) == (HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY
+                                     | HARNESS_CAP_EXEC))
+        _tf_ok("AgentHarness accounts isolated model, memory, and exec caps");
     else
-        _tf_fail_point("AgentHarness accounts isolated model and memory capabilities",
-                       "memory-loop metrics were incomplete");
+        _tf_fail_point("AgentHarness accounts isolated model, memory, and exec caps",
+                       "verified edit-loop metrics were incomplete");
 }
 
 static void target_agentfs_workspace_contract(void)

@@ -319,8 +319,10 @@ FAULT_INJECT_OBJS     := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_FAULT_INJECT
 CODEX_HARNESS_OBJS    := $(BUILD_DIR)/codex_harness_pd.o \
                          $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o \
                          $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o
+EXEC_VERIFY_OBJS      := $(BUILD_DIR)/exec_verify.o \
+                         $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o
 
-IMAGES := controller.elf event_bus.elf init_agent.elf worker.elf agentfs.elf vibe_engine.elf vibeos.elf log_drain.elf serial_pd.elf swap_slot.elf mem_profiler.elf net_isolator.elf perf_counters.elf time_partition.elf trace_recorder.elf nameserver.elf virtio_blk.elf vfs_server.elf spawn_server.elf app_slot.elf net_server.elf net_pd.elf wg_net.elf app_manager.elf http_svc.elf vm_manager.elf auth_server.elf ext2fs.elf proc_server.elf vm_snapshot.elf pflocal_server.elf exec_server.elf term_server.elf block_pd.elf framebuffer_pd.elf usb_pd.elf cc_pd.elf gpu_sched.elf timer_svc.elf entropy_svc.elf block_svc.elf usb_svc.elf model_svc.elf tool_svc.elf irq_pd.elf timer_pd.elf fault_handler.elf codex_harness.elf
+IMAGES := controller.elf event_bus.elf init_agent.elf worker.elf agentfs.elf vibe_engine.elf vibeos.elf log_drain.elf serial_pd.elf swap_slot.elf mem_profiler.elf net_isolator.elf perf_counters.elf time_partition.elf trace_recorder.elf nameserver.elf virtio_blk.elf vfs_server.elf spawn_server.elf app_slot.elf net_server.elf net_pd.elf wg_net.elf app_manager.elf http_svc.elf vm_manager.elf auth_server.elf ext2fs.elf proc_server.elf vm_snapshot.elf pflocal_server.elf exec_server.elf exec_verify.elf term_server.elf block_pd.elf framebuffer_pd.elf usb_pd.elf cc_pd.elf gpu_sched.elf timer_svc.elf entropy_svc.elf block_svc.elf usb_svc.elf model_svc.elf tool_svc.elf irq_pd.elf timer_pd.elf fault_handler.elf codex_harness.elf
 
 # Optional: periodic WASM slot snapshot scheduler
 ifdef AGENTOS_SNAPSHOT_SCHED
@@ -454,6 +456,10 @@ $(BUILD_DIR)/tool_svc.o: $(SERVICES_DIR)/toolsvc/tool_svc.c
 	$(CC) -c $(CFLAGS) $< -o $@
 
 $(BUILD_DIR)/codex_harness_pd.o: $(REPO_ROOT)/userspace/agents/codex-harness/codex_harness_pd.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/exec_verify.o: $(SERVICES_DIR)/exec-server/exec_verify.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
 
@@ -648,6 +654,9 @@ $(BUILD_DIR)/exec_server.elf: $(EXEC_SERVER_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/codex_harness.elf: $(CODEX_HARNESS_OBJS)
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+$(BUILD_DIR)/exec_verify.elf: $(EXEC_VERIFY_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/term_server.elf: $(TERM_SERVER_OBJS)

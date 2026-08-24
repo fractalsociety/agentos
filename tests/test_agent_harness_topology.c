@@ -29,11 +29,13 @@ int main(void)
     const pd_desc_t *model = find_pd("model_svc");
     const pd_desc_t *tools = find_pd("tool_svc");
     const pd_desc_t *memory = find_pd("agentfs");
+    const pd_desc_t *exec = find_pd("exec_verify");
     const pd_desc_t *controller = find_pd("controller");
     assert(harness != NULL);
     assert(model != NULL);
     assert(tools != NULL);
     assert(memory != NULL);
+    assert(exec != NULL);
     assert(controller != NULL);
 
     assert(harness->self_svc_id == SVC_ID_AGENT_HARNESS);
@@ -45,13 +47,18 @@ int main(void)
     assert(!has_service(harness, SVC_ID_NET_PD));
     assert(has_service(harness, SVC_ID_TOOLSVC));
     assert(has_service(harness, SVC_ID_AGENTFS));
-    assert(!has_service(harness, SVC_ID_EXEC_SERVER));
+    assert(has_service(harness, SVC_ID_EXEC_SERVER));
 
     /* Network belongs to ModelSvc, not to the worker. */
     assert(has_service(model, SVC_ID_NET_SERVER));
     assert(tools->self_svc_id == SVC_ID_TOOLSVC);
     assert(!has_service(tools, SVC_ID_NET_SERVER));
     assert(memory->self_svc_id == SVC_ID_AGENTFS);
+    assert(exec->self_svc_id == SVC_ID_EXEC_SERVER);
+    assert(!has_service(exec, SVC_ID_MODELSVC));
+    assert(!has_service(exec, SVC_ID_AGENTFS));
+    assert(!has_service(exec, SVC_ID_TOOLSVC));
+    assert(!has_service(exec, SVC_ID_NET_SERVER));
     assert(has_service(controller, SVC_ID_AGENT_HARNESS));
 
     puts("agent harness topology tests: ok");

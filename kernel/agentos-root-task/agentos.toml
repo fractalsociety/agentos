@@ -107,6 +107,10 @@ name = "tool_svc"
 priority = 185
 
 [[pd]]
+name = "exec_verify"
+priority = 185
+
+[[pd]]
 name = "net_pd"
 priority = 160
 

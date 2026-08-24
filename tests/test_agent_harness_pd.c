@@ -16,6 +16,7 @@ static bool model_echo_after_first;
 static uint32_t memory_calls;
 static char memory_path[AGENTFS_PATH_MAX];
 static char memory_content[HARNESS_TOOL_SCRATCH_CAP];
+static uint32_t exec_calls;
 
 static uint32_t fake_model(const char *system_prompt,
                            uint32_t system_prompt_len,
@@ -73,16 +74,40 @@ static uint32_t fake_memory(bool write, const char *path, uint32_t path_len,
                             uint32_t *output_len, void *ctx)
 {
     (void)ctx;
-    assert(write);
     assert(path_len + 1u <= sizeof(memory_path));
-    assert(content_len + 1u <= sizeof(memory_content));
     memcpy(memory_path, path, path_len);
     memory_path[path_len] = '\0';
+    memory_calls++;
+    if (!write) {
+        uint32_t len = (uint32_t)strlen(memory_content);
+        assert(len + 1u <= output_capacity);
+        memcpy(output, memory_content, len + 1u);
+        *output_len = len;
+        return HARNESS_OK;
+    }
+    assert(content_len + 1u <= sizeof(memory_content));
     memcpy(memory_content, content, content_len);
     memory_content[content_len] = '\0';
-    memory_calls++;
     static const char next[] =
         "{\"action\":\"final\",\"summary\":\"edit-written\"}";
+    assert(sizeof(next) <= output_capacity);
+    memcpy(output, next, sizeof(next));
+    *output_len = sizeof(next) - 1u;
+    return HARNESS_OK;
+}
+
+static uint32_t fake_exec(const char *actual, uint32_t actual_len,
+                          const char *expected, uint32_t expected_len,
+                          int32_t *exit_code,
+                          char *output, uint32_t output_capacity,
+                          uint32_t *output_len, void *ctx)
+{
+    (void)ctx;
+    exec_calls++;
+    *exit_code = actual_len == expected_len
+        && memcmp(actual, expected, actual_len) == 0 ? 0 : 1;
+    static const char next[] =
+        "{\"action\":\"final\",\"summary\":\"edit-verified\"}";
     assert(sizeof(next) <= output_capacity);
     memcpy(output, next, sizeof(next));
     *output_len = sizeof(next) - 1u;
@@ -118,10 +143,36 @@ static void reset(uint32_t installed_caps)
     model_status = HARNESS_OK;
     model_echo_after_first = false;
     memory_calls = 0u;
+    exec_calls = 0u;
     memory_path[0] = '\0';
     memory_content[0] = '\0';
     harness_runtime_init(arena, sizeof(arena), installed_caps, 7u,
                          fake_model, NULL);
+}
+
+static void test_verify_reads_memory_and_requires_exec_success(void)
+{
+    struct harness_reply_submit submit;
+    struct harness_reply_result result;
+    reset(HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    memcpy(memory_content, "after\n", 7u);
+    model_reply = "{\"action\":\"verify\",\"path\":\"src/answer.txt\","
+                  "\"expected\":\"after\\n\"}";
+    model_echo_after_first = true;
+    harness_runtime_set_memory_backend(fake_memory, NULL);
+    harness_runtime_set_exec_backend(fake_exec, NULL);
+    struct harness_req_submit req = request(
+        HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    req.task_flags = HARNESS_TASK_REQUIRE_TEST;
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_OK);
+    assert(strcmp((char *)arena + req.result_offset, "edit-verified") == 0);
+    assert(harness_runtime_result(req.task_id, &result) == HARNESS_OK);
+    assert(result.model_calls == 2u);
+    assert(result.memory_ops == 1u);
+    assert(result.exec_calls == 1u);
+    assert(result.verification_exit_code == 0);
+    assert(result.used_caps == (HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY
+                                | HARNESS_CAP_EXEC));
 }
 
 static void test_memory_write_uses_memory_cap_and_returns_to_model(void)
@@ -284,6 +335,7 @@ int main(void)
     test_final_action_completes_and_exports_metrics();
     test_tool_action_uses_distinct_capability_and_returns_to_model();
     test_memory_write_uses_memory_cap_and_returns_to_model();
+    test_verify_reads_memory_and_requires_exec_success();
     test_protocol_and_backend_failures_are_reported();
     test_verification_requires_exec_cap();
     test_shared_memory_is_not_charged_per_worker();

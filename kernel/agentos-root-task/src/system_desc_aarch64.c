@@ -48,16 +48,16 @@
 
 /* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
-#define AOS_AARCH64_PD_COUNT (23u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (23u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #else
-#define AOS_AARCH64_PD_COUNT (22u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (23u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
@@ -274,8 +274,8 @@ const system_desc_t system_desc_aarch64 = {
             },
         },
 
-        /* Native Codex-style harness. ModelSvc, ToolSvc, and AgentFS are
-         * distinct effect capabilities; ExecServer and NetServer are absent. */
+        /* Native Codex-style harness. ModelSvc, ToolSvc, AgentFS, and
+         * ExecServer are distinct effect capabilities; NetServer is absent. */
         {
             .name           = "codex_harness",
             .elf_path       = "codex_harness.elf",
@@ -283,12 +283,13 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 120u,
             .self_svc_id    = SVC_ID_AGENT_HARNESS,
-            .init_ep_count  = 4u,
+            .init_ep_count  = 5u,
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
                 { SVC_ID_MODELSVC,  PD_CNODE_SLOT_MODELSVC_EP  },
                 { SVC_ID_TOOLSVC,   PD_CNODE_SLOT_TOOLSVC_EP   },
                 { SVC_ID_AGENTFS,   PD_CNODE_SLOT_AGENTFS_EP   },
+                { SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP },
             },
         },
 
@@ -300,6 +301,21 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 185u,
             .self_svc_id    = SVC_ID_TOOLSVC,
+            .init_ep_count  = 1u,
+            .init_eps = {
+                { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
+            },
+        },
+
+        /* Independent verification service. It has no ModelCap, MemoryCap,
+         * ToolCap, or NetCap; callers pass bounded snapshots via ExecCap. */
+        {
+            .name           = "exec_verify",
+            .elf_path       = "exec_verify.elf",
+            .stack_size     = 0x4000u,
+            .cnode_size_bits = 8u,
+            .priority       = 185u,
+            .self_svc_id    = SVC_ID_EXEC_SERVER,
             .init_ep_count  = 1u,
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },

@@ -47,6 +47,7 @@
 #include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
 #include "contracts/agent_harness_contract.h"
 #include "contracts/agentfs_contract.h"
+#include "../../../contracts/execsvc/interface.h"
 #include "../../../contracts/modelsvc/interface.h"
 #include "../../../contracts/toolsvc/interface.h"
 #include <stdint.h>
@@ -615,6 +616,9 @@ static seL4_CPtr g_toolsvc_shmem_frames[TOOLSVC_SHMEM_PAGES];
 #define AGENTFS_SHMEM_PAGES (AGENTFS_SHMEM_SIZE / 4096u)
 #define AGENTFS_CLIENT_ARENA_PAGES (AGENTFS_CLIENT_ARENA_SIZE / 4096u)
 static seL4_CPtr g_agentfs_shmem_frames[AGENTFS_SHMEM_PAGES];
+#define EXECSVC_SHMEM_PAGES (EXECSVC_SHMEM_SIZE / 4096u)
+#define EXECSVC_CLIENT_ARENA_PAGES (EXECSVC_CLIENT_ARENA_SIZE / 4096u)
+static seL4_CPtr g_execsvc_shmem_frames[EXECSVC_SHMEM_PAGES];
 
 static volatile uint32_t *g_uart_dr;  /* PL011 UARTDR (offset 0x00) */
 static volatile uint32_t *g_uart_fr;  /* PL011 UARTFR (offset 0x18) */
@@ -1978,6 +1982,32 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts(pd->name);
             dbg_puts(" err=");
             dbg_hex((seL4_Word)ae);
+            dbg_puts("\n");
+        }
+
+        /* ExecServer owns its verifier arena; an ExecCap client maps only its
+         * badge-selected request window. */
+        if (name_eq(pd->name, "exec_verify")) {
+            seL4_Error xe = pd_vspace_map_shared_pages(
+                vspace, (seL4_Word)EXECSVC_SHMEM_VADDR,
+                EXECSVC_SHMEM_SIZE, 1,
+                g_execsvc_shmem_frames, EXECSVC_SHMEM_PAGES);
+            dbg_puts("[rt] ExecServer shared arena map err=");
+            dbg_hex((seL4_Word)xe);
+            dbg_puts("\n");
+        } else if (pd_has_init_service(pd, SVC_ID_EXEC_SERVER)
+                   && i < EXECSVC_CLIENT_SLOT_COUNT) {
+            uint32_t client_offset = EXECSVC_CLIENT_ARENA_OFFSET(i);
+            seL4_Error xe = pd_vspace_map_shared_pages(
+                vspace,
+                (seL4_Word)EXECSVC_SHMEM_VADDR + client_offset,
+                EXECSVC_CLIENT_ARENA_SIZE, 1,
+                &g_execsvc_shmem_frames[client_offset / 4096u],
+                EXECSVC_CLIENT_ARENA_PAGES);
+            dbg_puts("[rt] ExecServer client partition map pd=");
+            dbg_puts(pd->name);
+            dbg_puts(" err=");
+            dbg_hex((seL4_Word)xe);
             dbg_puts("\n");
         }
 

@@ -43,12 +43,12 @@ the default runtime target.
 
 The native C bootstrap harness now builds as its own protection domain, boots
 under seL4 on QEMU AArch64, and completes a Codex-style planner/final action,
-a ModelSvc→ToolSvc→ModelSvc tool loop, and a three-call
-ModelSvc→AgentFS write/readback→ModelSvc edit loop. Root-task endpoint
+a ModelSvc→ToolSvc→ModelSvc tool loop, and a verified
+ModelSvc→AgentFS edit→ExecServer→ModelSvc loop. Root-task endpoint
 distribution mints badged, call-only
 client capabilities (`Write + GrantReply`) and distinct receive-only service
-capabilities. The harness receives distinct ModelSvc, ToolSvc, AgentFS, and
-LogDrain endpoints, but no ExecServer or direct NetServer endpoint.
+capabilities. The harness receives distinct ModelSvc, ToolSvc, AgentFS,
+ExecServer, and LogDrain endpoints, but no direct NetServer endpoint.
 
 ModelSvc's 4 MiB shared arena is physically divided into 64 badge-selected
 48 KiB client partitions plus a 1 MiB service-only transport workspace.
@@ -71,14 +71,23 @@ native harness now parses `memory_write` and `memory_read` actions, invokes the
 AgentFS capability backend, and returns each observation to ModelSvc in a
 bounded multi-step loop.
 
+The ExecServer verification PD owns a fourth 4 MiB arena with 48 KiB
+badge-selected client windows. It has no ModelCap, MemoryCap, ToolCap, or
+NetCap. For a `verify` action the trusted harness reads the requested artifact
+through MemoryCap, copies that snapshot and the expected result into its
+ExecCap window, and requires a zero exit code before accepting a task marked
+`HARNESS_TASK_REQUIRE_TEST`. Exact-byte verification is the first deployed
+backend; compiling or executing repository tests remains the next backend.
+
 This is a runnable native planner bootstrap, not yet a completed coding agent.
 External MCP connections and repository tools are not implemented yet,
-ExecServer does not yet verify a command, and the monitor's dynamic
+ExecServer does not yet compile or execute a command, and the monitor's dynamic
 CapabilityBroker records policy metadata without
 performing CNode mint/delete/revoke operations. Until those pieces and a real
-edit/test/result workflow with ExecCap are proven on target, the project must
-not claim a completed native Codex agent. The built-in `agentos-smoke-coder`
-is a deterministic target-test model, not a substitute for live inference.
+live-model repository edit/test/result workflow is proven on target, the
+project must not claim a completed native Codex agent. The built-in
+`agentos-smoke-coder` is a deterministic target-test model, not a substitute
+for live inference.
 
 ## Shared services and worker memory
 
@@ -103,17 +112,17 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
   --perf-output build/agent-harness-qemu-perf.json --require-perf
 ```
 
-The 2026-08-24 AArch64 QEMU run with ModelSvc, ToolSvc, and AgentFS passed all
-34 target assertions. Host monotonic timestamps measured 402.53 ms from QEMU
-spawn to root-task readiness, a 3.35 ms cold native planner turn, and 12 warm
-turns with 0.131 ms p50 and 0.426 ms p95. The bootstrap worker reported
-249,856 bytes of private committed memory and 147,456 bytes of shared
-ModelSvc+ToolSvc+AgentFS client mappings under its 64 MiB private limit. These
-are QEMU/host-arrival measurements, not bare-metal cycle counts.
+The 2026-08-24 AArch64 QEMU run with ModelSvc, ToolSvc, AgentFS, and ExecServer
+passed all 34 target assertions. Host monotonic timestamps measured 419.99 ms
+from QEMU spawn to root-task readiness, a 3.54 ms cold native planner turn,
+and 12 warm turns with 0.284 ms p50 and 0.538 ms p95. The bootstrap worker
+reported 253,952 bytes of private committed memory and 196,608 bytes of shared
+client mappings under its 64 MiB private limit. These are QEMU/host-arrival
+measurements, not bare-metal cycle counts.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service
 PDs now use a 20 ms/100 ms interactive class; the repeated warm-turn p95 fell
-to sub-millisecond latency in subsequent runs. The 249,856-byte bootstrap is intentionally
+to sub-millisecond latency in subsequent runs. The 253,952-byte bootstrap is intentionally
 below the mature 20 MiB target floor; future context, overlay, and tool state
 must remain below the 150 MiB ceiling rather than padding the worker.

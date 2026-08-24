@@ -13,6 +13,7 @@
 
 #include "../../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
 #include "../../../contracts/toolsvc/interface.h"
+#include "../../../contracts/execsvc/interface.h"
 #include "../../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 
 #define HARNESS_SYSTEM_PROMPT_OFFSET 0xa000u
@@ -20,6 +21,7 @@
 #define HARNESS_TOOL_INPUT_OFFSET    0x8000u
 #define HARNESS_TOOL_OUTPUT_OFFSET   0x9000u
 #define HARNESS_TOOL_SCRATCH_CAP     4096u
+#define HARNESS_EXEC_OUTPUT_OFFSET   0xb000u
 #define HARNESS_INTERNAL_OFFSET      HARNESS_TOOL_INPUT_OFFSET
 #define HARNESS_INTERNAL_CAP         0x4000u
 
@@ -44,6 +46,13 @@ typedef uint32_t (*harness_tool_backend_fn)(
 typedef uint32_t (*harness_memory_backend_fn)(
     bool write, const char *path, uint32_t path_len,
     const char *content, uint32_t content_len,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx);
+
+typedef uint32_t (*harness_exec_backend_fn)(
+    const char *actual, uint32_t actual_len,
+    const char *expected, uint32_t expected_len,
+    int32_t *exit_code,
     char *output, uint32_t output_capacity, uint32_t *output_len,
     void *ctx);
 
@@ -75,6 +84,8 @@ static harness_tool_backend_fn runtime_tool_backend;
 static void *runtime_tool_ctx;
 static harness_memory_backend_fn runtime_memory_backend;
 static void *runtime_memory_ctx;
+static harness_exec_backend_fn runtime_exec_backend;
+static void *runtime_exec_ctx;
 static harness_task_state_t current_task;
 static uint32_t runtime_private_committed_bytes;
 static uint32_t runtime_private_limit_bytes;
@@ -230,6 +241,8 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     runtime_tool_ctx = NULL;
     runtime_memory_backend = NULL;
     runtime_memory_ctx = NULL;
+    runtime_exec_backend = NULL;
+    runtime_exec_ctx = NULL;
     runtime_private_committed_bytes = 0u;
     runtime_private_limit_bytes = HARNESS_WORKER_DEFAULT_LIMIT_BYTES;
     runtime_shared_mapped_bytes = arena_size;
@@ -252,6 +265,13 @@ void harness_runtime_set_memory_backend(harness_memory_backend_fn memory_backend
 {
     runtime_memory_backend = memory_backend;
     runtime_memory_ctx = memory_ctx;
+}
+
+void harness_runtime_set_exec_backend(harness_exec_backend_fn exec_backend,
+                                      void *exec_ctx)
+{
+    runtime_exec_backend = exec_backend;
+    runtime_exec_ctx = exec_ctx;
 }
 
 void harness_runtime_set_resources(uint32_t private_committed_bytes,
@@ -332,6 +352,8 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
     char *response = (char *)(runtime_arena + req->result_offset);
     char *action_input = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
     char *observation = (char *)(runtime_arena + HARNESS_TOOL_OUTPUT_OFFSET);
+    char *exec_observation = (char *)(runtime_arena
+                                      + HARNESS_EXEC_OUTPUT_OFFSET);
     static const char echo_prefix[] = "agentos:";
 
     for (uint32_t step = 1u; step <= req->max_steps; step++) {
@@ -376,7 +398,8 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                              &summary, &summary_len))
                 return fail_task(HARNESS_ERR_PROTOCOL, rep);
             /* A final action cannot bypass a requested verification gate. */
-            if ((req->task_flags & HARNESS_TASK_REQUIRE_TEST) != 0u)
+            if ((req->task_flags & HARNESS_TASK_REQUIRE_TEST) != 0u
+                && current_task.verification_exit_code != 0)
                 return fail_task(HARNESS_ERR_EXEC, rep);
             if (!decode_json_string(action_input, HARNESS_TOOL_SCRATCH_CAP,
                                     summary, summary_len, &final_len)
@@ -473,6 +496,62 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                                      ? HARNESS_ERR_MEMORY : status, rep);
             next_prompt = observation;
             next_prompt_len = observation_len;
+            continue;
+        }
+
+        if (bytes_equal(action, action_len, "verify", 6u)) {
+            if ((runtime_installed_caps & HARNESS_CAP_MEMORY) == 0u
+                || (runtime_installed_caps & HARNESS_CAP_EXEC) == 0u
+                || runtime_memory_backend == NULL
+                || runtime_exec_backend == NULL) {
+                current_task.denied_attempts++;
+                return fail_task(HARNESS_ERR_CAP_DENIED, rep);
+            }
+            const char *path = NULL, *expected = NULL;
+            uint32_t path_len = 0u, expected_len = 0u;
+            if (!json_string(json, json_len, "path", 4u,
+                             &path, &path_len)
+                || !json_string(json, json_len, "expected", 8u,
+                                &expected, &expected_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            char decoded_path[AGENTFS_PATH_MAX];
+            uint32_t decoded_path_len = 0u, decoded_expected_len = 0u;
+            if (!decode_json_string(decoded_path, sizeof(decoded_path),
+                                    path, path_len, &decoded_path_len)
+                || !decode_json_string(action_input,
+                                       HARNESS_TOOL_SCRATCH_CAP,
+                                       expected, expected_len,
+                                       &decoded_expected_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+
+            uint32_t actual_len = 0u;
+            status = runtime_memory_backend(
+                false, decoded_path, decoded_path_len, NULL, 0u,
+                observation, HARNESS_TOOL_SCRATCH_CAP, &actual_len,
+                runtime_memory_ctx);
+            current_task.memory_ops++;
+            current_task.used_caps |= HARNESS_CAP_MEMORY;
+            if (status != HARNESS_OK || actual_len >= HARNESS_TOOL_SCRATCH_CAP)
+                return fail_task(status == HARNESS_OK
+                                     ? HARNESS_ERR_MEMORY : status, rep);
+
+            uint32_t exec_observation_len = 0u;
+            int32_t exit_code = -1;
+            current_task.state = HARNESS_STATE_VERIFYING;
+            status = runtime_exec_backend(
+                observation, actual_len,
+                action_input, decoded_expected_len, &exit_code,
+                exec_observation, HARNESS_TOOL_SCRATCH_CAP,
+                &exec_observation_len, runtime_exec_ctx);
+            current_task.exec_calls++;
+            current_task.used_caps |= HARNESS_CAP_EXEC;
+            current_task.verification_exit_code = exit_code;
+            if (status != HARNESS_OK || exit_code != 0
+                || exec_observation_len >= HARNESS_TOOL_SCRATCH_CAP)
+                return fail_task(status == HARNESS_OK
+                                     ? HARNESS_ERR_EXEC : status, rep);
+            next_prompt = exec_observation;
+            next_prompt_len = exec_observation_len;
             continue;
         }
 
@@ -714,6 +793,48 @@ static uint32_t target_memory_backend(
     return HARNESS_OK;
 }
 
+static uint32_t target_exec_backend(
+    const char *actual, uint32_t actual_len,
+    const char *expected, uint32_t expected_len,
+    int32_t *exit_code,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx)
+{
+    (void)ctx;
+    const uint32_t actual_rel = 0x100u;
+    const uint32_t expected_rel = 0x2000u;
+    if (actual_len > 0x1800u || expected_len > 0x1800u
+        || exit_code == NULL || output_len == NULL)
+        return HARNESS_ERR_EXEC;
+    uint8_t *exec_arena = (uint8_t *)(uintptr_t)
+        EXECSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    bytes_copy(exec_arena + actual_rel, actual, actual_len);
+    bytes_copy(exec_arena + expected_rel, expected, expected_len);
+    uint32_t partition = EXECSVC_CLIENT_ARENA_OFFSET(
+        AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    execsvc_verify_exact_wire_t wire = {
+        .actual_offset = partition + actual_rel,
+        .actual_len = actual_len,
+        .expected_offset = partition + expected_rel,
+        .expected_len = expected_len,
+        .request_tag = current_task.task_id,
+    };
+    sel4_msg_t rep;
+    uint32_t status = sel4_client_call(PD_CNODE_SLOT_EXEC_SERVER_EP,
+                                       EXECSVC_OP_VERIFY_EXACT,
+                                       &wire, sizeof(wire), &rep);
+    if (status != EXECSVC_OK || rep.length < sizeof(execsvc_verify_reply_t))
+        return status == EXECSVC_ERR_DENIED
+            ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_EXEC;
+    *exit_code = (int32_t)rd32(rep.data, 4u);
+    static const char verified[] =
+        "{\"observation\":\"verify\",\"exit_code\":0}";
+    if (sizeof(verified) > output_capacity) return HARNESS_ERR_EXEC;
+    bytes_copy(output, verified, sizeof(verified));
+    *output_len = sizeof(verified) - 1u;
+    return HARNESS_OK;
+}
+
 static uint32_t h_submit(sel4_badge_t badge, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx)
 {
@@ -802,19 +923,22 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     harness_runtime_init((void *)(uintptr_t)HARNESS_SHMEM_VADDR,
                          HARNESS_SHMEM_SIZE,
                          HARNESS_CAP_MODEL | HARNESS_CAP_TOOL
-                             | HARNESS_CAP_MEMORY, 1u,
+                             | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC, 1u,
                          target_model_backend, NULL);
     harness_runtime_set_tool_backend(target_tool_backend, NULL);
     harness_runtime_set_memory_backend(target_memory_backend, NULL);
+    harness_runtime_set_exec_backend(target_exec_backend, NULL);
     /* Private charge: mapped image + 64 KiB stack + 4 KiB IPC page + a fixed
      * 128 KiB allowance for CNode/TCB/SC/page-table kernel objects. */
     harness_runtime_set_resources(image_bytes + 0x10000u + 0x1000u + 0x20000u,
                                   HARNESS_WORKER_DEFAULT_LIMIT_BYTES,
                                   HARNESS_SHMEM_SIZE + TOOLSVC_CLIENT_ARENA_SIZE
-                                      + AGENTFS_CLIENT_ARENA_SIZE,
+                                      + AGENTFS_CLIENT_ARENA_SIZE
+                                      + EXECSVC_CLIENT_ARENA_SIZE,
                                   HARNESS_SHARED_MODELSVC
                                       | HARNESS_SHARED_TOOL_MCP
-                                      | HARNESS_SHARED_ARTIFACT_STORE);
+                                      | HARNESS_SHARED_ARTIFACT_STORE
+                                      | HARNESS_SHARED_EXEC_GRAPH);
     sel4_server_init(&harness_server, my_ep);
     (void)sel4_server_register(&harness_server, MSG_HARNESS_SUBMIT,
                                h_submit, NULL);

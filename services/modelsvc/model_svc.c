@@ -460,12 +460,14 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
         static const char smoke_task[] = "edit-and-readback-smoke";
         static const char write_observation[] =
             "{\"observation\":\"memory_write\",\"status\":\"ok\"}";
-        static const char readback[] = "after\n";
+        static const char verify_observation[] =
+            "{\"observation\":\"verify\",\"exit_code\":0}";
         static const char write_action[] =
             "{\"action\":\"memory_write\",\"path\":\"src/answer.txt\","
             "\"content\":\"after\\n\"}";
-        static const char read_action[] =
-            "{\"action\":\"memory_read\",\"path\":\"src/answer.txt\"}";
+        static const char verify_action[] =
+            "{\"action\":\"verify\",\"path\":\"src/answer.txt\","
+            "\"expected\":\"after\\n\"}";
         static const char final_action[] =
             "{\"action\":\"final\",\"summary\":\"edit-readback-verified\"}";
         const char *user = (const char *)modelsvc_shmem
@@ -483,10 +485,11 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
             } else if (bytes_equal(user, wire->user_prompt_len,
                                    write_observation,
                                    sizeof(write_observation) - 1u)) {
-                local_response = read_action;
-                local_response_len = sizeof(read_action) - 1u;
+                local_response = verify_action;
+                local_response_len = sizeof(verify_action) - 1u;
             } else if (bytes_equal(user, wire->user_prompt_len,
-                                   readback, sizeof(readback) - 1u)) {
+                                   verify_observation,
+                                   sizeof(verify_observation) - 1u)) {
                 local_response = final_action;
                 local_response_len = sizeof(final_action) - 1u;
             } else {
