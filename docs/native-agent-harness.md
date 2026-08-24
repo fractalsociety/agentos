@@ -223,10 +223,10 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
 AgentFS, ExecSvc, and both transport PDs passed all 41 live target assertions.
-Host monotonic timestamps measured 494.95 ms from QEMU spawn to root-task
-readiness, a 4.18 ms cold native planner turn, and 12 warm turns with 0.294 ms
-p50 and 0.614 ms p95. ModelSvc cached queries measured 0.051 ms p50 and
-0.375 ms p95. The worker reported 274,432 bytes of private committed memory
+Host monotonic timestamps measured 445.10 ms from QEMU spawn to root-task
+readiness, a 3.99 ms cold native planner turn, and 12 warm turns with 0.190 ms
+p50 and 0.533 ms p95. ModelSvc cached queries measured 0.046 ms p50 and
+0.363 ms p95. The worker reported 274,432 bytes of private committed memory
 and 196,608 bytes of shared client mappings under its 64 MiB private limit.
 These are QEMU/host-arrival measurements, not bare-metal cycle counts.
 
