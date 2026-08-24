@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
 #include "../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
 
 static unsigned tests;
@@ -145,6 +146,19 @@ int main(void)
               == EVENTBUS_AGENT_EVENT_OK,
           "reconnect event is hash chained");
 
+    check(EVENTBUS_TASK_VERIFY_VERSION_V1 == AGENT_TASK_VERIFY_VERSION_V1
+              && EVENTBUS_TASK_VERIFY_VERSION_V2
+                    == AGENT_TASK_VERIFY_VERSION
+              && AGENT_TASK_VERIFY_V1_DECODE_ONLY
+              && AGENT_TASK_VERIFY_V2_CANONICAL,
+          "TASK_VERIFY transition keeps v1 decode-only and v2 canonical");
+
+    event = make_event(EVENTBUS_EVENT_PROMOTION_VERIFY, scope, task, 8u);
+    event.flags = EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+    check(eventbus_agent_event_stream_append(&stream, &event)
+              == EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN,
+          "candidate cannot append PROMOTION_VERIFY");
+
     seal_stream(&stream, &seal);
     status = eventbus_agent_event_replay(stream.events, stream.event_count,
                                          &seal, 7u, &first);
@@ -197,6 +211,29 @@ int main(void)
     check(eventbus_agent_event_replay(copied, stream.event_count, &seal, 7u,
                                       &second) == EVENTBUS_AGENT_EVENT_ERR_SCOPE,
           "cross-scope causal references are rejected");
+
+    /* A successful TASK_VERIFY is scoped evidence, not a bearer token that
+     * can be replayed by a sibling scope. */
+    struct eventbus_agent_event_stream cross_scope_commit;
+    eventbus_agent_event_stream_init(&cross_scope_commit, 7u);
+    event = make_event(EVENTBUS_EVENT_TASK_VERIFY, scope, task, 7u);
+    event.flags = EVENTBUS_EVENT_FLAG_TASK_VERIFY_SUCCESS;
+    event.payload_root = id(44u);
+    event.evidence_root = evidence;
+    (void)eventbus_agent_event_stream_append(&cross_scope_commit, &event);
+    event = make_event(EVENTBUS_EVENT_COMMIT, id(77u), task, 7u);
+    event.payload_root = id(44u);
+    event.evidence_root = evidence;
+    event.causal_parent = cross_scope_commit.events[0].event_hash;
+    check(eventbus_agent_event_stream_append(&cross_scope_commit, &event)
+              == EVENTBUS_AGENT_EVENT_OK,
+          "sibling commit can be staged before replay validation");
+    seal_stream(&cross_scope_commit, &seal);
+    check(eventbus_agent_event_replay(cross_scope_commit.events,
+                                      cross_scope_commit.event_count, &seal,
+                                      7u, &second)
+              == EVENTBUS_AGENT_EVENT_ERR_SCOPE,
+          "TASK_VERIFY evidence cannot cross scope at commit");
 
     struct eventbus_agent_event_stream unverified;
     eventbus_agent_event_stream_init(&unverified, 7u);

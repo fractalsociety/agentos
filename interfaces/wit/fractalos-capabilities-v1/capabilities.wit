@@ -37,6 +37,11 @@ interface common-types {
 
 /// The versioned asynchronous Fractal control-plane boundary. All operations
 /// return promptly; poll and terminal-result calls never wait for a worker.
+///
+/// TASK_VERIFY transition: the v1 compatibility adapter may decode the old
+/// `verify` spelling, but it is not a candidate-visible operation and cannot
+/// authorize promotion. New callers use only `task-verify`, whose
+/// `verify-evidence.evidence-version` is 2.
 interface task-control-plane {
     use common-types.{program-handle, task-handle, digest};
 
@@ -95,6 +100,7 @@ interface task-control-plane {
     }
 
     record verify-evidence {
+        /// 1 is legacy decode-only evidence; 2 is canonical TASK_VERIFY.
         evidence-version: u32,
         proof-level: proof-level,
         test-count: u32,
@@ -229,8 +235,9 @@ interface action {
 interface task-verifier {
     use common-types.{object-id, task-handle, constraints, error-code};
     /// @effect task-verification
-    /// v1 `verify` is retained only by the lower compatibility adapter.  The
-    /// v2 model-facing operation is unambiguously named `task-verify`.
+    /// v1 `verify` is retained only by the lower compatibility adapter and
+    /// cannot be surfaced to a candidate. The v2 model-facing operation is
+    /// unambiguously named `task-verify`.
     task-verify: func(candidate: object-id, verifier: object-id, limits: constraints) -> result<task-handle, error-code>;
 }
 

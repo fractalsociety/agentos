@@ -15,6 +15,7 @@
 
 #include "../harness/test_framework.h"
 #include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
 
 #define ASSERT_EVENT_CONTRACT(condition, name)                         \
@@ -22,6 +23,53 @@
         if (condition) _tf_ok(name);                                   \
         else _tf_fail_point(name, "canonical event contract assertion"); \
     } while (0)
+
+static eventbus_event_hash_t eventbus_test_id(uint8_t value)
+{
+    eventbus_event_hash_t result = {{0}};
+    result.bytes[0] = value;
+    result.bytes[31] = (uint8_t)(value ^ 0xa5u);
+    return result;
+}
+
+static struct eventbus_agent_event eventbus_test_event(
+    uint32_t type, eventbus_event_hash_t scope,
+    eventbus_event_hash_t task, uint32_t epoch)
+{
+    struct eventbus_agent_event event = {0};
+    event.event_type = type;
+    event.authority_epoch = epoch;
+    event.scope_id = scope;
+    event.task_id = task;
+    event.payload_root = eventbus_test_id((uint8_t)(type + 30u));
+    return event;
+}
+
+static void eventbus_test_append_chain(
+    struct eventbus_agent_event_stream *stream, uint32_t type,
+    eventbus_event_hash_t scope, eventbus_event_hash_t task,
+    eventbus_event_hash_t evidence)
+{
+    struct eventbus_agent_event event = eventbus_test_event(
+        type, scope, task,
+        type == EVENTBUS_EVENT_AUTHORITY_CHANGE
+            ? (stream->initial_authority_epoch + 1u)
+            : (stream->event_count >= 6u
+                   ? stream->initial_authority_epoch + 1u
+                   : stream->initial_authority_epoch));
+    if (stream->event_count != 0u)
+        event.causal_parent = stream->events[stream->event_count - 1u].event_hash;
+    if (type == EVENTBUS_EVENT_TASK_VERIFY) {
+        event.flags = EVENTBUS_EVENT_FLAG_TASK_VERIFY_SUCCESS
+            | EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+        event.payload_root = eventbus_test_id(44u);
+        event.evidence_root = evidence;
+    } else if (type == EVENTBUS_EVENT_COMMIT) {
+        event.payload_root = eventbus_test_id(44u);
+        event.evidence_root = evidence;
+    }
+    (void)eventbus_agent_event_stream_append(stream, &event);
+}
 
 void run_eventbus_tests(microkit_channel ch)
 {
@@ -87,4 +135,130 @@ void run_eventbus_tests(microkit_channel ch)
                     && EVENTBUS_AGENT_EVENT_ERR_COMMIT_EVIDENCE
                         != EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN,
                           "eventbus: replay failures are distinguishable");
+
+    ASSERT_EVENT_CONTRACT(AGENT_TASK_VERIFY_VERSION_V1 == 1u
+                              && AGENT_TASK_VERIFY_VERSION_V2 == 2u
+                              && AGENT_TASK_VERIFY_VERSION
+                                  == AGENT_TASK_VERIFY_VERSION_V2,
+                          "eventbus: TASK_VERIFY transition is explicit v1 to v2");
+    ASSERT_EVENT_CONTRACT(AGENT_TASK_VERIFY_V1_DECODE_ONLY
+                              && AGENT_TASK_VERIFY_V2_CANONICAL,
+                          "eventbus: legacy VERIFY cannot grant promotion");
+
+    /* Exercise the canonical stream through the EventBus contract's public
+     * helpers as well as the IPC endpoint above.  The list is deliberately
+     * explicit: adding an event class requires updating this contract test. */
+    {
+        static struct eventbus_agent_event_stream stream;
+        static struct eventbus_agent_event_stream tampered;
+        static struct eventbus_agent_event_seal seal;
+        static struct eventbus_agent_replay first, second;
+        const eventbus_event_hash_t scope = eventbus_test_id(1u);
+        const eventbus_event_hash_t task = eventbus_test_id(2u);
+        const eventbus_event_hash_t evidence = eventbus_test_id(90u);
+        const uint32_t types[] = {
+            EVENTBUS_EVENT_TASK, EVENTBUS_EVENT_NESTED_CALL,
+            EVENTBUS_EVENT_OBJECT_TRANSITION, EVENTBUS_EVENT_MAILBOX,
+            EVENTBUS_EVENT_BUDGET, EVENTBUS_EVENT_AUTHORITY_CHANGE,
+            EVENTBUS_EVENT_TASK_VERIFY, EVENTBUS_EVENT_EFFECT,
+            EVENTBUS_EVENT_CHECKPOINT, EVENTBUS_EVENT_COMMIT,
+            EVENTBUS_EVENT_DISCONNECT, EVENTBUS_EVENT_RECONNECT,
+        };
+        eventbus_agent_event_stream_init(&stream, 1u);
+        for (uint32_t i = 0u; i < sizeof(types) / sizeof(types[0]); i++)
+            eventbus_test_append_chain(&stream, types[i], scope, task, evidence);
+        eventbus_agent_event_stream_seal(&stream, &seal);
+        ASSERT_EVENT_CONTRACT(stream.event_count == 12u
+                                  && eventbus_agent_event_replay(
+                                      stream.events, stream.event_count, &seal,
+                                      1u, &first) == EVENTBUS_AGENT_EVENT_OK
+                                  && first.task_events == 1u
+                                  && first.nested_call_events == 1u
+                                  && first.object_events == 1u
+                                  && first.mailbox_events == 1u
+                                  && first.budget_events == 1u
+                                  && first.authority_events == 1u
+                                  && first.verification_events == 1u
+                                  && first.effect_events == 1u
+                                  && first.checkpoint_events == 1u
+                                  && first.commit_events == 1u
+                                  && first.disconnect_events == 1u
+                                  && first.reconnect_events == 1u,
+                              "eventbus: every Agent transition is chained");
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  stream.events, stream.event_count, &seal,
+                                  1u, &second) == EVENTBUS_AGENT_EVENT_OK
+                                  && eventbus_event_hash_equal(
+                                      &first.projection_hash,
+                                      &second.projection_hash),
+                              "eventbus: sealed replay is exact");
+
+        tampered = stream;
+        tampered.events[2].payload_root = eventbus_test_id(201u);
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  tampered.events, tampered.event_count, &seal,
+                                  1u, &second) == EVENTBUS_AGENT_EVENT_ERR_TAMPER,
+                              "eventbus: tamper is rejected");
+
+        struct eventbus_agent_event swap = stream.events[1];
+        tampered = stream;
+        tampered.events[1] = tampered.events[2];
+        tampered.events[2] = swap;
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  tampered.events, tampered.event_count, &seal,
+                                  1u, &second) == EVENTBUS_AGENT_EVENT_ERR_REORDERED,
+                              "eventbus: reorder is rejected");
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  stream.events, stream.event_count - 1u, &seal,
+                                  1u, &second) == EVENTBUS_AGENT_EVENT_ERR_TRUNCATED,
+                              "eventbus: truncation is rejected");
+
+        tampered = stream;
+        tampered.events[11].scope_id = eventbus_test_id(77u);
+        tampered.events[11].parent_scope_id = (eventbus_event_hash_t){{0}};
+        eventbus_agent_event_hash(&tampered.events[11],
+                                  &tampered.events[11].event_hash);
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  tampered.events, tampered.event_count, &seal,
+                                  1u, &second) == EVENTBUS_AGENT_EVENT_ERR_SCOPE,
+                              "eventbus: cross-scope references are rejected");
+    }
+
+    {
+        static struct eventbus_agent_event_stream stream;
+        static struct eventbus_agent_event_seal seal;
+        static struct eventbus_agent_replay replay;
+        const eventbus_event_hash_t scope = eventbus_test_id(3u);
+        const eventbus_event_hash_t task = eventbus_test_id(4u);
+        const eventbus_event_hash_t evidence = eventbus_test_id(90u);
+        eventbus_agent_event_stream_init(&stream, 1u);
+        eventbus_test_append_chain(&stream, EVENTBUS_EVENT_TASK,
+                                   scope, task, evidence);
+        eventbus_test_append_chain(&stream, EVENTBUS_EVENT_COMMIT,
+                                   scope, task, evidence);
+        eventbus_agent_event_stream_seal(&stream, &seal);
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  stream.events, stream.event_count, &seal,
+                                  1u, &replay)
+                                  == EVENTBUS_AGENT_EVENT_ERR_COMMIT_EVIDENCE,
+                              "eventbus: commit requires TASK_VERIFY evidence");
+
+        struct eventbus_agent_event promotion = eventbus_test_event(
+            EVENTBUS_EVENT_PROMOTION_VERIFY, scope, task, 1u);
+        promotion.schema_version = EVENTBUS_AGENT_EVENT_SCHEMA_VERSION;
+        promotion.position = 1u;
+        promotion.flags = EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+        eventbus_agent_event_hash(&promotion, &promotion.event_hash);
+        stream = (struct eventbus_agent_event_stream){0};
+        stream.initial_authority_epoch = 1u;
+        stream.events[0] = promotion;
+        stream.event_count = 1u;
+        seal.event_count = 1u;
+        seal.head = promotion.event_hash;
+        ASSERT_EVENT_CONTRACT(eventbus_agent_event_replay(
+                                  stream.events, stream.event_count, &seal,
+                                  1u, &replay)
+                                  == EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN,
+                              "eventbus: candidate-visible PROMOTION_VERIFY is forbidden");
+    }
 }

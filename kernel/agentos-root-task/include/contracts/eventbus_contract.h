@@ -40,6 +40,14 @@
 #define EVENTBUS_AGENT_EVENT_MAX_SCOPES     32u
 #define EVENTBUS_AGENT_EVENT_MAX_EVENTS     64u
 #define EVENTBUS_AGENT_EVENT_HASH_BYTES     32u
+#define EVENTBUS_AGENT_EVENT_CANONICAL_BYTES 252u
+
+/* TASK_VERIFY is the v2 spelling of the candidate-facing verification
+ * record.  v1 VERIFY may be decoded by a compatibility adapter only; it is
+ * never an event type and can never authorize promotion. */
+#define EVENTBUS_TASK_VERIFY_VERSION_V1 1u
+#define EVENTBUS_TASK_VERIFY_VERSION_V2 2u
+#define EVENTBUS_TASK_VERIFY_VERSION EVENTBUS_TASK_VERIFY_VERSION_V2
 
 typedef struct eventbus_event_hash {
     uint8_t bytes[EVENTBUS_AGENT_EVENT_HASH_BYTES];
@@ -200,17 +208,57 @@ static inline void eventbus_event_hash_bytes(const uint8_t *bytes,
     }
 }
 
+static inline void eventbus_event_hash_put_u32(uint8_t *bytes,
+                                               uint32_t *offset,
+                                               uint32_t value)
+{
+    bytes[(*offset)++] = (uint8_t)value;
+    bytes[(*offset)++] = (uint8_t)(value >> 8u);
+    bytes[(*offset)++] = (uint8_t)(value >> 16u);
+    bytes[(*offset)++] = (uint8_t)(value >> 24u);
+}
+
+static inline void eventbus_event_hash_put_u64(uint8_t *bytes,
+                                               uint32_t *offset,
+                                               uint64_t value)
+{
+    uint32_t i;
+    for (i = 0u; i < 8u; i++)
+        bytes[(*offset)++] = (uint8_t)(value >> (i * 8u));
+}
+
+static inline void eventbus_event_hash_put_hash(
+    uint8_t *bytes, uint32_t *offset, const eventbus_event_hash_t *value)
+{
+    uint32_t i;
+    for (i = 0u; i < EVENTBUS_AGENT_EVENT_HASH_BYTES; i++)
+        bytes[(*offset)++] = value->bytes[i];
+}
+
 static inline void eventbus_agent_event_hash(
     const struct eventbus_agent_event *event, eventbus_event_hash_t *out)
 {
-    struct eventbus_agent_event copy;
+    uint8_t canonical[EVENTBUS_AGENT_EVENT_CANONICAL_BYTES];
+    uint32_t offset = 0u;
     if (event == (const struct eventbus_agent_event *)0
             || out == (eventbus_event_hash_t *)0)
         return;
-    copy = *event;
-    copy.event_hash = (eventbus_event_hash_t){{0}};
-    eventbus_event_hash_bytes((const uint8_t *)&copy,
-                              (uint32_t)sizeof(copy), out);
+    /* Never hash C padding: this is the wire/canonical representation and is
+     * therefore identical on x86_64, AArch64, and freestanding compilers. */
+    eventbus_event_hash_put_u32(canonical, &offset, event->schema_version);
+    eventbus_event_hash_put_u32(canonical, &offset, event->event_type);
+    eventbus_event_hash_put_u64(canonical, &offset, event->position);
+    eventbus_event_hash_put_u32(canonical, &offset, event->authority_epoch);
+    eventbus_event_hash_put_u32(canonical, &offset, (uint32_t)event->budget_delta);
+    eventbus_event_hash_put_u32(canonical, &offset, event->flags);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->scope_id);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->parent_scope_id);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->task_id);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->causal_parent);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->payload_root);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->evidence_root);
+    eventbus_event_hash_put_hash(canonical, &offset, &event->previous_hash);
+    eventbus_event_hash_bytes(canonical, offset, out);
 }
 
 static inline void eventbus_agent_event_stream_init(
@@ -232,6 +280,18 @@ static inline uint32_t eventbus_agent_event_stream_append(
         return EVENTBUS_AGENT_EVENT_ERR_INVALID;
     if (stream->event_count >= EVENTBUS_AGENT_EVENT_MAX_EVENTS)
         return EVENTBUS_AGENT_EVENT_ERR_INVALID;
+    if (event->event_type < EVENTBUS_EVENT_TASK
+            || event->event_type > EVENTBUS_EVENT_RECONNECT)
+        return event->event_type == EVENTBUS_EVENT_PROMOTION_VERIFY
+            ? EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN
+            : EVENTBUS_AGENT_EVENT_ERR_INVALID;
+    if ((event->flags & ~EVENTBUS_EVENT_FLAG_KNOWN_MASK) != 0u)
+        return EVENTBUS_AGENT_EVENT_ERR_INVALID;
+    if ((event->flags & EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE)
+            && (event->flags & EVENTBUS_EVENT_FLAG_PROMOTION_INTERNAL))
+        return EVENTBUS_AGENT_EVENT_ERR_PROMOTION_FORBIDDEN;
+    if (eventbus_event_hash_zero(&event->scope_id))
+        return EVENTBUS_AGENT_EVENT_ERR_SCOPE;
     if (stream->event_count != 0u)
         head = stream->events[stream->event_count - 1u].event_hash;
     event->schema_version = EVENTBUS_AGENT_EVENT_SCHEMA_VERSION;
@@ -299,6 +359,7 @@ static inline uint32_t eventbus_agent_event_replay(
     eventbus_event_hash_t verified_task = {{0}};
     eventbus_event_hash_t verified_candidate = {{0}};
     eventbus_event_hash_t verified_evidence = {{0}};
+    eventbus_event_hash_t verified_scope = {{0}};
     eventbus_event_hash_t scopes[EVENTBUS_AGENT_EVENT_MAX_SCOPES];
     eventbus_event_hash_t parents[EVENTBUS_AGENT_EVENT_MAX_SCOPES];
     eventbus_event_hash_t event_hashes[EVENTBUS_AGENT_EVENT_MAX_EVENTS];
@@ -421,10 +482,13 @@ static inline uint32_t eventbus_agent_event_replay(
             verified_task = event->task_id;
             verified_candidate = event->payload_root;
             verified_evidence = event->evidence_root;
+            verified_scope = event->scope_id;
         }
         if (event->event_type == EVENTBUS_EVENT_COMMIT) {
             if (!verified || !eventbus_event_hash_equal(&event->task_id,
                                                          &verified_task)
+                    || !eventbus_event_hash_equal(&event->scope_id,
+                                                  &verified_scope)
                     || !eventbus_event_hash_equal(&event->payload_root,
                                                   &verified_candidate)
                     || !eventbus_event_hash_equal(&event->evidence_root,

@@ -15,7 +15,14 @@
 #define AGENT_TASK_INTERFACE_VERSION_V1 1u
 #define AGENT_TASK_INTERFACE_VERSION_V2 2u
 #define AGENT_TASK_INTERFACE_VERSION AGENT_TASK_INTERFACE_VERSION_V2
-#define AGENT_TASK_VERIFY_VERSION AGENT_TASK_INTERFACE_VERSION_V2
+/* The wire operation was VERIFY in v1 and is TASK_VERIFY in v2.  Keep the
+ * legacy value decode-only: accepting a v1 record must not create a
+ * candidate-visible promotion or commit authority. */
+#define AGENT_TASK_VERIFY_VERSION_V1 AGENT_TASK_INTERFACE_VERSION_V1
+#define AGENT_TASK_VERIFY_VERSION_V2 AGENT_TASK_INTERFACE_VERSION_V2
+#define AGENT_TASK_VERIFY_VERSION AGENT_TASK_VERIFY_VERSION_V2
+#define AGENT_TASK_VERIFY_V1_DECODE_ONLY 1u
+#define AGENT_TASK_VERIFY_V2_CANONICAL 1u
 
 #define AGENT_TASK_PROMPT_OFFSET 0x0000u
 #define AGENT_TASK_PROMPT_CAP    0x4000u
@@ -209,6 +216,9 @@ struct agent_task_budget {
 /* TASK_VERIFY evidence is digest-only: commit/test evidence is represented by
  * immutable digests and a proof level, never by executable command text. */
 struct agent_task_verify_evidence {
+    /* Must be AGENT_TASK_VERIFY_VERSION for a canonical TASK_VERIFY.  A v1
+     * evidence record may be decoded by compatibility code but cannot be
+     * used as commit evidence. */
     uint32_t evidence_version;
     uint32_t proof_level;
     uint32_t test_count;
