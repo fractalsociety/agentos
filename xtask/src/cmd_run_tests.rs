@@ -111,6 +111,9 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     if let Some(input_log) = &args.input_log {
         let text = std::fs::read_to_string(input_log)
             .with_context(|| format!("failed to read {}", input_log.display()))?;
+        if args.board == "qemu_virt_aarch64" {
+            validate_boot_health(&text)?;
+        }
         report_tap_result(&text, &args.board)?;
         return process_perf_records(&text, args, Vec::new());
     }
@@ -158,8 +161,51 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     println!("=====================\n");
 
     let measured_records = wait?;
+    if args.board == "qemu_virt_aarch64" {
+        validate_boot_health(&text)?;
+    }
     report_tap_result(&text, &args.board)?;
     process_perf_records(&text, args, measured_records)
+}
+
+pub fn validate_boot_health(output: &str) -> Result<()> {
+    anyhow::ensure!(
+        !output.contains("[rt] FAULT"),
+        "target emitted an unexpected root-task fault report"
+    );
+    anyhow::ensure!(
+        !output.contains("ns_register: nameserver not found"),
+        "controller could not reach its boot-provided NameServer capability"
+    );
+
+    let marker = output
+        .lines()
+        .find_map(|line| {
+            line.find("AGENTOS_BOOT_HEALTH ")
+                .map(|start| &line[start + "AGENTOS_BOOT_HEALTH ".len()..])
+        })
+        .context("target emitted no AGENTOS_BOOT_HEALTH record")?;
+    let mut registered = None;
+    let mut disabled = None;
+    let mut failed = None;
+    for field in marker.split_whitespace() {
+        if let Some(value) = field.strip_prefix("ns_registered=") {
+            registered = value.parse::<u32>().ok();
+        } else if let Some(value) = field.strip_prefix("ns_disabled=") {
+            disabled = value.parse::<u32>().ok();
+        } else if let Some(value) = field.strip_prefix("ns_failed=") {
+            failed = value.parse::<u32>().ok();
+        }
+    }
+    let registered = registered.context("boot health omitted ns_registered")?;
+    let _disabled = disabled.context("boot health omitted ns_disabled")?;
+    let failed = failed.context("boot health omitted ns_failed")?;
+    anyhow::ensure!(registered > 0u32, "boot health registered no services");
+    anyhow::ensure!(
+        failed == 0u32,
+        "boot health reported {failed} failed registrations"
+    );
+    Ok(())
 }
 
 pub fn parse_perf_records(output: &str) -> Result<Vec<TargetPerfRecord>> {
@@ -746,6 +792,27 @@ mod tests {
             parse_tap_done("TAP version 14\nok 1 - still running\n"),
             None
         );
+    }
+
+    #[test]
+    fn boot_health_rejects_root_faults_and_registration_failures() {
+        assert!(validate_boot_health(concat!(
+            "AGENTOS_BOOT_HEALTH ns_registered=3 ns_disabled=3 ns_failed=0\n",
+            "agentOS boot complete\n",
+        ))
+        .is_ok());
+        assert!(validate_boot_health(concat!(
+            "[rt] FAULT label=0x6 badge=0x17 pd=fault_handler\n",
+            "AGENTOS_BOOT_HEALTH ns_registered=3 ns_disabled=3 ns_failed=0\n",
+            "agentOS boot complete\n",
+        ))
+        .is_err());
+        assert!(validate_boot_health(concat!(
+            "AGENTOS_BOOT_HEALTH ns_registered=0 ns_disabled=3 ns_failed=3\n",
+            "agentOS boot complete\n",
+        ))
+        .is_err());
+        assert!(validate_boot_health("agentOS boot complete\n").is_err());
     }
 
     #[test]

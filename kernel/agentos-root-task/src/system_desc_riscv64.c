@@ -290,6 +290,7 @@ const system_desc_t system_desc_riscv64 = {
             .stack_size      = 0x4000u,
             .cnode_size_bits = 10u,
             .priority        = 255u,
+            .self_svc_id     = SVC_ID_FAULT_HANDLER,
             .init_ep_count   = 2u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },

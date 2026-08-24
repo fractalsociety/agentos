@@ -74,6 +74,7 @@ typedef struct {
 /* Stub nameserver constants */
 #define NS_OK            0u
 #define NS_ERR_NOT_FOUND 2u
+#define NS_ERR_DUPLICATE 3u
 #define NS_SVC_EVENTBUS  "event_bus"
 #define NS_SVC_VFS       "vfs"
 #define NS_SVC_NET       "net"
@@ -194,6 +195,7 @@ static inline uint32_t sel4_client_call(seL4_CPtr ep, uint32_t op,
                                          sel4_msg_t *rep) {
     (void)ep;(void)op;(void)payload;(void)len;
     rep->opcode = SEL4_ERR_OK; rep->length = 0;
+    for (uint32_t i = 0u; i < SEL4_MSG_DATA_BYTES; i++) rep->data[i] = 0u;
     return SEL4_ERR_OK;
 }
 
@@ -352,6 +354,9 @@ static const uint32_t ECHO_SERVICE_WASM_LEN = 305u;
 
 /* Client: outbound service calls */
 static sel4_client_t g_client;
+static uint32_t g_boot_ns_successes;
+static uint32_t g_boot_ns_failures;
+static uint32_t g_boot_ns_disabled;
 
 /* Server: inbound dispatch loop */
 static sel4_server_t g_srv;
@@ -518,10 +523,10 @@ static void monitor_apply_policy(void)
  * ns_register_service — register one service via nameserver client call
  * ─────────────────────────────────────────────────────────────────────────── */
 
-static void ns_register_service(const char *svc_name,
-                                 uint32_t    channel_id,
-                                 uint32_t    pd_id,
-                                 uint32_t    cap_classes)
+static bool ns_register_service(const char *svc_name,
+                                uint32_t    channel_id,
+                                uint32_t    pd_id,
+                                uint32_t    cap_classes)
 {
     /*
      * Pack the register request into sel4_msg_t.data[]:
@@ -555,23 +560,25 @@ static void ns_register_service(const char *svc_name,
         payload[ni] = 0u;
 
     sel4_msg_t rep;
-#ifndef AGENTOS_TEST_HOST
-    seL4_CPtr ns_ep;
-    uint32_t conn_rc = sel4_client_connect(&g_client, "nameserver", &ns_ep);
-    if (conn_rc != SEL4_ERR_OK) {
-        ctrl_puts("[controller] ns_register: nameserver not found\n");
-        return;
-    }
-    uint32_t rc = sel4_client_call(ns_ep, 0xD0u /* OP_NS_REGISTER */,
+    /* NameServer is a boot capability. Looking it up through itself is a
+     * circular dependency and previously made every registration fail. */
+    uint32_t rc = sel4_client_call(g_client.nameserver_ep,
+                                   0xD0u /* OP_NS_REGISTER */,
                                    payload, SEL4_MSG_DATA_BYTES, &rep);
-#else
-    uint32_t rc = sel4_client_call(0, 0xD0u, payload, SEL4_MSG_DATA_BYTES, &rep);
-#endif
-    if (rc != SEL4_ERR_OK && rc != NS_OK) {
+    uint32_t ns_status = (uint32_t)rep.data[0]
+                       | ((uint32_t)rep.data[1] << 8u)
+                       | ((uint32_t)rep.data[2] << 16u)
+                       | ((uint32_t)rep.data[3] << 24u);
+    if (rc == SEL4_ERR_OK
+        && (ns_status == NS_OK || ns_status == NS_ERR_DUPLICATE)) {
+        return true;
+    }
+    {
         ctrl_puts("[controller] NS_REGISTER failed for: ");
         ctrl_puts(svc_name);
         ctrl_puts("\n");
     }
+    return false;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1238,6 +1245,9 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     ctrl.vibe_swap_in_progress = false;
     ctrl.vibe_demo_complete    = false;
     ctrl.net_tick_counter      = 0;
+    g_boot_ns_successes        = 0u;
+    g_boot_ns_failures         = 0u;
+    g_boot_ns_disabled         = 0u;
 
     ctrl_puts("[controller] Initializing agentOS core services\n");
 
@@ -1309,21 +1319,55 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     /* ── 8. Initialise vibe-swap subsystem ──────────────────────────────────── */
     vibe_swap_init();
 
-    /* ── 9. Boot complete ───────────────────────────────────────────────────── */
+    /* Step 9: register enabled services before declaring boot ready. */
+    ctrl_puts("[controller] Registering services with NameServer...\n");
+    if (ns_register_service(NS_SVC_VFS, 19u, TRACE_PD_VFS_SERVER, CAP_CLASS_FS))
+        g_boot_ns_successes++;
+    else
+        g_boot_ns_failures++;
+    if (ns_register_service(NS_SVC_NET, 21u, TRACE_PD_NET_SERVER, CAP_CLASS_NET))
+        g_boot_ns_successes++;
+    else
+        g_boot_ns_failures++;
+    if (ns_register_service("virtio_blk", 22u, TRACE_PD_VIRTIO_BLK, CAP_CLASS_FS))
+        g_boot_ns_successes++;
+    else
+        g_boot_ns_failures++;
+
+    /* These legacy services are absent from the current AArch64 topology.
+     * Report them as disabled instead of claiming successful registration. */
+    g_boot_ns_disabled = 3u;
+    ctrl_puts("[controller] disabled service: spawn (not in topology)\n");
+    ctrl_puts("[controller] disabled service: app_manager (not in topology)\n");
+    ctrl_puts("[controller] disabled service: http (not in topology)\n");
+    {
+        char count[12];
+        ctrl_puts("AGENTOS_BOOT_HEALTH ns_registered=");
+        uint32_to_dec(g_boot_ns_successes, count, (int)sizeof(count));
+        ctrl_puts(count);
+        ctrl_puts(" ns_disabled=");
+        uint32_to_dec(g_boot_ns_disabled, count, (int)sizeof(count));
+        ctrl_puts(count);
+        ctrl_puts(" ns_failed=");
+        uint32_to_dec(g_boot_ns_failures, count, (int)sizeof(count));
+        ctrl_puts(count);
+        ctrl_puts("\n");
+    }
+
+    if (g_boot_ns_failures != 0u) {
+        ctrl_puts("[controller] FATAL: NameServer registration incomplete\n");
+#ifndef AGENTOS_TEST_HOST
+        for (;;) { seL4_Yield(); }
+#else
+        return;
+#endif
+    }
+
+    /* Step 10: publish readiness only after the health gate succeeds. */
     ctrl_puts("[controller] *** agentOS controller boot complete ***\n");
     ctrl_puts("[controller] Ready for agents.\n");
-    /* Canonical boot-complete marker — must match xtask/cmd_test.rs */
+    /* Canonical marker follows the boot-health gate. */
     ctrl_puts("agentOS boot complete\n");
-
-    /* ── 10. Register services with NameServer ──────────────────────────────── */
-    ctrl_puts("[controller] Registering services with NameServer...\n");
-    ns_register_service(NS_SVC_VFS,        19u  /* CH_VFS_SERVER   */, TRACE_PD_VFS_SERVER,   CAP_CLASS_FS);
-    ns_register_service(NS_SVC_SPAWN,      20u  /* CH_SPAWN_SERVER */, TRACE_PD_SPAWN_SERVER, CAP_CLASS_SPAWN);
-    ns_register_service(NS_SVC_NET,        21u  /* CH_NET_SERVER   */, TRACE_PD_NET_SERVER,   CAP_CLASS_NET);
-    ns_register_service("virtio_blk",      22u  /* CH_VIRTIO_BLK   */, TRACE_PD_VIRTIO_BLK,   CAP_CLASS_FS);
-    ns_register_service(NS_SVC_APPMANAGER, 23u  /* CH_APP_MANAGER  */, TRACE_PD_APP_MANAGER,  CAP_CLASS_SPAWN | CAP_CLASS_NET);
-    ns_register_service(NS_SVC_HTTP,       24u  /* CH_HTTP_SVC     */, TRACE_PD_HTTP_SVC,     CAP_CLASS_NET);
-    ctrl_puts("[controller] 6 microkernel services registered\n");
 
     /* ── 11. Legacy data-flow demo (Steps 1-4) ──────────────────────────────── */
     demo_sequence();
@@ -1395,6 +1439,9 @@ bool controller_vibe_triggered(void)   { return ctrl.vibe_demo_triggered; }
 bool controller_vibe_in_progress(void) { return ctrl.vibe_swap_in_progress; }
 bool controller_vibe_complete(void)    { return ctrl.vibe_demo_complete; }
 bool controller_policy_loaded(void)    { return g_policy_loaded; }
+uint32_t controller_boot_ns_successes(void) { return g_boot_ns_successes; }
+uint32_t controller_boot_ns_failures(void) { return g_boot_ns_failures; }
+uint32_t controller_boot_ns_disabled(void) { return g_boot_ns_disabled; }
 
 /* Expose g_srv handler_count so tests can verify registration */
 uint32_t controller_handler_count(void) { return g_srv.handler_count; }

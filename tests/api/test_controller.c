@@ -22,6 +22,7 @@
  *   18. notification kind 3 (vibe engine) triggers vibe_swap_in_progress
  *   19. notification kind 5 (gpu sched online) — GPU Scheduler online path
  *   20. notification kind 6 (mesh agent) executes without fault
+ *   21-23. boot readiness reports enabled, disabled, and failed services truthfully
  *
  * Build & run:
  *   cc -DAGENTOS_TEST_HOST \
@@ -361,13 +362,25 @@ static void test_notif_mesh_agent(void)
                 "notification kind 6: mesh agent online path executes, count increments");
 }
 
+/* Tests 21-23: boot registration summary is truthful. */
+static void test_boot_nameserver_registration_summary(void)
+{
+    setup();
+    ASSERT_EQ(controller_boot_ns_successes(), 3u,
+              "boot sequence: all three enabled legacy services registered");
+    ASSERT_EQ(controller_boot_ns_failures(), 0u,
+              "boot sequence: no failed registration is reported as success");
+    ASSERT_EQ(controller_boot_ns_disabled(), 3u,
+              "boot sequence: absent spawn, app-manager, and HTTP services are explicit");
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * main
  * ─────────────────────────────────────────────────────────────────────────── */
 
 int main(void)
 {
-    TAP_PLAN(20);
+    TAP_PLAN(23);
 
     test_init_no_crash();
     test_policy_loaded_at_init();
@@ -389,6 +402,7 @@ int main(void)
     test_notif_vibe_engine();
     test_notif_gpu_sched_online();
     test_notif_mesh_agent();
+    test_boot_nameserver_registration_summary();
 
     return tap_exit();
 }

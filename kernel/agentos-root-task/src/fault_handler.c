@@ -17,7 +17,7 @@
  *   OP_FAULT_POLICY_SET  (0xE0) — update per-slot restart policy
  *
  * Memory:
- *   fault_ring (256KB shared MR): ring buffer for fault log entries
+ *   fault_ring (256KB private BSS): ring buffer for fault log entries
  *
  * E5-S8: migrated from Microkit to raw seL4 IPC.
  *
@@ -67,13 +67,23 @@ typedef struct __attribute__((packed)) {
 } fault_ring_header_t;
 
 #define FAULT_RING_MAGIC  0xFA17DEAD
+#define FAULT_RING_SIZE   0x40000u
 
 /* ── Shared memory ────────────────────────────────────────────────────────── */
-uintptr_t fault_ring_vaddr;
+/*
+ * The fault history is served through IPC, so no other PD needs this memory
+ * mapped into its address space. Keeping the backing store in this PD's BSS
+ * also guarantees that it exists before fault_handler_init() touches it.
+ */
+static uint8_t fault_ring_storage[FAULT_RING_SIZE]
+    __attribute__((aligned(4096)));
 
-#define FAULT_HDR     ((volatile fault_ring_header_t *)fault_ring_vaddr)
+#define FAULT_HDR     ((volatile fault_ring_header_t *)fault_ring_storage)
 #define FAULT_ENTRIES ((volatile fault_entry_t *) \
-    ((uint8_t *)fault_ring_vaddr + sizeof(fault_ring_header_t)))
+    (fault_ring_storage + sizeof(fault_ring_header_t)))
+
+_Static_assert(sizeof(fault_ring_storage) == FAULT_RING_SIZE,
+               "fault ring backing store must remain 256 KiB");
 
 static uint64_t boot_tick = 0;
 
@@ -122,7 +132,7 @@ static void handle_fault_policy(uint32_t pd_slot) {
 /* ── Init ─────────────────────────────────────────────────────────────────── */
 static void fault_handler_init(void) {
     volatile fault_ring_header_t *hdr = FAULT_HDR;
-    uint64_t region_size = 0x40000;
+    uint64_t region_size = sizeof(fault_ring_storage);
     uint64_t entry_space = region_size - sizeof(fault_ring_header_t);
     uint64_t cap = entry_space / sizeof(fault_entry_t);
     hdr->magic    = FAULT_RING_MAGIC;

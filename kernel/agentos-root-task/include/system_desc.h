@@ -231,6 +231,7 @@ typedef struct {
 #define SVC_ID_MODEL_TRANSPORT 29u  /* dedicated host model transport PD          */
 #define SVC_ID_EXEC_TRANSPORT 30u   /* dedicated allowlisted execution transport   */
 #define SVC_ID_MCP_TRANSPORT  31u   /* shared external MCP provider transport       */
+#define SVC_ID_FAULT_HANDLER  32u   /* fault policy and history service               */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */

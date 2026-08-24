@@ -2576,6 +2576,12 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_hex(label);
             dbg_puts(" badge=");
             dbg_hex(badge);
+            dbg_puts(" pd=");
+            if (badge > 0u && badge <= (seL4_Word)sys->pd_count) {
+                dbg_puts(sys->pds[badge - 1u].name);
+            } else {
+                dbg_puts("<unknown>");
+            }
             dbg_puts("\n    MR0-7(regs):");
             for (int mri = 0; mri <= 7; mri++) {
                 dbg_puts(" ");

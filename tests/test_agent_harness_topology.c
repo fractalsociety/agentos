@@ -40,6 +40,7 @@ int main(void)
     const pd_desc_t *exec = find_pd("exec_verify");
     const pd_desc_t *exec_transport = find_pd("exec_transport");
     const pd_desc_t *mcp_transport = find_pd("mcp_transport");
+    const pd_desc_t *fault_handler = find_pd("fault_handler");
     const pd_desc_t *controller = find_pd("controller");
     const pd_desc_t *launcher = find_pd("init_agent");
     assert(harness != NULL);
@@ -49,6 +50,7 @@ int main(void)
     assert(exec != NULL);
     assert(exec_transport != NULL);
     assert(mcp_transport != NULL);
+    assert(fault_handler != NULL);
     assert(controller != NULL);
     assert(launcher != NULL);
 
@@ -94,6 +96,7 @@ int main(void)
     assert(!has_service(exec_transport, SVC_ID_EXEC_SERVER));
     assert(!has_service(exec_transport, SVC_ID_NET_SERVER));
     assert(mcp_transport->self_svc_id == SVC_ID_MCP_TRANSPORT);
+    assert(fault_handler->self_svc_id == SVC_ID_FAULT_HANDLER);
     assert(!has_service(mcp_transport, SVC_ID_MODELSVC));
     assert(!has_service(mcp_transport, SVC_ID_TOOLSVC));
     assert(!has_service(mcp_transport, SVC_ID_AGENTFS));

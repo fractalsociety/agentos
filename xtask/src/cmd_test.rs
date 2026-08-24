@@ -151,6 +151,10 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
         }
     };
 
+    if result.is_ok() && args.board == "qemu_virt_aarch64" {
+        std::thread::sleep(Duration::from_millis(250));
+    }
+
     let boot_ms = boot_started.elapsed().as_millis() as u64;
     let (qemu_rss_bytes, qemu_cpu_percent) = process_snapshot(qemu.id());
     let image_bytes = std::fs::metadata(
@@ -177,12 +181,19 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
 
     // Print captured serial output
     println!("\n=== Serial output ===");
+    let mut serial_output = String::new();
     if let Ok(mut f) = std::fs::File::open(&log_path) {
-        let mut buf = String::new();
-        let _ = f.read_to_string(&mut buf);
-        print!("{}", buf);
+        let _ = f.read_to_string(&mut serial_output);
+        print!("{}", serial_output);
     }
     println!("=====================\n");
+
+    let result = result.and_then(|marker| {
+        if args.board == "qemu_virt_aarch64" {
+            crate::cmd_run_tests::validate_boot_health(&serial_output)?;
+        }
+        Ok(marker)
+    });
 
     match result {
         Ok(marker) => {

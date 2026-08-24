@@ -604,15 +604,16 @@ const system_desc_t system_desc_aarch64 = {
 
         /* pd[18/19] — fault_handler (prio 255; highest priority for fault recovery)
          * Must preempt every other PD to handle seL4 fault IPC promptly.
-         * No self_svc_id: receives fault IPC via TCB fault endpoint, not a
-         * registered service endpoint. */
+         * The root task receives kernel fault IPC and identifies the faulting
+         * PD. This service endpoint exposes policy/history operations without
+         * ever attempting to receive on capability slot zero. */
         {
             .name           = "fault_handler",
             .elf_path       = "fault_handler.elf",
             .stack_size     = 0x4000u,
             .cnode_size_bits = 10u,
             .priority       = 255u,
-            .self_svc_id    = 0u,
+            .self_svc_id    = SVC_ID_FAULT_HANDLER,
             .init_ep_count  = 2u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
