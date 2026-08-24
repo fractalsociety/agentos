@@ -6,7 +6,7 @@
     "prompt": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
     "visibility": "private"
   },
-  "graph_hash": "sha256:4db64f46a9df3edda04308ac6a0f48945c43c0dfa6089818e64572d77d79b34a",
+  "graph_hash": "sha256:030247628a89325f3d058e2dba5c3a3569afa5d296278e880763ca17c58dc2fb",
   "graph": {
     "compiler_version": "fractal-harnessc/0.1.0",
     "edges": [
@@ -118,7 +118,7 @@
       {
         "condition": "success",
         "from": "finish_native_network",
-        "to": "implement_fractal_controlplane"
+        "to": "implement_fractal_controlplane_host"
       },
       {
         "condition": "success",
@@ -173,7 +173,12 @@
       {
         "condition": "success",
         "from": "fractal_controlplane_contract_tests",
-        "to": "implement_fractal_controlplane"
+        "to": "implement_fractal_controlplane_host"
+      },
+      {
+        "condition": "success",
+        "from": "fractal_controlplane_contract_tests",
+        "to": "implement_fractal_controlplane_sdk"
       },
       {
         "condition": "success",
@@ -218,7 +223,12 @@
       {
         "condition": "success",
         "from": "implement_canonical_event_verify",
-        "to": "implement_fractal_controlplane"
+        "to": "implement_fractal_controlplane_host"
+      },
+      {
+        "condition": "success",
+        "from": "implement_canonical_event_verify",
+        "to": "implement_fractal_controlplane_sdk"
       },
       {
         "condition": "success",
@@ -329,6 +339,16 @@
         "condition": "success",
         "from": "implement_fractal_controlplane",
         "to": "run_host_security_performance_gates"
+      },
+      {
+        "condition": "success",
+        "from": "implement_fractal_controlplane_host",
+        "to": "implement_fractal_controlplane"
+      },
+      {
+        "condition": "success",
+        "from": "implement_fractal_controlplane_sdk",
+        "to": "implement_fractal_controlplane"
       },
       {
         "condition": "success",
@@ -492,11 +512,6 @@
       },
       {
         "condition": "success",
-        "from": "reconcile_prd_beads",
-        "to": "verify.reconcile_prd_beads.harness"
-      },
-      {
-        "condition": "success",
         "from": "remote_mesh_contract_tests",
         "to": "companion_export_contract_tests"
       },
@@ -509,11 +524,6 @@
         "condition": "success",
         "from": "remote_mesh_contract_tests",
         "to": "implement_remote_mesh_sessions"
-      },
-      {
-        "condition": "success",
-        "from": "remote_mesh_contract_tests",
-        "to": "verify.remote_mesh_contract_tests.harness"
       },
       {
         "condition": "success",
@@ -544,15 +554,8 @@
         "condition": "success",
         "from": "unify_fractal_graph_ui",
         "to": "run_host_security_performance_gates"
-      },
-      {
-        "condition": "success",
-        "from": "unify_fractal_graph_ui",
-        "to": "verify.unify_fractal_graph_ui.harness"
       }
     ],
-    "evolution": 1,
-    "evolution_arm": "grow.verification",
     "execution_flow": {
       "schema": "fractal.execution_flow.v1",
       "waves": [
@@ -579,8 +582,7 @@
             "fix_wg_compile_regression",
             "fractal_controlplane_contract_tests",
             "project_progress_contract_tests",
-            "unify_fractal_graph_ui",
-            "verify.reconcile_prd_beads.harness"
+            "unify_fractal_graph_ui"
           ],
           "parallel_group": "wave-2",
           "wave": 2
@@ -594,8 +596,7 @@
             "finish_native_network",
             "implement_codex_worker",
             "implement_cursor_worker",
-            "remote_mesh_contract_tests",
-            "verify.unify_fractal_graph_ui.harness"
+            "remote_mesh_contract_tests"
           ],
           "parallel_group": "wave-3",
           "wave": 3
@@ -606,8 +607,7 @@
             "companion_export_contract_tests",
             "implement_canonical_event_verify",
             "implement_claude_worker",
-            "implement_remote_mesh_sessions",
-            "verify.remote_mesh_contract_tests.harness"
+            "implement_remote_mesh_sessions"
           ],
           "parallel_group": "wave-4",
           "wave": 4
@@ -616,11 +616,20 @@
           "mode": "parallel",
           "nodes": [
             "health_adapter_contract_tests",
-            "implement_fractal_controlplane",
+            "implement_fractal_controlplane_host",
+            "implement_fractal_controlplane_sdk",
             "implement_hermes_worker"
           ],
           "parallel_group": "wave-5",
           "wave": 5
+        },
+        {
+          "mode": "sequential",
+          "nodes": [
+            "implement_fractal_controlplane"
+          ],
+          "parallel_group": null,
+          "wave": 6
         },
         {
           "mode": "parallel",
@@ -628,8 +637,8 @@
             "implement_daily_root_projection",
             "implement_remote_authority"
           ],
-          "parallel_group": "wave-6",
-          "wave": 6
+          "parallel_group": "wave-7",
+          "wave": 7
         },
         {
           "mode": "parallel",
@@ -639,8 +648,8 @@
             "implement_health_adapter",
             "implement_shared_space_replication"
           ],
-          "parallel_group": "wave-7",
-          "wave": 7
+          "parallel_group": "wave-8",
+          "wave": 8
         },
         {
           "mode": "parallel",
@@ -648,8 +657,8 @@
             "implement_actor_memory_lifecycle",
             "implement_project_progress_adapter"
           ],
-          "parallel_group": "wave-8",
-          "wave": 8
+          "parallel_group": "wave-9",
+          "wave": 9
         },
         {
           "mode": "parallel",
@@ -657,8 +666,8 @@
             "build_companion_pages",
             "complete_gpu_pipeline"
           ],
-          "parallel_group": "wave-9",
-          "wave": 9
+          "parallel_group": "wave-10",
+          "wave": 10
         },
         {
           "mode": "sequential",
@@ -666,7 +675,7 @@
             "run_host_security_performance_gates"
           ],
           "parallel_group": null,
-          "wave": 10
+          "wave": 11
         },
         {
           "mode": "sequential",
@@ -674,7 +683,7 @@
             "run_dual_arch_qemu_gates"
           ],
           "parallel_group": null,
-          "wave": 11
+          "wave": 12
         },
         {
           "mode": "sequential",
@@ -682,7 +691,7 @@
             "run_two_device_vertical_slice"
           ],
           "parallel_group": null,
-          "wave": 12
+          "wave": 13
         },
         {
           "mode": "sequential",
@@ -690,7 +699,7 @@
             "publish_verified_program"
           ],
           "parallel_group": null,
-          "wave": 13
+          "wave": 14
         },
         {
           "mode": "sequential",
@@ -698,19 +707,19 @@
             "lead_closeout"
           ],
           "parallel_group": null,
-          "wave": 14
+          "wave": 15
         }
       ]
     },
-    "graph_hash": "sha256:4db64f46a9df3edda04308ac6a0f48945c43c0dfa6089818e64572d77d79b34a",
-    "graph_id": "fg_1d7817492d5db4110284a73f27343d3b",
-    "harness_hash": "sha256:4dcfbc93a53c85dc94797d97c69efe4003abb23b52a00c052586b9ac85c0d792",
+    "graph_hash": "sha256:030247628a89325f3d058e2dba5c3a3569afa5d296278e880763ca17c58dc2fb",
+    "graph_id": "fg_06e8fd855608ce21e81de8eb9793d03c",
+    "harness_hash": "sha256:f6153f392c6a5018cee8e9afe052ce5f612d76311d360289d8f59830544922f8",
     "nodes": [
       {
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -750,9 +759,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-9",
-          "task_number": "9.1",
-          "wave": 9
+          "parallel_group": "wave-10",
+          "task_number": "10.1",
+          "wave": 10
         },
         "executor": {
           "agent": "claude"
@@ -771,14 +780,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -793,16 +802,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "implement_companion_gateway.ready",
@@ -821,7 +830,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -879,14 +888,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -901,16 +910,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "fractal_controlplane_contract_tests.ready",
@@ -925,7 +934,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -983,14 +992,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -1005,16 +1014,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "cursor_compat_contract_tests.ready",
@@ -1029,7 +1038,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -1091,14 +1100,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -1113,16 +1122,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "daily_root_contract_tests.ready",
@@ -1138,7 +1147,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -1185,9 +1194,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-9",
-          "task_number": "9.2",
-          "wave": 9
+          "parallel_group": "wave-10",
+          "task_number": "10.2",
+          "wave": 10
         },
         "executor": {
           "agent": "cursor"
@@ -1206,14 +1215,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -1228,16 +1237,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -1255,7 +1264,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -1308,14 +1317,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -1330,16 +1339,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "reconcile_prd_beads.ready"
@@ -1353,7 +1362,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -1408,14 +1417,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -1430,16 +1439,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "project_progress_contract_tests.ready",
@@ -1454,7 +1463,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -1511,14 +1520,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -1533,16 +1542,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "fix_wg_compile_regression.ready"
@@ -1557,7 +1566,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -1612,14 +1621,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -1634,16 +1643,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "reconcile_prd_beads.ready"
@@ -1658,7 +1667,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -1714,14 +1723,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -1736,16 +1745,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "reconcile_prd_beads.ready"
@@ -1759,7 +1768,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -1813,14 +1822,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -1835,16 +1844,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "companion_export_contract_tests.ready",
@@ -1859,7 +1868,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -1917,9 +1926,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-8",
-          "task_number": "8.1",
-          "wave": 8
+          "parallel_group": "wave-9",
+          "task_number": "9.1",
+          "wave": 9
         },
         "executor": {
           "agent": "claude"
@@ -1938,14 +1947,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -1960,16 +1969,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -1988,7 +1997,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2039,9 +2048,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-7",
-          "task_number": "7.1",
-          "wave": 7
+          "parallel_group": "wave-8",
+          "task_number": "8.1",
+          "wave": 8
         },
         "executor": {
           "agent": "codex-luna"
@@ -2060,14 +2069,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -2082,16 +2091,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -2107,7 +2116,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -2165,14 +2174,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -2187,16 +2196,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -2212,7 +2221,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2270,14 +2279,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -2292,16 +2301,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "claude_hermes_compat_contract_tests.ready",
@@ -2316,7 +2325,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -2373,14 +2382,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -2395,16 +2404,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "fractal_controlplane_contract_tests.ready"
@@ -2419,7 +2428,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2456,9 +2465,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-7",
-          "task_number": "7.2",
-          "wave": 7
+          "parallel_group": "wave-8",
+          "task_number": "8.2",
+          "wave": 8
         },
         "executor": {
           "agent": "claude"
@@ -2477,14 +2486,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -2499,16 +2508,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "companion_export_contract_tests.ready",
@@ -2523,7 +2532,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2582,14 +2591,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -2604,16 +2613,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "cursor_compat_contract_tests.ready"
@@ -2627,7 +2636,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2667,9 +2676,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-6",
-          "task_number": "6.1",
-          "wave": 6
+          "parallel_group": "wave-7",
+          "task_number": "7.1",
+          "wave": 7
         },
         "executor": {
           "agent": "hermes"
@@ -2688,14 +2697,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -2710,16 +2719,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -2736,87 +2745,74 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
         "created_at": "1970-01-01T00:00:00Z",
         "depends_on": [
-          "finish_native_network",
-          "fractal_controlplane_contract_tests",
-          "implement_canonical_event_verify"
+          "implement_fractal_controlplane_host",
+          "implement_fractal_controlplane_sdk"
         ],
         "efficiency": {
-          "confidence_still_useful": "0.98",
+          "confidence_still_useful": "0.99",
           "current_assumptions": [
-            "Existing EventBus, AgentFS, QuotaPD, CapBroker, ModelSvc, ToolSvc, and ExecServer remain shared services",
-            "Workers never mint capabilities or create PDs"
+            "Host and SDK predecessor nodes have independently passed their focused gates",
+            "Workers never create PDs or mint capabilities"
           ],
           "dependencies": [
-            "fractal_controlplane_contract_tests",
-            "implement_canonical_event_verify",
-            "finish_native_network"
+            "implement_fractal_controlplane_host",
+            "implement_fractal_controlplane_sdk"
           ],
-          "estimated_remaining_tokens": 26000,
-          "expected_artifact": "A nonblocking capability-authorized Fractal bridge with generated SDK bindings and passing host contract tests",
+          "estimated_remaining_tokens": 12000,
+          "expected_artifact": "A build-integrated and target-checked Fractal control-plane bridge",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
-            "kernel/agentos-root-task/src/event_bus.c",
-            "kernel/agentos-root-task/src/monitor.c",
-            "kernel/agentos-root-task/src/system_desc_aarch64.c",
-            "kernel/agentos-root-task/include/agent_task_gateway.h",
             "kernel/agentos-root-task/agentos.toml",
             "kernel/agentos-root-task/agentos.system",
             "kernel/agentos-root-task/agentos-aarch64.system",
             "tools/topology.yaml",
             "services/event-bus/event_bus.c",
             "userspace/agents/codex-harness/codex_harness_pd.c",
-            "userspace/sdk/Cargo.toml",
-            "userspace/sdk/src/lib.rs",
-            "userspace/sdk/src/fractal.rs",
-            "userspace/sdk/src/fractal_capabilities.rs",
-            "userspace/sdk/src/generated",
-            "tests/contracts/agent_task_test.c",
-            "tests/test_agent_task_gateway.c"
+            "tests/api/test_controller.c"
           ],
           "similarity_to_other_active_nodes": {
-            "fractal_controlplane_contract_tests": "0.82",
-            "implement_agentlang_runtime": "0.34",
-            "implement_canonical_event_verify": "0.44"
+            "implement_agentlang_runtime": "0.25",
+            "implement_fractal_controlplane_host": "0.52",
+            "implement_fractal_controlplane_sdk": "0.42"
           },
-          "verification_plan": "Run focused contract and integration tests, cargo test for userspace/sdk, and an instrumented async flow proving submission returns before delayed completion and revocation prevents dispatch."
+          "verification_plan": "Run the focused gateway and controller suites, cargo test -p agentos-sdk, topology validation, and AArch64 plus x86_64 target compile checks."
         },
         "execution": {
-          "mode": "parallel",
-          "parallel_group": "wave-5",
-          "task_number": "5.2",
-          "wave": 5
+          "mode": "sequential",
+          "parallel_group": null,
+          "task_number": "6.1",
+          "wave": 6
         },
         "executor": {
           "agent": "codex-luna"
         },
         "human_intervention": false,
         "id": "implement_fractal_controlplane",
-        "instruction": "Implement the approved Fractal task contract in kernel/agentos-root-task/src/agent_task_gateway.c and the existing monitor and EventBus adapter files after the canonical-event implementation is present. Submission must validate badge, capability subset, authority epoch, ObjectIDs, budget, and bounds, enqueue work, and return a handle before long execution; completion, cancellation, failure, TASK_VERIFY evidence, and resource metrics must arrive through authenticated events. Generate Rust bindings under userspace/sdk from the WIT source, register the SDK dependency and module, and update both system descriptions and topology without creating a second contract for any PD or redefining predecessor contract headers. Make tests/contracts/agent_task_test.c and tests/test_agent_task_gateway.c pass on host while retaining target assertions.",
+        "instruction": "Integrate the completed C host bridge and generated Rust SDK into the existing AgentOS build only. Update the two system descriptions, root-task manifest, topology, existing EventBus service adapter, compatibility harness binding, and controller integration test without creating another PD contract or service implementation. Run the focused host suites plus both target-architecture compile checks and leave the canonical branch in a verified buildable state.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
           "workspace:root"
         ],
         "node_type": "implementation",
-        "objective": "Implement the asynchronous Fractal control-plane bridge",
+        "objective": "Integrate and verify the Fractal control-plane bridge",
         "policy_contract": {
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -2831,16 +2827,123 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
+        "reopen_count": 0,
+        "requires": [
+          "implement_fractal_controlplane_host.ready",
+          "implement_fractal_controlplane_sdk.ready"
+        ],
+        "route_candidates": [
+          "apple-container://code-edit-default"
+        ],
+        "sandbox_profile": "apple-container://local-work-v1",
+        "title": "Integrate and verify the Fractal control-plane bridge"
+      },
+      {
+        "artifacts_produced": [],
+        "attempt_count": 0,
+        "budget": {
+          "timeout_ms": 3600000
+        },
+        "capability": "code.edit",
+        "consumed_by": [],
+        "created_at": "1970-01-01T00:00:00Z",
+        "depends_on": [
+          "finish_native_network",
+          "fractal_controlplane_contract_tests",
+          "implement_canonical_event_verify"
+        ],
+        "efficiency": {
+          "confidence_still_useful": "0.99",
+          "current_assumptions": [
+            "The preserved checkpoint is the starting implementation, not work to recreate",
+            "Existing shared services remain singleton PDs"
+          ],
+          "dependencies": [
+            "fractal_controlplane_contract_tests",
+            "implement_canonical_event_verify",
+            "finish_native_network"
+          ],
+          "estimated_remaining_tokens": 12000,
+          "expected_artifact": "A tested nonblocking capability-authorized C gateway and canonical EventBus adapter",
+          "files_or_systems_affected": [
+            "kernel/agentos-root-task/include/agent_task_gateway.h",
+            "kernel/agentos-root-task/src/agent_task_gateway.c",
+            "kernel/agentos-root-task/src/event_bus.c",
+            "kernel/agentos-root-task/src/monitor.c",
+            "tests/contracts/agent_task_test.c",
+            "tests/test_agent_task_gateway.c"
+          ],
+          "similarity_to_other_active_nodes": {
+            "fractal_controlplane_contract_tests": "0.72",
+            "implement_canonical_event_verify": "0.38"
+          },
+          "verification_plan": "Run test_agent_task_contract and test_agent_task_gateway, compile the touched freestanding C for both target architectures, and prove submission returns a handle before delayed completion."
+        },
+        "execution": {
+          "mode": "parallel",
+          "parallel_group": "wave-5",
+          "task_number": "5.2",
+          "wave": 5
+        },
+        "executor": {
+          "agent": "codex-luna"
+        },
+        "human_intervention": false,
+        "id": "implement_fractal_controlplane_host",
+        "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the freestanding C host bridge and its focused tests. Validate badge, capability subset, authority epoch, ObjectIDs, budget, and bounds; enqueue submission before long execution; and emit authenticated completion, cancellation, failure, TASK_VERIFY, and resource events. Do not edit WIT, Rust SDK, system descriptions, topology, or lower contract headers. Make the agent-task contract and gateway suites pass while retaining target assertions.",
+        "kind": "container",
+        "memory_scopes": [
+          "work:goal",
+          "workspace:root"
+        ],
+        "node_type": "implementation",
+        "objective": "Complete the asynchronous Fractal host bridge",
+        "policy_contract": {
+          "allowed_commands": [],
+          "allowed_writes": [],
+          "budgets": {
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
+            "max_minutes": 60,
+            "max_output_tokens": 100000,
+            "max_steps": 80
+          },
+          "capability": "code.edit",
+          "decision": "allow",
+          "evidence_requirements": [
+            "commands",
+            "exit_codes",
+            "stderr",
+            "stdout"
+          ],
+          "external_side_effects": false,
+          "network": {
+            "allowed_destinations": [],
+            "default": "deny"
+          },
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
+          "sandbox_profile": "local-work-v1",
+          "schema": "fractal.node_policy_contract.v1",
+          "verifier_ids": [
+            "independent"
+          ]
+        },
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "finish_native_network.ready",
@@ -2851,13 +2954,117 @@
           "apple-container://code-edit-default"
         ],
         "sandbox_profile": "apple-container://local-work-v1",
-        "title": "Implement the asynchronous Fractal control-plane bridge"
+        "title": "Complete the asynchronous Fractal host bridge"
       },
       {
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
+        },
+        "capability": "code.edit",
+        "consumed_by": [],
+        "created_at": "1970-01-01T00:00:00Z",
+        "depends_on": [
+          "fractal_controlplane_contract_tests",
+          "implement_canonical_event_verify"
+        ],
+        "efficiency": {
+          "confidence_still_useful": "0.99",
+          "current_assumptions": [
+            "The WIT contract completed by the predecessor test node is authoritative",
+            "OpenCode uses the configured Z.ai GLM model"
+          ],
+          "dependencies": [
+            "fractal_controlplane_contract_tests",
+            "implement_canonical_event_verify"
+          ],
+          "estimated_remaining_tokens": 10000,
+          "expected_artifact": "One validated WIT-derived Rust SDK surface for asynchronous Fractal tasks",
+          "files_or_systems_affected": [
+            "interfaces/wit/fractalos-capabilities-v1/capabilities.wit",
+            "userspace/sdk/Cargo.toml",
+            "userspace/sdk/src/lib.rs",
+            "userspace/sdk/src/fractal.rs",
+            "userspace/sdk/src/fractalos_capabilities.rs"
+          ],
+          "similarity_to_other_active_nodes": {
+            "fractal_controlplane_contract_tests": "0.61",
+            "implement_agentlang_runtime": "0.31"
+          },
+          "verification_plan": "Run WIT parsing or generation checks, cargo test -p agentos-sdk, no_std compilation where supported, formatting, Clippy, and duplicate-binding checks."
+        },
+        "execution": {
+          "mode": "parallel",
+          "parallel_group": "wave-5",
+          "task_number": "5.3",
+          "wave": 5
+        },
+        "executor": {
+          "agent": "opencode"
+        },
+        "human_intervention": false,
+        "id": "implement_fractal_controlplane_sdk",
+        "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests and WIT validation pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
+        "kind": "container",
+        "memory_scopes": [
+          "work:goal",
+          "workspace:root"
+        ],
+        "node_type": "implementation",
+        "objective": "Complete generated Fractal WIT and Rust SDK bindings",
+        "policy_contract": {
+          "allowed_commands": [],
+          "allowed_writes": [],
+          "budgets": {
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
+            "max_minutes": 60,
+            "max_output_tokens": 100000,
+            "max_steps": 80
+          },
+          "capability": "code.edit",
+          "decision": "allow",
+          "evidence_requirements": [
+            "commands",
+            "exit_codes",
+            "stderr",
+            "stdout"
+          ],
+          "external_side_effects": false,
+          "network": {
+            "allowed_destinations": [],
+            "default": "deny"
+          },
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
+          "sandbox_profile": "local-work-v1",
+          "schema": "fractal.node_policy_contract.v1",
+          "verifier_ids": [
+            "independent"
+          ]
+        },
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
+        "reopen_count": 0,
+        "requires": [
+          "fractal_controlplane_contract_tests.ready",
+          "implement_canonical_event_verify.ready"
+        ],
+        "route_candidates": [
+          "apple-container://code-edit-default"
+        ],
+        "sandbox_profile": "apple-container://local-work-v1",
+        "title": "Complete generated Fractal WIT and Rust SDK bindings"
+      },
+      {
+        "artifacts_produced": [],
+        "attempt_count": 0,
+        "budget": {
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2892,9 +3099,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-7",
-          "task_number": "7.3",
-          "wave": 7
+          "parallel_group": "wave-8",
+          "task_number": "8.3",
+          "wave": 8
         },
         "executor": {
           "agent": "claude"
@@ -2913,14 +3120,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -2935,16 +3142,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "health_adapter_contract_tests.ready",
@@ -2959,7 +3166,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -2996,7 +3203,7 @@
         "execution": {
           "mode": "parallel",
           "parallel_group": "wave-5",
-          "task_number": "5.3",
+          "task_number": "5.4",
           "wave": 5
         },
         "executor": {
@@ -3016,14 +3223,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -3038,16 +3245,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "claude_hermes_compat_contract_tests.ready",
@@ -3062,7 +3269,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -3101,9 +3308,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-8",
-          "task_number": "8.2",
-          "wave": 8
+          "parallel_group": "wave-9",
+          "task_number": "9.2",
+          "wave": 9
         },
         "executor": {
           "agent": "cursor"
@@ -3122,14 +3329,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -3144,16 +3351,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -3169,7 +3376,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -3221,9 +3428,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-6",
-          "task_number": "6.2",
-          "wave": 6
+          "parallel_group": "wave-7",
+          "task_number": "7.2",
+          "wave": 7
         },
         "executor": {
           "agent": "hermes"
@@ -3242,14 +3449,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -3264,16 +3471,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "canonical_event_verify_contract_tests.ready",
@@ -3291,7 +3498,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -3348,14 +3555,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -3370,16 +3577,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "remote_mesh_contract_tests.ready"
@@ -3393,7 +3600,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -3430,9 +3637,9 @@
         },
         "execution": {
           "mode": "parallel",
-          "parallel_group": "wave-7",
-          "task_number": "7.4",
-          "wave": 7
+          "parallel_group": "wave-8",
+          "task_number": "8.4",
+          "wave": 8
         },
         "executor": {
           "agent": "codex-luna"
@@ -3451,14 +3658,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -3473,16 +3680,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "implement_canonical_event_verify.ready",
@@ -3498,7 +3705,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 1800000
         },
         "capability": "control.closeout",
         "consumed_by": [],
@@ -3523,8 +3730,8 @@
         "execution": {
           "mode": "sequential",
           "parallel_group": null,
-          "task_number": "14.1",
-          "wave": 14
+          "task_number": "15.1",
+          "wave": 15
         },
         "human_intervention": false,
         "id": "lead_closeout",
@@ -3540,17 +3747,17 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "control.closeout",
-          "decision": "deny",
+          "decision": "allow",
           "evidence_requirements": [
             "commands",
             "exit_codes",
@@ -3562,16 +3769,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
-          "sandbox_profile": "deny",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
+          "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "publish_verified_program.ready"
@@ -3623,14 +3830,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "control.plan",
           "decision": "allow",
@@ -3645,16 +3852,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "ready_at": "1970-01-01T00:00:00Z",
         "reopen_count": 0,
         "route_candidates": [
@@ -3666,7 +3873,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -3719,14 +3926,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -3741,16 +3948,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "reconcile_prd_beads.ready"
@@ -3764,7 +3971,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -3793,8 +4000,8 @@
         "execution": {
           "mode": "sequential",
           "parallel_group": null,
-          "task_number": "13.1",
-          "wave": 13
+          "task_number": "14.1",
+          "wave": 14
         },
         "executor": {
           "agent": "codex-luna"
@@ -3813,14 +4020,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -3835,16 +4042,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "run_two_device_vertical_slice.ready"
@@ -3859,7 +4066,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -3909,14 +4116,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -3931,16 +4138,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "lead_plan.ready"
@@ -3955,7 +4162,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.generate",
         "consumed_by": [],
@@ -4020,14 +4227,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.generate",
           "decision": "allow",
@@ -4042,16 +4249,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "fix_wg_compile_regression.ready",
@@ -4067,7 +4274,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 120000
+          "timeout_ms": 1800000
         },
         "capability": "project.tests.execute",
         "consumed_by": [],
@@ -4118,8 +4325,8 @@
         "execution": {
           "mode": "sequential",
           "parallel_group": null,
-          "task_number": "11.1",
-          "wave": 11
+          "task_number": "12.1",
+          "wave": 12
         },
         "executor": {
           "agent": "codex-luna"
@@ -4138,14 +4345,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "project.tests.execute",
           "decision": "allow",
@@ -4160,16 +4367,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "complete_gpu_pipeline.ready",
@@ -4192,7 +4399,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 120000
+          "timeout_ms": 1800000
         },
         "capability": "project.tests.execute",
         "consumed_by": [],
@@ -4259,8 +4466,8 @@
         "execution": {
           "mode": "sequential",
           "parallel_group": null,
-          "task_number": "10.1",
-          "wave": 10
+          "task_number": "11.1",
+          "wave": 11
         },
         "executor": {
           "agent": "hermes"
@@ -4279,14 +4486,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "project.tests.execute",
           "decision": "allow",
@@ -4301,16 +4508,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "build_companion_pages.ready",
@@ -4342,7 +4549,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 120000
+          "timeout_ms": 1800000
         },
         "capability": "project.tests.execute",
         "consumed_by": [],
@@ -4391,8 +4598,8 @@
         "execution": {
           "mode": "sequential",
           "parallel_group": null,
-          "task_number": "12.1",
-          "wave": 12
+          "task_number": "13.1",
+          "wave": 13
         },
         "executor": {
           "agent": "hermes"
@@ -4411,14 +4618,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "project.tests.execute",
           "decision": "allow",
@@ -4433,16 +4640,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "build_companion_pages.ready",
@@ -4464,7 +4671,7 @@
         "artifacts_produced": [],
         "attempt_count": 0,
         "budget": {
-          "timeout_ms": 180000
+          "timeout_ms": 3600000
         },
         "capability": "code.edit",
         "consumed_by": [],
@@ -4516,14 +4723,14 @@
           "allowed_commands": [],
           "allowed_writes": [],
           "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
+            "max_attempts": 3,
+            "max_cost_usd": 40,
+            "max_diff_lines": 4000,
+            "max_files_changed": 24,
+            "max_input_tokens": 500000,
             "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
+            "max_output_tokens": 100000,
+            "max_steps": 80
           },
           "capability": "code.edit",
           "decision": "allow",
@@ -4538,16 +4745,16 @@
             "allowed_destinations": [],
             "default": "deny"
           },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
+          "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+          "provenance": "project:.fractal/harness.yaml",
           "sandbox_profile": "local-work-v1",
           "schema": "fractal.node_policy_contract.v1",
           "verifier_ids": [
             "independent"
           ]
         },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
+        "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
+        "policy_provenance": "project:.fractal/harness.yaml",
         "reopen_count": 0,
         "requires": [
           "reconcile_prd_beads.ready"
@@ -4557,244 +4764,21 @@
         ],
         "sandbox_profile": "apple-container://local-work-v1",
         "title": "Record the external Fractal graph UI integration follow-up"
-      },
-      {
-        "artifacts_produced": [],
-        "attempt_count": 0,
-        "budget": {
-          "timeout_ms": 120000
-        },
-        "capability": "project.tests.execute",
-        "consumed_by": [],
-        "created_at": "1970-01-01T00:00:00Z",
-        "depends_on": [
-          "reconcile_prd_beads"
-        ],
-        "execution": {
-          "mode": "parallel",
-          "parallel_group": "wave-2",
-          "task_number": "2.6",
-          "wave": 2
-        },
-        "human_intervention": false,
-        "id": "verify.reconcile_prd_beads.harness",
-        "instruction": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "kind": "container",
-        "memory_scopes": [
-          "acceptance:spec",
-          "work:goal",
-          "workspace:root"
-        ],
-        "node_type": "verification",
-        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "policy_contract": {
-          "allowed_commands": [],
-          "allowed_writes": [],
-          "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
-            "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
-          },
-          "capability": "project.tests.execute",
-          "decision": "allow",
-          "evidence_requirements": [
-            "commands",
-            "exit_codes",
-            "stderr",
-            "stdout"
-          ],
-          "external_side_effects": false,
-          "network": {
-            "allowed_destinations": [],
-            "default": "deny"
-          },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
-          "sandbox_profile": "local-work-v1",
-          "schema": "fractal.node_policy_contract.v1",
-          "verifier_ids": [
-            "independent"
-          ]
-        },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
-        "reopen_count": 0,
-        "requires": [
-          "reconcile_prd_beads.ready"
-        ],
-        "route_candidates": [
-          "apple-container://project-tests-execute-default"
-        ],
-        "sandbox_profile": "apple-container://local-work-v1"
-      },
-      {
-        "artifacts_produced": [],
-        "attempt_count": 0,
-        "budget": {
-          "timeout_ms": 120000
-        },
-        "capability": "project.tests.execute",
-        "consumed_by": [],
-        "created_at": "1970-01-01T00:00:00Z",
-        "depends_on": [
-          "remote_mesh_contract_tests"
-        ],
-        "execution": {
-          "mode": "parallel",
-          "parallel_group": "wave-4",
-          "task_number": "4.5",
-          "wave": 4
-        },
-        "human_intervention": false,
-        "id": "verify.remote_mesh_contract_tests.harness",
-        "instruction": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "kind": "container",
-        "memory_scopes": [
-          "acceptance:spec",
-          "work:goal",
-          "workspace:root"
-        ],
-        "node_type": "verification",
-        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "policy_contract": {
-          "allowed_commands": [],
-          "allowed_writes": [],
-          "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
-            "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
-          },
-          "capability": "project.tests.execute",
-          "decision": "allow",
-          "evidence_requirements": [
-            "commands",
-            "exit_codes",
-            "stderr",
-            "stdout"
-          ],
-          "external_side_effects": false,
-          "network": {
-            "allowed_destinations": [],
-            "default": "deny"
-          },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
-          "sandbox_profile": "local-work-v1",
-          "schema": "fractal.node_policy_contract.v1",
-          "verifier_ids": [
-            "independent"
-          ]
-        },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
-        "reopen_count": 0,
-        "requires": [
-          "remote_mesh_contract_tests.ready"
-        ],
-        "route_candidates": [
-          "apple-container://project-tests-execute-default"
-        ],
-        "sandbox_profile": "apple-container://local-work-v1"
-      },
-      {
-        "artifacts_produced": [],
-        "attempt_count": 0,
-        "budget": {
-          "timeout_ms": 120000
-        },
-        "capability": "project.tests.execute",
-        "consumed_by": [],
-        "created_at": "1970-01-01T00:00:00Z",
-        "depends_on": [
-          "unify_fractal_graph_ui"
-        ],
-        "execution": {
-          "mode": "parallel",
-          "parallel_group": "wave-3",
-          "task_number": "3.8",
-          "wave": 3
-        },
-        "human_intervention": false,
-        "id": "verify.unify_fractal_graph_ui.harness",
-        "instruction": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "kind": "container",
-        "memory_scopes": [
-          "acceptance:spec",
-          "work:goal",
-          "workspace:root"
-        ],
-        "node_type": "verification",
-        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "policy_contract": {
-          "allowed_commands": [],
-          "allowed_writes": [],
-          "budgets": {
-            "max_attempts": 1,
-            "max_cost_usd": 20,
-            "max_diff_lines": 500,
-            "max_files_changed": 6,
-            "max_input_tokens": 250000,
-            "max_minutes": 60,
-            "max_output_tokens": 50000,
-            "max_steps": 40
-          },
-          "capability": "project.tests.execute",
-          "decision": "allow",
-          "evidence_requirements": [
-            "commands",
-            "exit_codes",
-            "stderr",
-            "stdout"
-          ],
-          "external_side_effects": false,
-          "network": {
-            "allowed_destinations": [],
-            "default": "deny"
-          },
-          "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-          "provenance": "builtin:safe-default.v1",
-          "sandbox_profile": "local-work-v1",
-          "schema": "fractal.node_policy_contract.v1",
-          "verifier_ids": [
-            "independent"
-          ]
-        },
-        "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
-        "policy_provenance": "builtin:safe-default.v1",
-        "reopen_count": 0,
-        "requires": [
-          "unify_fractal_graph_ui.ready"
-        ],
-        "route_candidates": [
-          "apple-container://project-tests-execute-default"
-        ],
-        "sandbox_profile": "apple-container://local-work-v1"
       }
     ],
-    "parent_graph": "sha256:fd7775694f8e123155f20d2019ea9eeb0c50c0ef94b4e2fef96a010bc7c2270a",
-    "policy_hash": "sha256:27e66212cd68848d2c9ac693d60382f2715cd48857e5f0135048efde8478f968",
+    "policy_hash": "sha256:8b915e847c5dcffc7aa0e47b1d2f697bf78de8ae2228f5d38b88f0424d84105f",
     "policy_provenance": {
-      "kind": "builtin_default",
-      "source": "builtin:safe-default.v1"
+      "kind": "yaml",
+      "source": "project:.fractal/harness.yaml"
     },
     "policy_schema": "fractal.harness_policy.v1",
     "schema": "fractal.execution_graph.v1",
     "target": "darwin-arm64",
-    "work_hash": "sha256:2ea633134db2c2beafd8e0f6a011743f6f18e3d12a97bb33f53f2b1ee67118bd"
+    "work_hash": "sha256:cd14c9374765dab879d450a6c864e4c0478540fc6e098d5541bc284d09618dd8"
   },
   "execution": {
     "schema": "fractal.execution_state.v1",
-    "phase": "executing",
+    "phase": "halted",
     "assignments": {
       "canonical_event_verify_contract_tests": {
         "agent_id": "codex-luna:1",
@@ -4815,14 +4799,14 @@
         "agent_label": "claude:4",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:34:40Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "complete_gpu_pipeline": {
         "agent_id": "cursor:3",
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:15:38Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4864,21 +4848,21 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:15:38Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_actor_memory_lifecycle": {
         "agent_id": "codex-luna:6",
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:15:38Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:15:38Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:3",
@@ -4892,7 +4876,7 @@
         "agent_label": "claude:5",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:34:41Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_codex_worker": {
         "agent_id": "codex-luna:3",
@@ -4906,7 +4890,7 @@
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T20:15:38Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_cursor_worker": {
         "agent_id": "cursor:1",
@@ -4920,42 +4904,42 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T20:15:38Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_fractal_controlplane": {
         "agent_id": "codex-luna:1",
         "agent_label": "codex-luna:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:49:32Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_health_adapter": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:15:39Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:7",
         "agent_label": "hermes:7",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:15:39Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_project_progress_adapter": {
         "agent_id": "cursor:2",
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T20:15:39Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_remote_authority": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T20:15:39Z"
+        "released_at": "2026-08-24T21:18:02Z"
       },
       "implement_remote_mesh_sessions": {
         "agent_id": "codex-luna:3",
@@ -4997,17 +4981,10 @@
         "agent_label": "claude:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T20:49:32Z"
-      },
-      "verify.remote_mesh_contract_tests.harness": {
-        "agent_id": "hermes:3",
-        "agent_label": "hermes:3",
-        "state": "completed",
-        "checked_out_at": "2026-08-24T20:34:31Z",
-        "completed_at": "2026-08-24T20:34:42Z"
+        "released_at": "2026-08-24T21:18:02Z"
       }
     },
-    "updated_at": "2026-08-24T20:49:32Z"
+    "updated_at": "2026-08-24T21:18:02Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -5023,12 +5000,12 @@
           "implement_project_progress_adapter",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "canonical_event_verify_contract_tests": {
         "node_id": "canonical_event_verify_contract_tests",
@@ -5095,18 +5072,12 @@
           "reconcile_prd_beads",
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
-        "ready_at": "2026-08-24T20:15:39Z",
-        "started_at": "2026-08-24T20:34:37Z",
-        "executor": {
-          "agent": "claude:4",
-          "version": "0.1.0"
-        },
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 18,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 27
+        "reopen_count": 29
       },
       "complete_gpu_pipeline": {
         "node_id": "complete_gpu_pipeline",
@@ -5118,12 +5089,12 @@
           "implement_actor_memory_lifecycle",
           "implement_codex_worker"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 15
+        "reopen_count": 17
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -5265,12 +5236,12 @@
           "companion_export_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 1,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 10
+        "reopen_count": 12
       },
       "implement_actor_memory_lifecycle": {
         "node_id": "implement_actor_memory_lifecycle",
@@ -5283,12 +5254,12 @@
           "implement_agentlang_runtime",
           "implement_companion_gateway"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 16
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5299,12 +5270,12 @@
           "fractal_controlplane_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 16
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5342,18 +5313,12 @@
           "claude_hermes_compat_contract_tests",
           "implement_cursor_worker"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
-        "ready_at": "2026-08-24T20:15:39Z",
-        "started_at": "2026-08-24T20:34:38Z",
-        "executor": {
-          "agent": "claude:5",
-          "version": "0.1.0"
-        },
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 17,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 28
       },
       "implement_codex_worker": {
         "node_id": "implement_codex_worker",
@@ -5389,12 +5354,12 @@
           "companion_export_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 13
+        "reopen_count": 15
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5432,34 +5397,58 @@
           "daily_root_contract_tests",
           "implement_fractal_controlplane"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 3,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 12
+        "reopen_count": 14
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
         "node_type": "implementation",
-        "objective": "Implement the asynchronous Fractal control-plane bridge",
+        "objective": "Integrate and verify the Fractal control-plane bridge",
+        "depends_on": [
+          "implement_fractal_controlplane_host",
+          "implement_fractal_controlplane_sdk"
+        ],
+        "created_at": "2026-08-24T21:18:02Z",
+        "attempt_count": 6,
+        "artifacts_produced": [],
+        "consumed_by": [],
+        "human_intervention": false,
+        "reopen_count": 17
+      },
+      "implement_fractal_controlplane_host": {
+        "node_id": "implement_fractal_controlplane_host",
+        "node_type": "implementation",
+        "objective": "Complete the asynchronous Fractal host bridge",
         "depends_on": [
           "finish_native_network",
           "fractal_controlplane_contract_tests",
           "implement_canonical_event_verify"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
-        "ready_at": "2026-08-24T20:34:26Z",
-        "started_at": "2026-08-24T20:34:31Z",
-        "executor": {
-          "agent": "codex-luna:1",
-          "version": "0.1.0"
-        },
-        "attempt_count": 6,
+        "created_at": "2026-08-24T21:18:02Z",
+        "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 15
+        "reopen_count": 1
+      },
+      "implement_fractal_controlplane_sdk": {
+        "node_id": "implement_fractal_controlplane_sdk",
+        "node_type": "implementation",
+        "objective": "Complete generated Fractal WIT and Rust SDK bindings",
+        "depends_on": [
+          "fractal_controlplane_contract_tests",
+          "implement_canonical_event_verify"
+        ],
+        "created_at": "2026-08-24T21:18:02Z",
+        "attempt_count": 0,
+        "artifacts_produced": [],
+        "consumed_by": [],
+        "human_intervention": false,
+        "reopen_count": 1
       },
       "implement_health_adapter": {
         "node_id": "implement_health_adapter",
@@ -5469,12 +5458,12 @@
           "health_adapter_contract_tests",
           "implement_daily_root_projection"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 15
+        "reopen_count": 17
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5484,12 +5473,12 @@
           "claude_hermes_compat_contract_tests",
           "implement_claude_worker"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 15
+        "reopen_count": 17
       },
       "implement_project_progress_adapter": {
         "node_id": "implement_project_progress_adapter",
@@ -5500,12 +5489,12 @@
           "implement_health_adapter",
           "project_progress_contract_tests"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 16
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5517,12 +5506,12 @@
           "implement_remote_mesh_sessions",
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 14
+        "reopen_count": 16
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5559,12 +5548,12 @@
           "implement_remote_authority",
           "implement_remote_mesh_sessions"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "lead_closeout": {
         "node_id": "lead_closeout",
@@ -5573,12 +5562,12 @@
         "depends_on": [
           "publish_verified_program"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "lead_plan": {
         "node_id": "lead_plan",
@@ -5635,12 +5624,12 @@
         "depends_on": [
           "run_two_device_vertical_slice"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "reconcile_prd_beads": {
         "node_id": "reconcile_prd_beads",
@@ -5720,12 +5709,12 @@
           "implement_remote_mesh_sessions",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "run_host_security_performance_gates": {
         "node_id": "run_host_security_performance_gates",
@@ -5751,12 +5740,12 @@
           "implement_remote_mesh_sessions",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "run_two_device_vertical_slice": {
         "node_id": "run_two_device_vertical_slice",
@@ -5772,12 +5761,12 @@
           "run_dual_arch_qemu_gates",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 5
       },
       "unify_fractal_graph_ui": {
         "node_id": "unify_fractal_graph_ui",
@@ -5786,79 +5775,12 @@
         "depends_on": [
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T20:14:49Z",
-        "ready_at": "2026-08-24T20:15:39Z",
-        "started_at": "2026-08-24T20:34:36Z",
-        "executor": {
-          "agent": "claude:2",
-          "version": "0.1.0"
-        },
+        "created_at": "2026-08-24T21:18:02Z",
         "attempt_count": 22,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 30
-      },
-      "verify.reconcile_prd_beads.harness": {
-        "node_id": "verify.reconcile_prd_beads.harness",
-        "node_type": "verification",
-        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "depends_on": [
-          "reconcile_prd_beads"
-        ],
-        "created_at": "2026-08-24T20:49:32Z",
-        "attempt_count": 0,
-        "artifacts_produced": [],
-        "consumed_by": [],
-        "human_intervention": false,
-        "reopen_count": 0
-      },
-      "verify.remote_mesh_contract_tests.harness": {
-        "node_id": "verify.remote_mesh_contract_tests.harness",
-        "node_type": "verification",
-        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "depends_on": [
-          "remote_mesh_contract_tests"
-        ],
-        "created_at": "2026-08-24T20:34:26Z",
-        "ready_at": "2026-08-24T20:34:30Z",
-        "started_at": "2026-08-24T20:34:31Z",
-        "finished_at": "2026-08-24T20:34:42Z",
-        "executor": {
-          "agent": "hermes:3",
-          "version": "0.1.0"
-        },
-        "attempt_count": 1,
-        "outcome": "verified_success",
-        "verification": {
-          "type": "automated",
-          "passed": true,
-          "evidence_refs": [
-            "evidence:verify.remote_mesh_contract_tests.harness:8736d7ca852af60057403f7e"
-          ]
-        },
-        "artifacts_produced": [
-          "artifact:verify.remote_mesh_contract_tests.harness:8736d7ca852af60057403f7e"
-        ],
-        "consumed_by": [
-          "artifact:remote_mesh_contract_tests:6214f1c18a17bb20dfac6cc2"
-        ],
-        "human_intervention": false,
-        "reopen_count": 0
-      },
-      "verify.unify_fractal_graph_ui.harness": {
-        "node_id": "verify.unify_fractal_graph_ui.harness",
-        "node_type": "verification",
-        "objective": "Re-run the acceptance suite against the produced artifact; fail if any test fails.",
-        "depends_on": [
-          "unify_fractal_graph_ui"
-        ],
-        "created_at": "2026-08-24T20:24:48Z",
-        "attempt_count": 0,
-        "artifacts_produced": [],
-        "consumed_by": [],
-        "human_intervention": false,
-        "reopen_count": 0
+        "reopen_count": 32
       }
     },
     "graph_edits": [
@@ -6059,6 +5981,130 @@
             "implement_project_progress_adapter",
             "implement_remote_authority",
             "implement_remote_mesh_sessions",
+            "implement_shared_space_replication",
+            "lead_closeout",
+            "publish_verified_program",
+            "run_dual_arch_qemu_gates",
+            "run_host_security_performance_gates",
+            "run_two_device_vertical_slice",
+            "unify_fractal_graph_ui"
+          ],
+          "retired_nodes": []
+        },
+        {
+          "migrated_at": "2026-08-24T21:16:22Z",
+          "new_graph_hash": "sha256:46878dc6e7ca112f92efd3123abcbacb58bd49703fd9112d74647b4d38ef929d",
+          "old_graph_hash": "sha256:4db64f46a9df3edda04308ac6a0f48945c43c0dfa6089818e64572d77d79b34a",
+          "preserved": [
+            "canonical_event_verify_contract_tests",
+            "claude_hermes_compat_contract_tests",
+            "cursor_compat_contract_tests",
+            "daily_root_contract_tests",
+            "finish_native_network",
+            "fix_wg_compile_regression",
+            "fractal_controlplane_contract_tests",
+            "implement_canonical_event_verify",
+            "implement_codex_worker",
+            "implement_cursor_worker",
+            "implement_remote_mesh_sessions",
+            "lead_plan",
+            "project_progress_contract_tests",
+            "reconcile_prd_beads",
+            "remote_mesh_contract_tests"
+          ],
+          "removed": [
+            "verify.reconcile_prd_beads.harness",
+            "verify.remote_mesh_contract_tests.harness",
+            "verify.unify_fractal_graph_ui.harness"
+          ],
+          "reopened": [
+            "build_companion_pages",
+            "companion_export_contract_tests",
+            "complete_gpu_pipeline",
+            "health_adapter_contract_tests",
+            "implement_actor_memory_lifecycle",
+            "implement_agentlang_runtime",
+            "implement_claude_worker",
+            "implement_companion_gateway",
+            "implement_daily_root_projection",
+            "implement_fractal_controlplane",
+            "implement_fractal_controlplane_host",
+            "implement_fractal_controlplane_sdk",
+            "implement_health_adapter",
+            "implement_hermes_worker",
+            "implement_project_progress_adapter",
+            "implement_remote_authority",
+            "implement_shared_space_replication",
+            "lead_closeout",
+            "publish_verified_program",
+            "run_dual_arch_qemu_gates",
+            "run_host_security_performance_gates",
+            "run_two_device_vertical_slice",
+            "unify_fractal_graph_ui"
+          ],
+          "retired_nodes": [
+            {
+              "attempt_count": 0,
+              "failure_code": null,
+              "finished_at": null,
+              "node_id": "verify.reconcile_prd_beads.harness",
+              "outcome": null
+            },
+            {
+              "attempt_count": 1,
+              "failure_code": null,
+              "finished_at": "2026-08-24T20:34:42Z",
+              "node_id": "verify.remote_mesh_contract_tests.harness",
+              "outcome": "verified_success"
+            },
+            {
+              "attempt_count": 0,
+              "failure_code": null,
+              "finished_at": null,
+              "node_id": "verify.unify_fractal_graph_ui.harness",
+              "outcome": null
+            }
+          ]
+        },
+        {
+          "migrated_at": "2026-08-24T21:18:02Z",
+          "new_graph_hash": "sha256:030247628a89325f3d058e2dba5c3a3569afa5d296278e880763ca17c58dc2fb",
+          "old_graph_hash": "sha256:46878dc6e7ca112f92efd3123abcbacb58bd49703fd9112d74647b4d38ef929d",
+          "preserved": [
+            "canonical_event_verify_contract_tests",
+            "claude_hermes_compat_contract_tests",
+            "cursor_compat_contract_tests",
+            "daily_root_contract_tests",
+            "finish_native_network",
+            "fix_wg_compile_regression",
+            "fractal_controlplane_contract_tests",
+            "implement_canonical_event_verify",
+            "implement_codex_worker",
+            "implement_cursor_worker",
+            "implement_remote_mesh_sessions",
+            "lead_plan",
+            "project_progress_contract_tests",
+            "reconcile_prd_beads",
+            "remote_mesh_contract_tests"
+          ],
+          "removed": [],
+          "reopened": [
+            "build_companion_pages",
+            "companion_export_contract_tests",
+            "complete_gpu_pipeline",
+            "health_adapter_contract_tests",
+            "implement_actor_memory_lifecycle",
+            "implement_agentlang_runtime",
+            "implement_claude_worker",
+            "implement_companion_gateway",
+            "implement_daily_root_projection",
+            "implement_fractal_controlplane",
+            "implement_fractal_controlplane_host",
+            "implement_fractal_controlplane_sdk",
+            "implement_health_adapter",
+            "implement_hermes_worker",
+            "implement_project_progress_adapter",
+            "implement_remote_authority",
             "implement_shared_space_replication",
             "lead_closeout",
             "publish_verified_program",
@@ -8615,5 +8661,5 @@
     "cross_project_links": {},
     "failure_graph_hash": "sha256:ae67bb82a31435c21a98599cb9c1eac4c705bf81c7d51bd311cdedf3474bb6e3"
   },
-  "updated_at": "2026-08-24T20:49:32Z"
+  "updated_at": "2026-08-24T21:18:02Z"
 }
