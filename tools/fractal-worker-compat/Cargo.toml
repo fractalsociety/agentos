@@ -21,6 +21,10 @@ path = "src/bin/fractal_cursor_worker.rs"
 name = "fractal-claude-worker"
 path = "src/bin/fractal_claude_worker.rs"
 
+[[bin]]
+name = "fractal-hermes-worker"
+path = "src/bin/fractal_hermes_worker.rs"
+
 [[test]]
 name = "test_cursor_worker"
 path = "../../tests/compat/test_cursor_worker.rs"

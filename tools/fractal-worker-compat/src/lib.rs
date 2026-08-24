@@ -2,9 +2,11 @@
 
 mod claude;
 mod cursor;
+mod hermes;
 
 pub use claude::ClaudeLauncher;
 pub use cursor::{CursorLauncher, OpenSessionOpts};
+pub use hermes::HermesLauncher;
 
 use std::path::{Path, PathBuf};
 
@@ -311,6 +313,10 @@ pub fn cursor_manifest_path() -> PathBuf {
 
 pub fn claude_manifest_path() -> PathBuf {
     repo_root().join("manifests/workers/claude.toml")
+}
+
+pub fn hermes_manifest_path() -> PathBuf {
+    repo_root().join("manifests/workers/hermes.toml")
 }
 
 pub fn worker_wit_path() -> PathBuf {
