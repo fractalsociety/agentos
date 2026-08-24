@@ -1,5 +1,9 @@
 //! Fractal worker compatibility helpers for `fractal-worker/v1`.
 
+mod cursor;
+
+pub use cursor::{CursorLauncher, OpenSessionOpts};
+
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
@@ -645,23 +649,3 @@ pub fn map_terminal_result(
     }
 }
 
-/// Live Cursor launcher placeholder — fails until the adapter task lands.
-pub struct CursorLauncher;
-
-impl CursorLauncher {
-    pub fn discover_version_live(_manifest: &WorkerManifest) -> Result<VersionRecord> {
-        Err(CompatError::LauncherNotImplemented(
-            "live Cursor version discovery is not wired yet".into(),
-        ))
-    }
-
-    pub fn open_session_live(
-        _manifest: &WorkerManifest,
-        _workspace: &WorkspaceInput,
-        _prompt: &str,
-    ) -> Result<TerminalResult> {
-        Err(CompatError::LauncherNotImplemented(
-            "live Cursor session launch is not wired yet".into(),
-        ))
-    }
-}

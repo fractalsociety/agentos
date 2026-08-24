@@ -4,8 +4,8 @@ use fractal_worker_compat::{
     apply_peak_rss, collect_changed_paths, cursor_fixture_dir, cursor_manifest_path,
     enforce_allowed_files, extract_usage, map_terminal_result, normalize_jsonl_events,
     parse_version_output, redact_text, scan_manifest_safety, validate_workspace_input,
-    worker_wit_path, CursorLauncher, ExitClass, SecretHandle, SessionEventKind, SessionState,
-    WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
+    worker_wit_path, CompatError, CursorLauncher, ExitClass, OpenSessionOpts, SecretHandle,
+    SessionEventKind, SessionState, WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
 };
 use std::fs;
 
@@ -176,24 +176,75 @@ fn cursor_credential_redaction_strips_canaries() {
 }
 
 #[test]
-fn cursor_live_launcher_fails_explicitly_until_adapter_exists() {
+fn cursor_adapter_is_wired_and_runs_fixture_session() {
     let m = load_manifest();
-    assert!(matches!(
-        CursorLauncher::discover_version_live(&m),
-        Err(fractal_worker_compat::CompatError::LauncherNotImplemented(
-            _
-        ))
-    ));
+    match CursorLauncher::discover_version_live(&m) {
+        Ok(v) => {
+            assert_eq!(v.provider, "cursor");
+            assert_eq!(v.protocol_version, "fractal-worker/v1");
+            assert!(!v.cli_version.is_empty());
+            assert!(!v.cli_version.contains("stub"));
+        }
+        Err(CompatError::LauncherNotImplemented(_)) => {
+            panic!("Cursor adapter must not return LauncherNotImplemented")
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            assert!(
+                msg.contains("not found") || msg.contains("failed") || msg.contains("preflight"),
+                "unexpected discover error: {msg}"
+            );
+        }
+    }
+
     let ws = WorkspaceInput {
-        workspace_id: "ws".into(),
+        workspace_id: "ws-fixture".into(),
         root_object_id: "root".into(),
         allowed_files: vec!["src/health.c".into()],
         verify_command: None,
     };
-    assert!(matches!(
-        CursorLauncher::open_session_live(&m, &ws, "prompt"),
-        Err(fractal_worker_compat::CompatError::LauncherNotImplemented(
-            _
-        ))
-    ));
+    let jsonl = fs::read_to_string(cursor_fixture_dir().join("session.jsonl")).unwrap();
+    let result = CursorLauncher::open_session(
+        &m,
+        &ws,
+        "fixture-prompt",
+        OpenSessionOpts {
+            replay_jsonl: Some(jsonl),
+            replay_peak_rss_bytes: Some(32 * 1024 * 1024),
+            secret: Some(SecretHandle {
+                id: "cursor-cli-auth".into(),
+                purpose: "cli-auth".into(),
+            }),
+            ..Default::default()
+        },
+    )
+    .expect("fixture session must succeed");
+    assert_eq!(result.schema, TERMINAL_RESULT_SCHEMA);
+    assert_eq!(result.exit, ExitClass::Success);
+    assert_eq!(result.usage.peak_rss_bytes, 32 * 1024 * 1024);
+    assert_eq!(result.changed_files.len(), 1);
+    assert_eq!(result.changed_files[0].path, "src/health.c");
+    assert!(result.changed_files[0].within_allowlist);
+    assert_eq!(
+        result.secret_handle.as_ref().map(|h| h.id.as_str()),
+        Some("cursor-cli-auth")
+    );
+
+    let deny_jsonl = concat!(
+        "{\"type\":\"status\",\"message\":\"bad\"}\n",
+        "{\"type\":\"tool_call\",\"name\":\"write\",\"path\":\"README.md\",\"bytes\":1}\n",
+        "{\"type\":\"result\",\"subtype\":\"success\",\"exit_code\":0}\n"
+    );
+    let denied = CursorLauncher::open_session(
+        &m,
+        &ws,
+        "deny",
+        OpenSessionOpts {
+            replay_jsonl: Some(deny_jsonl.into()),
+            replay_peak_rss_bytes: Some(1024),
+            ..Default::default()
+        },
+    )
+    .expect("policy denial returns a terminal envelope");
+    assert_eq!(denied.exit, ExitClass::PolicyDenied);
 }
