@@ -388,7 +388,7 @@
       "id": "companion_export_contract_tests",
       "title": "Specify typed companion gateway exports and failing tests",
       "capability": "code.generate",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Create interfaces/wit/fractal-companion-v1/companion.wit and kernel/agentos-root-task/include/contracts/companion_export_contract.h before any implementation. Define versioned Project, Progress, DailyRoot, HealthAdapter, WorkerMemory, EventCursor, and TaskIntent types with explicit field bounds, ObjectIDs, event ranges, authority epochs, redaction classes, pagination, and typed errors. Add new opcodes to kernel/agentos-root-task/include/agentos.h and failing tests/contracts/companion_export_test.c plus tests/contract/test_companion_schema.rs for every request, denial, stale cursor, oversized result, and schema compatibility path. The contract must not expose raw credentials, personal records, shell commands, filesystem paths, or promotion data.",
       "depends_on": [
         "reconcile_prd_beads",
@@ -843,7 +843,7 @@
       "id": "implement_claude_worker",
       "title": "Implement the real Claude compatibility worker",
       "capability": "code.generate",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Implement tools/fractal-worker-compat/src/claude.rs from manifests/workers/claude.toml and interfaces/wit/fractal-worker-v1/worker.wit. Perform real CLI version preflight, execute only inside an isolated temporary Git workspace, translate streaming events and terminal usage into the common Fractal result, propagate cancellation and deadlines, measure peak RSS, enforce the allowed-file set, and use opaque credential handles with deterministic redaction. Make tests/compat/test_claude_worker.rs pass and add a non-skipping live opt-in Claude case to tests/e2e/test_fractal_workers.sh.",
       "depends_on": [
         "claude_hermes_compat_contract_tests",
@@ -1066,7 +1066,7 @@
       "id": "implement_companion_gateway",
       "title": "Implement the typed companion export PD boundary",
       "capability": "code.generate",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Implement only the non-UI companion export PD in kernel/agentos-root-task/src/companion_export.c using exactly kernel/agentos-root-task/include/contracts/companion_export_contract.h. The PD must project bounded event-pinned reads and narrowly scoped TaskIntent submissions, validate schema versions, enforce capability badges, request limits, pagination, stale cursors, and redaction, and register the PD in the root-task build and both Microkit system descriptions. Do not write outside this repository and do not add browser assets, JavaScript, TypeScript, HTML, CSS, WebSockets, or an HTTP server to controlplane; the separately versioned Rust gateway and companion application are an explicit external follow-up recorded by build_companion_pages.",
       "depends_on": [
         "companion_export_contract_tests",
@@ -1153,7 +1153,7 @@
       "id": "implement_health_adapter",
       "title": "Implement the minimum-necessary health adapter",
       "capability": "code.generate",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Implement userspace/sdk/src/health_adapter.rs as a capability-scoped projection boundary from opaque external source handles to HealthAdapterSummary. Enforce explicit consent scope, allowed summary fields, freshness and expiry, source revocation, minimum-necessary aggregation, provenance hashing, and deterministic redaction; keep raw medical records and source credentials out of AgentFS shared spaces, canonical event payloads, logs, and companion responses. Make tests/contract/test_health_adapter.rs pass including seeded personal-record and credential canaries.",
       "depends_on": [
         "health_adapter_contract_tests",
@@ -1293,7 +1293,7 @@
       "id": "implement_actor_memory_lifecycle",
       "title": "Implement async actors, warm pools, scheduling, and passivation metrics",
       "capability": "code.edit",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Extend the existing agent pool, snapshot scheduler, memory profiler, QuotaPD, and core-affinity paths to implement scoped AgentHandle, TaskHandle, ProgramHandle, bounded persistent mailboxes, immediate SPAWN and DELEGATE handles, cancellation and deadline propagation, passivation to immutable roots, authorized reactivation, dynamic warm-pool sizing, and topology-aware placement. Release stacks, transient WASM memory, guest state, and private service mappings on passivation; retain at most 256 KiB of dormant metadata and mailbox state per actor. Emit active_private_bytes, dormant_private_bytes, shared_bytes, actor_count, active_peer_bytes, placement, and graph fingerprint, and add host and target tests for thousands of dormant actors, stale handles, reconnect reactivation, and the 150 MiB active-worker ceiling.",
       "depends_on": [
         "fractal_controlplane_contract_tests",
@@ -1450,7 +1450,7 @@
       "id": "build_companion_pages",
       "title": "Record the external companion gateway and pages follow-up",
       "capability": "code.edit",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Do not create or edit a sibling repository from this single-repository hybrid node. Use bd to create or update one explicit external follow-up for the separately versioned companion gateway and application, including the target repository, companion.wit hash, generated-client boundary, local authentication, HTTP/3 with HTTP/2 fallback, strict CSP, request limits, redaction, the four project/daily-root/health/worker-memory pages, typed TaskIntent constraints, unit and accessibility gates, and exact completion commands. Record machine-readable handoff evidence in build/evidence/external-companion-followup.json with repository availability, observed read-only revision when available, linked Beads issue, required checks, and a precise blocker or external commit. Do not write outside controlplane and do not add any UI or browser-serving file here.",
       "depends_on": [
         "implement_companion_gateway",
@@ -1495,7 +1495,7 @@
       "id": "unify_fractal_graph_ui",
       "title": "Record the external Fractal graph UI integration follow-up",
       "capability": "code.edit",
-      "agent": "claude",
+      "agent": "opencode",
       "instruction": "Do not create, stage, or edit files in fractalsociety-website, fractal-cli, fractalmaster, or any other sibling repository from this controlplane plan. Use bd to create or update a bounded external integration follow-up that preserves the intended canonical ExecutionGraphPreview renderer, shared projection and design-token package, seven intelligence lenses, typed snapshot/query adapters, visual-parity and end-to-end gates, duplicate-source retirement order, and Fractal Voice rebuild requirement. Record build/evidence/external-fractal-graph-ui.json with each repository's availability and read-only revision when available, linked issue, required checks, and precise blocker or external commit. Do not add UI files or browser-serving code to controlplane.",
       "depends_on": [
         "reconcile_prd_beads"
