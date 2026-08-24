@@ -103,6 +103,10 @@ name = "codex_harness"
 priority = 120
 
 [[pd]]
+name = "tool_svc"
+priority = 185
+
+[[pd]]
 name = "net_pd"
 priority = 160
 

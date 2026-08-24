@@ -2,9 +2,9 @@
  * Native AgentHarness protection-domain adapter.
  *
  * This bootstrap adapter implements the capability-checking control plane and
- * one real ModelSvc planner turn. It deliberately has no network client and no
- * ambient service lookup. Additional action backends must be added as distinct
- * capability-bound calls; unsupported model actions fail closed.
+ * real ModelSvc planner turns plus capability-bound ToolSvc dispatch. It has
+ * no network client and no ambient service lookup. Additional action backends
+ * must be added as distinct capability-bound calls.
  */
 
 #include <stdbool.h>
@@ -12,9 +12,15 @@
 #include <stdint.h>
 
 #include "../../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../../contracts/toolsvc/interface.h"
 
 #define HARNESS_SYSTEM_PROMPT_OFFSET 0xa000u
 #define HARNESS_SYSTEM_PROMPT_CAP    4096u
+#define HARNESS_TOOL_INPUT_OFFSET    0x8000u
+#define HARNESS_TOOL_OUTPUT_OFFSET   0x9000u
+#define HARNESS_TOOL_SCRATCH_CAP     4096u
+#define HARNESS_INTERNAL_OFFSET      HARNESS_TOOL_INPUT_OFFSET
+#define HARNESS_INTERNAL_CAP         0x4000u
 
 static const char harness_system_prompt[] =
     "You are an AgentOS coding planner. Return one JSON object. "
@@ -27,6 +33,12 @@ typedef uint32_t (*harness_model_backend_fn)(
     const char *model_id, uint32_t model_id_len,
     char *response, uint32_t response_capacity, uint32_t *response_len,
     uint32_t *tokens_in, uint32_t *tokens_out, void *ctx);
+
+typedef uint32_t (*harness_tool_backend_fn)(
+    const char *name, uint32_t name_len,
+    const char *input, uint32_t input_len,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx);
 
 typedef struct {
     uint32_t task_id;
@@ -52,6 +64,8 @@ static uint32_t runtime_installed_caps;
 static uint32_t runtime_authority_epoch;
 static harness_model_backend_fn runtime_model_backend;
 static void *runtime_model_ctx;
+static harness_tool_backend_fn runtime_tool_backend;
+static void *runtime_tool_ctx;
 static harness_task_state_t current_task;
 static uint32_t runtime_private_committed_bytes;
 static uint32_t runtime_private_limit_bytes;
@@ -96,8 +110,8 @@ static bool ranges_overlap(uint32_t a_offset, uint32_t a_len,
 
 static bool overlaps_internal(uint32_t offset, uint32_t len)
 {
-    return ranges_overlap(offset, len, HARNESS_SYSTEM_PROMPT_OFFSET,
-                          HARNESS_SYSTEM_PROMPT_CAP);
+    return ranges_overlap(offset, len, HARNESS_INTERNAL_OFFSET,
+                          HARNESS_INTERNAL_CAP);
 }
 
 static void fill_submit_reply(struct harness_reply_submit *rep,
@@ -137,7 +151,11 @@ static bool json_string(const char *json, uint32_t json_len,
         uint32_t p = i + key_len + 2u;
         while (p < json_len && (json[p] == ' ' || json[p] == '\t'
                                || json[p] == '\r' || json[p] == '\n')) p++;
-        if (p >= json_len || json[p++] != ':') return false;
+        /* A matching quoted token may be a value rather than this key (for
+         * example action="tool" followed by the key "tool"). Keep scanning
+         * unless the token is followed by a JSON key separator. */
+        if (p >= json_len || json[p] != ':') continue;
+        p++;
         while (p < json_len && (json[p] == ' ' || json[p] == '\t'
                                || json[p] == '\r' || json[p] == '\n')) p++;
         if (p >= json_len || json[p++] != '"') return false;
@@ -199,6 +217,8 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     runtime_authority_epoch = authority_epoch;
     runtime_model_backend = model_backend;
     runtime_model_ctx = model_ctx;
+    runtime_tool_backend = NULL;
+    runtime_tool_ctx = NULL;
     runtime_private_committed_bytes = 0u;
     runtime_private_limit_bytes = HARNESS_WORKER_DEFAULT_LIMIT_BYTES;
     runtime_shared_mapped_bytes = arena_size;
@@ -207,6 +227,13 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     bytes_zero(&current_task, sizeof(current_task));
     current_task.state = HARNESS_STATE_IDLE;
     current_task.verification_exit_code = -1;
+}
+
+void harness_runtime_set_tool_backend(harness_tool_backend_fn tool_backend,
+                                      void *tool_ctx)
+{
+    runtime_tool_backend = tool_backend;
+    runtime_tool_ctx = tool_ctx;
 }
 
 void harness_runtime_set_resources(uint32_t private_committed_bytes,
@@ -309,10 +336,82 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
         json_len -= sizeof(echo_prefix) - 1u;
     }
 
-    const char *action = NULL, *summary = NULL;
-    uint32_t action_len = 0u, summary_len = 0u;
-    if (!json_string(json, json_len, "action", 6u, &action, &action_len)
-        || !bytes_equal(action, action_len, "final", 5u)
+    const char *action = NULL;
+    uint32_t action_len = 0u;
+    if (!json_string(json, json_len, "action", 6u, &action, &action_len))
+        return fail_task(HARNESS_ERR_PROTOCOL, rep);
+
+    if (bytes_equal(action, action_len, "tool", 4u)) {
+        if ((runtime_installed_caps & HARNESS_CAP_TOOL) == 0u
+            || runtime_tool_backend == NULL) {
+            current_task.denied_attempts++;
+            return fail_task(HARNESS_ERR_CAP_DENIED, rep);
+        }
+        if (req->max_steps < 2u) return fail_task(HARNESS_ERR_STEP_LIMIT, rep);
+
+        const char *tool = NULL, *input = NULL;
+        uint32_t tool_len = 0u, input_len = 0u;
+        if (!json_string(json, json_len, "tool", 4u, &tool, &tool_len)
+            || !json_string(json, json_len, "input", 5u,
+                            &input, &input_len))
+            return fail_task(HARNESS_ERR_PROTOCOL, rep);
+
+        char tool_name[TOOLSVC_TOOL_NAME_MAX];
+        uint32_t decoded_name_len = 0u, decoded_input_len = 0u;
+        char *tool_input = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
+        char *tool_output = (char *)(runtime_arena + HARNESS_TOOL_OUTPUT_OFFSET);
+        if (!decode_json_string(tool_name, sizeof(tool_name),
+                                tool, tool_len, &decoded_name_len)
+            || !decode_json_string(tool_input, HARNESS_TOOL_SCRATCH_CAP,
+                                   input, input_len, &decoded_input_len))
+            return fail_task(HARNESS_ERR_PROTOCOL, rep);
+
+        uint32_t tool_output_len = 0u;
+        current_task.state = HARNESS_STATE_TOOL;
+        status = runtime_tool_backend(
+            tool_name, decoded_name_len, tool_input, decoded_input_len,
+            tool_output, HARNESS_TOOL_SCRATCH_CAP, &tool_output_len,
+            runtime_tool_ctx);
+        current_task.tool_calls = 1u;
+        current_task.used_caps |= HARNESS_CAP_TOOL;
+        if (status != HARNESS_OK || tool_output_len >= HARNESS_TOOL_SCRATCH_CAP)
+            return fail_task(status == HARNESS_OK ? HARNESS_ERR_TOOL : status,
+                             rep);
+
+        current_task.state = HARNESS_STATE_PLANNING;
+        current_task.step = 2u;
+        uint32_t more_in = 0u, more_out = 0u;
+        status = runtime_model_backend(
+            harness_system_prompt,
+            (uint32_t)(sizeof(harness_system_prompt) - 1u),
+            tool_output, tool_output_len,
+            req->model_id_len == 0u ? NULL
+                : (const char *)(runtime_arena + req->model_id_offset),
+            req->model_id_len, response, req->result_capacity, &response_len,
+            &more_in, &more_out, runtime_model_ctx);
+        current_task.model_calls++;
+        current_task.tokens_in += more_in;
+        current_task.tokens_out += more_out;
+        if (status != HARNESS_OK || response_len >= req->result_capacity)
+            return fail_task(status == HARNESS_OK ? HARNESS_ERR_MODEL : status,
+                             rep);
+        response[response_len] = '\0';
+        json = response;
+        json_len = response_len;
+        if (json_len >= sizeof(echo_prefix) - 1u
+            && bytes_equal(json, sizeof(echo_prefix) - 1u,
+                           echo_prefix, sizeof(echo_prefix) - 1u)) {
+            json += sizeof(echo_prefix) - 1u;
+            json_len -= sizeof(echo_prefix) - 1u;
+        }
+        if (!json_string(json, json_len, "action", 6u,
+                         &action, &action_len))
+            return fail_task(HARNESS_ERR_PROTOCOL, rep);
+    }
+
+    const char *summary = NULL;
+    uint32_t summary_len = 0u;
+    if (!bytes_equal(action, action_len, "final", 5u)
         || !json_string(json, json_len, "summary", 7u,
                         &summary, &summary_len))
         return fail_task(HARNESS_ERR_PROTOCOL, rep);
@@ -322,9 +421,12 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
         return fail_task(HARNESS_ERR_EXEC, rep);
 
     uint32_t final_len = 0u;
-    if (!decode_json_string(response, req->result_capacity,
-                            summary, summary_len, &final_len))
+    char *final_scratch = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
+    if (!decode_json_string(final_scratch, HARNESS_TOOL_SCRATCH_CAP,
+                            summary, summary_len, &final_len)
+        || final_len >= req->result_capacity)
         return fail_task(HARNESS_ERR_PROTOCOL, rep);
+    bytes_copy(response, final_scratch, final_len + 1u);
 
     current_task.result_len = final_len;
     current_task.state = HARNESS_STATE_COMPLETE;
@@ -452,6 +554,51 @@ static uint32_t target_model_backend(
     return HARNESS_OK;
 }
 
+static uint32_t target_tool_backend(
+    const char *name, uint32_t name_len,
+    const char *input, uint32_t input_len,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx)
+{
+    (void)ctx;
+    const uint32_t name_rel = 0x100u;
+    const uint32_t input_rel = 0x400u;
+    const uint32_t output_rel = 0x2000u;
+    if (name_len >= 256u || input_len >= 0x1800u
+        || output_capacity > TOOLSVC_CLIENT_ARENA_SIZE - output_rel)
+        return HARNESS_ERR_TOOL;
+
+    uint8_t *tool_arena = (uint8_t *)(uintptr_t)
+        TOOLSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    bytes_copy(tool_arena + name_rel, name, name_len);
+    bytes_copy(tool_arena + input_rel, input, input_len);
+
+    const uint32_t partition = TOOLSVC_CLIENT_ARENA_OFFSET(
+        AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    toolsvc_invoke_wire_t wire;
+    bytes_zero(&wire, sizeof(wire));
+    wire.name_offset = partition + name_rel;
+    wire.name_len = name_len;
+    wire.input_offset = partition + input_rel;
+    wire.input_len = input_len;
+    wire.output_offset = partition + output_rel;
+    wire.output_buf_len = output_capacity;
+
+    sel4_msg_t rep;
+    uint32_t status = sel4_client_call(PD_CNODE_SLOT_TOOLSVC_EP,
+                                       TOOLSVC_OP_INVOKE,
+                                       &wire, sizeof(wire), &rep);
+    if (status != TOOLSVC_ERR_OK || rep.length < 8u)
+        return status == TOOLSVC_ERR_DENIED
+            ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_TOOL;
+    uint32_t len = rd32(rep.data, 4u);
+    if (len >= output_capacity) return HARNESS_ERR_TOOL;
+    bytes_copy(output, tool_arena + output_rel, len);
+    output[len] = '\0';
+    *output_len = len;
+    return HARNESS_OK;
+}
+
 static uint32_t h_submit(sel4_badge_t badge, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx)
 {
@@ -538,14 +685,17 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     uint32_t image_bytes = (uint32_t)((uintptr_t)_end - image_base);
     image_bytes = (image_bytes + 4095u) & ~4095u;
     harness_runtime_init((void *)(uintptr_t)HARNESS_SHMEM_VADDR,
-                         HARNESS_SHMEM_SIZE, HARNESS_CAP_MODEL, 1u,
+                         HARNESS_SHMEM_SIZE,
+                         HARNESS_CAP_MODEL | HARNESS_CAP_TOOL, 1u,
                          target_model_backend, NULL);
+    harness_runtime_set_tool_backend(target_tool_backend, NULL);
     /* Private charge: mapped image + 64 KiB stack + 4 KiB IPC page + a fixed
      * 128 KiB allowance for CNode/TCB/SC/page-table kernel objects. */
     harness_runtime_set_resources(image_bytes + 0x10000u + 0x1000u + 0x20000u,
                                   HARNESS_WORKER_DEFAULT_LIMIT_BYTES,
-                                  HARNESS_SHMEM_SIZE,
-                                  HARNESS_SHARED_MODELSVC);
+                                  HARNESS_SHMEM_SIZE + TOOLSVC_CLIENT_ARENA_SIZE,
+                                  HARNESS_SHARED_MODELSVC
+                                      | HARNESS_SHARED_TOOL_MCP);
     sel4_server_init(&harness_server, my_ep);
     (void)sel4_server_register(&harness_server, MSG_HARNESS_SUBMIT,
                                h_submit, NULL);

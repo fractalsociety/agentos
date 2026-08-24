@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../contracts/toolsvc/interface.h"
 
 #ifdef AGENTOS_TEST_HOST
 #include <stdio.h>
@@ -49,6 +50,10 @@ int main(void)
           "NetCap uses a distinct channel from ModelCap");
     check(HARNESS_SHMEM_SIZE == MODELSVC_CLIENT_ARENA_SIZE,
           "harness maps one badge-isolated ModelSvc client partition");
+    check(TOOLSVC_CLIENT_ARENA_SIZE == MODELSVC_CLIENT_ARENA_SIZE,
+          "ToolSvc uses the same bounded per-worker window size");
+    check(TOOLSVC_SHMEM_VADDR != MODELSVC_SHMEM_VADDR,
+          "ToolCap memory is distinct from ModelCap memory");
     check(MSG_HARNESS_RESOURCES != MSG_HARNESS_RESULT,
           "resource accounting has a distinct opcode");
     check(HARNESS_WORKER_TARGET_LOW_BYTES == 20u * 1024u * 1024u &&

@@ -12,6 +12,7 @@ static uint8_t arena[HARNESS_SHMEM_SIZE];
 static uint32_t model_calls;
 static const char *model_reply;
 static uint32_t model_status;
+static bool model_echo_after_first;
 
 static uint32_t fake_model(const char *system_prompt,
                            uint32_t system_prompt_len,
@@ -35,12 +36,31 @@ static uint32_t fake_model(const char *system_prompt,
     (void)ctx;
     model_calls++;
     if (model_status != HARNESS_OK) return model_status;
-    uint32_t len = (uint32_t)strlen(model_reply);
+    const char *selected = model_echo_after_first && model_calls > 1u
+        ? user_prompt : model_reply;
+    uint32_t len = model_echo_after_first && model_calls > 1u
+        ? user_prompt_len : (uint32_t)strlen(selected);
     assert(len + 1u <= response_capacity);
-    memcpy(response, model_reply, len + 1u);
+    memcpy(response, selected, len);
+    response[len] = '\0';
     *response_len = len;
     *tokens_in = 11u;
     *tokens_out = 7u;
+    return HARNESS_OK;
+}
+
+static uint32_t fake_tool(const char *name, uint32_t name_len,
+                          const char *input, uint32_t input_len,
+                          char *output, uint32_t output_capacity,
+                          uint32_t *output_len, void *ctx)
+{
+    (void)ctx;
+    assert(name_len == strlen("agent.echo"));
+    assert(memcmp(name, "agent.echo", name_len) == 0);
+    assert(input_len + 1u <= output_capacity);
+    memcpy(output, input, input_len);
+    output[input_len] = '\0';
+    *output_len = input_len;
     return HARNESS_OK;
 }
 
@@ -71,8 +91,34 @@ static void reset(uint32_t installed_caps)
     model_calls = 0u;
     model_reply = "{\"action\":\"final\",\"summary\":\"done\"}";
     model_status = HARNESS_OK;
+    model_echo_after_first = false;
     harness_runtime_init(arena, sizeof(arena), installed_caps, 7u,
                          fake_model, NULL);
+}
+
+static void test_tool_action_uses_distinct_capability_and_returns_to_model(void)
+{
+    struct harness_reply_submit submit;
+    struct harness_reply_result result;
+    reset(HARNESS_CAP_MODEL | HARNESS_CAP_TOOL);
+    model_reply = "{\"action\":\"tool\",\"tool\":\"agent.echo\","
+                  "\"input\":\"{\\\"action\\\":\\\"final\\\","
+                  "\\\"summary\\\":\\\"tool-ok\\\"}\"}";
+    model_echo_after_first = true;
+    harness_runtime_set_tool_backend(fake_tool, NULL);
+    struct harness_req_submit req = request(HARNESS_CAP_MODEL | HARNESS_CAP_TOOL);
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_OK);
+    assert(strcmp((char *)arena + req.result_offset, "tool-ok") == 0);
+    assert(harness_runtime_result(req.task_id, &result) == HARNESS_OK);
+    assert(result.model_calls == 2u);
+    assert(result.tool_calls == 1u);
+    assert(result.used_caps == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL));
+
+    reset(HARNESS_CAP_MODEL);
+    model_reply = "{\"action\":\"tool\",\"tool\":\"agent.echo\","
+                  "\"input\":\"{}\"}";
+    req = request(HARNESS_CAP_MODEL);
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_ERR_CAP_DENIED);
 }
 
 static void test_missing_authority_denies_before_model(void)
@@ -180,6 +226,7 @@ int main(void)
     test_missing_authority_denies_before_model();
     test_bounds_and_epoch_are_checked();
     test_final_action_completes_and_exports_metrics();
+    test_tool_action_uses_distinct_capability_and_returns_to_model();
     test_protocol_and_backend_failures_are_reported();
     test_verification_requires_exec_cap();
     test_shared_memory_is_not_charged_per_worker();

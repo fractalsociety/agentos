@@ -42,11 +42,12 @@ the default runtime target.
 ## Implementation status
 
 The native C bootstrap harness now builds as its own protection domain, boots
-under seL4 on QEMU AArch64, and completes a Codex-style planner/final action
-through ModelSvc. Root-task endpoint distribution mints badged, call-only
+under seL4 on QEMU AArch64, and completes both a Codex-style planner/final
+action and a ModelSvc→ToolSvc→ModelSvc tool loop. Root-task endpoint
+distribution mints badged, call-only
 client capabilities (`Write + GrantReply`) and distinct receive-only service
-capabilities. The harness receives ModelSvc and LogDrain endpoints, but no
-ToolSvc, AgentFS, ExecServer, or direct NetServer endpoint.
+capabilities. The harness receives distinct ModelSvc, ToolSvc, and LogDrain
+endpoints, but no AgentFS, ExecServer, or direct NetServer endpoint.
 
 ModelSvc's 4 MiB shared arena is physically divided into 64 badge-selected
 48 KiB client partitions plus a 1 MiB service-only transport workspace.
@@ -54,9 +55,16 @@ Ordinary workers map only their own partition. ModelSvc checks every supplied
 offset against the caller's partition and keys cached results by client, so a
 worker cannot address or retrieve another worker's model data.
 
+ToolSvc is also a singleton service with a separate 4 MiB arena and the same
+badge-selected 48 KiB client partitions. Its first built-in MCP-compatible
+tool is `agent.echo`; the on-target suite proves invocation through ToolCap and
+rejection of a cross-worker output offset. Dynamic MCP provider registration
+remains denied until CapBroker can mint and revoke provider endpoints.
+
 This is a runnable native planner bootstrap, not yet a completed coding agent.
-ToolSvc is still a target stub, ExecServer does not yet execute a command, and
-the monitor's dynamic CapabilityBroker records policy metadata without
+External MCP connections and repository tools are not implemented yet,
+ExecServer does not yet execute a command, and the monitor's dynamic
+CapabilityBroker records policy metadata without
 performing CNode mint/delete/revoke operations. Until those pieces and a real
 edit/test/result workflow are proven on target, the project must not claim a
 completed native Codex agent.
@@ -84,16 +92,17 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
   --perf-output build/agent-harness-qemu-perf.json --require-perf
 ```
 
-The 2026-08-23 AArch64 QEMU run passed all 24 target assertions. Host monotonic
-timestamps measured 319.65 ms from QEMU spawn to root-task readiness, a 2.86 ms
-cold native planner turn, and 12 warm turns with 0.228 ms p50 and 0.457 ms p95.
-The bootstrap worker reported 241,664 bytes of private committed memory and a
-49,152-byte shared ModelSvc mapping under its 64 MiB private limit. These are
-QEMU/host-arrival measurements, not bare-metal cycle counts.
+The 2026-08-23 AArch64 QEMU run with ModelSvc and ToolSvc passed all 29 target
+assertions. Host monotonic timestamps measured 460.11 ms from QEMU spawn to
+root-task readiness, a 3.25 ms cold native planner turn, and 12 warm turns with
+0.275 ms p50 and 0.561 ms p95. The bootstrap worker reported 245,760 bytes of
+private committed memory and 98,304 bytes of shared ModelSvc+ToolSvc mappings
+under its 64 MiB private limit. These are QEMU/host-arrival measurements, not
+bare-metal cycle counts.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service
 PDs now use a 20 ms/100 ms interactive class; the repeated warm-turn p95 fell
-to 0.457 ms in the subsequent run. The 241,664-byte bootstrap is intentionally
+to sub-millisecond latency in subsequent runs. The 245,760-byte bootstrap is intentionally
 below the mature 20 MiB target floor; future context, overlay, and tool state
 must remain below the 150 MiB ceiling rather than padding the worker.

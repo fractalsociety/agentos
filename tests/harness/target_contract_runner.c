@@ -42,6 +42,7 @@
 #include "../../kernel/agentos-root-task/include/agentos.h"
 #include "../../kernel/agentos-root-task/include/sel4_ipc.h"
 #include "../../contracts/modelsvc/interface.h"
+#include "../../contracts/toolsvc/interface.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
@@ -138,6 +139,8 @@ static void target_benchmark_eventbus_ipc(void)
 /* ── ModelSvc real-IPC + shared-arena proof (agentos-gz0.2) ──────── */
 #define TARGET_MODELSVC_CAP 130u
 #define TARGET_AGENT_HARNESS_CAP 131u
+#define TARGET_TOOLSVC_CAP 132u
+#define TARGET_TEST_RUNNER_CLIENT_ID 22u
 #define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
 #define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
 
@@ -172,7 +175,8 @@ static void target_modelsvc_contract(void)
     static const char model[] = "agentos-echo";
     static const char prompt[] = "hello";
     static const char expected[] = "agentos:hello";
-    const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(21u);
+    const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID);
     const uint32_t model_off = client_base + 0x100u;
     const uint32_t prompt_off = client_base + 0x200u;
     const uint32_t response_off = client_base + 0x400u;
@@ -289,7 +293,10 @@ static void target_agent_harness_contract(void)
         && tr_rd32(rep.data, 4u) > 0u
         && tr_rd32(rep.data, 4u) <= HARNESS_WORKER_MAX_BYTES
         && tr_rd32(rep.data, 8u) == HARNESS_WORKER_DEFAULT_LIMIT_BYTES
-        && tr_rd32(rep.data, 12u) == HARNESS_SHMEM_SIZE)
+        && tr_rd32(rep.data, 12u) == HARNESS_SHMEM_SIZE
+            + TOOLSVC_CLIENT_ARENA_SIZE
+        && tr_rd32(rep.data, 24u)
+            == (HARNESS_SHARED_MODELSVC | HARNESS_SHARED_TOOL_MCP))
         _tf_ok("AgentHarness reports private and shared memory separately");
     else
         _tf_fail_point("AgentHarness reports private and shared memory separately",
@@ -315,7 +322,7 @@ static void target_agent_harness_contract(void)
     target_emit_batch_marker("BEGIN", AGENT_HARNESS_COLD_TURN_METRIC, 1u, 0u);
     sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
     bool submit_ok = rep.opcode == HARNESS_OK
-        && tr_rd32(rep.data, 8u) == HARNESS_CAP_MODEL
+        && tr_rd32(rep.data, 8u) == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL)
         && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
         && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
                     expected, sizeof(expected) - 1u);
@@ -341,6 +348,123 @@ static void target_agent_harness_contract(void)
     else
         _tf_fail_point("AgentHarness exports task and capability metrics",
                        "result metrics were incomplete");
+}
+
+static void target_toolsvc_contract(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)TOOLSVC_SHMEM_VADDR;
+    const uint32_t client_base = TOOLSVC_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID);
+    const uint32_t name_off = client_base + 0x100u;
+    const uint32_t input_off = client_base + 0x400u;
+    const uint32_t output_off = client_base + 0x1000u;
+    static const char name[] = "agent.echo";
+    static const char input[] = "target-tool-ok";
+    for (uint32_t i = 0u; i < sizeof(name); i++) arena[name_off + i] = name[i];
+    for (uint32_t i = 0u; i < sizeof(input); i++) arena[input_off + i] = input[i];
+
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = TOOLSVC_OP_HEALTH;
+    sel4_call((seL4_CPtr)TARGET_TOOLSVC_CAP, &req, &rep);
+    if (rep.opcode == TOOLSVC_ERR_OK
+        && tr_rd32(rep.data, 4u) == 1u
+        && tr_rd32(rep.data, 8u) == TOOLSVC_INTERFACE_VERSION)
+        _tf_ok("ToolSvc target health over distinct ToolCap");
+    else
+        _tf_fail_point("ToolSvc target health over distinct ToolCap",
+                       "health reply was invalid");
+
+    toolsvc_invoke_wire_t invoke;
+    tr_zero(&invoke, sizeof(invoke));
+    invoke.name_offset = name_off;
+    invoke.name_len = sizeof(name) - 1u;
+    invoke.input_offset = input_off;
+    invoke.input_len = sizeof(input) - 1u;
+    invoke.output_offset = output_off;
+    invoke.output_buf_len = 128u;
+    tr_zero(&req, sizeof(req));
+    req.opcode = TOOLSVC_OP_INVOKE;
+    req.length = sizeof(invoke);
+    tr_copy(req.data, &invoke, sizeof(invoke));
+    sel4_call((seL4_CPtr)TARGET_TOOLSVC_CAP, &req, &rep);
+    if (rep.opcode == TOOLSVC_ERR_OK
+        && tr_rd32(rep.data, 4u) == sizeof(input) - 1u
+        && tr_equal((const char *)(uintptr_t)(TOOLSVC_SHMEM_VADDR + output_off),
+                    input, sizeof(input) - 1u))
+        _tf_ok("ToolSvc invokes shared singleton tool");
+    else
+        _tf_fail_point("ToolSvc invokes shared singleton tool",
+                       "invoke failed or output mismatched");
+
+    invoke.output_offset = TOOLSVC_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID - 1u);
+    tr_copy(req.data, &invoke, sizeof(invoke));
+    sel4_call((seL4_CPtr)TARGET_TOOLSVC_CAP, &req, &rep);
+    if (rep.opcode == TOOLSVC_ERR_DENIED)
+        _tf_ok("ToolSvc denies cross-worker arena offsets");
+    else
+        _tf_fail_point("ToolSvc denies cross-worker arena offsets",
+                       "cross-partition output was accepted");
+}
+
+static void target_agent_harness_tool_loop(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] =
+        "{\"action\":\"tool\",\"tool\":\"agent.echo\","
+        "\"input\":\"{\\\"action\\\":\\\"final\\\","
+        "\\\"summary\\\":\\\"native-tool-loop\\\"}\"}";
+    static const char expected[] = "native-tool-loop";
+    const uint32_t prompt_off = 0x1000u;
+    const uint32_t model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 2u;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_TOOL;
+    submit.max_steps = 4u;
+    submit.authority_epoch = 1u;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 256u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
+        && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
+                    expected, sizeof(expected) - 1u))
+        _tf_ok("AgentHarness completes ModelSvc-ToolSvc-ModelSvc loop");
+    else
+        _tf_fail_point("AgentHarness completes ModelSvc-ToolSvc-ModelSvc loop",
+                       "tool loop did not complete");
+
+    struct harness_req_task result_req = {.task_id = 2u};
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_RESULT;
+    req.length = sizeof(result_req);
+    tr_copy(req.data, &result_req, sizeof(result_req));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (rep.opcode == HARNESS_OK
+        && tr_rd32(rep.data, 16u) == 2u
+        && tr_rd32(rep.data, 20u) == 1u
+        && tr_rd32(rep.data, 44u) == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL))
+        _tf_ok("AgentHarness accounts distinct model and tool capabilities");
+    else
+        _tf_fail_point("AgentHarness accounts distinct model and tool capabilities",
+                       "tool-loop metrics were incomplete");
 }
 
 static void target_benchmark_agent_harness(void)
@@ -401,7 +525,8 @@ static void target_benchmark_modelsvc_cache(void)
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)MODELSVC_SHMEM_VADDR;
     static const char model[] = "agentos-echo";
     static const char prompt[] = "benchmark-cache";
-    const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(21u);
+    const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID);
     const uint32_t model_off = client_base + 0x100u;
     const uint32_t prompt_off = client_base + 0x200u;
     const uint32_t response_off = client_base + 0x400u;
@@ -506,6 +631,8 @@ void target_contract_runner_main(void)
     /* Prove the native agent path first.  A failure in an unrelated legacy
      * contract must not hide whether the booted image can run an agent turn. */
     target_agent_harness_contract();
+    target_toolsvc_contract();
+    target_agent_harness_tool_loop();
     target_benchmark_agent_harness();
     run_eventbus_tests((microkit_channel)MONITOR_CH_EVENTBUS);
     run_serial_pd_tests((microkit_channel)CH_SERIAL_PD);

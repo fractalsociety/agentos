@@ -25,7 +25,7 @@
 
 /* ── Version ─────────────────────────────────────────────────────────────── */
 
-#define TOOLSVC_INTERFACE_VERSION  1
+#define TOOLSVC_INTERFACE_VERSION  2
 
 /* ── Limits ──────────────────────────────────────────────────────────────── */
 
@@ -34,6 +34,22 @@
 #define TOOLSVC_TOOL_DESC_MAX       512
 #define TOOLSVC_SCHEMA_MAX          2048   /* JSON schema per tool (in/out) */
 #define TOOLSVC_AGENT_ID_BYTES      32
+
+/* One singleton arena is owned by ToolSvc. Each ToolCap client maps only the
+ * 48 KiB partition selected by its immutable endpoint badge. */
+#define TOOLSVC_SHMEM_VADDR              0x61000000u
+#define TOOLSVC_SHMEM_SIZE               (4u * 1024u * 1024u)
+#define TOOLSVC_CLIENT_SLOT_COUNT        64u
+#define TOOLSVC_CLIENT_ARENA_SIZE        (48u * 1024u)
+#define TOOLSVC_CLIENT_REGION_SIZE       \
+    (TOOLSVC_CLIENT_SLOT_COUNT * TOOLSVC_CLIENT_ARENA_SIZE)
+#define TOOLSVC_INTERNAL_ARENA_OFFSET    TOOLSVC_CLIENT_REGION_SIZE
+#define TOOLSVC_INTERNAL_ARENA_SIZE      \
+    (TOOLSVC_SHMEM_SIZE - TOOLSVC_INTERNAL_ARENA_OFFSET)
+#define TOOLSVC_CLIENT_ARENA_OFFSET(client_id) \
+    ((uint32_t)(client_id) * TOOLSVC_CLIENT_ARENA_SIZE)
+#define TOOLSVC_CLIENT_ARENA_VADDR(client_id) \
+    (TOOLSVC_SHMEM_VADDR + TOOLSVC_CLIENT_ARENA_OFFSET(client_id))
 
 /* ── Tool flags ──────────────────────────────────────────────────────────── */
 
@@ -60,7 +76,36 @@
 #define TOOLSVC_ERR_DENIED          4u   /* caller lacks CAPSTORE_CAP_TOOL */
 #define TOOLSVC_ERR_NOMEM           5u   /* tool table full */
 #define TOOLSVC_ERR_PROVIDER_DOWN   6u   /* provider agent is not responding */
+#define TOOLSVC_ERR_TOO_LARGE       7u   /* output buffer cannot hold result */
 #define TOOLSVC_ERR_INTERNAL        99u
+
+/* Bounded on-wire records. Text and JSON remain in the capability-mapped
+ * arena; these structs fit one agentOS seL4 message payload. Offsets are in
+ * the global ToolSvc arena and must fall in the caller badge's partition. */
+typedef struct toolsvc_invoke_wire {
+    uint32_t timeout_ms;
+    uint32_t name_offset;
+    uint32_t name_len;
+    uint32_t input_offset;
+    uint32_t input_len;
+    uint32_t output_offset;
+    uint32_t output_buf_len;
+} __attribute__((packed)) toolsvc_invoke_wire_t;
+
+typedef struct toolsvc_list_wire {
+    uint32_t output_offset;
+    uint32_t output_buf_len;
+} __attribute__((packed)) toolsvc_list_wire_t;
+
+typedef struct toolsvc_info_wire {
+    uint32_t name_offset;
+    uint32_t name_len;
+    uint32_t output_offset;
+    uint32_t output_buf_len;
+} __attribute__((packed)) toolsvc_info_wire_t;
+
+_Static_assert(sizeof(toolsvc_invoke_wire_t) == 28u,
+               "ToolSvc invoke wire must fit one seL4 payload");
 
 /* ── Tool metadata structure (returned by TOOLSVC_OP_INFO) ──────────────── */
 
