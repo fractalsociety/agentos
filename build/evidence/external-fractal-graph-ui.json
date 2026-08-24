@@ -1,0 +1,131 @@
+{
+  "schema": "agentos.external_handoff.v1",
+  "task_id": "unify_fractal_graph_ui",
+  "generated_at": "2026-08-24T21:40:41Z",
+  "controlplane_revision": "078983010a95567d5102754f53f9ec2811f99b66",
+  "linked_issue": {
+    "id": "agentos-gz0.14.18.1",
+    "title": "Unify Fractal graph UI on the canonical ExecutionGraphPreview renderer (external repos)",
+    "status": "open"
+  },
+  "boundary": {
+    "controlplane_contributes": "handoff record only; no UI files, no browser-serving code, no sibling-repository mutation",
+    "prohibited_repositories_touched": [
+      "fractalsociety/website",
+      "fractalsociety/fractal-cli",
+      "fractalsociety/fractalmaster",
+      "fractalsociety/fractal-voice"
+    ],
+    "survey_mode": "read-only (git rev-parse, ls-files, status, cmp, grep, sed only)"
+  },
+  "repositories": [
+    {
+      "name": "fractalsociety/website",
+      "local_path": "/Users/jamesstar/fractalsociety-website",
+      "role": "owner of canonical ExecutionGraphPreview renderer and shared projection + design-token package",
+      "canonical_renderer": "apps/dashboard/components/projects/ExecutionGraphPreview.tsx",
+      "shared_package": "packages/fractal-graph-ui (npm name @fractalwork/fractal-graph-ui)",
+      "availability": "available",
+      "branch": "main",
+      "revision": "1c7671742ec3cd1433d5a571c3ebe1b1e8f2386b",
+      "dirty_paths": 12,
+      "external_commit_for_this_work": null,
+      "blocker": "packages/fractal-graph-ui exists only as UNTRACKED working-tree state (git ls-files is empty; status reports '?? packages/fractal-graph-ui/'), so no committed revision exists for consumers to depend on -> shared-package-published FAILS. Its src/index.ts GRAPH_LENSES (lines 21-29) declares ids 'economics' and 'memory' where the lens contract requires 'resource_economic' and 'memory_knowledge' -> lens-contract FAILS at the source of truth. The canonical renderer apps/dashboard/components/projects/ExecutionGraphPreview.tsx IS tracked and already imports projectGraphInput from '@fractalwork/fractal-graph-ui' (line 9), so only the package commit and lens-id fix are needed. This is the critical-path root for all downstream steps."
+    },
+    {
+      "name": "fractalsociety/fractal-cli",
+      "local_path": "/Users/jamesstar/fractal-cli",
+      "role": "consumer; retires duplicate static renderer under execution-graph/",
+      "availability": "available",
+      "branch": "codex/multi-agent-release",
+      "revision": "0fa7ff1b6370937ed91dcd672d5bdecdbc49ebcd",
+      "dirty_paths": 9,
+      "external_commit_for_this_work": null,
+      "blocker": "execution-graph/ vendors UNTRACKED byte-identical copies of the website package static assets (cmp-verified: execution-graph/fractal-graph-ui.js == packages/fractal-graph-ui/static/fractal-graph-ui.js; execution-graph/fractal-graph-ui.css == static/fractal-graph-ui.css, plus vendor/) instead of importing the shared package -> token-contract FAILS. Tracked duplicate sources to retire at step (b): execution-graph/app.js, index.html, master-graph.js, master-graph.css, styles.css, tests/test_master_graph.js (tracked dir also holds README.md, server.py, task-state.py, graph-state*.json, assets/, tests/*.py which are removed with the duplicate surface). Retirement step (b) is gated on step (a) plus green visual-parity and e2e gates."
+    },
+    {
+      "name": "fractalsociety/fractalmaster",
+      "local_path": "/Users/jamesstar/fractalmaster",
+      "role": "consumer; retires execution-graph/ and intelligence_graph/web/ LAST, and owns the typed snapshot/query adapters",
+      "availability": "available",
+      "branch": "main",
+      "revision": "c46d0201acc52db5e68fa4b29186a81a4d38f11f",
+      "dirty_paths": 83,
+      "external_commit_for_this_work": null,
+      "blocker": "The seven-lens source of truth is still intelligence_graph/web/app.js (LENS_BUTTONS lines 12-18 carry all seven contract ids/labels; overview fallback at line 60; ?lens= URL handling at line 717) while the shared package lens ids are wrong, so seven-lens parity has no authoritative counterpart yet. Adapters remain untyped dict/Mapping shaping: intelligence_graph/lens_snapshot.py (454 lines) and intelligence_graph/views/voice_query.py (702 lines) -> typed-adapters NOT STARTED. No visual-parity harness, screenshot baseline, or playwright/percy config is tracked in any UI-bearing repository -> no pre-migration reference exists; visual-parity and e2e gates NOT STARTED. The 83-path dirty tree means no clean revision represents the migration state. Retirement steps (c) and (d) blocked; intelligence_graph/web/ retires LAST only after seven-lens parity is proven."
+    },
+    {
+      "name": "fractalsociety/fractal-voice",
+      "local_path": "/Users/jamesstar/fractal-voice",
+      "role": "rebuild target for Fractal Voice on the unified projection",
+      "availability": "available",
+      "branch": "main",
+      "revision": "1fdf96d45808b96b16bdd8c6dc7d5f6e36a1c473",
+      "dirty_paths": 0,
+      "external_commit_for_this_work": null,
+      "blocker": "main tracks only .gitignore, README.md, and SECURITY.md (git ls-files) - there is no Voice implementation to migrate, so Fractal Voice must be REBUILT against the unified projection and the typed query adapter, replacing the current fractalmaster voice_query path. voice-rebuild NOT STARTED and is blocked on step (a) plus the typed adapters; Voice counts as migrated only when its e2e gate passes on the shared projection."
+    }
+  ],
+  "contract_lenses": [
+    { "id": "overview", "label": "Overview" },
+    { "id": "execution", "label": "Execution" },
+    { "id": "resource_economic", "label": "Economics" },
+    { "id": "memory_knowledge", "label": "Memory" },
+    { "id": "trace_evidence", "label": "Traces & evidence" },
+    { "id": "failure_learning", "label": "Failures & lessons" },
+    { "id": "agent_model_tool_harness", "label": "Agents & tools" }
+  ],
+  "intended_outcomes": [
+    "One canonical renderer: ExecutionGraphPreview in fractalsociety-website is the only Fractal graph renderer; no second renderer implementation anywhere",
+    "Shared projection + design-token package: one versioned package (packages/fractal-graph-ui, @fractalwork/fractal-graph-ui) exports graph projection types and design tokens; consumers import, never re-declare",
+    "Seven intelligence lenses preserved exactly (ids and labels above); ?lens= deep link and unknown-lens fallback to overview keep working",
+    "Typed snapshot/query adapters: lens snapshot producer (fractalmaster intelligence_graph/lens_snapshot.py) and voice query compiler (intelligence_graph/views/voice_query.py) get typed, versioned adapter contracts against the shared projection package; untyped ad-hoc JSON shaping removed",
+    "Visual-parity gate: automated check of the unified renderer against the pre-migration reference for all seven lenses; must pass before any duplicate source is retired",
+    "End-to-end gate: e2e run loads a real snapshot through the typed adapters into the canonical renderer in each consumer surface, asserting node/edge counts, lens switching, and detail rendering",
+    "Duplicate-source retirement in strict gated order (see retirement_order); intelligence_graph/web/ retires LAST",
+    "Fractal Voice rebuilt on the unified projection and typed query adapter; migrated only when its e2e gate passes on the shared projection"
+  ],
+  "retirement_order": [
+    {
+      "step": "a",
+      "repository": "fractalsociety/website",
+      "action": "Harden canonical ExecutionGraphPreview and commit/publish packages/fractal-graph-ui (fixing GRAPH_LENSES ids to the contract set); blocked first"
+    },
+    {
+      "step": "b",
+      "repository": "fractalsociety/fractal-cli",
+      "action": "Consume the shared package, then delete execution-graph/ duplicates (app.js, index.html, master-graph.js, master-graph.css, styles.css, tests/test_master_graph.js and the rest of the duplicate surface); gated on step a plus parity+e2e"
+    },
+    {
+      "step": "c",
+      "repository": "fractalsociety/fractalmaster",
+      "action": "Consume the shared package, then delete fractalmaster/execution-graph/; gated on step a plus parity+e2e",
+      "note": "requires a clean committed migration revision; tree currently has 83 dirty paths"
+    },
+    {
+      "step": "d",
+      "repository": "fractalsociety/fractalmaster",
+      "action": "Retire intelligence_graph/web/ LAST, only after seven-lens parity is proven against it as the current source of truth for lens behavior"
+    }
+  ],
+  "required_checks": [
+    { "id": "shared-package-published", "requirement": "packages/fractal-graph-ui committed and consumable at an external revision (no untracked-only source)", "status": "FAILING", "evidence": "git ls-files packages/fractal-graph-ui is empty in fractalsociety/website @ 1c76717" },
+    { "id": "lens-contract", "requirement": "7 ids/labels exact, ?lens= deep link, overview fallback", "status": "FAILING", "evidence": "package GRAPH_LENSES uses 'economics'/'memory' vs contract 'resource_economic'/'memory_knowledge'; correct set still only in fractalmaster web/app.js lines 12-18" },
+    { "id": "token-contract", "requirement": "no consumer-local duplication of design tokens or projection types", "status": "FAILING", "evidence": "fractal-cli execution-graph/ vendors byte-identical untracked copies of package static assets" },
+    { "id": "typed-adapters", "requirement": "snapshot producer and query compiler typed/versioned against the shared projection", "status": "NOT_STARTED", "evidence": "lens_snapshot.py (454 lines) and views/voice_query.py (702 lines) remain untyped dict/Mapping shaping" },
+    { "id": "visual-parity", "requirement": "all 7 lenses pass against pre-migration reference", "status": "NOT_STARTED", "evidence": "no playwright/percy/screenshot baseline tracked in any UI-bearing repository" },
+    { "id": "e2e", "requirement": "snapshot -> typed adapter -> ExecutionGraphPreview per consumer surface", "status": "NOT_STARTED", "evidence": "typed adapters and shared package revision do not exist yet" },
+    { "id": "retirement-order", "requirement": "no duplicate deleted before its parity+e2e gate is green", "status": "NOT_STARTED", "evidence": "all four retirement steps blocked on step a and the gates" },
+    { "id": "voice-rebuild", "requirement": "Fractal Voice e2e green on the shared projection", "status": "NOT_STARTED", "evidence": "fractal-voice main tracks only .gitignore, README.md, SECURITY.md; nothing to migrate, full rebuild required" },
+    { "id": "controlplane-clean", "requirement": "controlplane diff contains no UI file, no browser-serving code, and no sibling-repo or parent-relative path", "status": "PASSING", "evidence": "only build/evidence/external-fractal-graph-ui.json (gitignored build artifact) and Beads issue notes written this run" }
+  ],
+  "next_action": {
+    "owner": "external (each sibling repository needs its own authorized plan rooted in that repository)",
+    "critical_path": "commit packages/fractal-graph-ui in fractalsociety/website and correct GRAPH_LENSES ids to 'resource_economic' and 'memory_knowledge', then build the parity/e2e gates before any retirement",
+    "controlplane_completion": "handoff record complete; issue agentos-gz0.14.18.1 stays OPEN for the blocked external proof"
+  },
+  "verification": {
+    "jq_validate": "jq -e '.schema==\"agentos.external_handoff.v1\" and (.repositories|length)==4 and all(.repositories[]; (.revision|test(\"^[0-9a-f]{40}$\")) and (.external_commit_for_this_work==null) and (.blocker|length>0)) and (.required_checks|length)==9 and (.contract_lenses|length)==7 and (.retirement_order|length)==4' build/evidence/external-fractal-graph-ui.json",
+    "diff_clean_check": "git status --porcelain and git diff --name-only contain no UI extension (html, css, js, mjs, jsx, tsx, vue, svelte, package.json, node_modules, yarn.lock, bun.lockb) and no parent-relative or sibling-repository path"
+  }
+}
