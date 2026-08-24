@@ -38,6 +38,7 @@
  */
 
 #include "system_desc.h"
+#include "cap_authority.h"
 #include "../../../contracts/execsvc/interface.h"
 #include "../../../contracts/toolsvc/interface.h"
 
@@ -179,12 +180,14 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 110u,
             .self_svc_id    = SVC_ID_INIT_AGENT,
-            .init_ep_count  = 4u,
+            .init_ep_count  = 5u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_EVENTBUS,   PD_CNODE_SLOT_EVENTBUS_EP   },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
                 { SVC_ID_MODELSVC,   PD_CNODE_SLOT_MODELSVC_EP   },
+                { SVC_ID_CONTROLLER, PD_CNODE_SLOT_CONTROLLER_EP,
+                  CONTROLLER_RIGHT_CAP_ADMIN },
             },
         },
 
@@ -286,12 +289,10 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 120u,
             .self_svc_id    = SVC_ID_AGENT_HARNESS,
-            .init_ep_count  = 5u,
+            .init_ep_count  = 4u,
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
                 { SVC_ID_MODELSVC,  PD_CNODE_SLOT_MODELSVC_EP  },
-                { SVC_ID_TOOLSVC,   PD_CNODE_SLOT_TOOLSVC_EP,
-                  TOOLSVC_RIGHT_ALL },
                 { SVC_ID_AGENTFS,   PD_CNODE_SLOT_AGENTFS_EP   },
                 { SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP,
                   EXECSVC_RIGHT_ALL },
@@ -620,14 +621,14 @@ const system_desc_t system_desc_aarch64 = {
 
 #ifdef AGENTOS_SEL4_TEST_IMAGE
         /* agentos-8f5 / agentos-0h4: on-target contract TAP runner.  Test image
-         * only.  Pure client PD: it issues microkit_ppcall(ch) — i.e.
-         * seL4_Call(BASE_ENDPOINT_CAP[74] + ch) — to the live service PDs, so it
-         * must hold each service's listen endpoint at CNode slot 74+ch:
+         * only. Most legacy suites issue microkit_ppcall(ch) — i.e.
+         * seL4_Call(BASE_ENDPOINT_CAP[74] + ch). Native contracts use their
+         * explicit well-known capability slots instead:
          *   EventBus   ch=MONITOR_CH_EVENTBUS(1)  -> slot 75
          *   serial_pd  ch=CH_SERIAL_PD(44)        -> slot 118
-         *   log_drain  ch=CH_LOG_DRAIN(55)        -> slot 129
+         *   log_drain  native well-known cap      -> slot 4
          *   ExecSvc raw capability                 -> slot 200
-         * cnode_size_bits=9 (512 slots) covers those high slot indices. */
+         * cnode_size_bits=9 (512 slots) covers both layouts. */
         {
             .name           = "test_runner",
             .elf_path       = "test_runner.elf",
@@ -642,17 +643,18 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 9u,
+            .init_ep_count  = 10u,
             .init_eps = {
                 { SVC_ID_EXEC_SERVER, 200u, EXECSVC_RIGHT_ALL },
                 { SVC_ID_EXEC_SERVER, 201u, EXECSVC_RIGHT_C11_COMPILE },
                 { SVC_ID_EVENTBUS,   75u  },   /* 74 + MONITOR_CH_EVENTBUS(1) */
                 { SVC_ID_SERIAL,     118u },   /* 74 + CH_SERIAL_PD(44)       */
-                { SVC_ID_LOG_DRAIN,  129u },   /* 74 + CH_LOG_DRAIN(55)       */
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP },
                 { SVC_ID_MODELSVC,   130u },   /* raw seL4 contract cap        */
                 { SVC_ID_AGENT_HARNESS, 131u }, /* native harness contract cap   */
                 { SVC_ID_TOOLSVC,   132u, TOOLSVC_RIGHT_ALL },
                 { SVC_ID_AGENTFS,   133u },   /* raw AgentFS contract cap       */
+                { SVC_ID_CONTROLLER, 134u, CONTROLLER_RIGHT_CAP_ADMIN },
             },
         },
 #endif

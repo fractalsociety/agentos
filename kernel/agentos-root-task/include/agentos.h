@@ -772,6 +772,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_HARNESS_STATUS               0x2A03  /* MR1=task_id → status record */
 #define MSG_HARNESS_RESULT               0x2A04  /* MR1=task_id → result record */
 #define MSG_HARNESS_RESOURCES            0x2A05  /* worker-private/shared memory accounting */
+#define MSG_HARNESS_AUTHORITY_UPDATE     0x2A06  /* controller: post-CSpace authority epoch */
 
 /* ─── AgentFS contract opcodes (0x1000) ─────────────────────────────────── */
 #define MSG_AGENTFS_READ                0x1001  /* MR1=inode MR2=offset MR3=len → actual in shmem */

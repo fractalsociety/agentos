@@ -89,4 +89,8 @@ enum cap_broker_error {
     CAP_BROKER_ERR_POLICY_DENY = 2,  /* policy rejects this grant */
     CAP_BROKER_ERR_NOT_FOUND   = 3,  /* grant_id or target_pd not found */
     CAP_BROKER_ERR_TABLE_FULL  = 4,
+    CAP_BROKER_ERR_KERNEL      = 5,  /* seL4 mint/delete failed */
+    CAP_BROKER_ERR_SYNC        = 6,  /* harness epoch update failed */
+    CAP_BROKER_ERR_FORBIDDEN   = 7,  /* caller lacks CapAdmin badge right */
+    CAP_BROKER_ERR_BAD_ARG     = 8,
 };

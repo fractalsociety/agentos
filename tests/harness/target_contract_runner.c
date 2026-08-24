@@ -46,6 +46,8 @@
 #include "../../contracts/toolsvc/interface.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
+#include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
+#include "../../kernel/agentos-root-task/include/cap_authority.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
  *
@@ -143,6 +145,7 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_AGENT_HARNESS_CAP 131u
 #define TARGET_TOOLSVC_CAP 132u
 #define TARGET_AGENTFS_CAP 133u
+#define TARGET_CONTROLLER_CAP 134u
 #define TARGET_EXECSVC_CAP 200u
 #define TARGET_COMPILE_ONLY_EXECSVC_CAP 201u
 #define TARGET_TEST_RUNNER_CLIENT_ID 23u
@@ -331,9 +334,7 @@ static void target_agent_harness_contract(void)
     target_emit_batch_marker("BEGIN", AGENT_HARNESS_COLD_TURN_METRIC, 1u, 0u);
     sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
     bool submit_ok = rep.opcode == HARNESS_OK
-        && tr_rd32(rep.data, 8u)
-            == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL | HARNESS_CAP_MEMORY
-                | HARNESS_CAP_EXEC)
+        && tr_rd32(rep.data, 8u) == CAPBROKER_HARNESS_INITIAL_CAPS
         && tr_rd32(rep.data, 12u) == HARNESS_STATE_COMPLETE
         && tr_equal((const char *)(uintptr_t)(HARNESS_SHMEM_VADDR + result_off),
                     expected, sizeof(expected) - 1u);
@@ -440,7 +441,7 @@ static void target_agent_harness_tool_loop(void)
     submit.harness_kind = HARNESS_KIND_CODEX;
     submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_TOOL;
     submit.max_steps = 4u;
-    submit.authority_epoch = 1u;
+    submit.authority_epoch = 2u;
     submit.prompt_offset = prompt_off;
     submit.prompt_len = sizeof(prompt) - 1u;
     submit.result_offset = result_off;
@@ -478,6 +479,100 @@ static void target_agent_harness_tool_loop(void)
                        "tool-loop metrics were incomplete");
 }
 
+static void target_cap_broker_tool_lifecycle(void)
+{
+    sel4_msg_t req, rep;
+    struct cap_broker_req_grant grant = {
+        .target_pd = CAPBROKER_HARNESS_PD_ID,
+        .cap_class = HARNESS_CAP_TOOL,
+        .rights = TOOLSVC_RIGHT_ALL,
+        .ttl_ticks = 0u,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_CAP_GRANT;
+    req.length = sizeof(grant);
+    tr_copy(req.data, &grant, sizeof(grant));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    if (rep.opcode == CAP_BROKER_OK
+        && tr_rd32(rep.data, 4u) == (CAPBROKER_HARNESS_INITIAL_CAPS
+                                     | HARNESS_CAP_TOOL)
+        && tr_rd32(rep.data, 8u) == 2u
+        && tr_rd32(rep.data, 12u) == 1u)
+        _tf_ok("CapBroker mints a real ToolCap and advances harness authority");
+    else
+        _tf_fail_point("CapBroker mints a real ToolCap and advances harness authority",
+                       "kernel mint or harness epoch synchronization failed");
+}
+
+static void target_cap_broker_revoke_and_regrant_tool(void)
+{
+    sel4_msg_t req, rep;
+    struct cap_broker_req_revoke revoke = {
+        .target_pd = CAPBROKER_HARNESS_PD_ID,
+        .cap_class = HARNESS_CAP_TOOL,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_CAP_REVOKE_GRANT;
+    req.length = sizeof(revoke);
+    tr_copy(req.data, &revoke, sizeof(revoke));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    bool revoked = rep.opcode == CAP_BROKER_OK
+        && tr_rd32(rep.data, 4u) == CAPBROKER_HARNESS_INITIAL_CAPS
+        && tr_rd32(rep.data, 8u) == 3u
+        && tr_rd32(rep.data, 12u) == 1u;
+
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
+    static const char model[] = "agentos-echo";
+    static const char prompt[] = "{\"action\":\"final\",\"summary\":\"must-deny\"}";
+    const uint32_t prompt_off = 0x1000u, model_off = 0x2000u;
+    const uint32_t result_off = 0x4000u;
+    for (uint32_t i = 0u; i < sizeof(prompt); i++) arena[prompt_off + i] = prompt[i];
+    for (uint32_t i = 0u; i < sizeof(model); i++) arena[model_off + i] = model[i];
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 90u;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_TOOL;
+    submit.max_steps = 2u;
+    submit.authority_epoch = 3u;
+    submit.prompt_offset = prompt_off;
+    submit.prompt_len = sizeof(prompt) - 1u;
+    submit.result_offset = result_off;
+    submit.result_capacity = 256u;
+    submit.model_id_offset = model_off;
+    submit.model_id_len = sizeof(model) - 1u;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &rep);
+    if (revoked && rep.opcode == HARNESS_ERR_CAP_DENIED
+        && tr_rd32(rep.data, 8u) == CAPBROKER_HARNESS_INITIAL_CAPS)
+        _tf_ok("CapBroker deletes ToolCap before the harness denies a new task");
+    else
+        _tf_fail_point("CapBroker deletes ToolCap before the harness denies a new task",
+                       "delete, epoch sync, or capability preflight did not fail closed");
+
+    struct cap_broker_req_grant grant = {
+        .target_pd = CAPBROKER_HARNESS_PD_ID,
+        .cap_class = HARNESS_CAP_TOOL,
+        .rights = TOOLSVC_RIGHT_ALL,
+        .ttl_ticks = 0u,
+    };
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_CAP_GRANT;
+    req.length = sizeof(grant);
+    tr_copy(req.data, &grant, sizeof(grant));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    if (rep.opcode == CAP_BROKER_OK
+        && tr_rd32(rep.data, 8u) == 4u
+        && tr_rd32(rep.data, 12u) == 1u)
+        _tf_ok("CapBroker re-mints ToolCap for the next harness epoch");
+    else
+        _tf_fail_point("CapBroker re-mints ToolCap for the next harness epoch",
+                       "re-grant did not restore kernel authority");
+}
+
 static void target_agent_harness_memory_loop(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
@@ -498,7 +593,7 @@ static void target_agent_harness_memory_loop(void)
         | HARNESS_CAP_EXEC;
     submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
     submit.max_steps = 5u;
-    submit.authority_epoch = 1u;
+    submit.authority_epoch = 4u;
     submit.prompt_offset = prompt_off;
     submit.prompt_len = sizeof(prompt) - 1u;
     submit.result_offset = result_off;
@@ -563,7 +658,7 @@ static void target_agent_harness_live_model(void)
         | HARNESS_CAP_EXEC;
     submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
     submit.max_steps = 8u;
-    submit.authority_epoch = 1u;
+    submit.authority_epoch = 4u;
     submit.prompt_offset = prompt_off;
     submit.prompt_len = sizeof(prompt) - 1u;
     submit.result_offset = result_off;
@@ -620,7 +715,7 @@ static void target_agent_harness_live_repository(void)
         | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC;
     submit.task_flags = HARNESS_TASK_REQUIRE_TEST;
     submit.max_steps = 8u;
-    submit.authority_epoch = 1u;
+    submit.authority_epoch = 4u;
     submit.prompt_offset = prompt_off;
     submit.prompt_len = sizeof(prompt) - 1u;
     submit.result_offset = result_off;
@@ -838,7 +933,7 @@ static void target_benchmark_agent_harness(void)
         submit.harness_kind = HARNESS_KIND_CODEX;
         submit.required_caps = HARNESS_CAP_MODEL;
         submit.max_steps = 4u;
-        submit.authority_epoch = 1u;
+        submit.authority_epoch = 4u;
         submit.prompt_offset = prompt_off;
         submit.prompt_len = sizeof(prompt) - 1u;
         submit.result_offset = result_off;
@@ -985,7 +1080,9 @@ void target_contract_runner_main(void)
     target_toolsvc_contract();
     target_agentfs_workspace_contract();
     target_execsvc_profile_contract();
+    target_cap_broker_tool_lifecycle();
     target_agent_harness_tool_loop();
+    target_cap_broker_revoke_and_regrant_tool();
     target_agent_harness_memory_loop();
 #ifdef AGENTOS_LIVE_MODEL_TEST
     target_agent_harness_live_model();

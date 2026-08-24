@@ -182,6 +182,23 @@ struct harness_reply_resources {
 _Static_assert(sizeof(struct harness_reply_resources) == 32u,
                "harness resource reply must fit one seL4 payload");
 
+/* Controller-only synchronization after a successful kernel CSpace change.
+ * This mask accelerates task preflight; possession of the actual endpoint cap
+ * remains the authority for every effect. Epochs are strictly monotonic. */
+struct harness_req_authority_update {
+    uint32_t installed_caps;
+    uint32_t authority_epoch;
+    uint32_t broker_receipt;
+    uint32_t reserved;
+};
+
+struct harness_reply_authority_update {
+    uint32_t status;
+    uint32_t installed_caps;
+    uint32_t authority_epoch;
+    uint32_t reserved;
+};
+
 /* Policy preflight only. Real enforcement remains the CSpace/VSpace layout. */
 static inline bool harness_authority_satisfies(uint32_t required,
                                                 uint32_t installed)

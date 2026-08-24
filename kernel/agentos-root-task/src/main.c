@@ -46,6 +46,7 @@
 #include "agentos.h"         /* sel4_dbg_puts                                    */
 #include "pd_startup_record.h" /* pd_startup_record_t, PD_STARTUP_RECORD_VA      */
 #include "contracts/agent_harness_contract.h"
+#include "cap_authority.h"
 #include "contracts/agentfs_contract.h"
 #include "../../../contracts/execsvc/interface.h"
 #include "../../../contracts/modelsvc/interface.h"
@@ -733,6 +734,61 @@ static int name_eq(const char *a, const char *b)
 {
     while (*a && *b && *a == *b) { a++; b++; }
     return (*a == '\0' && *b == '\0');
+}
+
+static uint32_t pd_index_named(const system_desc_t *sys, const char *name)
+{
+    for (uint32_t i = 0u; i < sys->pd_count; i++) {
+        if (name_eq(sys->pds[i].name, name)) return i;
+    }
+    return SYSTEM_MAX_PDS;
+}
+
+/* Delegate a closed authority manifest to CapBroker after every target CNode
+ * and service endpoint exists. The controller receives no root CNode cap and
+ * cannot choose arbitrary CPtrs: only its own CNode, the harness CNode, and
+ * call-only copies of the five agent effect endpoints are installed. */
+static seL4_Error install_cap_broker_authority(const system_desc_t *sys)
+{
+    uint32_t controller = pd_index_named(sys, "controller");
+    uint32_t harness = pd_index_named(sys, "codex_harness");
+    if (controller >= sys->pd_count || harness >= sys->pd_count
+        || harness != CAPBROKER_HARNESS_PD_ID)
+        return seL4_InvalidArgument;
+
+    seL4_CPtr controller_cnode = PD_SLOT_CNODE(controller);
+    seL4_Error err = seL4_CNode_Copy(
+        controller_cnode, CAPBROKER_AUTH_SELF_CNODE_SLOT,
+        CAPBROKER_CONTROLLER_CNODE_BITS, seL4_CapInitThreadCNode,
+        PD_SLOT_CNODE(controller), 64u, seL4_AllRights);
+    if (err != seL4_NoError) return err;
+    err = seL4_CNode_Copy(
+        controller_cnode, CAPBROKER_AUTH_HARNESS_CNODE_SLOT,
+        CAPBROKER_CONTROLLER_CNODE_BITS, seL4_CapInitThreadCNode,
+        PD_SLOT_CNODE(harness), 64u, seL4_AllRights);
+    if (err != seL4_NoError) return err;
+
+    static const struct {
+        uint16_t service_id;
+        uint16_t controller_slot;
+    } sources[] = {
+        { SVC_ID_MODELSVC, CAPBROKER_AUTH_MODEL_SOURCE_SLOT },
+        { SVC_ID_TOOLSVC, CAPBROKER_AUTH_TOOL_SOURCE_SLOT },
+        { SVC_ID_AGENTFS, CAPBROKER_AUTH_MEMORY_SOURCE_SLOT },
+        { SVC_ID_EXEC_SERVER, CAPBROKER_AUTH_EXEC_SOURCE_SLOT },
+        { SVC_ID_NET_SERVER, CAPBROKER_AUTH_NETWORK_SOURCE_SLOT },
+    };
+    seL4_CapRights_t call_rights = seL4_CapRights_new(1u, 0u, 0u, 1u);
+    for (uint32_t i = 0u; i < sizeof(sources) / sizeof(sources[0]); i++) {
+        seL4_CPtr source = ep_find_by_service_id(sources[i].service_id);
+        if (source == seL4_CapNull) return seL4_FailedLookup;
+        err = seL4_CNode_Copy(
+            controller_cnode, sources[i].controller_slot,
+            CAPBROKER_CONTROLLER_CNODE_BITS, seL4_CapInitThreadCNode,
+            source, 64u, call_rights);
+        if (err != seL4_NoError) return err;
+    }
+    return seL4_NoError;
 }
 
 /* True iff name starts with prefix. */
@@ -1585,9 +1641,21 @@ void root_task_main(const seL4_BootInfo *bi)
             seL4_Word badge = ((uint64_t)ep_spec->service_id << 48u) |
                               ((uint64_t)i                   << 32u) |
                               (uint64_t)ep_spec->badge_data;
-            ep_mint_badge(service_ep, badge,
-                           pd_cnode, ep_spec->cnode_slot,
-                           pd->cnode_size_bits);
+            seL4_Error mint_err = ep_mint_badge(service_ep, badge,
+                                                pd_cnode,
+                                                ep_spec->cnode_slot,
+                                                pd->cnode_size_bits);
+            if (mint_err != seL4_NoError) {
+                dbg_puts("[rt] endpoint mint failed pd=");
+                dbg_puts(pd->name);
+                dbg_puts(" service=");
+                dbg_hex((seL4_Word)ep_spec->service_id);
+                dbg_puts(" slot=");
+                dbg_hex((seL4_Word)ep_spec->cnode_slot);
+                dbg_puts(" err=");
+                dbg_hex((seL4_Word)mint_err);
+                dbg_puts("\n");
+            }
         }
 
         /* ── 4g.4: Distribute device MMIO frame caps ────────────────────────
@@ -2083,7 +2151,10 @@ void root_task_main(const seL4_BootInfo *bi)
         }
 
         /* ToolSvc is a singleton shared registry/dispatcher. As with ModelSvc,
-         * ordinary workers map only the partition selected by ToolCap badge. */
+         * ordinary workers map only their private request-staging partition.
+         * The dynamic harness reserves that inert partition before ToolCap is
+         * minted; the mapping exposes no registry state and cannot invoke the
+         * service, so the endpoint cap remains the effect authority. */
         if (name_eq(pd->name, "tool_svc")) {
             seL4_Error te = pd_vspace_map_shared_pages(
                 vspace, (seL4_Word)TOOLSVC_SHMEM_VADDR,
@@ -2092,7 +2163,8 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts("[rt] ToolSvc shared arena map err=");
             dbg_hex((seL4_Word)te);
             dbg_puts("\n");
-        } else if (pd_has_init_service(pd, SVC_ID_TOOLSVC)
+        } else if ((pd_has_init_service(pd, SVC_ID_TOOLSVC)
+                    || name_eq(pd->name, "codex_harness"))
                    && i < TOOLSVC_CLIENT_SLOT_COUNT) {
             uint32_t client_offset = TOOLSVC_CLIENT_ARENA_OFFSET(i);
             seL4_Error te = pd_vspace_map_shared_pages(
@@ -2275,10 +2347,18 @@ void root_task_main(const seL4_BootInfo *bi)
         if (pd->self_svc_id != 0u) {
             self_ep = ep_alloc_for_service((uint16_t)pd->self_svc_id);
             if (self_ep != seL4_CapNull) {
-                ep_mint_receiver(self_ep,
-                                 pd_cnode, PD_CNODE_SLOT_SELF_EP,
-                                 pd->cnode_size_bits);
-                self_ep_slot = PD_CNODE_SLOT_SELF_EP;
+                seL4_Error receiver_err = ep_mint_receiver(
+                    self_ep, pd_cnode, PD_CNODE_SLOT_SELF_EP,
+                    pd->cnode_size_bits);
+                if (receiver_err != seL4_NoError) {
+                    dbg_puts("[rt] receiver endpoint mint failed pd=");
+                    dbg_puts(pd->name);
+                    dbg_puts(" err=");
+                    dbg_hex((seL4_Word)receiver_err);
+                    dbg_puts("\n");
+                } else {
+                    self_ep_slot = PD_CNODE_SLOT_SELF_EP;
+                }
             }
         }
 
@@ -2330,7 +2410,15 @@ void root_task_main(const seL4_BootInfo *bi)
         }
     }
 
-    /* ── Step 4.5: Capability audit baseline ─────────────────────────────── */
+    /* ── Step 4.5: Restricted runtime CapBroker authority ───────────────── */
+    {
+        seL4_Error authority_err = install_cap_broker_authority(sys);
+        dbg_puts("[rt] CapBroker kernel authority manifest err=");
+        dbg_hex((seL4_Word)authority_err);
+        dbg_puts("\n");
+    }
+
+    /* ── Step 4.6: Capability audit baseline ─────────────────────────────── */
     /*
      * After all PDs are started, record the initial capability counts per PD
      * as a regression baseline.  cap_tree_verify_all_pds() is implemented in

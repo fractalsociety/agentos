@@ -16,7 +16,13 @@
 #define AGENTOS_DEBUG 1
 #include "agentos.h"
 #include "sel4_server.h"
+#include "sel4_client.h"
 #include "contracts/cap_broker_contract.h"
+#include "contracts/agent_harness_contract.h"
+#include "cap_authority.h"
+#include "system_desc.h"
+#include "../../../contracts/toolsvc/interface.h"
+#include "../../../contracts/execsvc/interface.h"
 
 #define MAX_CAPS 256
 
@@ -33,6 +39,152 @@ typedef struct {
 static cap_entry_t cap_table[MAX_CAPS];
 static uint32_t cap_count = 0;
 static uint64_t audit_seq = 0;
+
+typedef struct {
+    uint32_t cap_class;
+    uint16_t service_id;
+    uint16_t destination_slot;
+    uint16_t source_slot;
+    uint16_t reserved;
+    uint32_t max_badge_rights;
+    uint32_t granted_badge_rights;
+    bool installed;
+} runtime_cap_t;
+
+static runtime_cap_t runtime_caps[] = {
+    { HARNESS_CAP_MODEL, SVC_ID_MODELSVC, PD_CNODE_SLOT_MODELSVC_EP,
+      CAPBROKER_AUTH_MODEL_SOURCE_SLOT, 0u, 0u, 0u, true },
+    { HARNESS_CAP_TOOL, SVC_ID_TOOLSVC, PD_CNODE_SLOT_TOOLSVC_EP,
+      CAPBROKER_AUTH_TOOL_SOURCE_SLOT, 0u, TOOLSVC_RIGHT_ALL, 0u, false },
+    { HARNESS_CAP_MEMORY, SVC_ID_AGENTFS, PD_CNODE_SLOT_AGENTFS_EP,
+      CAPBROKER_AUTH_MEMORY_SOURCE_SLOT, 0u, 0u, 0u, true },
+    { HARNESS_CAP_EXEC, SVC_ID_EXEC_SERVER, PD_CNODE_SLOT_EXEC_SERVER_EP,
+      CAPBROKER_AUTH_EXEC_SOURCE_SLOT, 0u, EXECSVC_RIGHT_ALL,
+      EXECSVC_RIGHT_ALL, true },
+    { HARNESS_CAP_NETWORK, SVC_ID_NET_SERVER, PD_CNODE_SLOT_NET_SERVER_EP,
+      CAPBROKER_AUTH_NETWORK_SOURCE_SLOT, 0u, 0u, 0u, false },
+};
+static uint32_t runtime_installed_caps = CAPBROKER_HARNESS_INITIAL_CAPS;
+static uint32_t runtime_authority_epoch = 1u;
+static uint32_t runtime_receipt = 0u;
+
+static runtime_cap_t *runtime_cap_find(uint32_t cap_class)
+{
+    if (cap_class == 0u || (cap_class & (cap_class - 1u)) != 0u) return NULL;
+    for (uint32_t i = 0u; i < sizeof(runtime_caps) / sizeof(runtime_caps[0]); i++)
+        if (runtime_caps[i].cap_class == cap_class) return &runtime_caps[i];
+    return NULL;
+}
+
+static uint32_t runtime_mint(const runtime_cap_t *entry, uint32_t badge_rights)
+{
+    seL4_Word badge = ((uint64_t)entry->service_id << 48u)
+        | ((uint64_t)CAPBROKER_HARNESS_PD_ID << 32u)
+        | (uint64_t)badge_rights;
+    seL4_CapRights_t call_rights = seL4_CapRights_new(1u, 0u, 0u, 1u);
+    return (uint32_t)seL4_CNode_Mint(
+        CAPBROKER_AUTH_HARNESS_CNODE_SLOT, entry->destination_slot,
+        CAPBROKER_HARNESS_CNODE_BITS,
+        CAPBROKER_AUTH_SELF_CNODE_SLOT, entry->source_slot,
+        CAPBROKER_CONTROLLER_CNODE_BITS, call_rights, badge);
+}
+
+static uint32_t runtime_delete(const runtime_cap_t *entry)
+{
+    return (uint32_t)seL4_CNode_Delete(
+        CAPBROKER_AUTH_HARNESS_CNODE_SLOT, entry->destination_slot,
+        CAPBROKER_HARNESS_CNODE_BITS);
+}
+
+static uint32_t runtime_sync_harness(uint32_t caps, uint32_t epoch,
+                                     uint32_t receipt)
+{
+    struct harness_req_authority_update update = {
+        .installed_caps = caps,
+        .authority_epoch = epoch,
+        .broker_receipt = receipt,
+        .reserved = 0u,
+    };
+    sel4_msg_t rep;
+    uint32_t rc = sel4_client_call(PD_CNODE_SLOT_AGENT_HARNESS_EP,
+                                    MSG_HARNESS_AUTHORITY_UPDATE,
+                                    &update, sizeof(update), &rep);
+    if (rc != HARNESS_OK || rep.length < sizeof(struct harness_reply_authority_update))
+        return CAP_BROKER_ERR_SYNC;
+    struct harness_reply_authority_update reply;
+    for (uint32_t i = 0u; i < sizeof(reply); i++)
+        ((uint8_t *)&reply)[i] = rep.data[i];
+    return reply.status == HARNESS_OK && reply.installed_caps == caps
+        && reply.authority_epoch == epoch
+        ? CAP_BROKER_OK : CAP_BROKER_ERR_SYNC;
+}
+
+uint32_t cap_broker_runtime_change(bool install, uint32_t target_pd,
+                                   uint32_t cap_class, uint32_t badge_rights,
+                                   struct cap_broker_reply_runtime *reply)
+{
+    if (reply == NULL) return CAP_BROKER_ERR_BAD_ARG;
+    reply->status = CAP_BROKER_ERR_BAD_ARG;
+    reply->installed_caps = runtime_installed_caps;
+    reply->authority_epoch = runtime_authority_epoch;
+    reply->changed = 0u;
+    if (target_pd != CAPBROKER_HARNESS_PD_ID) return reply->status;
+
+    runtime_cap_t *entry = runtime_cap_find(cap_class);
+    if (entry == NULL) return reply->status;
+    if (!install) badge_rights = entry->granted_badge_rights;
+    if ((badge_rights & ~entry->max_badge_rights) != 0u
+        || (entry->max_badge_rights == 0u && badge_rights != 0u))
+        return reply->status;
+    if (entry->installed == install) {
+        reply->status = CAP_BROKER_OK;
+        return CAP_BROKER_OK;
+    }
+
+    uint32_t kernel_rc = install ? runtime_mint(entry, badge_rights)
+                                 : runtime_delete(entry);
+    if (kernel_rc != (uint32_t)seL4_NoError) {
+        reply->status = CAP_BROKER_ERR_KERNEL;
+        return reply->status;
+    }
+
+    uint32_t new_caps = install ? runtime_installed_caps | cap_class
+                                : runtime_installed_caps & ~cap_class;
+    uint32_t new_epoch = runtime_authority_epoch + 1u;
+    uint32_t new_receipt = runtime_receipt + 1u;
+    uint32_t sync_rc = runtime_sync_harness(new_caps, new_epoch, new_receipt);
+    if (sync_rc != CAP_BROKER_OK) {
+        /* Restore kernel authority before reporting failure. */
+        if (install) (void)runtime_delete(entry);
+        else (void)runtime_mint(entry, badge_rights);
+        reply->status = sync_rc;
+        return sync_rc;
+    }
+
+    entry->installed = install;
+    entry->granted_badge_rights = install ? badge_rights : 0u;
+    runtime_installed_caps = new_caps;
+    runtime_authority_epoch = new_epoch;
+    runtime_receipt = new_receipt;
+    audit_seq++;
+    reply->status = CAP_BROKER_OK;
+    reply->installed_caps = new_caps;
+    reply->authority_epoch = new_epoch;
+    reply->changed = 1u;
+    log_drain_write(4, 4, install
+        ? "[cap_broker] kernel capability minted and harness epoch advanced\n"
+        : "[cap_broker] kernel capability deleted and harness epoch advanced\n");
+    return CAP_BROKER_OK;
+}
+
+void cap_broker_runtime_status(struct cap_broker_reply_runtime *reply)
+{
+    if (reply == NULL) return;
+    reply->status = CAP_BROKER_OK;
+    reply->installed_caps = runtime_installed_caps;
+    reply->authority_epoch = runtime_authority_epoch;
+    reply->changed = 0u;
+}
 
 /* ── Capability Policy ───────────────────────────────────────────────────── */
 
@@ -76,6 +228,12 @@ void cap_broker_init(void) {
     active_policy.n_rules  = 0;  /* default: allow all */
     staging_policy.n_rules = 0;
     policy_version         = 1u;
+    runtime_installed_caps = CAPBROKER_HARNESS_INITIAL_CAPS;
+    runtime_authority_epoch = 1u;
+    runtime_receipt = 0u;
+    for (uint32_t i = 0u; i < sizeof(runtime_caps) / sizeof(runtime_caps[0]); i++)
+        runtime_caps[i].installed =
+            (runtime_installed_caps & runtime_caps[i].cap_class) != 0u;
 
     log_drain_write(4, 4, "[cap_broker] Ready\n");
 }

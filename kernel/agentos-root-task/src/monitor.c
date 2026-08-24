@@ -23,6 +23,8 @@
 #include "contracts/agent_pool_contract.h"  /* agent_pool_occupancy (agentos-7j5) */
 #include "boot_integrity.h"
 #include "app_manager.h"
+#include "contracts/cap_broker_contract.h"
+#include "cap_authority.h"
 #include "verify.h"
 #include "monocypher.h"
 /* Forward declarations for agent_pool (no separate header yet) */
@@ -32,6 +34,10 @@ int  agent_pool_spawn(const char *agent_name, uint64_t task_id,
 /* Forward declarations for cap_broker (no separate header yet) */
 void cap_broker_init(void);
 void cap_broker_revoke_agent(uint32_t agent_id, uint32_t reason);
+uint32_t cap_broker_runtime_change(bool install, uint32_t target_pd,
+                                   uint32_t cap_class, uint32_t badge_rights,
+                                   struct cap_broker_reply_runtime *reply);
+void cap_broker_runtime_status(struct cap_broker_reply_runtime *reply);
 /* Local opcode aliases (defined in test-host stub too, kept in sync) */
 #define OP_AGENTFS_PUT  0x30u
 #define OP_AGENTFS_GET  0x31u
@@ -116,11 +122,44 @@ static inline void cap_broker_init(void) {}
 static inline void cap_broker_revoke_agent(uint32_t a, uint32_t r) { (void)a;(void)r; }
 static inline uint32_t cap_broker_attest(uint64_t t, uint32_t n, uint32_t d) { (void)t;(void)n;(void)d; return 0; }
 
+#define CONTROLLER_RIGHT_CAP_ADMIN (1u << 0)
+#define MSG_CAP_GRANT        0x1A01u
+#define MSG_CAP_REVOKE_GRANT 0x1A02u
+#define MSG_CAP_GRANT_STATUS 0x1A03u
+#define CAP_BROKER_OK 0u
+#define CAP_BROKER_ERR_FORBIDDEN 7u
+#define CAP_BROKER_ERR_BAD_ARG 8u
+#define CAPBROKER_HARNESS_PD_ID 11u
+struct cap_broker_req_grant {
+    uint32_t target_pd, cap_class, rights, ttl_ticks;
+};
+struct cap_broker_req_revoke { uint32_t target_pd, cap_class; };
+struct cap_broker_req_status { uint32_t target_pd; };
+struct cap_broker_reply_runtime {
+    uint32_t status, installed_caps, authority_epoch, changed;
+};
+static uint32_t cap_broker_runtime_change(bool install, uint32_t target_pd,
+                                           uint32_t cap_class,
+                                           uint32_t badge_rights,
+                                           struct cap_broker_reply_runtime *r) {
+    (void)install; (void)target_pd; (void)cap_class; (void)badge_rights;
+    r->status = CAP_BROKER_OK; r->installed_caps = 0x0du;
+    r->authority_epoch = 1u; r->changed = 0u; return CAP_BROKER_OK;
+}
+static void cap_broker_runtime_status(struct cap_broker_reply_runtime *r) {
+    r->status = CAP_BROKER_OK; r->installed_caps = 0x0du;
+    r->authority_epoch = 1u; r->changed = 0u;
+}
+
 /* Stub agent_pool */
 static inline void agent_pool_init(void) {}
 static inline int  agent_pool_spawn(const char *n, uint64_t t,
                                      const uint8_t *p, uint32_t l, uint32_t prio) {
     (void)n;(void)t;(void)p;(void)l;(void)prio; return 0;
+}
+static inline void agent_pool_occupancy(uint32_t *total, uint32_t *busy,
+                                        uint32_t *idle, uint32_t *faulted) {
+    *total = 8u; *busy = 0u; *idle = 8u; *faulted = 0u;
 }
 
 /* Stub agentos_log_boot */
@@ -203,6 +242,7 @@ static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 #define MSG_SPAWN_AGENT_REPLY      0x0802u
 #define MSG_WORKER_RETRIEVE        0x0701u
 #define MSG_WORKER_RETRIEVE_REPLY  0x0702u
+#define MSG_AGENTPOOL_STATUS       0x1103u
 #define MSG_QUOTA_REVOKE           0x0B01u
 #define MSG_GPU_SUBMIT             0x0901u
 #define MSG_VMM_VCPU_SET_REGS      0x2B05u
@@ -753,6 +793,96 @@ static uint32_t handle_cap_policy_reload(sel4_badge_t badge,
     return SEL4_ERR_OK;
 }
 
+static uint32_t monitor_data_u32(const uint8_t *data, uint32_t off)
+{
+    return (uint32_t)data[off] | ((uint32_t)data[off + 1u] << 8u)
+        | ((uint32_t)data[off + 2u] << 16u)
+        | ((uint32_t)data[off + 3u] << 24u);
+}
+
+static void monitor_reply_runtime(sel4_msg_t *rep,
+                                  const struct cap_broker_reply_runtime *r)
+{
+    const uint8_t *src = (const uint8_t *)r;
+    for (uint32_t i = 0u; i < sizeof(*r); i++) rep->data[i] = src[i];
+    rep->length = sizeof(*r);
+}
+
+static bool cap_admin_badge(sel4_badge_t badge)
+{
+    return ((uint32_t)(uint64_t)badge & CONTROLLER_RIGHT_CAP_ADMIN) != 0u;
+}
+
+static uint32_t handle_cap_grant(sel4_badge_t badge, const sel4_msg_t *req,
+                                 sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct cap_broker_reply_runtime reply = {0};
+    if (!cap_admin_badge(badge)) {
+        reply.status = CAP_BROKER_ERR_FORBIDDEN;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    if (req->length != sizeof(struct cap_broker_req_grant)) {
+        reply.status = CAP_BROKER_ERR_BAD_ARG;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    uint32_t rc = cap_broker_runtime_change(
+        true, monitor_data_u32(req->data, 0u),
+        monitor_data_u32(req->data, 4u), monitor_data_u32(req->data, 8u),
+        &reply);
+    monitor_reply_runtime(rep, &reply);
+    return rc;
+}
+
+static uint32_t handle_cap_revoke(sel4_badge_t badge, const sel4_msg_t *req,
+                                  sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct cap_broker_reply_runtime reply = {0};
+    if (!cap_admin_badge(badge)) {
+        reply.status = CAP_BROKER_ERR_FORBIDDEN;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    if (req->length != sizeof(struct cap_broker_req_revoke)) {
+        reply.status = CAP_BROKER_ERR_BAD_ARG;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    uint32_t rc = cap_broker_runtime_change(
+        false, monitor_data_u32(req->data, 0u),
+        monitor_data_u32(req->data, 4u), 0u, &reply);
+    monitor_reply_runtime(rep, &reply);
+    return rc;
+}
+
+static uint32_t handle_cap_status(sel4_badge_t badge, const sel4_msg_t *req,
+                                  sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct cap_broker_reply_runtime reply = {0};
+    if (!cap_admin_badge(badge)) {
+        reply.status = CAP_BROKER_ERR_FORBIDDEN;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    if (req->length != sizeof(struct cap_broker_req_status)) {
+        reply.status = CAP_BROKER_ERR_BAD_ARG;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    if (monitor_data_u32(req->data, 0u) != CAPBROKER_HARNESS_PD_ID) {
+        reply.status = CAP_BROKER_ERR_BAD_ARG;
+        monitor_reply_runtime(rep, &reply);
+        return reply.status;
+    }
+    cap_broker_runtime_status(&reply);
+    monitor_reply_runtime(rep, &reply);
+    return reply.status;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Inbound handler: MSG_VMM_VCPU_SET_REGS
  * ─────────────────────────────────────────────────────────────────────────── */
@@ -1208,6 +1338,9 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&g_srv, (uint32_t)MSG_VMM_REGISTER,      handle_vmm_register,      (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_WORKER_RETRIEVE,   handle_worker_retrieve,    (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_AGENTPOOL_STATUS,  handle_agentpool_status,   (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_CAP_GRANT,         handle_cap_grant,           (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_CAP_REVOKE_GRANT,  handle_cap_revoke,          (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_CAP_GRANT_STATUS,  handle_cap_status,          (void *)0);
 
 #ifndef AGENTOS_TEST_HOST
     /* Enter the never-returning server dispatch loop */

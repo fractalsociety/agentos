@@ -15,6 +15,7 @@
 #include "../../../contracts/toolsvc/interface.h"
 #include "../../../contracts/execsvc/interface.h"
 #include "../../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
+#include "../../../kernel/agentos-root-task/include/cap_authority.h"
 
 #define HARNESS_SYSTEM_PROMPT_OFFSET 0x8000u
 #define HARNESS_SYSTEM_PROMPT_CAP    4096u
@@ -97,6 +98,7 @@ static uint8_t *runtime_arena;
 static uint32_t runtime_arena_size;
 static uint32_t runtime_installed_caps;
 static uint32_t runtime_authority_epoch;
+static uint32_t runtime_broker_receipt;
 static harness_model_backend_fn runtime_model_backend;
 static void *runtime_model_ctx;
 static harness_tool_backend_fn runtime_tool_backend;
@@ -284,6 +286,7 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     runtime_arena_size = arena_size;
     runtime_installed_caps = installed_caps & HARNESS_CAP_KNOWN_MASK;
     runtime_authority_epoch = authority_epoch;
+    runtime_broker_receipt = 0u;
     runtime_model_backend = model_backend;
     runtime_model_ctx = model_ctx;
     runtime_tool_backend = NULL;
@@ -302,6 +305,29 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     bytes_zero(&current_task, sizeof(current_task));
     current_task.state = HARNESS_STATE_IDLE;
     current_task.verification_exit_code = -1;
+}
+
+uint32_t harness_runtime_update_authority(
+    const struct harness_req_authority_update *req,
+    struct harness_reply_authority_update *rep)
+{
+    if (rep == NULL) return HARNESS_ERR_INVALID;
+    rep->status = HARNESS_ERR_INVALID;
+    rep->installed_caps = runtime_installed_caps;
+    rep->authority_epoch = runtime_authority_epoch;
+    rep->reserved = 0u;
+    if (req == NULL || req->reserved != 0u
+        || (req->installed_caps & ~HARNESS_CAP_KNOWN_MASK) != 0u
+        || req->authority_epoch != runtime_authority_epoch + 1u
+        || req->broker_receipt <= runtime_broker_receipt)
+        return rep->status;
+    runtime_installed_caps = req->installed_caps;
+    runtime_authority_epoch = req->authority_epoch;
+    runtime_broker_receipt = req->broker_receipt;
+    rep->status = HARNESS_OK;
+    rep->installed_caps = runtime_installed_caps;
+    rep->authority_epoch = runtime_authority_epoch;
+    return HARNESS_OK;
 }
 
 void harness_runtime_set_tool_backend(harness_tool_backend_fn tool_backend,
@@ -1133,6 +1159,26 @@ static uint32_t h_resources(sel4_badge_t badge, const sel4_msg_t *req,
     return status;
 }
 
+static uint32_t h_authority_update(sel4_badge_t badge, const sel4_msg_t *req,
+                                   sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    uint32_t service_id = (uint32_t)(((uint64_t)badge >> 48u) & 0xffffu);
+    uint32_t caller_pd = (uint32_t)(((uint64_t)badge >> 32u) & 0xffffu);
+    if (service_id != CAPBROKER_HARNESS_SERVICE_ID
+        || caller_pd != CAPBROKER_CONTROLLER_PD_ID)
+        return HARNESS_ERR_CAP_DENIED;
+    if (req->length != sizeof(struct harness_req_authority_update))
+        return HARNESS_ERR_INVALID;
+    struct harness_req_authority_update update;
+    struct harness_reply_authority_update reply;
+    bytes_copy(&update, req->data, sizeof(update));
+    uint32_t status = harness_runtime_update_authority(&update, &reply);
+    bytes_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return status;
+}
+
 __attribute__((noreturn))
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
@@ -1143,8 +1189,7 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     image_bytes = (image_bytes + 4095u) & ~4095u;
     harness_runtime_init((void *)(uintptr_t)HARNESS_SHMEM_VADDR,
                          HARNESS_SHMEM_SIZE,
-                         HARNESS_CAP_MODEL | HARNESS_CAP_TOOL
-                             | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC, 1u,
+                         CAPBROKER_HARNESS_INITIAL_CAPS, 1u,
                          target_model_backend, NULL);
     harness_runtime_set_tool_backend(target_tool_backend, NULL);
     harness_runtime_set_memory_backend(target_memory_backend, NULL);
@@ -1173,6 +1218,8 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
                                h_result, NULL);
     (void)sel4_server_register(&harness_server, MSG_HARNESS_RESOURCES,
                                h_resources, NULL);
+    (void)sel4_server_register(&harness_server, MSG_HARNESS_AUTHORITY_UPDATE,
+                               h_authority_update, NULL);
     sel4_server_run(&harness_server);
     for (;;) { __asm__ volatile("" ::: "memory"); }
 }

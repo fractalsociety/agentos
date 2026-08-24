@@ -477,6 +477,27 @@ static void test_shared_memory_is_not_charged_per_worker(void)
     assert(resources.private_limit_bytes == HARNESS_WORKER_MAX_BYTES);
 }
 
+static void test_authority_updates_are_monotonic_broker_receipts(void)
+{
+    reset(CAPBROKER_HARNESS_INITIAL_CAPS);
+    struct harness_req_authority_update req = {
+        .installed_caps = CAPBROKER_HARNESS_INITIAL_CAPS | HARNESS_CAP_TOOL,
+        .authority_epoch = 8u,
+        .broker_receipt = 1u,
+    };
+    struct harness_reply_authority_update rep;
+    assert(harness_runtime_update_authority(&req, &rep) == HARNESS_OK);
+    assert(rep.installed_caps
+           == (CAPBROKER_HARNESS_INITIAL_CAPS | HARNESS_CAP_TOOL));
+    assert(rep.authority_epoch == 8u);
+
+    assert(harness_runtime_update_authority(&req, &rep) == HARNESS_ERR_INVALID);
+    req.authority_epoch = 9u;
+    req.broker_receipt = 2u;
+    req.installed_caps |= 0x80000000u;
+    assert(harness_runtime_update_authority(&req, &rep) == HARNESS_ERR_INVALID);
+}
+
 int main(void)
 {
     test_missing_authority_denies_before_model();
@@ -491,6 +512,7 @@ int main(void)
     test_protocol_and_backend_failures_are_reported();
     test_verification_requires_exec_cap();
     test_shared_memory_is_not_charged_per_worker();
+    test_authority_updates_are_monotonic_broker_receipts();
     puts("agent harness PD tests: ok");
     return 0;
 }

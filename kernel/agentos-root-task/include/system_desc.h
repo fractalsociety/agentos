@@ -25,7 +25,7 @@
 
 #define PD_MAX_NAME_LEN       32u  /* max length of pd_desc_t.name (with NUL)   */
 #define PD_MAX_ELF_PATH       64u  /* max length of pd_desc_t.elf_path (NUL)    */
-#define PD_MAX_INIT_EPS        9u  /* max initial endpoints distributed per PD  */
+#define PD_MAX_INIT_EPS       10u  /* max initial endpoints distributed per PD  */
 #define PD_MAX_IRQS            8u  /* max hardware IRQs bound per PD            */
 #define PD_MAX_DEVICE_FRAMES   4u  /* max MMIO device frames distributed per PD */
 #define PD_MAX_MEMORY_REGIONS  3u  /* max large RAM regions mapped per PD       */

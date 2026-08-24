@@ -40,6 +40,7 @@ int main(void)
     const pd_desc_t *exec = find_pd("exec_verify");
     const pd_desc_t *exec_transport = find_pd("exec_transport");
     const pd_desc_t *controller = find_pd("controller");
+    const pd_desc_t *launcher = find_pd("init_agent");
     assert(harness != NULL);
     assert(model != NULL);
     assert(tools != NULL);
@@ -47,6 +48,7 @@ int main(void)
     assert(exec != NULL);
     assert(exec_transport != NULL);
     assert(controller != NULL);
+    assert(launcher != NULL);
 
     assert(harness->self_svc_id == SVC_ID_AGENT_HARNESS);
     assert(harness->stack_size == 0x10000u);
@@ -55,9 +57,9 @@ int main(void)
     assert(has_service(harness, SVC_ID_LOG_DRAIN));
     assert(!has_service(harness, SVC_ID_NET_SERVER));
     assert(!has_service(harness, SVC_ID_NET_PD));
-    assert(has_service(harness, SVC_ID_TOOLSVC));
-    assert(service_badge_data(harness, SVC_ID_TOOLSVC)
-           == TOOLSVC_RIGHT_ALL);
+    /* ToolCap is deliberately absent at boot and is minted into its canonical
+     * slot by the restricted CapBroker authority manifest. */
+    assert(!has_service(harness, SVC_ID_TOOLSVC));
     assert(has_service(harness, SVC_ID_AGENTFS));
     assert(has_service(harness, SVC_ID_EXEC_SERVER));
     assert(service_badge_data(harness, SVC_ID_EXEC_SERVER)
@@ -88,6 +90,9 @@ int main(void)
     assert(!has_service(exec_transport, SVC_ID_EXEC_SERVER));
     assert(!has_service(exec_transport, SVC_ID_NET_SERVER));
     assert(has_service(controller, SVC_ID_AGENT_HARNESS));
+    assert(has_service(launcher, SVC_ID_CONTROLLER));
+    assert(service_badge_data(launcher, SVC_ID_CONTROLLER)
+           == CONTROLLER_RIGHT_CAP_ADMIN);
 
     puts("agent harness topology tests: ok");
     return 0;

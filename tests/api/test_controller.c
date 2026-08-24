@@ -5,7 +5,7 @@
  *   1.  controller_main initialises without crashing
  *   2.  capability policy is loaded at init
  *   3.  handler table is populated after init (>0 handlers)
- *   4.  exactly 4 inbound opcodes are registered
+ *   4.  controller registers the complete inbound opcode set
  *   5.  OP_CAP_POLICY_RELOAD handler returns SEL4_ERR_OK
  *   6.  OP_CAP_POLICY_RELOAD sets policy_loaded = true
  *   7.  MSG_VMM_REGISTER handler returns SEL4_ERR_OK
@@ -131,11 +131,11 @@ static void test_handler_table_populated(void)
  * Test 4: exactly 4 inbound opcodes are registered
  * ─────────────────────────────────────────────────────────────────────────── */
 
-static void test_handler_count_four(void)
+static void test_handler_count_complete(void)
 {
     setup();
-    ASSERT_EQ(controller_handler_count(), 4u,
-              "controller_main: exactly 4 handlers registered");
+    ASSERT_EQ(controller_handler_count(), 8u,
+              "controller_main: all policy, VMM, worker, pool, and CapBroker handlers registered");
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -372,7 +372,7 @@ int main(void)
     test_init_no_crash();
     test_policy_loaded_at_init();
     test_handler_table_populated();
-    test_handler_count_four();
+    test_handler_count_complete();
     test_cap_policy_reload_ok();
     test_cap_policy_reload_reply_data();
     test_vmm_register_ok();
