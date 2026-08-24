@@ -143,6 +143,7 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_AGENT_HARNESS_CAP 131u
 #define TARGET_TOOLSVC_CAP 132u
 #define TARGET_AGENTFS_CAP 133u
+#define TARGET_EXECSVC_CAP 200u
 #define TARGET_TEST_RUNNER_CLIENT_ID 23u
 #define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
 #define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
@@ -542,9 +543,10 @@ static void target_agent_harness_live_model(void)
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
     static const char model[] = "fast";
     static const char prompt[] =
-        "Create src/live.txt containing exactly live-agentos followed by a newline. "
-        "Use memory_write, then verify that path with the exact expected text, "
-        "then return final only after verification succeeds.";
+        "Create src/live.c containing one valid C11 function named agentos_answer "
+        "that takes no arguments and returns 42. Use memory_write, then test that "
+        "path with the c11_compile profile, then return final only after the real "
+        "compiler reports success.";
     const uint32_t prompt_off = 0x1000u;
     const uint32_t model_off = 0x2000u;
     const uint32_t result_off = 0x4000u;
@@ -586,9 +588,9 @@ static void target_agent_harness_live_model(void)
         && tr_rd32(rep.data, 24u) >= 2u
         && tr_rd32(rep.data, 28u) >= 1u
         && (int32_t)tr_rd32(rep.data, 40u) == 0)
-        _tf_ok("AgentHarness completes live-model edit and ExecCap verification");
+        _tf_ok("AgentHarness completes live-model edit and profiled C compilation");
     else
-        _tf_fail_point("AgentHarness completes live-model edit and ExecCap verification",
+        _tf_fail_point("AgentHarness completes live-model edit and profiled C compilation",
                        "live model did not complete the capability-gated protocol");
 }
 #endif
@@ -656,6 +658,49 @@ static void target_agentfs_workspace_contract(void)
     else
         _tf_fail_point("AgentFS denies cross-worker overlay offsets",
                        "cross-partition read was accepted");
+}
+
+static void target_execsvc_profile_contract(void)
+{
+    volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)EXECSVC_SHMEM_VADDR;
+    const uint32_t client_base = EXECSVC_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID);
+    const uint32_t source_off = client_base + 0x100u;
+    const uint32_t output_off = client_base + 0x3000u;
+    static const char source[] = "int target_contract(void) { return 0; }\n";
+    for (uint32_t i = 0u; i < sizeof(source) - 1u; i++)
+        arena[source_off + i] = source[i];
+
+    execsvc_run_profile_wire_t wire = {
+        .source_offset = source_off,
+        .source_len = sizeof(source) - 1u,
+        .output_offset = output_off,
+        .output_capacity = 256u,
+        .profile_id = 0xfeedu,
+        .request_tag = 91u,
+    };
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = EXECSVC_OP_RUN_PROFILE;
+    req.length = sizeof(wire);
+    tr_copy(req.data, &wire, sizeof(wire));
+    sel4_call((seL4_CPtr)TARGET_EXECSVC_CAP, &req, &rep);
+    if (rep.opcode == EXECSVC_ERR_UNSUPPORTED)
+        _tf_ok("ExecSvc denies unknown execution profiles on target");
+    else
+        _tf_fail_point("ExecSvc denies unknown execution profiles on target",
+                       "unknown profile reached the execution transport");
+
+    wire.profile_id = EXECSVC_PROFILE_C11_COMPILE;
+    wire.output_offset = EXECSVC_CLIENT_ARENA_OFFSET(
+        TARGET_TEST_RUNNER_CLIENT_ID - 1u);
+    tr_copy(req.data, &wire, sizeof(wire));
+    sel4_call((seL4_CPtr)TARGET_EXECSVC_CAP, &req, &rep);
+    if (rep.opcode == EXECSVC_ERR_DENIED)
+        _tf_ok("ExecSvc denies cross-worker profile output offsets on target");
+    else
+        _tf_fail_point("ExecSvc denies cross-worker profile output offsets on target",
+                       "profile output escaped the caller partition");
 }
 
 static void target_benchmark_agent_harness(void)
@@ -824,6 +869,7 @@ void target_contract_runner_main(void)
     target_agent_harness_contract();
     target_toolsvc_contract();
     target_agentfs_workspace_contract();
+    target_execsvc_profile_contract();
     target_agent_harness_tool_loop();
     target_agent_harness_memory_loop();
 #ifdef AGENTOS_LIVE_MODEL_TEST

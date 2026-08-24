@@ -7,6 +7,28 @@
 #include "../services/exec-server/exec_verify.c"
 
 static uint8_t arena[EXECSVC_SHMEM_SIZE];
+static uint32_t transport_calls;
+
+static uint32_t fake_transport(uint32_t profile_id,
+                               const uint8_t *source, uint32_t source_len,
+                               uint8_t *output, uint32_t output_capacity,
+                               uint32_t request_tag, int32_t *exit_code,
+                               uint32_t *output_len, void *ctx)
+{
+    (void)ctx;
+    assert(profile_id == EXECSVC_PROFILE_C11_COMPILE);
+    static const char expected_source[] = "int answer(void){return 42;}";
+    assert(source_len == sizeof(expected_source) - 1u);
+    assert(memcmp(source, expected_source, source_len) == 0);
+    assert(request_tag == 77u);
+    static const char compiled[] = "compile: ok";
+    assert(output_capacity >= sizeof(compiled) - 1u);
+    memcpy(output, compiled, sizeof(compiled) - 1u);
+    *output_len = sizeof(compiled) - 1u;
+    *exit_code = 0;
+    transport_calls++;
+    return EXECSVC_OK;
+}
 
 static uint64_t badge(uint16_t service, uint16_t client)
 {
@@ -45,6 +67,46 @@ int main(void)
                                    &wire, &reply) == EXECSVC_ERR_DENIED);
     assert(execsvc_verify_dispatch(badge(SVC_ID_TOOLSVC, client),
                                    &wire, &reply) == EXECSVC_ERR_DENIED);
+
+    static const char source[] = "int answer(void){return 42;}";
+    memcpy(arena + base + 0x400u, source, sizeof(source) - 1u);
+    execsvc_run_profile_wire_t run = {
+        .source_offset = base + 0x400u,
+        .source_len = sizeof(source) - 1u,
+        .output_offset = base + 0x3000u,
+        .output_capacity = 1024u,
+        .profile_id = EXECSVC_PROFILE_C11_COMPILE,
+        .request_tag = 77u,
+    };
+    execsvc_run_profile_reply_t run_reply;
+    execsvc_verify_set_transport(fake_transport, NULL);
+    assert(execsvc_run_profile_dispatch(badge(SVC_ID_EXEC_SERVER, client),
+                                        &run, &run_reply) == EXECSVC_OK);
+    assert(run_reply.exit_code == 0);
+    assert(run_reply.output_len == strlen("compile: ok"));
+    assert(run_reply.request_tag == 77u);
+    assert(memcmp(arena + run.output_offset, "compile: ok",
+                  run_reply.output_len) == 0);
+    assert(transport_calls == 1u);
+
+    run.profile_id = 0xfeedu;
+    assert(execsvc_run_profile_dispatch(badge(SVC_ID_EXEC_SERVER, client),
+                                        &run, &run_reply)
+           == EXECSVC_ERR_UNSUPPORTED);
+    assert(transport_calls == 1u);
+    run.profile_id = EXECSVC_PROFILE_C11_COMPILE;
+    run.output_offset = EXECSVC_CLIENT_ARENA_OFFSET(client + 1u);
+    assert(execsvc_run_profile_dispatch(badge(SVC_ID_EXEC_SERVER, client),
+                                        &run, &run_reply)
+           == EXECSVC_ERR_DENIED);
+    run.output_offset = base + 0x3000u;
+    assert(execsvc_run_profile_dispatch(badge(SVC_ID_TOOLSVC, client),
+                                        &run, &run_reply)
+           == EXECSVC_ERR_DENIED);
+    execsvc_verify_set_transport(NULL, NULL);
+    assert(execsvc_run_profile_dispatch(badge(SVC_ID_EXEC_SERVER, client),
+                                        &run, &run_reply)
+           == EXECSVC_ERR_TRANSPORT);
     puts("exec verify tests: ok");
     return 0;
 }

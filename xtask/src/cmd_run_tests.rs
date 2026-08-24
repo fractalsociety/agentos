@@ -81,6 +81,7 @@ struct SerialEvent {
 struct QemuTestProcess {
     child: std::process::Child,
     model_proxy: Option<std::process::Child>,
+    exec_proxy: Option<std::process::Child>,
     serial_events: Receiver<SerialEvent>,
     serial_reader: JoinHandle<()>,
 }
@@ -137,6 +138,10 @@ pub fn run(args: &RunTestsArgs) -> Result<()> {
     let _ = qemu.child.kill();
     let _ = qemu.child.wait();
     if let Some(mut proxy) = qemu.model_proxy.take() {
+        let _ = proxy.kill();
+        let _ = proxy.wait();
+    }
+    if let Some(mut proxy) = qemu.exec_proxy.take() {
         let _ = proxy.kill();
         let _ = proxy.wait();
     }
@@ -409,6 +414,7 @@ fn spawn_qemu_test_image(
     let log_file = std::fs::File::create(log_path).context("failed to create QEMU log file")?;
     let build_dir = repo_root.join("build").join(format!("{board}-test"));
     let model_socket_path = log_path.with_extension("model.sock");
+    let exec_socket_path = log_path.with_extension("exec.sock");
 
     let mut cmd = match board {
         "qemu_virt_aarch64" => {
@@ -451,6 +457,15 @@ fn spawn_qemu_test_image(
                     .arg("virtio-serial-device,bus=virtio-mmio-bus.3,id=vser_model")
                     .arg("-device")
                     .arg("virtconsole,bus=vser_model.0,chardev=model_pd_char,name=model.0");
+                c.arg("-chardev")
+                    .arg(format!(
+                        "socket,id=exec_pd_char,path={},server=on,wait=off",
+                        exec_socket_path.display()
+                    ))
+                    .arg("-device")
+                    .arg("virtio-serial-device,bus=virtio-mmio-bus.8,id=vser_exec")
+                    .arg("-device")
+                    .arg("virtconsole,bus=vser_exec.0,chardev=exec_pd_char,name=exec.0");
             }
             c
         }
@@ -511,6 +526,27 @@ fn spawn_qemu_test_image(
     } else {
         None
     };
+    let exec_proxy = if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
+        let mut command = std::process::Command::new("python3");
+        command
+            .arg(repo_root.join("tools/exec_transport_proxy.py"))
+            .arg("--socket")
+            .arg(&exec_socket_path)
+            .stdout(Stdio::null());
+        if std::env::var_os("AGENTOS_EXEC_TRANSPORT_TRACE").is_some() {
+            command.arg("--trace");
+        }
+        let proxy = command
+            .spawn()
+            .context("failed to spawn native execution transport proxy")?;
+        println!(
+            "[xtask:run-tests] execution transport proxy pid={}",
+            proxy.id()
+        );
+        Some(proxy)
+    } else {
+        None
+    };
     let stdout = child
         .stdout
         .take()
@@ -543,6 +579,7 @@ fn spawn_qemu_test_image(
     Ok(QemuTestProcess {
         child,
         model_proxy,
+        exec_proxy,
         serial_events,
         serial_reader,
     })

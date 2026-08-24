@@ -33,6 +33,7 @@ static const char harness_system_prompt[] =
     "markdown. Actions: {\"action\":\"memory_write\",\"path\":\"relative/path\","
     "\"content\":\"text\"}; {\"action\":\"memory_read\",\"path\":\"relative/path\"}; "
     "{\"action\":\"verify\",\"path\":\"relative/path\",\"expected\":\"text\"}; "
+    "{\"action\":\"test\",\"path\":\"relative/path\",\"profile\":\"c11_compile\"}; "
     "{\"action\":\"tool\",\"tool\":\"name\",\"input\":\"text\"}; or "
     "{\"action\":\"final\",\"summary\":\"result\"}. Never return final before "
     "required verification succeeds.";
@@ -59,6 +60,12 @@ typedef uint32_t (*harness_memory_backend_fn)(
 typedef uint32_t (*harness_exec_backend_fn)(
     const char *actual, uint32_t actual_len,
     const char *expected, uint32_t expected_len,
+    int32_t *exit_code,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx);
+
+typedef uint32_t (*harness_test_backend_fn)(
+    uint32_t profile_id, const char *source, uint32_t source_len,
     int32_t *exit_code,
     char *output, uint32_t output_capacity, uint32_t *output_len,
     void *ctx);
@@ -93,6 +100,8 @@ static harness_memory_backend_fn runtime_memory_backend;
 static void *runtime_memory_ctx;
 static harness_exec_backend_fn runtime_exec_backend;
 static void *runtime_exec_ctx;
+static harness_test_backend_fn runtime_test_backend;
+static void *runtime_test_ctx;
 static harness_task_state_t current_task;
 static uint32_t runtime_private_committed_bytes;
 static uint32_t runtime_private_limit_bytes;
@@ -278,6 +287,8 @@ void harness_runtime_init(void *arena, uint32_t arena_size,
     runtime_memory_ctx = NULL;
     runtime_exec_backend = NULL;
     runtime_exec_ctx = NULL;
+    runtime_test_backend = NULL;
+    runtime_test_ctx = NULL;
     runtime_private_committed_bytes = 0u;
     runtime_private_limit_bytes = HARNESS_WORKER_DEFAULT_LIMIT_BYTES;
     runtime_shared_mapped_bytes = arena_size;
@@ -307,6 +318,13 @@ void harness_runtime_set_exec_backend(harness_exec_backend_fn exec_backend,
 {
     runtime_exec_backend = exec_backend;
     runtime_exec_ctx = exec_ctx;
+}
+
+void harness_runtime_set_test_backend(harness_test_backend_fn test_backend,
+                                      void *test_ctx)
+{
+    runtime_test_backend = test_backend;
+    runtime_test_ctx = test_ctx;
 }
 
 void harness_runtime_set_resources(uint32_t private_committed_bytes,
@@ -603,6 +621,67 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
             continue;
         }
 
+        if (bytes_equal(action, action_len, "test", 4u)) {
+            if ((runtime_installed_caps & HARNESS_CAP_MEMORY) == 0u
+                || (runtime_installed_caps & HARNESS_CAP_EXEC) == 0u
+                || runtime_memory_backend == NULL
+                || runtime_test_backend == NULL) {
+                current_task.denied_attempts++;
+                return fail_task(HARNESS_ERR_CAP_DENIED, rep);
+            }
+            const char *path = NULL, *profile = NULL;
+            uint32_t path_len = 0u, profile_len = 0u;
+            if (!json_string(json, json_len, "path", 4u, &path, &path_len)
+                || !json_string(json, json_len, "profile", 7u,
+                                &profile, &profile_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            char decoded_path[AGENTFS_PATH_MAX];
+            char decoded_profile[32];
+            uint32_t decoded_path_len = 0u, decoded_profile_len = 0u;
+            if (!decode_json_string(decoded_path, sizeof(decoded_path),
+                                    path, path_len, &decoded_path_len)
+                || !decode_json_string(decoded_profile,
+                                       sizeof(decoded_profile), profile,
+                                       profile_len, &decoded_profile_len)
+                || !bytes_equal(decoded_profile, decoded_profile_len,
+                                "c11_compile", 11u))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+
+            uint32_t source_len = 0u;
+            status = runtime_memory_backend(
+                false, decoded_path, decoded_path_len, NULL, 0u,
+                observation, HARNESS_TOOL_SCRATCH_CAP, &source_len,
+                runtime_memory_ctx);
+            current_task.memory_ops++;
+            current_task.used_caps |= HARNESS_CAP_MEMORY;
+            if (status != HARNESS_OK || source_len >= HARNESS_TOOL_SCRATCH_CAP)
+                return fail_task(status == HARNESS_OK
+                                     ? HARNESS_ERR_MEMORY : status, rep);
+
+            uint32_t test_output_len = 0u;
+            int32_t exit_code = -1;
+            current_task.state = HARNESS_STATE_VERIFYING;
+            status = runtime_test_backend(
+                EXECSVC_PROFILE_C11_COMPILE, observation, source_len,
+                &exit_code, exec_observation, HARNESS_TOOL_SCRATCH_CAP,
+                &test_output_len, runtime_test_ctx);
+            current_task.exec_calls++;
+            current_task.used_caps |= HARNESS_CAP_EXEC;
+            current_task.verification_exit_code = exit_code;
+            if (status != HARNESS_OK
+                || test_output_len >= HARNESS_TOOL_SCRATCH_CAP)
+                return fail_task(status == HARNESS_OK
+                                     ? HARNESS_ERR_EXEC : status, rep);
+            /* A compiler failure is an observation, not a terminal runtime
+             * failure. The model may edit and retry; final remains gated on
+             * verification_exit_code == 0. */
+            if (!context_append_turn(&context_len, json, json_len,
+                                     exec_observation, test_output_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            next_prompt_len = context_len;
+            continue;
+        }
+
         return fail_task(HARNESS_ERR_PROTOCOL, rep);
     }
 
@@ -886,6 +965,55 @@ static uint32_t target_exec_backend(
     return HARNESS_OK;
 }
 
+static uint32_t target_test_backend(
+    uint32_t profile_id, const char *source, uint32_t source_len,
+    int32_t *exit_code,
+    char *output, uint32_t output_capacity, uint32_t *output_len,
+    void *ctx)
+{
+    (void)ctx;
+    const uint32_t source_rel = 0x100u;
+    const uint32_t output_rel = 0x7000u;
+    if (profile_id != EXECSVC_PROFILE_C11_COMPILE
+        || source_len == 0u || source_len > EXECSVC_SOURCE_MAX
+        || output_capacity == 0u || output_capacity > EXECSVC_OUTPUT_MAX
+        || exit_code == NULL || output_len == NULL)
+        return HARNESS_ERR_EXEC;
+    uint8_t *exec_arena = (uint8_t *)(uintptr_t)
+        EXECSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    bytes_copy(exec_arena + source_rel, source, source_len);
+    uint32_t partition = EXECSVC_CLIENT_ARENA_OFFSET(
+        AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
+    execsvc_run_profile_wire_t wire = {
+        .source_offset = partition + source_rel,
+        .source_len = source_len,
+        .output_offset = partition + output_rel,
+        .output_capacity = output_capacity - 1u,
+        .profile_id = profile_id,
+        .request_tag = current_task.task_id,
+    };
+    sel4_msg_t rep;
+    uint32_t status = sel4_client_call(PD_CNODE_SLOT_EXEC_SERVER_EP,
+                                       EXECSVC_OP_RUN_PROFILE,
+                                       &wire, sizeof(wire), &rep);
+    if (status != EXECSVC_OK
+        || rep.length < sizeof(execsvc_run_profile_reply_t))
+        return status == EXECSVC_ERR_DENIED
+            ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_EXEC;
+    execsvc_run_profile_reply_t run_reply;
+    bytes_copy(&run_reply, rep.data, sizeof(run_reply));
+    if (run_reply.status != EXECSVC_OK
+        || run_reply.request_tag != current_task.task_id
+        || run_reply.output_len >= output_capacity)
+        return run_reply.status == EXECSVC_ERR_DENIED
+            ? HARNESS_ERR_CAP_DENIED : HARNESS_ERR_EXEC;
+    *exit_code = run_reply.exit_code;
+    bytes_copy(output, exec_arena + output_rel, run_reply.output_len);
+    output[run_reply.output_len] = '\0';
+    *output_len = run_reply.output_len;
+    return HARNESS_OK;
+}
+
 static uint32_t h_submit(sel4_badge_t badge, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx)
 {
@@ -979,6 +1107,7 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     harness_runtime_set_tool_backend(target_tool_backend, NULL);
     harness_runtime_set_memory_backend(target_memory_backend, NULL);
     harness_runtime_set_exec_backend(target_exec_backend, NULL);
+    harness_runtime_set_test_backend(target_test_backend, NULL);
     /* Private charge: mapped image + 64 KiB stack + 4 KiB IPC page + a fixed
      * 128 KiB allowance for CNode/TCB/SC/page-table kernel objects. */
     harness_runtime_set_resources(image_bytes + 0x10000u + 0x1000u + 0x20000u,

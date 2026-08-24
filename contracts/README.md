@@ -66,6 +66,7 @@ its own priority when the caller PPCs in — this prevents priority inversion.
 | [cap-broker](cap-broker/) | Implemented | (monitor PD) | Capability delegation and ACL enforcement |
 | [capstore](capstore/) | Implemented | (monitor PD) | Semantic capability database and audit log |
 | [event-bus](event-bus/) | Implemented | 200 | Pub/sub event routing between PDs |
+| [execsvc](execsvc/) | Implemented | 185 | Badge-isolated exact verification and allowlisted compile profiles |
 | [logsvc](logsvc/) | Implemented | (controller PD) | Structured audit logging service |
 | [memfs](memfs/) | Implemented | (controller PD) | In-memory virtual filesystem (storage.v1 ABI) |
 | [modelsvc](modelsvc/) | Implemented | (controller PD) | LLM inference proxy (OpenAI-compatible) |
@@ -111,6 +112,7 @@ To avoid collisions, opcode ranges are allocated per service:
 | 0x00B0 – 0x00BA | NetServer (OP_NET_*) |
 | 0x00C0 – 0x00C3 | CapPolicy (OP_CAP_POLICY_*) |
 | 0x00E0 | FaultHandler extended (OP_FAULT_POLICY_SET) |
+| 0x00E4 – 0x00E5 | ExecSvc exact verification and profiled execution |
 | 0x0100 – 0x010B | MsgBus (MSGBUS_OP_*) |
 | 0x0200 – 0x0206 | CapStore (CAPSTORE_OP_*) |
 | 0x0300 – 0x0304 | LogSvc (LOGSVC_OP_*) |

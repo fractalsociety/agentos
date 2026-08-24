@@ -88,23 +88,40 @@ native harness now parses `memory_write` and `memory_read` actions, invokes the
 AgentFS capability backend, and returns each observation to ModelSvc in a
 bounded multi-step loop.
 
-The ExecServer verification PD owns a fourth 4 MiB arena with 48 KiB
-badge-selected client windows. It has no ModelCap, MemoryCap, ToolCap, or
-NetCap. For a `verify` action the trusted harness reads the requested artifact
-through MemoryCap, copies that snapshot and the expected result into its
-ExecCap window, and requires a zero exit code before accepting a task marked
-`HARNESS_TASK_REQUIRE_TEST`. Exact-byte verification is the first deployed
-backend; compiling or executing repository tests remains the next backend.
+ExecSvc owns a fourth 4 MiB arena with 48 KiB badge-selected client windows.
+It has no ModelCap, MemoryCap, ToolCap, or NetCap. For a `verify` action the
+trusted harness reads the requested artifact through MemoryCap, copies that
+snapshot and the expected result into its ExecCap window, and requires a zero
+exit code before accepting a task marked `HARNESS_TASK_REQUIRE_TEST`.
+
+ExecSvc also implements `RUN_PROFILE`, whose request contains an immutable
+profile ID rather than a command string or argv. The deployed `C11_COMPILE`
+profile sends at most 24 KiB of source to a shared `exec_transport` PD and
+receives at most 16 KiB of diagnostics. That PD alone owns a dedicated VirtIO
+console on bus.8; bus.8 occupies a separate 4 KiB physical MMIO page from the
+model and network devices. The host proxy invokes `clang` with a fixed
+compile-only argv, no shell, an empty temporary working directory, `-nostdinc`,
+a conservative ban on preprocessor directives, a timeout, bounded output, and
+Linux CPU/address-space/file-descriptor limits. An unknown profile, wrong
+service badge, cross-worker offset, overlapping source/output range, missing
+transport, or oversized payload is rejected.
+
+The native harness exposes this as
+`{"action":"test","path":"...","profile":"c11_compile"}`. A nonzero
+compiler exit becomes a model observation so the agent can edit and retry;
+`final` remains denied until a later profile run exits zero.
 
 This is now a genuine, bounded native coding-agent loop rather than only a
 deterministic planner demo. An authenticated official Codex process has driven
-the on-target harness through `memory_write`, AgentFS mutation, `verify`, an
-ExecCap-protected exact-byte check, and `final`. It is not yet a general-purpose
-Codex replacement: external MCP providers and repository indexing are not
-wired to ToolSvc, ExecServer does not yet compile or execute allowlisted
-commands, and the monitor's dynamic CapabilityBroker records policy metadata
-without performing CNode mint/delete/revoke operations. The built-in
-`agentos-smoke-coder` remains only the deterministic hermetic-test model.
+the on-target harness through `memory_write`, AgentFS mutation, a real C11
+compiler profile through ExecCap, observation of compiler success, and
+`final`. It is not yet a general-purpose Codex replacement: the deployed
+profile validates one bounded C translation unit rather than building a
+repository or executing tests; external MCP providers and repository indexing
+are not wired to ToolSvc; and the monitor's dynamic CapabilityBroker records
+policy metadata without performing CNode mint/delete/revoke operations. The
+built-in `agentos-smoke-coder` remains only the deterministic hermetic-test
+model.
 
 ## Shared services and worker memory
 
@@ -146,22 +163,25 @@ memory independently of worker count. The native worker still has no NetCap or
 credential; the heavier model client belongs to shared ModelSvc infrastructure
 rather than being duplicated into each worker.
 
-The native live target gate passed on 2026-08-24. The AArch64 seL4 worker sent
+The expanded native live target gate passed on 2026-08-24. The AArch64 seL4 worker sent
 three ModelCap requests through ModelSvc and NetServer to a dedicated
 `model_transport` protection domain. That PD alone owns the model VirtIO
 console and maps ModelSvc's service-private transport arena; the worker has no
 transport cap, NetCap, credential, or host socket. The host proxy forwarded the
 bounded JSON frames to one already-authenticated official Codex process. Codex
-returned `memory_write(src/live.txt, "live-agentos\\n")`, then
-`verify(src/live.txt, "live-agentos\\n")`, observed exit code zero, and only
-then returned `final`. The live VM suite passed 35/35; the credential-free
-hermetic suite passed 34/34.
+returned `memory_write(src/live.c, "int agentos_answer(void) { ... }")`, then
+`test(src/live.c, c11_compile)`. ExecSvc validated the worker partition and
+profile, the distinct execution transport invoked the real host compiler, and
+Codex received `compile: ok` before returning `final`. The live VM suite passed
+37/37; the credential-free hermetic suite passed 36/36.
 
-This dedicated console is an honest intermediate transport, not a claim of
-native TCP or Headscale support. The current lwIP shim does not provide a real
+These dedicated model and execution consoles are honest intermediate
+transports, not a claim of native TCP, a native compiler, repository-wide test
+execution, or Headscale support. The current lwIP shim does not provide a real
 packet path, so native Headscale-ready networking and device enrollment remain
-open work. The transport does prove the intended authority graph without
-placing the model client or its credentials in every worker.
+open work. The transports prove the intended authority graph without placing
+the model client, compiler process, credentials, or host sockets in every
+worker.
 
 In another terminal, enable the opt-in live target assertion:
 
@@ -184,18 +204,18 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 ```
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
-AgentFS, ExecServer, and the model-transport PD passed all 34 hermetic target
-assertions. Host monotonic timestamps measured 479.54 ms from QEMU spawn to
-root-task readiness, a 4.28 ms cold native planner turn, and 12 warm turns with
-0.155 ms p50 and 0.495 ms p95. ModelSvc cached queries measured 0.048 ms p50
-and 0.394 ms p95. The worker reported 270,336 bytes of private committed memory
+AgentFS, ExecSvc, and both transport PDs passed all 37 live target assertions.
+Host monotonic timestamps measured 446.34 ms from QEMU spawn to root-task
+readiness, a 3.88 ms cold native planner turn, and 12 warm turns with 0.147 ms
+p50 and 0.480 ms p95. ModelSvc cached queries measured 0.044 ms p50 and
+0.372 ms p95. The worker reported 274,432 bytes of private committed memory
 and 196,608 bytes of shared client mappings under its 64 MiB private limit.
 These are QEMU/host-arrival measurements, not bare-metal cycle counts.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service
 PDs now use a 20 ms/100 ms interactive class; the repeated warm-turn p95 fell
-to sub-millisecond latency in subsequent runs. The 270,336-byte bootstrap is
+to sub-millisecond latency in subsequent runs. The 274,432-byte bootstrap is
 intentionally below the mature 20 MiB target floor; future context, overlay,
 and tool state must remain below the 150 MiB ceiling rather than padding the
 worker.

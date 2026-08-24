@@ -14,9 +14,12 @@ static const char *model_reply;
 static uint32_t model_status;
 static bool model_echo_after_first;
 static uint32_t memory_calls;
+static const char *memory_next;
 static char memory_path[AGENTFS_PATH_MAX];
 static char memory_content[HARNESS_TOOL_SCRATCH_CAP];
 static uint32_t exec_calls;
+static uint32_t test_calls;
+static bool test_fail_first;
 
 static const char *latest_observation(const char *prompt, uint32_t prompt_len,
                                       uint32_t *observation_len)
@@ -113,11 +116,12 @@ static uint32_t fake_memory(bool write, const char *path, uint32_t path_len,
     assert(content_len + 1u <= sizeof(memory_content));
     memcpy(memory_content, content, content_len);
     memory_content[content_len] = '\0';
-    static const char next[] =
-        "{\"action\":\"final\",\"summary\":\"edit-written\"}";
-    assert(sizeof(next) <= output_capacity);
-    memcpy(output, next, sizeof(next));
-    *output_len = sizeof(next) - 1u;
+    const char *next = memory_next != NULL ? memory_next
+        : "{\"action\":\"final\",\"summary\":\"edit-written\"}";
+    uint32_t next_len = (uint32_t)strlen(next);
+    assert(next_len + 1u <= output_capacity);
+    memcpy(output, next, next_len + 1u);
+    *output_len = next_len;
     return HARNESS_OK;
 }
 
@@ -133,6 +137,37 @@ static uint32_t fake_exec(const char *actual, uint32_t actual_len,
         && memcmp(actual, expected, actual_len) == 0 ? 0 : 1;
     static const char next[] =
         "{\"action\":\"final\",\"summary\":\"edit-verified\"}";
+    assert(sizeof(next) <= output_capacity);
+    memcpy(output, next, sizeof(next));
+    *output_len = sizeof(next) - 1u;
+    return HARNESS_OK;
+}
+
+static uint32_t fake_test(uint32_t profile_id,
+                          const char *source, uint32_t source_len,
+                          int32_t *exit_code,
+                          char *output, uint32_t output_capacity,
+                          uint32_t *output_len, void *ctx)
+{
+    (void)ctx;
+    assert(profile_id == EXECSVC_PROFILE_C11_COMPILE);
+    static const char expected[] = "int answer(void) { return 42; }\n";
+    test_calls++;
+    if (test_fail_first && test_calls == 1u) {
+        *exit_code = 1;
+        static const char repair[] =
+            "{\"action\":\"memory_write\",\"path\":\"src/answer.c\","
+            "\"content\":\"int answer(void) { return 42; }\\n\"}";
+        assert(sizeof(repair) <= output_capacity);
+        memcpy(output, repair, sizeof(repair));
+        *output_len = sizeof(repair) - 1u;
+        return HARNESS_OK;
+    }
+    assert(source_len == sizeof(expected) - 1u);
+    assert(memcmp(source, expected, source_len) == 0);
+    *exit_code = 0;
+    static const char next[] =
+        "{\"action\":\"final\",\"summary\":\"compile-verified\"}";
     assert(sizeof(next) <= output_capacity);
     memcpy(output, next, sizeof(next));
     *output_len = sizeof(next) - 1u;
@@ -168,11 +203,75 @@ static void reset(uint32_t installed_caps)
     model_status = HARNESS_OK;
     model_echo_after_first = false;
     memory_calls = 0u;
+    memory_next = NULL;
     exec_calls = 0u;
+    test_calls = 0u;
+    test_fail_first = false;
     memory_path[0] = '\0';
     memory_content[0] = '\0';
     harness_runtime_init(arena, sizeof(arena), installed_caps, 7u,
                          fake_model, NULL);
+}
+
+static void test_compile_action_reads_agentfs_and_uses_profiled_exec(void)
+{
+    struct harness_reply_submit submit;
+    struct harness_reply_result result;
+    reset(HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    static const char source[] = "int answer(void) { return 42; }\n";
+    memcpy(memory_content, source, sizeof(source));
+    model_reply = "{\"action\":\"test\",\"path\":\"src/answer.c\","
+                  "\"profile\":\"c11_compile\"}";
+    model_echo_after_first = true;
+    harness_runtime_set_memory_backend(fake_memory, NULL);
+    harness_runtime_set_test_backend(fake_test, NULL);
+    struct harness_req_submit req = request(
+        HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    req.task_flags = HARNESS_TASK_REQUIRE_TEST;
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_OK);
+    assert(strcmp((char *)arena + req.result_offset, "compile-verified") == 0);
+    assert(strcmp(memory_path, "src/answer.c") == 0);
+    assert(test_calls == 1u);
+    assert(harness_runtime_result(req.task_id, &result) == HARNESS_OK);
+    assert(result.memory_ops == 1u);
+    assert(result.exec_calls == 1u);
+    assert(result.verification_exit_code == 0);
+
+    reset(HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY);
+    model_reply = "{\"action\":\"test\",\"path\":\"src/answer.c\","
+                  "\"profile\":\"c11_compile\"}";
+    harness_runtime_set_memory_backend(fake_memory, NULL);
+    req = request(HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY);
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_ERR_CAP_DENIED);
+    assert(test_calls == 0u);
+}
+
+static void test_failed_compile_is_observed_and_can_be_repaired(void)
+{
+    struct harness_reply_submit submit;
+    struct harness_reply_result result;
+    reset(HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    memcpy(memory_content, "int answer(void) { return ; }\n",
+           sizeof("int answer(void) { return ; }\n"));
+    model_reply = "{\"action\":\"test\",\"path\":\"src/answer.c\","
+                  "\"profile\":\"c11_compile\"}";
+    model_echo_after_first = true;
+    test_fail_first = true;
+    memory_next = "{\"action\":\"test\",\"path\":\"src/answer.c\","
+                  "\"profile\":\"c11_compile\"}";
+    harness_runtime_set_memory_backend(fake_memory, NULL);
+    harness_runtime_set_test_backend(fake_test, NULL);
+    struct harness_req_submit req = request(
+        HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC);
+    req.task_flags = HARNESS_TASK_REQUIRE_TEST;
+    assert(harness_runtime_submit(&req, &submit) == HARNESS_OK);
+    assert(strcmp((char *)arena + req.result_offset, "compile-verified") == 0);
+    assert(test_calls == 2u);
+    assert(harness_runtime_result(req.task_id, &result) == HARNESS_OK);
+    assert(result.model_calls == 4u);
+    assert(result.memory_ops == 3u);
+    assert(result.exec_calls == 2u);
+    assert(result.verification_exit_code == 0);
 }
 
 static void test_verify_reads_memory_and_requires_exec_success(void)
@@ -361,6 +460,8 @@ int main(void)
     test_tool_action_uses_distinct_capability_and_returns_to_model();
     test_memory_write_uses_memory_cap_and_returns_to_model();
     test_verify_reads_memory_and_requires_exec_success();
+    test_compile_action_reads_agentfs_and_uses_profiled_exec();
+    test_failed_compile_is_observed_and_can_be_repaired();
     test_protocol_and_backend_failures_are_reported();
     test_verification_requires_exec_cap();
     test_shared_memory_is_not_charged_per_worker();

@@ -48,16 +48,16 @@
 
 /* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (26u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (27u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
-#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (26u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (26u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #else
-#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
@@ -317,9 +317,10 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 185u,
             .self_svc_id    = SVC_ID_EXEC_SERVER,
-            .init_ep_count  = 1u,
+            .init_ep_count  = 2u,
             .init_eps = {
                 { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
+                { SVC_ID_EXEC_TRANSPORT, PD_CNODE_SLOT_EXEC_TRANSPORT_EP },
             },
         },
 
@@ -619,6 +620,7 @@ const system_desc_t system_desc_aarch64 = {
          *   EventBus   ch=MONITOR_CH_EVENTBUS(1)  -> slot 75
          *   serial_pd  ch=CH_SERIAL_PD(44)        -> slot 118
          *   log_drain  ch=CH_LOG_DRAIN(55)        -> slot 129
+         *   ExecSvc raw capability                 -> slot 200
          * cnode_size_bits=9 (512 slots) covers those high slot indices. */
         {
             .name           = "test_runner",
@@ -636,7 +638,7 @@ const system_desc_t system_desc_aarch64 = {
             .self_svc_id    = 0u,
             .init_ep_count  = 8u,
             .init_eps = {
-                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_EXEC_SERVER, 200u }, /* raw ExecSvc contract cap       */
                 { SVC_ID_EVENTBUS,   75u  },   /* 74 + MONITOR_CH_EVENTBUS(1) */
                 { SVC_ID_SERIAL,     118u },   /* 74 + CH_SERIAL_PD(44)       */
                 { SVC_ID_LOG_DRAIN,  129u },   /* 74 + CH_LOG_DRAIN(55)       */
@@ -658,6 +660,23 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 8u,
             .priority       = 210u,
             .self_svc_id    = SVC_ID_MODEL_TRANSPORT,
+            .init_ep_count  = 2u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+            },
+        },
+
+        /* Shared execution bridge. It owns only its dedicated bus.8 console,
+         * the ExecSvc arena, and logging/nameserver caps. ExecSvc is its sole
+         * caller; native workers never receive this endpoint or device cap. */
+        {
+            .name           = "exec_transport",
+            .elf_path       = "exec_transport.elf",
+            .stack_size     = 0x8000u,
+            .cnode_size_bits = 8u,
+            .priority       = 210u,
+            .self_svc_id    = SVC_ID_EXEC_TRANSPORT,
             .init_ep_count  = 2u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
