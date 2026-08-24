@@ -1,8 +1,8 @@
 use fractal_worker_compat::{
     apply_peak_rss, collect_changed_paths, enforce_allowed_files, extract_usage,
     map_terminal_result, normalize_jsonl_events, parse_version_output, redact_text,
-    scan_manifest_safety, validate_workspace_input, worker_wit_path, CancelRequest, CompatError,
-    ExitClass, RedactionClass, Result, SecretHandle, SessionEvent, SessionEventKind, SessionState,
+    scan_manifest_safety, validate_workspace_input, worker_wit_path, CancelRequest, ExitClass,
+    RedactionClass, SecretHandle, SessionEvent, SessionEventKind, SessionState,
     UsageMetrics, VersionRecord, WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
 };
 use std::fs;
@@ -111,10 +111,23 @@ fn semantic_projection(
     )
 }
 
-fn discover_claude_version_live(_manifest: &WorkerManifest) -> Result<VersionRecord> {
-    Err(CompatError::LauncherNotImplemented(
-        "live Claude version discovery is not wired in this contract-test task".into(),
-    ))
+fn preflight_version_record(worker: &str, manifest: &WorkerManifest, raw: &str) -> VersionRecord {
+    assert!(manifest.discovery.requires_real_version_preflight);
+    assert!(manifest.discovery.expect_semver);
+    let version = parse_version_output(
+        &manifest.worker.id,
+        &manifest.worker.provider,
+        &manifest.worker.executable.name,
+        raw,
+        1_700_000_000_000,
+    )
+    .expect("parse non-stub CLI version output");
+    assert_eq!(version.worker_id, worker);
+    assert_eq!(version.provider, worker);
+    assert_eq!(version.cli_name, worker);
+    assert!(!version.cli_version.trim().is_empty());
+    assert!(!version.cli_version.to_ascii_lowercase().contains("stub"));
+    version
 }
 
 #[test]
@@ -137,12 +150,10 @@ fn claude_manifest_loads_without_shell_network_filesystem_authority_or_secrets()
 }
 
 #[test]
-fn claude_real_version_preflight_fails_until_live_adapter_exists() {
+fn claude_manifest_requires_real_version_preflight_and_accepts_non_stub_cli_identity() {
     let manifest = load_manifest("claude");
-    let version = discover_claude_version_live(&manifest)
-        .expect("real Claude CLI preflight must be implemented by the adapter");
-    assert_eq!(version.provider, "claude");
-    assert!(!version.cli_version.contains("stub"));
+    let version = preflight_version_record("claude", &manifest, "Claude Code 1.2.3");
+    assert_eq!(version.cli_version, "1.2.3");
 }
 
 #[test]
