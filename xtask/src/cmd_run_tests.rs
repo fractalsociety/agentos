@@ -173,7 +173,13 @@ pub fn parse_perf_records(output: &str) -> Result<Vec<TargetPerfRecord>> {
 pub fn parse_agent_resource_records(output: &str) -> Result<Vec<AgentResourceRecord>> {
     output
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("AGENT_RESOURCE_JSON:"))
+        // Several protection domains share the debug UART. A concurrent writer
+        // can prefix a valid record before the resource marker reaches the host,
+        // so locate the self-delimiting marker instead of requiring column zero.
+        .filter_map(|line| {
+            line.find("AGENT_RESOURCE_JSON:")
+                .map(|start| &line[start + 20..])
+        })
         .map(|json| serde_json::from_str(json).context("invalid AGENT_RESOURCE_JSON record"))
         .collect()
 }
@@ -774,6 +780,21 @@ mod tests {
         assert_eq!(resources[0].worker, "codex_harness");
         assert_eq!(resources[0].private_committed_bytes, 241_664);
         assert_eq!(resources[0].shared_mapped_bytes, 49_152);
+    }
+
+    #[test]
+    fn parser_accepts_agent_resource_json_after_concurrent_uart_prefix() {
+        let resources = parse_agent_resource_records(concat!(
+            "[cc_pd] partial output AGENT_RESOURCE_JSON:",
+            "{\"schema\":1,\"worker\":\"codex_harness\",",
+            "\"private_committed_bytes\":274432,\"private_limit_bytes\":67108864,",
+            "\"shared_mapped_bytes\":196608,\"target_low_bytes\":20971520,",
+            "\"target_high_bytes\":157286400,\"shared_components\":55}\n",
+        ))
+        .unwrap();
+        assert_eq!(resources.len(), 1);
+        assert_eq!(resources[0].private_committed_bytes, 274_432);
+        assert_eq!(resources[0].shared_components, 55);
     }
 
     #[test]
