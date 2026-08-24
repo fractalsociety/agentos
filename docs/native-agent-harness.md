@@ -131,11 +131,20 @@ compiler profile through ExecCap, observation of compiler success, and
 `final`. A second authenticated task repaired a tracked fixture through its
 AgentFS overlay, invoked the capability-scoped managed repository suite, saw
 `repository tests: ok`, and only then returned `final`. It is not yet a
-general-purpose Codex replacement: repository change sets are capped at 24 KiB,
-external MCP providers and repository indexing are not
-wired to ToolSvc, and the monitor's dynamic CapabilityBroker records policy
-metadata without performing CNode mint/delete/revoke operations. The built-in
+general-purpose Codex replacement: repository change sets are capped at 24 KiB
+and external MCP providers are not yet wired to ToolSvc. The built-in
 `agentos-smoke-coder` remains only the deterministic hermetic-test model.
+
+Runtime authority is now enforced by actual CSpace operations rather than by a
+capability bitmap alone. Root gives the controller a private authority CNode
+and call-only source capabilities for the five harness capability classes; it
+does not delegate the root CNode or accept caller-selected source/destination
+slots. CapBroker performs `seL4_CNode_Mint` and `seL4_CNode_Delete`, then sends
+the harness a controller-authenticated, strictly monotonic authority epoch.
+The harness boots without ToolCap. The target suite mints ToolCap, completes a
+ModelSvc→ToolSvc→ModelSvc turn, deletes ToolCap, proves that a tool-requiring
+task is denied, re-mints ToolCap, and resumes the coding workflow. A failed
+harness synchronization causes the broker to roll back the kernel operation.
 
 ## Shared services and worker memory
 
@@ -199,7 +208,9 @@ observations and never a repository root, argv, shell, or host filesystem
 handle. ToolSvc checks distinct immutable badge rights for `agent.echo`,
 `repo.search`, and `repo.read`; its own ExecCap contains only the fixed search
 and read profiles. With on-target overlay-export isolation checks, the live VM
-suite passed 41/41; the credential-free hermetic suite passed 39/39.
+suite passed 41/41; the credential-free hermetic suite passed 39/39. The
+subsequent runtime-authority suite passed 42/42 on real seL4, including kernel
+ToolCap mint/delete/re-mint and epoch enforcement.
 
 These dedicated model and execution consoles are honest intermediate
 transports, not a claim of native TCP, a native compiler, arbitrary repository
@@ -230,7 +241,7 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
 ```
 
 The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
-AgentFS, ExecSvc, and both transport PDs passed all 41 live target assertions.
+AgentFS, ExecSvc, and both transport PDs passed all 42 target assertions.
 The exact detached clean-worktree repository-discovery run measured 445.583 ms
 from QEMU spawn to root-task readiness, a 4.136 ms cold native planner turn,
 and 12 warm turns with 0.160 ms p50 and 0.463 ms p95. ModelSvc cached queries
@@ -241,6 +252,14 @@ its shared-component bitmap now includes the singleton repository index.
 Host-side proxy memory is shared system infrastructure and is intentionally not
 reported as worker-private memory. These are QEMU/host-arrival measurements,
 not bare-metal cycle counts.
+
+The clean-worktree authority run retained the same resource contract:
+274,432 bytes private committed, 196,608 bytes shared mapped, a 64 MiB default
+private limit, a 20 MiB mature-worker target floor, and a 150 MiB hard ceiling.
+It reported 55 shared-component bits and completed all 12 warm turns without an
+error. Dynamic authority therefore does not duplicate the model client,
+repository index, MCP/tool connections, semantic cache, execution graph, or
+artifact storage inside the worker.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service
