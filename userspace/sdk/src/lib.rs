@@ -25,13 +25,21 @@ pub mod context;
 pub mod cuda;
 pub mod daily_root;
 pub mod event;
-pub mod fractalos_capabilities;
+
+/// Canonical Fractal control-plane surface, generated from
+/// `interfaces/wit/fractalos-capabilities-v1/capabilities.wit`.
+#[cfg(feature = "wit-bindings")]
+pub mod fractal;
 
 #[cfg(feature = "wit-bindings")]
 pub mod wit_generated {
     wit_bindgen::generate!({
         path: "../../interfaces/wit/fractalos-capabilities-v1",
         world: "agent-runtime-v1",
+        // The WIT world must stay usable from no_std seL4 PDs: gate the
+        // generated `std::error::Error` implementations behind this crate's
+        // own `std` feature instead of assuming `std` is linked.
+        std_feature,
     });
 }
 pub mod identity;
