@@ -45,6 +45,7 @@
 #include "../../contracts/execsvc/interface.h"
 #include "../../contracts/toolsvc/interface.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
 #include "../../kernel/agentos-root-task/include/cap_authority.h"
@@ -370,6 +371,78 @@ static void target_agent_harness_contract(void)
     else
         _tf_fail_point("AgentHarness exports task and capability metrics",
                        "result metrics were incomplete");
+}
+
+static void target_agent_task_gateway_denial(void)
+{
+    static const char prompt[] = "task data cannot grant network authority";
+    struct agent_task_req_begin begin = {
+        .interface_version = AGENT_TASK_INTERFACE_VERSION,
+        .required_caps = HARNESS_CAP_MODEL | HARNESS_CAP_NETWORK,
+        .task_flags = 0u,
+        .max_steps = 4u,
+        .prompt_len = sizeof(prompt) - 1u,
+        .result_capacity = 256u,
+    };
+    sel4_msg_t req, rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_AGENT_TASK_BEGIN;
+    req.length = sizeof(begin);
+    tr_copy(req.data, &begin, sizeof(begin));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+
+    struct agent_task_reply_begin begin_reply;
+    tr_zero(&begin_reply, sizeof(begin_reply));
+    if (rep.length >= sizeof(begin_reply))
+        tr_copy(&begin_reply, rep.data, sizeof(begin_reply));
+    bool begin_ok = rep.opcode == AGENT_TASK_OK
+        && begin_reply.status == AGENT_TASK_OK
+        && (begin_reply.available_caps & HARNESS_CAP_NETWORK) == 0u;
+    if (begin_ok)
+        _tf_ok("Controller accepts task data without treating it as authority");
+    else
+        _tf_fail_point(
+            "Controller accepts task data without treating it as authority",
+            "task gateway begin failed or NetworkCap appeared");
+
+    uint32_t offset = 0u;
+    while (begin_ok && offset < sizeof(prompt) - 1u) {
+        struct agent_task_req_write write;
+        tr_zero(&write, sizeof(write));
+        write.task_id = begin_reply.task_id;
+        write.offset = offset;
+        write.len = (sizeof(prompt) - 1u) - offset;
+        if (write.len > AGENT_TASK_CHUNK_BYTES)
+            write.len = AGENT_TASK_CHUNK_BYTES;
+        tr_copy(write.data, prompt + offset, write.len);
+        tr_zero(&req, sizeof(req));
+        req.opcode = MSG_AGENT_TASK_WRITE;
+        req.length = sizeof(write);
+        tr_copy(req.data, &write, sizeof(write));
+        sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+        begin_ok = rep.opcode == AGENT_TASK_OK;
+        offset += write.len;
+    }
+
+    struct agent_task_req_run run = {.task_id = begin_reply.task_id};
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_AGENT_TASK_RUN;
+    req.length = sizeof(run);
+    tr_copy(req.data, &run, sizeof(run));
+    sel4_call((seL4_CPtr)TARGET_CONTROLLER_CAP, &req, &rep);
+    struct agent_task_reply_run run_reply;
+    tr_zero(&run_reply, sizeof(run_reply));
+    if (rep.length >= sizeof(run_reply))
+        tr_copy(&run_reply, rep.data, sizeof(run_reply));
+    if (begin_ok && rep.opcode == AGENT_TASK_OK
+        && run_reply.status == AGENT_TASK_OK
+        && run_reply.harness_status == HARNESS_ERR_CAP_DENIED
+        && run_reply.used_caps == 0u)
+        _tf_ok("Native task gateway cannot manufacture a missing NetworkCap");
+    else
+        _tf_fail_point(
+            "Native task gateway cannot manufacture a missing NetworkCap",
+            "controller transport failed or harness accepted missing authority");
 }
 
 static void target_toolsvc_contract(void)
@@ -1299,6 +1372,7 @@ void target_contract_runner_main(void)
     /* Prove the native agent path first.  A failure in an unrelated legacy
      * contract must not hide whether the booted image can run an agent turn. */
     target_agent_harness_contract();
+    target_agent_task_gateway_denial();
     target_toolsvc_contract();
     target_agentfs_workspace_contract();
     target_execsvc_profile_contract();

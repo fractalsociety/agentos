@@ -75,6 +75,7 @@ static int test_cc_relay_opcodes(void)
     CHECK(MSG_CC_TRACE_STOP         == 0x2617u);
     CHECK(MSG_CC_TRACE_QUERY        == 0x2618u);
     CHECK(MSG_CC_TRACE_DUMP         == 0x2619u);
+    CHECK(MSG_CC_AGENT_RUN          == 0x261Au);
 
     /* All in 0x2600 range */
     CHECK((MSG_CC_LIST_GUESTS        & 0xFF00u) == 0x2600u);
@@ -106,7 +107,7 @@ static int test_cc_relay_opcodes(void)
         MSG_CC_RESTORE, MSG_CC_LOG_STREAM, MSG_CC_CREATE_GUEST,
         MSG_CC_FAULT_INJECT, MSG_CC_SUSPEND_GUEST, MSG_CC_RESUME_GUEST,
         MSG_CC_DESTROY_GUEST, MSG_CC_TRACE_START, MSG_CC_TRACE_STOP,
-        MSG_CC_TRACE_QUERY, MSG_CC_TRACE_DUMP,
+        MSG_CC_TRACE_QUERY, MSG_CC_TRACE_DUMP, MSG_CC_AGENT_RUN,
     };
     size_t n = sizeof(ops) / sizeof(ops[0]);
     for (size_t i = 0; i < n; i++)
@@ -131,6 +132,7 @@ static int test_cc_error_codes(void)
     CHECK(CC_ERR_BAD_HANDLE    == 6);
     CHECK(CC_ERR_BAD_DEV_TYPE  == 7);
     CHECK(CC_ERR_RELAY_FAULT   == 8);
+    CHECK(CC_ERR_AGENT_TASK    == 9);
 
     PASS("cc_error_codes");
 }
@@ -388,6 +390,12 @@ static int test_cc_req_reply_sizes(void)
     CHECK(sizeof(struct cc_reply_trace_query)     == 4 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_req_trace_dump)        == 1 * sizeof(uint32_t));
     CHECK(sizeof(struct cc_reply_trace_dump)      == 4 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_agent_run_request)     == 5 * sizeof(uint32_t));
+    CHECK(sizeof(struct cc_agent_run_result)      == 88u);
+    CHECK(CC_AGENT_PROMPT_MAX + sizeof(struct cc_agent_run_request)
+          == CC_MAX_CMD_BYTES);
+    CHECK(CC_AGENT_RESULT_MAX + sizeof(struct cc_agent_run_result)
+          == CC_MAX_RESP_BYTES);
 
     PASS("cc_req_reply_sizes");
 }

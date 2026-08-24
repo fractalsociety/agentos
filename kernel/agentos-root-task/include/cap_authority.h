@@ -10,6 +10,7 @@
 #include <stdint.h>
 
 #define CONTROLLER_RIGHT_CAP_ADMIN       (1u << 0)
+#define CONTROLLER_RIGHT_AGENT_TASK      (1u << 1)
 
 #define CAPBROKER_AUTH_SELF_CNODE_SLOT   224u
 #define CAPBROKER_AUTH_HARNESS_CNODE_SLOT 225u

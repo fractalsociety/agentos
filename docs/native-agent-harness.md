@@ -191,6 +191,35 @@ offset validation, and per-worker object capabilities.
 
 ## Reproducible QEMU measurement
 
+The supported one-command operator path builds AgentOS, validates the existing
+official Codex login, boots the seL4 image and its bounded transport proxies,
+waits for the truthful boot marker, and submits one task through
+`agentctl -> CC-PD -> Controller -> native harness`:
+
+```sh
+tools/run_native_agent.py --prompt \
+  'Create src/live.c containing exactly int agentos_live(void){return 42;} then compile src/live.c with the fixed c11_compile profile. Only return final after the compile succeeds.'
+```
+
+Use `--prompt-file` for a longer task. `--required-caps` is a requirement
+declaration, not authority: Controller refreshes the installed capability set
+from CapBroker when `RUN` arrives. Supplying `NetworkCap` in either the mask or
+prompt cannot manufacture a missing endpoint. The result contains the task
+state, final response, model/tool/memory/exec counters, token counts,
+verification status, private and shared worker memory, budget limits, and the
+shared-component bitmap. `AGENTOS_NATIVE_RUN` separately reports total elapsed
+time and whole-QEMU RSS/CPU so emulator overhead is not confused with private
+worker memory.
+
+The 2026-08-24 live run completed the example above through an authenticated
+official Codex backend in 26,660 ms. Codex issued three model calls, two
+AgentFS operations, and one fixed-profile ExecCap compilation before returning
+final. The worker reported 274,432 bytes private committed, 196,608 bytes
+shared mapped, and a 64 MiB private limit; the whole QEMU process used
+182,140,928 bytes RSS at completion. A second external run requested a missing
+NetworkCap and was rejected before any model, tool, memory, or exec operation
+occurred.
+
 For a live OpenAI-compatible model, keep the API credential on the host and
 run the bounded bridge. `AGENTOS_MODEL_NAME` is required because the native
 registry's `fast` route is a logical route name, not an upstream model name.
@@ -271,9 +300,9 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
   --perf-output build/agent-harness-qemu-perf.json --require-perf
 ```
 
-The latest 2026-08-24 detached clean-worktree AArch64 QEMU performance run with
+The latest 2026-08-24 AArch64 QEMU target gate with
 ModelSvc, ToolSvc, AgentFS, ExecSvc, and the model, execution, and MCP transport
-PDs passed all 45 target assertions. It measured 548.266 ms from QEMU spawn to
+PDs passed all 51 target assertions. It measured 548.266 ms from QEMU spawn to
 root-task readiness, a 4.192 ms cold native planner turn, and 12 warm turns with
 0.238 ms p50 and 0.521 ms p95. ModelSvc cached queries measured 0.057 ms p50
 and 0.376 ms p95. The structured report captured 274,432 bytes of private

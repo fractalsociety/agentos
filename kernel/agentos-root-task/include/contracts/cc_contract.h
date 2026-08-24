@@ -54,6 +54,7 @@
 
 #pragma once
 #include "../agentos.h"
+#include "agent_harness_contract.h"
 
 /* ─── Channel IDs ────────────────────────────────────────────────────────── */
 #define CC_PD_CH_CONTROLLER  CH_CC_PD
@@ -63,6 +64,35 @@
 #define CC_SESSION_TIMEOUT_TICKS  5000u  /* ~50 seconds at 100 Hz */
 #define CC_MAX_CMD_BYTES        4096u
 #define CC_MAX_RESP_BYTES       4096u
+
+/* One-shot external native-agent request. Controller performs chunking into
+ * the already mapped harness partition and supplies the authority epoch. */
+#define CC_AGENT_INTERFACE_VERSION 1u
+
+struct cc_agent_run_request {
+    uint32_t interface_version;
+    uint32_t required_caps;
+    uint32_t task_flags;
+    uint32_t max_steps;
+    uint32_t prompt_len;
+};
+
+struct cc_agent_run_result {
+    uint32_t interface_version;
+    uint32_t reserved;
+    struct harness_reply_result metrics;
+    struct harness_reply_resources resources;
+};
+
+#define CC_AGENT_PROMPT_MAX \
+    (CC_MAX_CMD_BYTES - (uint32_t)sizeof(struct cc_agent_run_request))
+#define CC_AGENT_RESULT_MAX \
+    (CC_MAX_RESP_BYTES - (uint32_t)sizeof(struct cc_agent_run_result))
+
+_Static_assert(sizeof(struct cc_agent_run_request) == 20u,
+               "CC agent request header size");
+_Static_assert(sizeof(struct cc_agent_run_result) == 88u,
+               "CC agent result header size");
 
 /* ─── Command types ──────────────────────────────────────────────────────── */
 
@@ -163,6 +193,7 @@ enum cc_error {
     CC_ERR_BAD_HANDLE       = 6,  /* guest_handle / dev_handle invalid */
     CC_ERR_BAD_DEV_TYPE     = 7,  /* dev_type not one of CC_DEV_TYPE_* */
     CC_ERR_RELAY_FAULT      = 8,  /* downstream PPC returned error */
+    CC_ERR_AGENT_TASK       = 9,  /* malformed or failed task transport */
 };
 
 /* ─── Device type constants (mirrors GUEST_DEV_* from guest_contract.h) ─── */

@@ -1,8 +1,10 @@
-//! Read-only Model Context Protocol bridge for the agentOS control plane.
+//! Narrow Model Context Protocol bridge for the agentOS control plane.
 //!
 //! The server deliberately exposes a small allowlist instead of a generic
-//! `agentctl raw` escape hatch. Codex talks JSON-RPC over stdio; this process
-//! alone connects to CC-PD's Unix socket through the audited `agentctl` client.
+//! `agentctl raw` escape hatch. Three operations are read-only; the explicitly
+//! mutating native-task operation reaches only the audited `agentctl agent-run`
+//! command. Codex talks JSON-RPC over stdio; this process alone connects to
+//! CC-PD's Unix socket.
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -86,6 +88,30 @@ fn tool_descriptor(name: &str, title: &str, description: &str, input: Value) -> 
     })
 }
 
+fn native_task_descriptor() -> Value {
+    json!({
+        "name": "agentos_run_native_task",
+        "title": "Run an AgentOS-native coding task",
+        "description": "Submit one bounded task to the capability-native AgentOS harness and return its final result and structured metrics.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "minLength": 1, "maxLength": 4076},
+                "required_caps": {"type": "integer", "minimum": 0, "maximum": 31, "default": 13},
+                "max_steps": {"type": "integer", "minimum": 1, "maximum": 128, "default": 16},
+                "require_test": {"type": "boolean", "default": false}
+            },
+            "required": ["prompt"],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "openWorldHint": false
+        }
+    })
+}
+
 fn tools_list() -> Value {
     json!({"tools": [
         tool_descriptor(
@@ -112,7 +138,8 @@ fn tools_list() -> Value {
                 "required": ["guest_handle"],
                 "additionalProperties": false
             })
-        )
+        ),
+        native_task_descriptor()
     ]})
 }
 
@@ -187,6 +214,44 @@ where
                 .filter(|value| *value <= u32::MAX as u64)
                 .ok_or_else(|| "guest_handle must be a uint32".to_string());
             handle.and_then(|value| invoke("guest-status", &[value.to_string()]))
+        }
+        "agentos_run_native_task" => {
+            let prompt = arguments
+                .get("prompt")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty() && value.len() <= 4076)
+                .ok_or_else(|| "prompt must be a 1..4076 byte string".to_string());
+            let caps = arguments
+                .get("required_caps")
+                .and_then(Value::as_u64)
+                .unwrap_or(13);
+            let max_steps = arguments
+                .get("max_steps")
+                .and_then(Value::as_u64)
+                .unwrap_or(16);
+            let require_test = arguments
+                .get("require_test")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if caps > 31 {
+                Err("required_caps must be a known uint5 capability mask".to_string())
+            } else if !(1..=128).contains(&max_steps) {
+                Err("max_steps must be in 1..128".to_string())
+            } else {
+                prompt.and_then(|prompt| {
+                    let mut args = vec![
+                        "--caps".to_string(),
+                        caps.to_string(),
+                        "--max-steps".to_string(),
+                        max_steps.to_string(),
+                    ];
+                    if require_test {
+                        args.push("--require-test".to_string());
+                    }
+                    args.push(prompt.to_string());
+                    invoke("agent-run", &args)
+                })
+            }
         }
         _ => Err(format!("unknown AgentOS tool: {name}")),
     };
@@ -279,13 +344,16 @@ mod tests {
         let response =
             handle_request(&request(2, "tools/list", json!({})), &|_, _| unreachable!()).unwrap();
         let tools = response["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 3);
-        assert!(tools
+        assert_eq!(tools.len(), 4);
+        assert!(tools[..3]
             .iter()
             .all(|tool| tool["annotations"]["readOnlyHint"] == true));
         assert!(tools
             .iter()
             .all(|tool| !tool["name"].as_str().unwrap().contains("raw")));
+        assert_eq!(tools[3]["name"], "agentos_run_native_task");
+        assert_eq!(tools[3]["annotations"]["readOnlyHint"], false);
+        assert_eq!(tools[3]["annotations"]["destructiveHint"], true);
     }
 
     #[test]
@@ -320,6 +388,38 @@ mod tests {
         )
         .unwrap();
         assert_eq!(response["result"]["isError"], true);
+    }
+
+    #[test]
+    fn native_task_tool_uses_only_the_named_agentctl_command() {
+        let response = handle_request(
+            &request(
+                5,
+                "tools/call",
+                json!({"name": "agentos_run_native_task", "arguments": {
+                    "prompt": "repair the fixture", "required_caps": 13,
+                    "max_steps": 20, "require_test": true
+                }}),
+            ),
+            &|command, args| {
+                assert_eq!(command, "agent-run");
+                assert_eq!(
+                    args,
+                    &[
+                        "--caps",
+                        "13",
+                        "--max-steps",
+                        "20",
+                        "--require-test",
+                        "repair the fixture"
+                    ]
+                );
+                Ok(json!({"ok": 0, "task_id": 9, "result": "done"}))
+            },
+        )
+        .unwrap();
+        assert_eq!(response["result"]["structuredContent"]["task_id"], 9);
+        assert_eq!(response["result"]["isError"], false);
     }
 
     #[test]

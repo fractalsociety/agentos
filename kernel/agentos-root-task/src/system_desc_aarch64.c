@@ -578,7 +578,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_VIBE_ENGINE, PD_CNODE_SLOT_VIBE_ENGINE_EP },
                 { SVC_ID_VM_MANAGER,  PD_CNODE_SLOT_VM_MANAGER_EP  },
                 /* agentos-7j5: controller EP for live MSG_AGENTPOOL_STATUS. */
-                { SVC_ID_CONTROLLER,  PD_CNODE_SLOT_CONTROLLER_EP },
+                { SVC_ID_CONTROLLER,  PD_CNODE_SLOT_CONTROLLER_EP,
+                  CONTROLLER_RIGHT_AGENT_TASK },
 #if defined(AGENTOS_FAULT_INJECT)
                 { SVC_ID_FAULT_INJECT, PD_CNODE_SLOT_FAULT_INJECT_EP },
 #endif
@@ -656,7 +657,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_AGENT_HARNESS, 131u }, /* native harness contract cap   */
                 { SVC_ID_TOOLSVC,   132u, TOOLSVC_RIGHT_ALL },
                 { SVC_ID_AGENTFS,   133u },   /* raw AgentFS contract cap       */
-                { SVC_ID_CONTROLLER, 134u, CONTROLLER_RIGHT_CAP_ADMIN },
+                { SVC_ID_CONTROLLER, 134u,
+                  CONTROLLER_RIGHT_CAP_ADMIN | CONTROLLER_RIGHT_AGENT_TASK },
             },
         },
 #endif

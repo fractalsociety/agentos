@@ -25,6 +25,7 @@
 #include "app_manager.h"
 #include "contracts/cap_broker_contract.h"
 #include "cap_authority.h"
+#include "contracts/agent_harness_contract.h"
 #include "verify.h"
 #include "monocypher.h"
 /* Forward declarations for agent_pool (no separate header yet) */
@@ -124,6 +125,7 @@ static inline void cap_broker_revoke_agent(uint32_t a, uint32_t r) { (void)a;(vo
 static inline uint32_t cap_broker_attest(uint64_t t, uint32_t n, uint32_t d) { (void)t;(void)n;(void)d; return 0; }
 
 #define CONTROLLER_RIGHT_CAP_ADMIN (1u << 0)
+#define CONTROLLER_RIGHT_AGENT_TASK (1u << 1)
 #define MSG_CAP_GRANT        0x1A01u
 #define MSG_CAP_REVOKE_GRANT 0x1A02u
 #define MSG_CAP_GRANT_STATUS 0x1A03u
@@ -138,6 +140,35 @@ struct cap_broker_req_revoke { uint32_t target_pd, cap_class; };
 struct cap_broker_req_status { uint32_t target_pd; };
 struct cap_broker_reply_runtime {
     uint32_t status, installed_caps, authority_epoch, changed;
+};
+
+/* Minimal native-harness wire definitions for the controller host test. The
+ * production build includes the authoritative contract above. */
+#define HARNESS_SHMEM_SIZE 0xC000u
+#define HARNESS_OK 0u
+#define HARNESS_ERR_NOT_FOUND 3u
+#define HARNESS_ERR_MODEL 5u
+#define HARNESS_STATE_IDLE 0u
+#define HARNESS_STATE_FAILED 5u
+struct harness_req_submit {
+    uint32_t task_id, harness_kind, required_caps, task_flags, max_steps;
+    uint32_t authority_epoch, prompt_offset, prompt_len, result_offset;
+    uint32_t result_capacity, model_id_offset, model_id_len;
+};
+struct harness_reply_submit {
+    uint32_t status, task_id, available_caps, state;
+};
+struct harness_req_task { uint32_t task_id; };
+struct harness_reply_result {
+    uint32_t status, task_id, state, result_len, model_calls, tool_calls;
+    uint32_t memory_ops, exec_calls, tokens_in, tokens_out;
+    int32_t verification_exit_code;
+    uint32_t used_caps;
+};
+struct harness_reply_resources {
+    uint32_t status, private_committed_bytes, private_limit_bytes;
+    uint32_t shared_mapped_bytes, target_low_bytes, target_high_bytes;
+    uint32_t shared_components, authority_epoch;
 };
 static uint32_t cap_broker_runtime_change(bool install, uint32_t target_pd,
                                            uint32_t cap_class,
@@ -245,6 +276,12 @@ static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 #define MSG_WORKER_RETRIEVE        0x0701u
 #define MSG_WORKER_RETRIEVE_REPLY  0x0702u
 #define MSG_AGENTPOOL_STATUS       0x1103u
+#define MSG_AGENT_TASK_BEGIN       0x2C01u
+#define MSG_AGENT_TASK_WRITE       0x2C02u
+#define MSG_AGENT_TASK_RUN         0x2C03u
+#define MSG_AGENT_TASK_RESULT      0x2C04u
+#define MSG_AGENT_TASK_METRICS     0x2C05u
+#define MSG_AGENT_TASK_RESOURCES   0x2C06u
 #define MSG_QUOTA_REVOKE           0x0B01u
 #define MSG_GPU_SUBMIT             0x0901u
 #define MSG_VMM_VCPU_SET_REGS      0x2B05u
@@ -277,6 +314,11 @@ static inline int cap_policy_vcpu_el_check(uint64_t spsr, bool aarch64) { (void)
 #define NUM_SWAP_SLOTS 4
 
 #endif /* AGENTOS_TEST_HOST */
+
+#include "agent_task_gateway.h"
+#ifndef AGENTOS_TEST_HOST
+#include "system_desc.h"
+#endif
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Memory regions (set by root-task on real hardware; zeroed in host tests)
@@ -372,6 +414,73 @@ static seL4_CPtr g_ep_net;        /* net_server endpoint      */
 static seL4_CPtr g_ep_spawn;      /* spawn_server endpoint    */
 static seL4_CPtr g_ep_appmgr;     /* app_manager endpoint     */
 static seL4_CPtr g_ep_http;       /* http_svc endpoint        */
+
+#ifdef AGENTOS_TEST_HOST
+static uint8_t g_agent_task_host_arena[HARNESS_SHMEM_SIZE];
+#endif
+
+static void controller_task_copy(void *dst, const void *src, uint32_t len)
+{
+    uint8_t *d = (uint8_t *)dst;
+    const uint8_t *s = (const uint8_t *)src;
+    for (uint32_t i = 0u; i < len; i++) d[i] = s[i];
+}
+
+static uint32_t controller_task_submit(
+    const struct harness_req_submit *req,
+    struct harness_reply_submit *reply, void *ctx)
+{
+    (void)ctx;
+#ifndef AGENTOS_TEST_HOST
+    sel4_msg_t rep = {0};
+    uint32_t status = sel4_client_call(PD_CNODE_SLOT_AGENT_HARNESS_EP,
+                                       MSG_HARNESS_SUBMIT, req, sizeof(*req),
+                                       &rep);
+    if (rep.length >= sizeof(*reply))
+        controller_task_copy(reply, rep.data, sizeof(*reply));
+    return status;
+#else
+    (void)req;
+    reply->status = HARNESS_ERR_MODEL;
+    reply->state = HARNESS_STATE_FAILED;
+    return HARNESS_ERR_MODEL;
+#endif
+}
+
+static uint32_t controller_task_metrics(
+    uint32_t task_id, struct harness_reply_result *reply, void *ctx)
+{
+    (void)ctx;
+#ifndef AGENTOS_TEST_HOST
+    struct harness_req_task req = {.task_id = task_id};
+    sel4_msg_t rep = {0};
+    uint32_t status = sel4_client_call(PD_CNODE_SLOT_AGENT_HARNESS_EP,
+                                       MSG_HARNESS_RESULT, &req, sizeof(req),
+                                       &rep);
+    if (rep.length >= sizeof(*reply))
+        controller_task_copy(reply, rep.data, sizeof(*reply));
+    return status;
+#else
+    (void)task_id;
+    (void)reply;
+    return HARNESS_ERR_NOT_FOUND;
+#endif
+}
+
+static void controller_task_authority(uint32_t *installed_caps,
+                                      uint32_t *authority_epoch, void *ctx)
+{
+    (void)ctx;
+    struct cap_broker_reply_runtime status;
+    cap_broker_runtime_status(&status);
+    *installed_caps = status.installed_caps;
+    *authority_epoch = status.authority_epoch;
+}
+
+static bool agent_task_badge(sel4_badge_t badge)
+{
+    return ((uint32_t)(uint64_t)badge & CONTROLLER_RIGHT_AGENT_TASK) != 0u;
+}
 
 /*
  * Notification capability for event_bus (used for seL4_Signal instead of
@@ -890,6 +999,146 @@ static uint32_t handle_cap_status(sel4_badge_t badge, const sel4_msg_t *req,
     return reply.status;
 }
 
+/* Native task ingress is separately authorized from CapBroker administration.
+ * The controller owns the harness arena mapping and supplies the current
+ * authority epoch; callers can declare required caps but cannot grant them. */
+static uint32_t handle_agent_task_begin(sel4_badge_t badge,
+                                        const sel4_msg_t *req,
+                                        sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct agent_task_reply_begin reply = {0};
+    if (!agent_task_badge(badge)) {
+        reply.status = AGENT_TASK_ERR_DENIED;
+    } else if (req->length != sizeof(struct agent_task_req_begin)) {
+        reply.status = AGENT_TASK_ERR_INVALID;
+    } else {
+        struct agent_task_req_begin begin;
+        controller_task_copy(&begin, req->data, sizeof(begin));
+        (void)agent_task_gateway_begin(&begin, &reply);
+    }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_agent_task_write(sel4_badge_t badge,
+                                        const sel4_msg_t *req,
+                                        sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    uint32_t status = AGENT_TASK_ERR_DENIED;
+    if (agent_task_badge(badge)) {
+        if (req->length == sizeof(struct agent_task_req_write)) {
+            struct agent_task_req_write write;
+            controller_task_copy(&write, req->data, sizeof(write));
+            status = agent_task_gateway_write(&write);
+        } else {
+            status = AGENT_TASK_ERR_INVALID;
+        }
+    }
+    controller_task_copy(rep->data, &status, sizeof(status));
+    rep->length = sizeof(status);
+    return status;
+}
+
+static uint32_t handle_agent_task_run(sel4_badge_t badge,
+                                      const sel4_msg_t *req,
+                                      sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct agent_task_reply_run reply = {0};
+    if (!agent_task_badge(badge)) {
+        reply.status = AGENT_TASK_ERR_DENIED;
+    } else if (req->length != sizeof(struct agent_task_req_run)) {
+        reply.status = AGENT_TASK_ERR_INVALID;
+    } else {
+        struct agent_task_req_run run;
+        controller_task_copy(&run, req->data, sizeof(run));
+        (void)agent_task_gateway_run(&run, &reply);
+    }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_agent_task_result(sel4_badge_t badge,
+                                         const sel4_msg_t *req,
+                                         sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct agent_task_reply_result reply = {0};
+    if (!agent_task_badge(badge)) {
+        reply.status = AGENT_TASK_ERR_DENIED;
+    } else if (req->length != sizeof(struct agent_task_req_result)) {
+        reply.status = AGENT_TASK_ERR_INVALID;
+    } else {
+        struct agent_task_req_result result;
+        controller_task_copy(&result, req->data, sizeof(result));
+        (void)agent_task_gateway_result(&result, &reply);
+    }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_agent_task_metrics(sel4_badge_t badge,
+                                          const sel4_msg_t *req,
+                                          sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct harness_reply_result reply = {0};
+    uint32_t status;
+    if (!agent_task_badge(badge)) {
+        status = AGENT_TASK_ERR_DENIED;
+        reply.status = status;
+    } else if (req->length != sizeof(struct agent_task_req_run)) {
+        status = AGENT_TASK_ERR_INVALID;
+        reply.status = status;
+    } else {
+        struct agent_task_req_run metrics;
+        controller_task_copy(&metrics, req->data, sizeof(metrics));
+        status = agent_task_gateway_metrics(metrics.task_id, &reply);
+        if (status != AGENT_TASK_OK) reply.status = status;
+    }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return status;
+}
+
+static uint32_t handle_agent_task_resources(sel4_badge_t badge,
+                                            const sel4_msg_t *req,
+                                            sel4_msg_t *rep, void *ctx)
+{
+    (void)ctx;
+    struct harness_reply_resources reply = {0};
+    uint32_t status = AGENT_TASK_ERR_DENIED;
+    if (agent_task_badge(badge)) {
+        if (req->length != 0u) {
+            status = AGENT_TASK_ERR_INVALID;
+        } else {
+#ifndef AGENTOS_TEST_HOST
+            sel4_msg_t harness_rep = {0};
+            status = sel4_client_call(PD_CNODE_SLOT_AGENT_HARNESS_EP,
+                                      MSG_HARNESS_RESOURCES, NULL, 0u,
+                                      &harness_rep);
+            if (harness_rep.length >= sizeof(reply))
+                controller_task_copy(&reply, harness_rep.data, sizeof(reply));
+#else
+            status = HARNESS_OK;
+            reply.status = HARNESS_OK;
+            reply.private_committed_bytes = 274432u;
+            reply.private_limit_bytes = 64u * 1024u * 1024u;
+            reply.shared_mapped_bytes = 196608u;
+#endif
+        }
+    }
+    if (status != HARNESS_OK) reply.status = status;
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return status;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Inbound handler: MSG_VMM_VCPU_SET_REGS
  * ─────────────────────────────────────────────────────────────────────────── */
@@ -1258,6 +1507,17 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     cap_broker_init();
     agent_pool_init();
     boot_integrity_init();
+#ifndef AGENTOS_TEST_HOST
+    agent_task_gateway_init((uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR,
+                            HARNESS_SHMEM_SIZE, controller_task_submit,
+                            controller_task_metrics, controller_task_authority,
+                            NULL);
+#else
+    agent_task_gateway_init(g_agent_task_host_arena,
+                            sizeof(g_agent_task_host_arena),
+                            controller_task_submit, controller_task_metrics,
+                            controller_task_authority, NULL);
+#endif
 
     /* ── 4. FATAL cryptographic selftest gate ───────────────────────────────────
      *
@@ -1385,6 +1645,12 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&g_srv, (uint32_t)MSG_CAP_GRANT,         handle_cap_grant,           (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_CAP_REVOKE_GRANT,  handle_cap_revoke,          (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_CAP_GRANT_STATUS,  handle_cap_status,          (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_BEGIN,  handle_agent_task_begin,     (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_WRITE,  handle_agent_task_write,     (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_RUN,    handle_agent_task_run,       (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_RESULT, handle_agent_task_result,    (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_METRICS,handle_agent_task_metrics,   (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_RESOURCES,handle_agent_task_resources,(void *)0);
 
 #ifndef AGENTOS_TEST_HOST
     /* Enter the never-returning server dispatch loop */

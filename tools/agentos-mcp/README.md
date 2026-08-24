@@ -1,9 +1,9 @@
 # Official Codex + AgentOS
 
-`agentos-mcp` is a read-only Model Context Protocol bridge from the official
-Codex CLI to a live AgentOS CC-PD. `codex-agentos` is the non-interactive
-launcher that registers that bridge for one Codex process without modifying
-the operator's global Codex configuration.
+`agentos-mcp` is a narrow Model Context Protocol bridge from an orchestrator to
+a live AgentOS CC-PD. `codex-agentos` is the non-interactive compatibility
+launcher that registers the read-only subset for one official Codex process
+without modifying the operator's global Codex configuration.
 
 The model receives three named tools:
 
@@ -11,9 +11,20 @@ The model receives three named tools:
 - `agentos_list_guests`
 - `agentos_guest_status`
 
-There is deliberately no raw-opcode, shell, mutation, or arbitrary socket
-tool. The Codex shell remains under its normal sandbox; only the separate MCP
-process can open the configured CC-PD socket.
+The server also advertises one explicitly mutating tool for trusted
+orchestrators:
+
+- `agentos_run_native_task`
+
+That operation accepts one bounded prompt and task policy, then invokes only
+the named `agentctl agent-run` command. It cannot select raw opcodes, fabricate
+capabilities, or open arbitrary sockets. The `codex-agentos` compatibility
+launcher deliberately does not allowlist this tool, preventing a recursive
+Codex-to-native-Codex loop.
+
+There is deliberately no raw-opcode, shell, or arbitrary-socket tool. The
+Codex shell remains under its normal sandbox; only the separate MCP process
+can open the configured CC-PD socket.
 
 ## Run it
 
@@ -63,6 +74,11 @@ edit only one C file, and requires the test to pass afterward.
 This is the production-capable path available now: official Codex runs on a
 supported host and treats the seL4 system as a capability-limited external
 control plane.
+
+For the capability-native V2 path, use `tools/run_native_agent.py` as described
+in `docs/native-agent-harness.md`. It boots AgentOS, keeps the authenticated
+Codex model client in shared infrastructure, and submits the task through
+CC-PD and Controller to the native harness.
 
 The pinned official AArch64 CLI also boots inside an AgentOS-managed Linux
 compatibility guest and passes its own version preflight via `cargo xtask

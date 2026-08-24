@@ -135,8 +135,8 @@ static void test_handler_table_populated(void)
 static void test_handler_count_complete(void)
 {
     setup();
-    ASSERT_EQ(controller_handler_count(), 8u,
-              "controller_main: all policy, VMM, worker, pool, and CapBroker handlers registered");
+    ASSERT_EQ(controller_handler_count(), 14u,
+              "controller_main: policy, runtime, and native task handlers registered");
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

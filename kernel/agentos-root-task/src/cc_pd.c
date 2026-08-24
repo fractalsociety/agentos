@@ -37,6 +37,7 @@
 #include "contracts/fault_inject_contract.h"
 #include "contracts/log_drain_contract.h"
 #include "contracts/agent_pool_contract.h"
+#include "contracts/agent_task_contract.h"
 #include "sel4_ipc.h"
 #include "system_desc.h"
 #include <stdint.h>
@@ -1616,6 +1617,162 @@ static void handle_trace_dump(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     rep->mr[3] = g_cc_trace_overflow;
 }
 
+static bool cc_controller_task_call(uint32_t opcode, const void *payload,
+                                    uint32_t payload_len, sel4_msg_t *reply)
+{
+    if (payload_len > SEL4_MSG_DATA_BYTES) return false;
+    sel4_msg_t request = {0};
+    request.opcode = opcode;
+    request.length = payload_len;
+    if (payload_len != 0u)
+        __builtin_memcpy(request.data, payload, payload_len);
+    sel4_call((seL4_CPtr)PD_CNODE_SLOT_CONTROLLER_EP, &request, reply);
+    return true;
+}
+
+/* Run one native harness task to completion through Controller. CC-PD never
+ * maps the harness arena and holds none of ModelCap/ToolCap/MemoryCap/ExecCap;
+ * it can only exercise its separately badged task-submission capability. */
+static void handle_agent_run(const cc_req_wire_t *req, cc_reply_wire_t *rep)
+{
+    struct cc_agent_run_request external;
+    __builtin_memcpy(&external, req->shmem, sizeof(external));
+    if (external.interface_version != CC_AGENT_INTERFACE_VERSION
+        || external.prompt_len == 0u
+        || external.prompt_len > CC_AGENT_PROMPT_MAX
+        || external.max_steps == 0u) {
+        rep->mr[0] = CC_ERR_AGENT_TASK;
+        return;
+    }
+
+    struct agent_task_req_begin begin = {
+        .interface_version = AGENT_TASK_INTERFACE_VERSION,
+        .required_caps = external.required_caps,
+        .task_flags = external.task_flags,
+        .max_steps = external.max_steps,
+        .prompt_len = external.prompt_len,
+        .result_capacity = CC_AGENT_RESULT_MAX + 1u,
+    };
+    sel4_msg_t downstream = {0};
+    if (!cc_controller_task_call(MSG_AGENT_TASK_BEGIN, &begin, sizeof(begin),
+                                 &downstream)
+        || downstream.opcode != AGENT_TASK_OK
+        || downstream.length < sizeof(struct agent_task_reply_begin)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        return;
+    }
+    struct agent_task_reply_begin begin_reply;
+    __builtin_memcpy(&begin_reply, downstream.data, sizeof(begin_reply));
+    if (begin_reply.status != AGENT_TASK_OK) {
+        rep->mr[0] = CC_ERR_AGENT_TASK;
+        return;
+    }
+
+    uint32_t offset = 0u;
+    while (offset < external.prompt_len) {
+        struct agent_task_req_write write = {0};
+        write.task_id = begin_reply.task_id;
+        write.offset = offset;
+        write.len = external.prompt_len - offset;
+        if (write.len > AGENT_TASK_CHUNK_BYTES)
+            write.len = AGENT_TASK_CHUNK_BYTES;
+        __builtin_memcpy(write.data,
+                         req->shmem + sizeof(external) + offset, write.len);
+        downstream = (sel4_msg_t){0};
+        if (!cc_controller_task_call(MSG_AGENT_TASK_WRITE, &write,
+                                     sizeof(write), &downstream)
+            || downstream.opcode != AGENT_TASK_OK) {
+            rep->mr[0] = CC_ERR_RELAY_FAULT;
+            rep->mr[1] = begin_reply.task_id;
+            return;
+        }
+        offset += write.len;
+    }
+
+    struct agent_task_req_run run = {.task_id = begin_reply.task_id};
+    downstream = (sel4_msg_t){0};
+    if (!cc_controller_task_call(MSG_AGENT_TASK_RUN, &run, sizeof(run),
+                                 &downstream)
+        || downstream.opcode != AGENT_TASK_OK
+        || downstream.length < sizeof(struct agent_task_reply_run)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = begin_reply.task_id;
+        return;
+    }
+    struct agent_task_reply_run run_reply;
+    __builtin_memcpy(&run_reply, downstream.data, sizeof(run_reply));
+
+    downstream = (sel4_msg_t){0};
+    if (!cc_controller_task_call(MSG_AGENT_TASK_METRICS, &run, sizeof(run),
+                                 &downstream)
+        || downstream.opcode != AGENT_TASK_OK
+        || downstream.length < sizeof(struct harness_reply_result)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = begin_reply.task_id;
+        return;
+    }
+    struct cc_agent_run_result result = {
+        .interface_version = CC_AGENT_INTERFACE_VERSION,
+        .reserved = 0u,
+    };
+    __builtin_memcpy(&result.metrics, downstream.data,
+                     sizeof(result.metrics));
+
+    downstream = (sel4_msg_t){0};
+    if (!cc_controller_task_call(MSG_AGENT_TASK_RESOURCES, NULL, 0u,
+                                 &downstream)
+        || downstream.opcode != HARNESS_OK
+        || downstream.length < sizeof(struct harness_reply_resources)) {
+        rep->mr[0] = CC_ERR_RELAY_FAULT;
+        rep->mr[1] = begin_reply.task_id;
+        return;
+    }
+    __builtin_memcpy(&result.resources, downstream.data,
+                     sizeof(result.resources));
+    __builtin_memcpy(rep->shmem, &result, sizeof(result));
+
+    if (run_reply.result_len > CC_AGENT_RESULT_MAX) {
+        rep->mr[0] = CC_ERR_AGENT_TASK;
+        rep->mr[1] = begin_reply.task_id;
+        return;
+    }
+    offset = 0u;
+    while (offset < run_reply.result_len) {
+        struct agent_task_req_result result_req = {
+            .task_id = begin_reply.task_id,
+            .offset = offset,
+            .max_len = AGENT_TASK_RESULT_CHUNK_BYTES,
+        };
+        downstream = (sel4_msg_t){0};
+        if (!cc_controller_task_call(MSG_AGENT_TASK_RESULT, &result_req,
+                                     sizeof(result_req), &downstream)
+            || downstream.opcode != AGENT_TASK_OK
+            || downstream.length < sizeof(struct agent_task_reply_result)) {
+            rep->mr[0] = CC_ERR_RELAY_FAULT;
+            rep->mr[1] = begin_reply.task_id;
+            return;
+        }
+        struct agent_task_reply_result chunk;
+        __builtin_memcpy(&chunk, downstream.data, sizeof(chunk));
+        if (chunk.status != AGENT_TASK_OK || chunk.chunk_offset != offset
+            || chunk.total_len != run_reply.result_len
+            || chunk.chunk_len == 0u
+            || chunk.chunk_len > run_reply.result_len - offset) {
+            rep->mr[0] = CC_ERR_AGENT_TASK;
+            rep->mr[1] = begin_reply.task_id;
+            return;
+        }
+        __builtin_memcpy(rep->shmem + sizeof(result) + offset,
+                         chunk.data, chunk.chunk_len);
+        offset += chunk.chunk_len;
+    }
+
+    rep->mr[0] = CC_OK;
+    rep->mr[1] = begin_reply.task_id;
+    rep->mr[2] = run_reply.result_len;
+    rep->mr[3] = run_reply.state;
+}
+
 /* ─── Dispatch ───────────────────────────────────────────────────────────── */
 
 static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
@@ -1656,6 +1813,7 @@ static void cc_dispatch(const cc_req_wire_t *req, cc_reply_wire_t *rep)
     case MSG_CC_TRACE_STOP:         handle_trace_stop(rep);              break;
     case MSG_CC_TRACE_QUERY:        handle_trace_query(rep);             break;
     case MSG_CC_TRACE_DUMP:         handle_trace_dump(req, rep);         break;
+    case MSG_CC_AGENT_RUN:          handle_agent_run(req, rep);          break;
 
     default:
         sel4_dbg_puts("[cc_pd] unknown opcode\n");

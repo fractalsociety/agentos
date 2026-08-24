@@ -64,6 +64,8 @@ static void usage(FILE *out)
             "  trace-stop\n"
             "  trace-query\n"
             "  trace-dump [MAX_EVENTS]\n"
+            "  agent-run [--caps MASK] [--max-steps N] [--require-test] PROMPT\n"
+            "  agent-run-file [--caps MASK] [--max-steps N] [--require-test] PATH\n"
             "  mesh [--url URL] status|nodes|users|enroll-key|expire-node ...\n"
             "  connect\n"
             "  status SESSION_ID\n"
@@ -304,6 +306,160 @@ static int cmd_trace_dump(int argc, char **argv)
     return r.mr[0] == CC_OK ? 0 : 1;
 }
 
+static void print_json_bytes(const uint8_t *data, size_t len)
+{
+    static const char hex[] = "0123456789abcdef";
+    putchar('"');
+    for (size_t i = 0; i < len; i++) {
+        uint8_t c = data[i];
+        if (c == '"' || c == '\\') {
+            putchar('\\');
+            putchar((int)c);
+        } else if (c == '\n') {
+            fputs("\\n", stdout);
+        } else if (c == '\r') {
+            fputs("\\r", stdout);
+        } else if (c == '\t') {
+            fputs("\\t", stdout);
+        } else if (c < 0x20u) {
+            fputs("\\u00", stdout);
+            putchar(hex[c >> 4u]);
+            putchar(hex[c & 0x0fu]);
+        } else {
+            putchar((int)c);
+        }
+    }
+    putchar('"');
+}
+
+static bool read_prompt_file(const char *path, uint8_t *dst, size_t cap,
+                             size_t *len)
+{
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        fprintf(stderr, "agentctl: cannot open prompt file %s: %s\n",
+                path, strerror(errno));
+        return false;
+    }
+    size_t n = fread(dst, 1u, cap, file);
+    int extra = fgetc(file);
+    bool ok = !ferror(file) && extra == EOF;
+    fclose(file);
+    if (!ok) {
+        fprintf(stderr, "agentctl: prompt file exceeds %u bytes\n",
+                (unsigned)cap);
+        return false;
+    }
+    *len = n;
+    return n != 0u;
+}
+
+static int cmd_agent_run(int argc, char **argv, bool from_file)
+{
+    uint32_t caps = HARNESS_CAP_MODEL | HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC;
+    uint32_t flags = HARNESS_TASK_ALLOW_PATCH;
+    uint32_t max_steps = 16u;
+    int i = 0;
+    while (i < argc && strncmp(argv[i], "--", 2u) == 0) {
+        if (strcmp(argv[i], "--caps") == 0 && i + 1 < argc) {
+            caps = parse_u32(argv[i + 1], "caps");
+            i += 2;
+        } else if (strcmp(argv[i], "--max-steps") == 0 && i + 1 < argc) {
+            max_steps = parse_u32(argv[i + 1], "max_steps");
+            i += 2;
+        } else if (strcmp(argv[i], "--require-test") == 0) {
+            flags |= HARNESS_TASK_REQUIRE_TEST;
+            i++;
+        } else if (strcmp(argv[i], "--no-patch") == 0) {
+            flags &= ~HARNESS_TASK_ALLOW_PATCH;
+            i++;
+        } else {
+            fprintf(stderr, "agentctl: invalid agent-run option: %s\n", argv[i]);
+            return 2;
+        }
+    }
+    if (i + 1 != argc || max_steps == 0u) return 2;
+
+    uint8_t frame[CC_MAX_CMD_BYTES];
+    memset(frame, 0, sizeof(frame));
+    uint8_t *prompt = frame + sizeof(struct cc_agent_run_request);
+    size_t prompt_len = 0u;
+    if (from_file) {
+        if (!read_prompt_file(argv[i], prompt, CC_AGENT_PROMPT_MAX,
+                              &prompt_len))
+            return 1;
+    } else {
+        prompt_len = strlen(argv[i]);
+        if (prompt_len == 0u || prompt_len > CC_AGENT_PROMPT_MAX) {
+            fprintf(stderr, "agentctl: prompt must be 1..%u bytes\n",
+                    (unsigned)CC_AGENT_PROMPT_MAX);
+            return 2;
+        }
+        memcpy(prompt, argv[i], prompt_len);
+    }
+
+    struct cc_agent_run_request request = {
+        .interface_version = CC_AGENT_INTERFACE_VERSION,
+        .required_caps = caps,
+        .task_flags = flags,
+        .max_steps = max_steps,
+        .prompt_len = (uint32_t)prompt_len,
+    };
+    memcpy(frame, &request, sizeof(request));
+
+    cc_reply_wire_t reply;
+    if (!cc_call(MSG_CC_AGENT_RUN, 0u, 0u, 0u, frame,
+                 sizeof(request) + prompt_len, &reply))
+        return 1;
+    if (reply.mr[0] != CC_OK) {
+        printf("{\"ok\":%" PRIu32 ",\"task_id\":%" PRIu32
+               ",\"transport_error\":true}\n", reply.mr[0], reply.mr[1]);
+        return 1;
+    }
+    if (reply.mr[2] > CC_AGENT_RESULT_MAX) {
+        fprintf(stderr, "agentctl: AgentOS returned an oversized result\n");
+        return 1;
+    }
+    struct cc_agent_run_result result;
+    memcpy(&result, reply.shmem, sizeof(result));
+    if (result.interface_version != CC_AGENT_INTERFACE_VERSION
+        || result.metrics.task_id != reply.mr[1]
+        || result.metrics.result_len != reply.mr[2]) {
+        fprintf(stderr, "agentctl: invalid AgentOS native-task response\n");
+        return 1;
+    }
+
+    printf("{\"ok\":%" PRIu32 ",\"task_id\":%" PRIu32
+           ",\"state\":%" PRIu32 ",\"result\":",
+           result.metrics.status, result.metrics.task_id, result.metrics.state);
+    print_json_bytes(reply.shmem + sizeof(result), result.metrics.result_len);
+    printf(",\"metrics\":{\"model_calls\":%" PRIu32
+           ",\"tool_calls\":%" PRIu32
+           ",\"memory_ops\":%" PRIu32
+           ",\"exec_calls\":%" PRIu32
+           ",\"tokens_in\":%" PRIu32
+           ",\"tokens_out\":%" PRIu32
+           ",\"verification_exit_code\":%" PRId32
+           ",\"used_caps\":%" PRIu32 "},\"resources\":{"
+           "\"private_committed_bytes\":%" PRIu32
+           ",\"private_limit_bytes\":%" PRIu32
+           ",\"shared_mapped_bytes\":%" PRIu32
+           ",\"target_low_bytes\":%" PRIu32
+           ",\"target_high_bytes\":%" PRIu32
+           ",\"shared_components\":%" PRIu32 "}}\n",
+           result.metrics.model_calls, result.metrics.tool_calls,
+           result.metrics.memory_ops, result.metrics.exec_calls,
+           result.metrics.tokens_in, result.metrics.tokens_out,
+           result.metrics.verification_exit_code, result.metrics.used_caps,
+           result.resources.private_committed_bytes,
+           result.resources.private_limit_bytes,
+           result.resources.shared_mapped_bytes,
+           result.resources.target_low_bytes,
+           result.resources.target_high_bytes,
+           result.resources.shared_components);
+    return result.metrics.status == HARNESS_OK ? 0 : 1;
+}
+
 static int cmd_mesh(int argc, char **argv)
 {
     const char *helper = getenv("AGENTCTL_MESH_HELPER");
@@ -422,6 +578,8 @@ int main(int argc, char **argv)
         return cmd_simple(MSG_CC_TRACE_QUERY, 0, 0, 0);
     }
     if (strcmp(cmd, "trace-dump") == 0) return cmd_trace_dump(n, args);
+    if (strcmp(cmd, "agent-run") == 0) return cmd_agent_run(n, args, false);
+    if (strcmp(cmd, "agent-run-file") == 0) return cmd_agent_run(n, args, true);
     if (strcmp(cmd, "mesh") == 0) return cmd_mesh(n, args);
     if (strcmp(cmd, "raw") == 0 && n >= 1) {
         return cmd_simple(parse_u32(args[0], "opcode"),

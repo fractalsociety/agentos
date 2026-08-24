@@ -254,6 +254,26 @@ No API credential is stored in the image; authenticated in-guest model work
 still requires the capability-gated network and runtime-secret handoff. The
 native capability-scoped harness remains the production target.
 
+### Run a capability-native Codex-style agent
+
+With the official Codex CLI authenticated, one command now builds and boots
+AgentOS, starts the single shared Codex-backed ModelSvc bridge, and submits a
+bounded coding task through CC-PD and Controller to the native harness:
+
+```sh
+tools/run_native_agent.py --prompt \
+  'Create src/live.c containing exactly int agentos_live(void){return 42;} then compile it with the fixed c11_compile profile.'
+```
+
+The worker contains only the native agent loop, task state, small AgentFS
+overlay, and capability handles. Model client state, repository index, MCP
+connections, semantic cache, execution graph, and artifact storage stay in
+singleton services. The command reports worker-private and shared memory,
+capability use, model/tool/memory/exec counts, tokens, verification status,
+elapsed time, and whole-QEMU resource usage. See
+[`docs/native-agent-harness.md`](docs/native-agent-harness.md) for the security
+boundary and reproducible measurements.
+
 ## Project Structure
 
 ```
@@ -315,7 +335,7 @@ below is labeled by **proof level**, not by "done / not done".
 | CC-PD host API (list/status/console) | boot-proven | Unix socket bridge at `build/cc_pd.sock`; list/status/console-drain proven by guest-login E2E |
 | Official Codex external agent loop | boot-proven | `AGENTOS_CODEX_LIVE=1 make e2e-codex-agent` requires official Codex to query a booted CC-PD through the read-only MCP bridge, edit one C file in an isolated Git worktree, and pass its test |
 | Official Codex compatibility guest | boot-proven | `cargo xtask qemu-test --guest-os codex --timeout-secs 300` boots the pinned official AArch64 CLI and requires `AGENTOS_CODEX_PREFLIGHT status=0`; authenticated in-guest inference is not yet wired |
-| Native Codex-style capability harness | boot-proven | AArch64/seL4 gate passes 45/45, including real CSpace ToolCap mint/delete/re-mint, AgentFS edits, fixed execution profiles, repository tools, and an isolated external MCP stdio provider; see `docs/native-agent-harness.md` |
+| Native Codex-style capability harness | boot-proven | AArch64/seL4 gate passes 51/51, including real CSpace capability mint/delete/re-mint, Controller task ingress, AgentFS edits, fixed execution profiles, repository tools, resource telemetry, and an isolated external MCP stdio provider; the one-command runner has completed a genuine authenticated Codex-backed compile task; see `docs/native-agent-harness.md` |
 | CC-PD snapshot relay | stubbed | Returns `CC_ERR_RELAY_FAULT` for the boot guest (snapshot not implemented) |
 | VibeOS lifecycle API (`VOS_*`) | host-tested | Contract tests build with `-DAGENTOS_TEST_HOST` (`make test-vibeos-contract`, `tests/api/test_vibeos*.c`); create/destroy/list/status logic proven on host, not on target |
 | vibe-engine WASM hot-swap | host-tested | `tests/integration/vibe_hotswap_test.c` exercises read/probe paths only; actual WASM propose+swap needs a mapped staging region (hardware-dependent) |

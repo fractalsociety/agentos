@@ -42,6 +42,7 @@ int main(void)
     const pd_desc_t *mcp_transport = find_pd("mcp_transport");
     const pd_desc_t *fault_handler = find_pd("fault_handler");
     const pd_desc_t *controller = find_pd("controller");
+    const pd_desc_t *cc = find_pd("cc_pd");
     const pd_desc_t *launcher = find_pd("init_agent");
     assert(harness != NULL);
     assert(model != NULL);
@@ -52,6 +53,7 @@ int main(void)
     assert(mcp_transport != NULL);
     assert(fault_handler != NULL);
     assert(controller != NULL);
+    assert(cc != NULL);
     assert(launcher != NULL);
 
     assert(harness->self_svc_id == SVC_ID_AGENT_HARNESS);
@@ -103,6 +105,9 @@ int main(void)
     assert(!has_service(mcp_transport, SVC_ID_EXEC_SERVER));
     assert(!has_service(mcp_transport, SVC_ID_NET_SERVER));
     assert(has_service(controller, SVC_ID_AGENT_HARNESS));
+    assert(has_service(cc, SVC_ID_CONTROLLER));
+    assert(service_badge_data(cc, SVC_ID_CONTROLLER)
+           == CONTROLLER_RIGHT_AGENT_TASK);
     assert(has_service(launcher, SVC_ID_CONTROLLER));
     assert(service_badge_data(launcher, SVC_ID_CONTROLLER)
            == CONTROLLER_RIGHT_CAP_ADMIN);

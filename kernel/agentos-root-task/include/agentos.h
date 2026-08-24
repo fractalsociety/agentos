@@ -774,6 +774,15 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_HARNESS_RESOURCES            0x2A05  /* worker-private/shared memory accounting */
 #define MSG_HARNESS_AUTHORITY_UPDATE     0x2A06  /* controller: post-CSpace authority epoch */
 
+/* Controller-owned native task gateway. Payloads are defined by
+ * contracts/agent_task_contract.h. */
+#define MSG_AGENT_TASK_BEGIN              0x2C01
+#define MSG_AGENT_TASK_WRITE              0x2C02
+#define MSG_AGENT_TASK_RUN                0x2C03
+#define MSG_AGENT_TASK_RESULT             0x2C04
+#define MSG_AGENT_TASK_METRICS            0x2C05
+#define MSG_AGENT_TASK_RESOURCES          0x2C06
+
 /* ─── AgentFS contract opcodes (0x1000) ─────────────────────────────────── */
 #define MSG_AGENTFS_READ                0x1001  /* MR1=inode MR2=offset MR3=len → actual in shmem */
 #define MSG_AGENTFS_WRITE               0x1002  /* MR1=inode MR2=offset MR3=len; data in shmem */
@@ -974,6 +983,7 @@ static inline void log_drain_write(uint32_t slot, uint32_t pd_id, const char *ms
 #define MSG_CC_TRACE_STOP               0x2617  /* → MR0=ok MR1=events_seen */
 #define MSG_CC_TRACE_QUERY              0x2618  /* → MR0=ok MR1=count MR2=bytes MR3=overflow */
 #define MSG_CC_TRACE_DUMP               0x2619  /* MR1=max_events → MR0=ok MR1=count MR2=bytes MR3=overflow */
+#define MSG_CC_AGENT_RUN                0x261A  /* bounded native harness task in shmem */
 
 /* ─── Guest OS lifecycle opcodes (0x2A00) ───────────────────────────────── */
 #define MSG_GUEST_CREATE                0x2A01  /* guest_create_req in shmem → MR0=ok MR1=guest_id */

@@ -42,6 +42,27 @@ struct Suite {
 /// stable as new test files are added incrementally.
 const SUITES: &[Suite] = &[
     Suite {
+        name: "test_agent_task_gateway",
+        sources: &[
+            "tests/test_agent_task_gateway.c",
+            "kernel/agentos-root-task/src/agent_task_gateway.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        name: "test_controller",
+        sources: &[
+            "tests/api/test_controller.c",
+            "kernel/agentos-root-task/src/agent_task_gateway.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        name: "test_cc_contract",
+        sources: &["tests/test_cc_contract.c"],
+        extra_args: &[],
+    },
+    Suite {
         name: "test_repo_agent_task",
         sources: &[
             "tests/test_repo_agent_task.c",
