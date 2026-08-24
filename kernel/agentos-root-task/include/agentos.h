@@ -134,6 +134,10 @@ typedef enum {
     MSG_SPAWN_AGENT            = 0x0801,  /* Spawn a WASM agent by hash */
     MSG_SPAWN_AGENT_REPLY      = 0x0802,  /* Reply: agent_id or error */
 
+    /* Launcher-owned composable AgentHarness planning. */
+    MSG_INITAGENT_COMPOSE_VALIDATE = 0x2D01,
+    MSG_INITAGENT_COMPOSE_PROFILE  = 0x2D02,
+
     /* VibeEngine module registry opcodes (in OP_ space, not MSG_) */
     OP_VIBE_REPLAY             = 0x46,   /* Boot replay: seed registry from AgentFS */
     OP_VIBE_HOTRELOAD          = 0x47,   /* Zero-downtime slot update (was REGISTRY_QUERY) */

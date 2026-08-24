@@ -31,9 +31,18 @@ static uint32_t service_badge_data(const pd_desc_t *pd, uint16_t service_id)
     return 0u;
 }
 
+static uint32_t service_owner_count(uint16_t service_id)
+{
+    uint32_t count = 0u;
+    for (uint32_t i = 0u; i < system_desc_aarch64.pd_count; i++)
+        if (system_desc_aarch64.pds[i].self_svc_id == service_id) count++;
+    return count;
+}
+
 int main(void)
 {
     const pd_desc_t *harness = find_pd("codex_harness");
+    const pd_desc_t *read_only = find_pd("read_only_harness");
     const pd_desc_t *model = find_pd("model_svc");
     const pd_desc_t *tools = find_pd("tool_svc");
     const pd_desc_t *memory = find_pd("agentfs");
@@ -45,6 +54,7 @@ int main(void)
     const pd_desc_t *cc = find_pd("cc_pd");
     const pd_desc_t *launcher = find_pd("init_agent");
     assert(harness != NULL);
+    assert(read_only != NULL);
     assert(model != NULL);
     assert(tools != NULL);
     assert(memory != NULL);
@@ -72,6 +82,32 @@ int main(void)
            == EXECSVC_RIGHT_ALL);
     assert(!has_service(harness, SVC_ID_EXEC_TRANSPORT));
     assert(!has_service(harness, SVC_ID_MCP_TRANSPORT));
+
+    /* The read-only assembly has a smaller private stack and only the two
+     * component endpoints that cause the root task to map their badge-local
+     * client arenas. Absent service entries therefore mean absent endpoint
+     * caps and absent AgentFS/Exec/Net mappings. */
+    assert(read_only->self_svc_id == SVC_ID_READ_ONLY_HARNESS);
+    assert(read_only->stack_size < harness->stack_size);
+    assert(read_only->cnode_size_bits == harness->cnode_size_bits);
+    assert(has_service(read_only, SVC_ID_LOG_DRAIN));
+    assert(has_service(read_only, SVC_ID_MODELSVC));
+    assert(has_service(read_only, SVC_ID_TOOLSVC));
+    assert(service_badge_data(read_only, SVC_ID_TOOLSVC)
+           == (TOOLSVC_RIGHT_REPO_SEARCH | TOOLSVC_RIGHT_REPO_READ));
+    assert(!has_service(read_only, SVC_ID_AGENTFS));
+    assert(!has_service(read_only, SVC_ID_EXEC_SERVER));
+    assert(!has_service(read_only, SVC_ID_NET_SERVER));
+    assert(!has_service(read_only, SVC_ID_NET_PD));
+    assert(!has_service(read_only, SVC_ID_MODEL_TRANSPORT));
+    assert(!has_service(read_only, SVC_ID_EXEC_TRANSPORT));
+    assert(!has_service(read_only, SVC_ID_MCP_TRANSPORT));
+
+    /* Profiles import the singleton services; they do not spawn copies. */
+    assert(service_owner_count(SVC_ID_MODELSVC) == 1u);
+    assert(service_owner_count(SVC_ID_TOOLSVC) == 1u);
+    assert(service_owner_count(SVC_ID_AGENTFS) == 1u);
+    assert(service_owner_count(SVC_ID_EXEC_SERVER) == 1u);
 
     /* Network belongs to ModelSvc, not to the worker. */
     assert(has_service(model, SVC_ID_NET_SERVER));

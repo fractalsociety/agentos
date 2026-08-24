@@ -45,6 +45,7 @@
 #include "../../contracts/execsvc/interface.h"
 #include "../../contracts/toolsvc/interface.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../kernel/agentos-root-task/include/contracts/init_agent_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 #include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
@@ -152,9 +153,11 @@ static void target_benchmark_eventbus_ipc(void)
 #define TARGET_WG_NET_CAP 135u
 #define TARGET_NET_FASTPATH_CAP 136u
 #define TARGET_NET_UNPRIV_CAP 137u
+#define TARGET_INIT_AGENT_CAP 140u
+#define TARGET_READ_ONLY_HARNESS_CAP 141u
 #define TARGET_EXECSVC_CAP 200u
 #define TARGET_COMPILE_ONLY_EXECSVC_CAP 201u
-#define TARGET_TEST_RUNNER_CLIENT_ID 23u
+#define TARGET_TEST_RUNNER_CLIENT_ID 24u
 #define AGENT_HARNESS_COLD_TURN_METRIC "agent_harness_native_turn_cold"
 #define AGENT_HARNESS_WARM_TURN_METRIC "agent_harness_native_turn_warm"
 
@@ -189,6 +192,134 @@ static bool tr_equal(const char *a, const char *b, uint32_t len)
 {
     for (uint32_t i = 0u; i < len; i++) if (a[i] != b[i]) return false;
     return true;
+}
+
+static void target_harness_composition_contract(void)
+{
+    struct initagent_req_compose_profile profile;
+    struct initagent_reply_compose read_only, coding;
+    sel4_msg_t req, rep;
+    tr_zero(&profile, sizeof(profile));
+    profile.interface_version = HARNESS_COMPOSE_INTERFACE_VERSION;
+    profile.profile_id = HARNESS_PROFILE_READ_ONLY;
+    profile.private_limit_bytes = HARNESS_COMPOSE_DEFAULT_LIMIT_BYTES;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_INITAGENT_COMPOSE_PROFILE;
+    req.length = sizeof(profile);
+    tr_copy(req.data, &profile, sizeof(profile));
+    sel4_call((seL4_CPtr)TARGET_INIT_AGENT_CAP, &req, &rep);
+    tr_copy(&read_only, rep.data, sizeof(read_only));
+
+    profile.profile_id = HARNESS_PROFILE_CODING;
+    tr_zero(&req, sizeof(req));
+    tr_zero(&rep, sizeof(rep));
+    req.opcode = MSG_INITAGENT_COMPOSE_PROFILE;
+    req.length = sizeof(profile);
+    tr_copy(req.data, &profile, sizeof(profile));
+    sel4_call((seL4_CPtr)TARGET_INIT_AGENT_CAP, &req, &rep);
+    tr_copy(&coding, rep.data, sizeof(coding));
+
+    bool profiles = read_only.status == HARNESS_COMPOSE_OK
+        && coding.status == HARNESS_COMPOSE_OK
+        && read_only.component_mask != coding.component_mask
+        && (read_only.endpoint_mask
+            & (HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC)) == 0u
+        && (read_only.mapping_mask
+            & (HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC)) == 0u
+        && (coding.endpoint_mask & (HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC))
+            == (HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC)
+        && read_only.private_committed_bytes
+            < coding.private_committed_bytes
+        && read_only.shared_mapped_bytes < coding.shared_mapped_bytes;
+    if (profiles)
+        _tf_ok("InitAgent composes heterogeneous minimal harness plans");
+    else
+        _tf_fail_point(
+            "InitAgent composes heterogeneous minimal harness plans",
+            "profile graph, endpoint, mapping, or resource plan mismatch");
+
+    profile.profile_id = 0xfeedu;
+    tr_zero(&req, sizeof(req));
+    tr_zero(&rep, sizeof(rep));
+    req.opcode = MSG_INITAGENT_COMPOSE_PROFILE;
+    req.length = sizeof(profile);
+    tr_copy(req.data, &profile, sizeof(profile));
+    sel4_call((seL4_CPtr)TARGET_INIT_AGENT_CAP, &req, &rep);
+    struct initagent_reply_compose rejected;
+    tr_copy(&rejected, rep.data, sizeof(rejected));
+    if (rejected.status == HARNESS_COMPOSE_ERR_UNKNOWN_PROFILE)
+        _tf_ok("InitAgent fails closed on unknown harness profiles");
+    else
+        _tf_fail_point("InitAgent fails closed on unknown harness profiles",
+                       "unknown profile was accepted on target");
+}
+
+static void target_harness_profile_footprints(void)
+{
+    sel4_msg_t req, coding_rep, read_only_rep;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_RESOURCES;
+    sel4_call((seL4_CPtr)TARGET_AGENT_HARNESS_CAP, &req, &coding_rep);
+    sel4_call((seL4_CPtr)TARGET_READ_ONLY_HARNESS_CAP, &req, &read_only_rep);
+
+    const uint32_t coding_private = tr_rd32(coding_rep.data, 4u);
+    const uint32_t read_only_private = tr_rd32(read_only_rep.data, 4u);
+    const uint32_t coding_shared = tr_rd32(coding_rep.data, 12u);
+    const uint32_t read_only_shared = tr_rd32(read_only_rep.data, 12u);
+    const uint32_t coding_components = tr_rd32(coding_rep.data, 24u);
+    const uint32_t read_only_components = tr_rd32(read_only_rep.data, 24u);
+    const uint32_t read_only_expected = HARNESS_SHMEM_SIZE
+        + TOOLSVC_CLIENT_ARENA_SIZE;
+    const uint32_t read_only_component_expected = HARNESS_SHARED_MODELSVC
+        | HARNESS_SHARED_TOOL_MCP | HARNESS_SHARED_REPO_INDEX;
+
+    bool footprint_ok = coding_rep.opcode == HARNESS_OK
+        && read_only_rep.opcode == HARNESS_OK
+        && read_only_private < coding_private
+        && read_only_shared == read_only_expected
+        && read_only_shared < coding_shared
+        && read_only_components == read_only_component_expected
+        && (read_only_components
+            & (HARNESS_SHARED_ARTIFACT_STORE | HARNESS_SHARED_EXEC_GRAPH)) == 0u
+        && (coding_components
+            & (HARNESS_SHARED_ARTIFACT_STORE | HARNESS_SHARED_EXEC_GRAPH))
+            == (HARNESS_SHARED_ARTIFACT_STORE | HARNESS_SHARED_EXEC_GRAPH);
+    if (footprint_ok)
+        _tf_ok("Booted read-only harness omits coding-only resources");
+    else
+        _tf_fail_point(
+            "Booted read-only harness omits coding-only resources",
+            "live private/shared resource footprint did not shrink");
+
+    /* A denied submit returns the runtime's launcher-installed capability
+     * mask before touching the profile's private arena. This proves the live
+     * read-only worker has no MemoryCap, ExecCap, or NetCap import. */
+    struct harness_req_submit submit;
+    tr_zero(&submit, sizeof(submit));
+    submit.task_id = 0x524fu;
+    submit.harness_kind = HARNESS_KIND_CODEX;
+    submit.required_caps = HARNESS_CAP_MEMORY;
+    submit.max_steps = 1u;
+    submit.authority_epoch = 1u;
+    submit.prompt_offset = 0x1000u;
+    submit.prompt_len = 1u;
+    submit.result_offset = 0x4000u;
+    submit.result_capacity = 16u;
+    tr_zero(&req, sizeof(req));
+    req.opcode = MSG_HARNESS_SUBMIT;
+    req.length = sizeof(submit);
+    tr_copy(req.data, &submit, sizeof(submit));
+    sel4_call((seL4_CPtr)TARGET_READ_ONLY_HARNESS_CAP, &req, &read_only_rep);
+    const uint32_t installed = tr_rd32(read_only_rep.data, 8u);
+    if (read_only_rep.opcode == HARNESS_ERR_CAP_DENIED
+        && installed == (HARNESS_CAP_MODEL | HARNESS_CAP_TOOL)
+        && (installed & (HARNESS_CAP_MEMORY | HARNESS_CAP_EXEC
+                         | HARNESS_CAP_NETWORK)) == 0u)
+        _tf_ok("Booted read-only harness lacks absent component authority");
+    else
+        _tf_fail_point(
+            "Booted read-only harness lacks absent component authority",
+            "live worker imported an undeclared capability");
 }
 
 /* ── WireGuard PD boot and authority proof ─────────────────────────────── */
@@ -1595,6 +1726,8 @@ void target_contract_runner_main(void)
     /* Prove the native agent path first.  A failure in an unrelated legacy
      * contract must not hide whether the booted image can run an agent turn. */
     target_agent_harness_contract();
+    target_harness_composition_contract();
+    target_harness_profile_footprints();
     target_agent_task_gateway_denial();
     target_toolsvc_contract();
     target_agentfs_workspace_contract();

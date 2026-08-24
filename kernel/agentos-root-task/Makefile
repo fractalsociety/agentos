@@ -196,7 +196,7 @@ BOARD_UART_IRQ  ?=
 # m3_bare_metal.c provides memset/memcpy/memmove needed by compiler-generated code
 PD_MONITOR_SRCS   := src/monitor.c src/agent_task_gateway.c src/cap_broker.c src/agent_pool.c src/vibe_swap.c src/m3_bare_metal.c src/log.c src/boot_integrity.c src/ed25519_verify.c src/monocypher.c src/cap_policy.c src/verify.c src/pd_tcb.c src/ut_alloc.c
 PD_EVENTBUS_SRCS  := src/m3_bare_metal.c src/log.c   # event_bus.c → services/event-bus/ (E9-S1)
-PD_INITAGENT_SRCS := src/init_agent.c src/m3_bare_metal.c src/log.c
+PD_INITAGENT_SRCS := src/init_agent.c src/harness_composition.c src/m3_bare_metal.c src/log.c
 PD_WORKER_SRCS    := src/worker.c src/m3_bare_metal.c src/log.c
 # agentfs needs m3_bare_metal for memset/sqrtf (no wasm3 headers needed)
 PD_AGENTFS_SRCS      := src/m3_bare_metal.c src/log.c   # agentfs.c → services/agentfs/ (E9-S1)
@@ -325,10 +325,13 @@ FAULT_INJECT_OBJS     := $(patsubst src/%.c, $(BUILD_DIR)/%.o, $(PD_FAULT_INJECT
 CODEX_HARNESS_OBJS    := $(BUILD_DIR)/codex_harness_pd.o \
                          $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o \
                          $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o
+READ_ONLY_HARNESS_OBJS := $(BUILD_DIR)/read_only_harness_pd.o \
+                          $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o \
+                          $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o
 EXEC_VERIFY_OBJS      := $(BUILD_DIR)/exec_verify.o \
                          $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o
 
-IMAGES := controller.elf event_bus.elf init_agent.elf worker.elf agentfs.elf vibe_engine.elf vibeos.elf log_drain.elf serial_pd.elf swap_slot.elf mem_profiler.elf net_isolator.elf perf_counters.elf time_partition.elf trace_recorder.elf nameserver.elf virtio_blk.elf vfs_server.elf spawn_server.elf app_slot.elf net_server.elf net_pd.elf model_transport.elf exec_transport.elf mcp_transport.elf wg_net.elf app_manager.elf http_svc.elf vm_manager.elf auth_server.elf ext2fs.elf proc_server.elf vm_snapshot.elf pflocal_server.elf exec_server.elf exec_verify.elf term_server.elf block_pd.elf framebuffer_pd.elf usb_pd.elf cc_pd.elf gpu_sched.elf timer_svc.elf entropy_svc.elf block_svc.elf usb_svc.elf model_svc.elf tool_svc.elf irq_pd.elf timer_pd.elf fault_handler.elf codex_harness.elf
+IMAGES := controller.elf event_bus.elf init_agent.elf worker.elf agentfs.elf vibe_engine.elf vibeos.elf log_drain.elf serial_pd.elf swap_slot.elf mem_profiler.elf net_isolator.elf perf_counters.elf time_partition.elf trace_recorder.elf nameserver.elf virtio_blk.elf vfs_server.elf spawn_server.elf app_slot.elf net_server.elf net_pd.elf model_transport.elf exec_transport.elf mcp_transport.elf wg_net.elf app_manager.elf http_svc.elf vm_manager.elf auth_server.elf ext2fs.elf proc_server.elf vm_snapshot.elf pflocal_server.elf exec_server.elf exec_verify.elf term_server.elf block_pd.elf framebuffer_pd.elf usb_pd.elf cc_pd.elf gpu_sched.elf timer_svc.elf entropy_svc.elf block_svc.elf usb_svc.elf model_svc.elf tool_svc.elf irq_pd.elf timer_pd.elf fault_handler.elf codex_harness.elf read_only_harness.elf
 
 # Optional: periodic WASM slot snapshot scheduler
 ifdef AGENTOS_SNAPSHOT_SCHED
@@ -473,6 +476,16 @@ $(BUILD_DIR)/tool_svc.o: $(SERVICES_DIR)/toolsvc/tool_svc.c
 $(BUILD_DIR)/codex_harness_pd.o: $(REPO_ROOT)/userspace/agents/codex-harness/codex_harness_pd.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/read_only_harness_pd.o: $(REPO_ROOT)/userspace/agents/codex-harness/codex_harness_pd.c
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) \
+		-DAGENT_HARNESS_READ_ONLY=1 \
+		-DAGENT_HARNESS_BOOTSTRAP_CLIENT_ID=12u \
+		-DAGENT_HARNESS_INITIAL_CAPS=3u \
+		-DAGENT_HARNESS_STACK_BYTES=0x8000u \
+		-DAGENT_HARNESS_SHARED_MAPPED_BYTES=98304u \
+		-DAGENT_HARNESS_SHARED_COMPONENTS=7u $< -o $@
 
 $(BUILD_DIR)/exec_verify.o: $(SERVICES_DIR)/exec-server/exec_verify.c
 	@mkdir -p $(BUILD_DIR)
@@ -678,6 +691,9 @@ $(BUILD_DIR)/exec_server.elf: $(EXEC_SERVER_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/codex_harness.elf: $(CODEX_HARNESS_OBJS)
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+$(BUILD_DIR)/read_only_harness.elf: $(READ_ONLY_HARNESS_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/exec_verify.elf: $(EXEC_VERIFY_OBJS)

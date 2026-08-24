@@ -106,6 +106,21 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
+        // agentos-gz0.13.1: launcher-validated composable harness graphs.
+        name: "test_harness_composition_contract",
+        sources: &[
+            "tests/contracts/harness_composition_test.c",
+            "kernel/agentos-root-task/src/harness_composition.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // agentos-gz0.13.1: InitAgent owns composition IPC dispatch.
+        name: "test_init_agent_composition",
+        sources: &["tests/test_init_agent_composition.c"],
+        extra_args: &[],
+    },
+    Suite {
         name: "test_msgbus",
         sources: &["tests/api/test_msgbus.c"],
         extra_args: &[],

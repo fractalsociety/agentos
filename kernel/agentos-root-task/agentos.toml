@@ -115,6 +115,10 @@ name = "codex_harness"
 priority = 120
 
 [[pd]]
+name = "read_only_harness"
+priority = 120
+
+[[pd]]
 name = "tool_svc"
 priority = 185
 

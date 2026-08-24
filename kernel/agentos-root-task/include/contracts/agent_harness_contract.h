@@ -42,7 +42,9 @@
 /* Static-topology bootstrap identity. Offsets in AgentHarness messages are
  * relative to this worker-local mapping; ModelSvc translates them into the
  * badge-selected global partition. */
+#ifndef AGENT_HARNESS_BOOTSTRAP_CLIENT_ID
 #define AGENT_HARNESS_BOOTSTRAP_CLIENT_ID 11u
+#endif
 #define HARNESS_SHMEM_VADDR \
     MODELSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID)
 #define HARNESS_SHMEM_SIZE MODELSVC_CLIENT_ARENA_SIZE

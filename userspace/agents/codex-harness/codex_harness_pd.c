@@ -17,6 +17,31 @@
 #include "../../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 #include "../../../kernel/agentos-root-task/include/cap_authority.h"
 
+#ifndef AGENT_HARNESS_INITIAL_CAPS
+#define AGENT_HARNESS_INITIAL_CAPS CAPBROKER_HARNESS_INITIAL_CAPS
+#endif
+
+#ifndef AGENT_HARNESS_STACK_BYTES
+#define AGENT_HARNESS_STACK_BYTES 0x10000u
+#endif
+
+#ifndef AGENT_HARNESS_SHARED_MAPPED_BYTES
+#define AGENT_HARNESS_SHARED_MAPPED_BYTES \
+    (HARNESS_SHMEM_SIZE + TOOLSVC_CLIENT_ARENA_SIZE \
+     + AGENTFS_CLIENT_ARENA_SIZE + EXECSVC_CLIENT_ARENA_SIZE)
+#endif
+
+#ifndef AGENT_HARNESS_SHARED_COMPONENTS
+#define AGENT_HARNESS_SHARED_COMPONENTS \
+    (HARNESS_SHARED_MODELSVC | HARNESS_SHARED_TOOL_MCP \
+     | HARNESS_SHARED_REPO_INDEX | HARNESS_SHARED_ARTIFACT_STORE \
+     | HARNESS_SHARED_EXEC_GRAPH)
+#endif
+
+#ifndef AGENT_HARNESS_READ_ONLY
+#define AGENT_HARNESS_READ_ONLY 0
+#endif
+
 #define HARNESS_SYSTEM_PROMPT_OFFSET 0x8000u
 #define HARNESS_SYSTEM_PROMPT_CAP    4096u
 #define HARNESS_MODEL_CONTEXT_OFFSET 0x9000u
@@ -29,6 +54,14 @@
 #define HARNESS_INTERNAL_CAP         0x4000u
 #define HARNESS_CONTEXT_CAP          HARNESS_MODEL_CONTEXT_CAP
 
+#if AGENT_HARNESS_READ_ONLY
+static const char harness_system_prompt[] =
+    "You are an AgentOS read-only agent. Return exactly one JSON object and "
+    "no markdown. Actions: {\"action\":\"tool\",\"tool\":\"name\","
+    "\"input\":\"text\"}; or {\"action\":\"final\",\"summary\":\"result\"}. "
+    "Available repository tools are repo.search and repo.read. You cannot "
+    "write memory, execute code, or access the network directly.";
+#else
 static const char harness_system_prompt[] =
     "You are an AgentOS coding agent. Return exactly one JSON object and no "
     "markdown. Actions: {\"action\":\"memory_write\",\"path\":\"relative/path\","
@@ -42,6 +75,7 @@ static const char harness_system_prompt[] =
     "returns path:line:text matches from the shared tracked-code index. "
     "repo.read accepts one relative tracked path. Use both to discover and "
     "inspect code instead of guessing paths.";
+#endif
 
 typedef uint32_t (*harness_model_backend_fn)(
     const char *system_prompt, uint32_t system_prompt_len,
@@ -442,8 +476,10 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
     char *response = (char *)(runtime_arena + req->result_offset);
     char *action_input = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
     char *observation = (char *)(runtime_arena + HARNESS_TOOL_OUTPUT_OFFSET);
+#if !AGENT_HARNESS_READ_ONLY
     char *exec_observation = (char *)(runtime_arena
                                       + HARNESS_EXEC_OUTPUT_OFFSET);
+#endif
     static const char echo_prefix[] = "agentos:";
 
     for (uint32_t step = 1u; step <= req->max_steps; step++) {
@@ -542,6 +578,7 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
             continue;
         }
 
+#if !AGENT_HARNESS_READ_ONLY
         bool memory_write = bytes_equal(action, action_len,
                                         "memory_write", 12u);
         bool memory_read = bytes_equal(action, action_len,
@@ -720,6 +757,7 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
             next_prompt_len = context_len;
             continue;
         }
+#endif
 
         return fail_task(HARNESS_ERR_PROTOCOL, rep);
     }
@@ -894,6 +932,7 @@ static uint32_t target_tool_backend(
     return HARNESS_OK;
 }
 
+#if !AGENT_HARNESS_READ_ONLY
 static uint32_t target_memory_backend(
     bool write, const char *path, uint32_t path_len,
     const char *content, uint32_t content_len,
@@ -1081,6 +1120,7 @@ static uint32_t target_test_backend(
     *output_len = run_reply.output_len;
     return HARNESS_OK;
 }
+#endif
 
 static uint32_t h_submit(sel4_badge_t badge, const sel4_msg_t *req,
                          sel4_msg_t *rep, void *ctx)
@@ -1189,24 +1229,21 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     image_bytes = (image_bytes + 4095u) & ~4095u;
     harness_runtime_init((void *)(uintptr_t)HARNESS_SHMEM_VADDR,
                          HARNESS_SHMEM_SIZE,
-                         CAPBROKER_HARNESS_INITIAL_CAPS, 1u,
+                         AGENT_HARNESS_INITIAL_CAPS, 1u,
                          target_model_backend, NULL);
     harness_runtime_set_tool_backend(target_tool_backend, NULL);
+#if !AGENT_HARNESS_READ_ONLY
     harness_runtime_set_memory_backend(target_memory_backend, NULL);
     harness_runtime_set_exec_backend(target_exec_backend, NULL);
     harness_runtime_set_test_backend(target_test_backend, NULL);
-    /* Private charge: mapped image + 64 KiB stack + 4 KiB IPC page + a fixed
+#endif
+    /* Private charge: mapped image + profile stack + 4 KiB IPC page + a fixed
      * 128 KiB allowance for CNode/TCB/SC/page-table kernel objects. */
-    harness_runtime_set_resources(image_bytes + 0x10000u + 0x1000u + 0x20000u,
+    harness_runtime_set_resources(image_bytes + AGENT_HARNESS_STACK_BYTES
+                                      + 0x1000u + 0x20000u,
                                   HARNESS_WORKER_DEFAULT_LIMIT_BYTES,
-                                  HARNESS_SHMEM_SIZE + TOOLSVC_CLIENT_ARENA_SIZE
-                                      + AGENTFS_CLIENT_ARENA_SIZE
-                                      + EXECSVC_CLIENT_ARENA_SIZE,
-                                  HARNESS_SHARED_MODELSVC
-                                      | HARNESS_SHARED_TOOL_MCP
-                                      | HARNESS_SHARED_REPO_INDEX
-                                      | HARNESS_SHARED_ARTIFACT_STORE
-                                      | HARNESS_SHARED_EXEC_GRAPH);
+                                  AGENT_HARNESS_SHARED_MAPPED_BYTES,
+                                  AGENT_HARNESS_SHARED_COMPONENTS);
     sel4_server_init(&harness_server, my_ep);
     (void)sel4_server_register(&harness_server, MSG_HARNESS_SUBMIT,
                                h_submit, NULL);

@@ -302,6 +302,26 @@ const system_desc_t system_desc_aarch64 = {
             },
         },
 
+        /* Materially smaller AgentHarness assembly: the same control contract
+         * with only ModelCap and read-only ToolCap. No AgentFS, ExecServer, or
+         * NetServer endpoint means those components receive neither endpoint
+         * authority nor a client-arena mapping. Shared services stay singletons. */
+        {
+            .name           = "read_only_harness",
+            .elf_path       = "read_only_harness.elf",
+            .stack_size     = 0x8000u,
+            .cnode_size_bits = 8u,
+            .priority       = 120u,
+            .self_svc_id    = SVC_ID_READ_ONLY_HARNESS,
+            .init_ep_count  = 3u,
+            .init_eps = {
+                { SVC_ID_LOG_DRAIN, PD_CNODE_SLOT_LOG_DRAIN_EP },
+                { SVC_ID_MODELSVC, PD_CNODE_SLOT_MODELSVC_EP },
+                { SVC_ID_TOOLSVC, PD_CNODE_SLOT_TOOLSVC_EP,
+                  TOOLSVC_RIGHT_REPO_SEARCH | TOOLSVC_RIGHT_REPO_READ },
+            },
+        },
+
         /* Shared MCP-compatible tool registry and dispatch service. */
         {
             .name           = "tool_svc",
@@ -644,7 +664,7 @@ const system_desc_t system_desc_aarch64 = {
              * the ring-unmapped state (agentos-gom). */
             .priority       = 250u,
             .self_svc_id    = 0u,
-            .init_ep_count  = 13u,
+            .init_ep_count  = 15u,
             .init_eps = {
                 { SVC_ID_EXEC_SERVER, 200u, EXECSVC_RIGHT_ALL },
                 { SVC_ID_EXEC_SERVER, 201u, EXECSVC_RIGHT_C11_COMPILE },
@@ -660,6 +680,8 @@ const system_desc_t system_desc_aarch64 = {
                 { SVC_ID_WG_NET,    135u },   /* native WireGuard contract cap */
                 { SVC_ID_NET_PD,    136u, NET_PD_RIGHT_FASTPATH },
                 { SVC_ID_NET_PD,    137u, 0u }, /* negative authority probe */
+                { SVC_ID_INIT_AGENT, 140u }, /* composition contract */
+                { SVC_ID_READ_ONLY_HARNESS, 141u }, /* minimal profile */
             },
         },
 #endif

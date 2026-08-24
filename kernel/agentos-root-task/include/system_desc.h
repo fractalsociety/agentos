@@ -25,7 +25,7 @@
 
 #define PD_MAX_NAME_LEN       32u  /* max length of pd_desc_t.name (with NUL)   */
 #define PD_MAX_ELF_PATH       64u  /* max length of pd_desc_t.elf_path (NUL)    */
-#define PD_MAX_INIT_EPS       14u  /* max initial endpoints distributed per PD  */
+#define PD_MAX_INIT_EPS       15u  /* max initial endpoints distributed per PD  */
 #define PD_MAX_IRQS            8u  /* max hardware IRQs bound per PD            */
 #define PD_MAX_DEVICE_FRAMES   4u  /* max MMIO device frames distributed per PD */
 #define PD_MAX_MEMORY_REGIONS  3u  /* max large RAM regions mapped per PD       */
@@ -233,6 +233,7 @@ typedef struct {
 #define SVC_ID_MCP_TRANSPORT  31u   /* shared external MCP provider transport       */
 #define SVC_ID_FAULT_HANDLER  32u   /* fault policy and history service               */
 #define SVC_ID_WG_NET         33u   /* capability-scoped WireGuard overlay PD          */
+#define SVC_ID_READ_ONLY_HARNESS 34u /* minimal ModelCap + ToolCap AgentHarness profile */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */

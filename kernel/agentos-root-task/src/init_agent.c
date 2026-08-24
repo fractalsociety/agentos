@@ -122,6 +122,8 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 
 #endif /* AGENTOS_TEST_HOST */
 
+#include "harness_composition.h"
+
 /* ── Contract opcodes (guarded so test overrides are possible) ──────────── */
 
 #ifndef MSG_INITAGENT_STATUS
@@ -232,6 +234,13 @@ static inline void data_wr64(uint8_t *d, int off, uint64_t v)
 {
     data_wr32(d, off,     (uint32_t)(v & 0xFFFFFFFFu));
     data_wr32(d, off + 4, (uint32_t)(v >> 32));
+}
+
+static void data_copy(void *dst, const void *src, uint32_t len)
+{
+    uint8_t *d = (uint8_t *)dst;
+    const uint8_t *s = (const uint8_t *)src;
+    for (uint32_t i = 0u; i < len; i++) d[i] = s[i];
 }
 
 /* ── Debug output ────────────────────────────────────────────────────────── */
@@ -587,6 +596,55 @@ static uint32_t handle_spawn_complete(sel4_badge_t badge, const sel4_msg_t *req,
     return SEL4_ERR_OK;
 }
 
+static void compose_invalid_reply(struct initagent_reply_compose *reply)
+{
+    for (uint32_t i = 0u; i < sizeof(*reply); i++)
+        ((uint8_t *)reply)[i] = 0u;
+    reply->status = HARNESS_COMPOSE_ERR_INVALID;
+    reply->rejected_index = UINT32_MAX;
+}
+
+/* Composition calls validate and account for a requested graph only. They do
+ * not install caps or map arenas; those effects remain launcher/root-task
+ * operations after this plan succeeds. */
+static uint32_t handle_compose_validate(sel4_badge_t badge,
+                                        const sel4_msg_t *req,
+                                        sel4_msg_t *rep, void *ctx)
+{
+    (void)badge;
+    (void)ctx;
+    struct initagent_reply_compose reply;
+    if (req->length == sizeof(struct initagent_req_compose_validate)) {
+        struct initagent_req_compose_validate manifest;
+        data_copy(&manifest, req->data, sizeof(manifest));
+        (void)harness_compose_validate_builtin(&manifest, &reply);
+    } else {
+        compose_invalid_reply(&reply);
+    }
+    data_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return SEL4_ERR_OK;
+}
+
+static uint32_t handle_compose_profile(sel4_badge_t badge,
+                                       const sel4_msg_t *req,
+                                       sel4_msg_t *rep, void *ctx)
+{
+    (void)badge;
+    (void)ctx;
+    struct initagent_reply_compose reply;
+    if (req->length == sizeof(struct initagent_req_compose_profile)) {
+        struct initagent_req_compose_profile profile;
+        data_copy(&profile, req->data, sizeof(profile));
+        (void)harness_compose_profile(&profile, &reply);
+    } else {
+        compose_invalid_reply(&reply);
+    }
+    data_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return SEL4_ERR_OK;
+}
+
 /* ── Test-visible helpers ────────────────────────────────────────────────── */
 
 /*
@@ -610,6 +668,10 @@ static void init_agent_test_init(void)
     sel4_server_register(&g_srv, MSG_INITAGENT_STATUS, handle_status, NULL);
     sel4_server_register(&g_srv, MSG_SPAWN_AGENT,      handle_spawn_agent, NULL);
     sel4_server_register(&g_srv, MSG_SPAWN_AGENT_REPLY, handle_spawn_complete, NULL);
+    sel4_server_register(&g_srv, MSG_INITAGENT_COMPOSE_VALIDATE,
+                         handle_compose_validate, NULL);
+    sel4_server_register(&g_srv, MSG_INITAGENT_COMPOSE_PROFILE,
+                         handle_compose_profile, NULL);
 }
 
 /*
@@ -661,6 +723,10 @@ void init_agent_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&g_srv, MSG_INITAGENT_STATUS,  handle_status,          NULL);
     sel4_server_register(&g_srv, MSG_SPAWN_AGENT,       handle_spawn_agent,     NULL);
     sel4_server_register(&g_srv, MSG_SPAWN_AGENT_REPLY, handle_spawn_complete,  NULL);
+    sel4_server_register(&g_srv, MSG_INITAGENT_COMPOSE_VALIDATE,
+                         handle_compose_validate, NULL);
+    sel4_server_register(&g_srv, MSG_INITAGENT_COMPOSE_PROFILE,
+                         handle_compose_profile, NULL);
 
     /* Enter server loop — never returns */
     sel4_server_run(&g_srv);

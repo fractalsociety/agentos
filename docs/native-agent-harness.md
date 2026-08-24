@@ -58,6 +58,33 @@ task or met the 150 MiB ceiling.
 
 ## Implementation status
 
+The product abstraction is now a launcher-validated component graph rather
+than a fixed `codex_harness` image that every worker must reproduce. InitAgent
+exposes bounded `COMPOSE_VALIDATE` and `COMPOSE_PROFILE` opcodes over its one
+IPC contract. A manifest names independently versioned components, dependency
+edges, required capability classes, private-memory charges, shared-service
+references, and a deterministic graph fingerprint. The validator rejects
+unknown IDs, incompatible versions, duplicate singletons, missing dependencies,
+cycles, conflicts, capability over/under-declaration, and the 150 MiB ceiling.
+The manifest remains a declaration: workers cannot create PDs, mint caps, or
+map arenas; launcher-installed seL4 CSpace and VSpace objects are authoritative.
+
+The AArch64 target currently boots two materially different bootstrap
+assemblies. The coding profile has ModelSvc, ToolSvc, AgentFS, and ExecSvc
+client mappings. The read-only profile is compiled without mutation,
+verification, or test action handlers, uses a 32 KiB stack, and receives only
+ModelSvc plus a ToolSvc badge restricted to `repo.search` and `repo.read`.
+Root-task boot evidence shows exactly those two client-arena mappings and no
+AgentFS, ExecSvc, network, or transport import. Both profiles reference the
+same singleton service PDs. On-target resource and negative-authority tests
+compare the live workers and prove that the smaller profile has a smaller
+private image/stack charge, maps 96 KiB rather than 192 KiB of shared client
+arenas, and reports only ModelCap plus ToolCap.
+
+This is the contract/topology foundation, not dynamic graph instantiation yet.
+Warm workers keyed by graph fingerprint belong to `agentos-gz0.8`; validated
+AOT component artifacts that omit unused modules belong to `agentos-gz0.7`.
+
 The native C bootstrap harness now builds as its own protection domain, boots
 under seL4 on QEMU AArch64, and completes a Codex-style planner/final action,
 a ModelSvc→ToolSvc→ModelSvc tool loop, and a verified
