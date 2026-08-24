@@ -217,7 +217,7 @@ enum companion_wire_record_type {
     COMPANION_WIRE_PROJECT_PAGE = 2u,
     COMPANION_WIRE_PROGRESS_PAGE = 3u,
     COMPANION_WIRE_DAILY_ROOT = 4u,
-    COMPANION_WIRE_HEALTH_ADAPTER = 5u,
+    COMPANION_WIRE_HEALTH_ADAPTER_SUMMARY = 5u,
     COMPANION_WIRE_WORKER_MEMORY_PAGE = 6u,
     COMPANION_WIRE_TASK_INTENT_RECEIPT = 7u,
 };
@@ -387,6 +387,8 @@ typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {
     uint32_t status;
     companion_object_id_t provenance;
     uint64_t observed_unix;
+    uint32_t freshness_seconds;
+    uint32_t source_freshness;
     uint32_t redaction;
     uint32_t reserved;
 } companion_wire_health_signal_t;
@@ -395,19 +397,21 @@ typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {
     companion_schema_version_t schema;
     uint64_t authority_epoch;
     companion_source_handle_t source;
+    uint32_t origin;
+    uint32_t reserved2;
     companion_wire_list_t consent_scope;
     uint64_t consent_expires_unix;
     uint8_t revoked;
     uint8_t reserved[3];
     uint32_t status;
     uint32_t freshness_seconds;
-    uint32_t reserved2;
+    uint32_t reserved3;
     companion_wire_list_t signals;
     companion_object_id_t provenance;
     companion_event_range_t range;
     uint32_t redaction;
-    uint32_t reserved3;
-} companion_wire_health_adapter_t;
+    uint32_t reserved4;
+} companion_wire_health_adapter_summary_t;
 
 typedef struct __attribute__((aligned(COMPANION_ABI_ALIGNMENT))) {
     companion_schema_version_t schema;
@@ -710,7 +714,7 @@ _Static_assert(sizeof(companion_wire_record_t) + sizeof(companion_wire_session_t
 _Static_assert(sizeof(companion_wire_record_t) + sizeof(companion_wire_daily_root_t)
                    <= COMPANION_MAX_RESULT_BYTES,
                "daily-root response header exceeds bounded transport");
-_Static_assert(sizeof(companion_wire_record_t) + sizeof(companion_wire_health_adapter_t)
+_Static_assert(sizeof(companion_wire_record_t) + sizeof(companion_wire_health_adapter_summary_t)
                    <= COMPANION_MAX_RESULT_BYTES,
                "health response header exceeds bounded transport");
 _Static_assert(COMPANION_MAX_DATE_BYTES % 2u == 0u,

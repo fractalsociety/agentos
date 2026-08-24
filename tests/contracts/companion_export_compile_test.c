@@ -16,7 +16,7 @@ _Static_assert(sizeof(companion_wire_list_t) == 16u,
                "target list slice layout");
 _Static_assert(_Alignof(companion_wire_daily_root_t) == COMPANION_ABI_ALIGNMENT,
                "target result record alignment");
-_Static_assert(_Alignof(companion_wire_health_adapter_t) == COMPANION_ABI_ALIGNMENT,
+_Static_assert(_Alignof(companion_wire_health_adapter_summary_t) == COMPANION_ABI_ALIGNMENT,
                "target health record alignment");
 _Static_assert(_Alignof(companion_wire_worker_memory_t) == COMPANION_ABI_ALIGNMENT,
                "target worker record alignment");

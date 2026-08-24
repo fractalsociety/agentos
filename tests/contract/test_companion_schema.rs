@@ -222,7 +222,7 @@ fn operations_parse_to_typed_bounded_results() {
         ("list-projects", "result<project-page, export-error>"),
         ("list-progress", "result<progress-page, export-error>"),
         ("get-daily-root", "result<daily-root, export-error>"),
-        ("get-health-adapter", "result<health-adapter, export-error>"),
+        ("get-health-adapter", "result<health-adapter-summary, export-error>"),
         (
             "list-worker-memory",
             "result<worker-memory-page, export-error>",
@@ -415,7 +415,10 @@ fn every_v1_1_result_record_has_the_same_c_and_wit_semantic_fields() {
         ("daily-item", "companion_wire_daily_item_t"),
         ("daily-root", "companion_wire_daily_root_t"),
         ("health-signal", "companion_wire_health_signal_t"),
-        ("health-adapter", "companion_wire_health_adapter_t"),
+        (
+            "health-adapter-summary",
+            "companion_wire_health_adapter_summary_t",
+        ),
         ("worker-memory", "companion_wire_worker_memory_t"),
         ("session", "companion_wire_session_t"),
         (
@@ -455,7 +458,7 @@ fn forbidden_payload_fields_are_absent_from_parsed_export_records() {
         "project",
         "progress",
         "daily-root",
-        "health-adapter",
+        "health-adapter-summary",
         "worker-memory",
         "task-intent",
     ] {

@@ -528,8 +528,62 @@ interface types {
     }
 
     // ── Health adapter ───────────────────────────────────────────────────
+    //
+    // Health binding rules (normative, mirrored by the adapter behind
+    // companion_export_contract.h). HealthAdapterSummary is the ONLY shape
+    // health data may take on this interface, and it is a summary in the
+    // strict sense: the coarsest aggregate that still answers "is attention
+    // needed", built from the minimum necessary source records.
+    //
+    //   H1. Explicit authorization. Reading requires the `health` grant AND
+    //       per-family user consent recorded in `consent-scope`. Either one
+    //       missing is `export-error.denied` -- never an empty or default
+    //       summary. A signal may only be emitted for a family listed in
+    //       `consent-scope`; consent is per family, never global.
+    //   H2. Minimum-necessary aggregation. The only values that cross are
+    //       the coarse enums `health-source` and `health-status`. No
+    //       measurement, value, unit, series, trend, record identifier,
+    //       provider name, or timestamp series appears in any field at any
+    //       redaction class. `provenance` is a hash over exactly the
+    //       minimum-necessary aggregate that produced `status`, so the
+    //       summary is verifiable without being reversible.
+    //   H3. Expiry. Consent is a window, not a standing state: once
+    //       `consent-expires-unix` passes, reads fail `export-error.expired`
+    //       rather than serving on stale consent. Each signal states its own
+    //       freshness, so one stale family cannot hide behind a fresh
+    //       rollup. A source past the freshness window is
+    //       `source-freshness.stale` on the signal and the summary, and
+    //       `export-error.stale-source` past the hard window. A stale or
+    //       offline source is never rendered as a fresh, current, or empty
+    //       summary.
+    //   H4. Deletion and revocation. `revoked` is true once the user revoked
+    //       consent or the source was deleted. A revoked or deleted adapter
+    //       serves `export-error.denied` -- never a cached summary, never a
+    //       tombstone that still names the source. Deleting source data
+    //       removes the affected signals; a cached aggregate may not survive
+    //       the deletion it summarizes.
+    //   H5. Deterministic projection. At most one signal per family,
+    //       ordered by ascending `health-source` ordinal -- never arrival
+    //       order, adapter iteration order, or an implementation address.
+    //       Rebuilding from the same pinned `range`, consent state, and
+    //       source observations must produce a byte-identical `provenance`;
+    //       wall-clock build time is not an input to any identity.
+    //   H6. Canary non-disclosure. Canary or sentinel records planted in a
+    //       health source are never disclosed: their values, their
+    //       existence, their count, and their absence are not exported at
+    //       any redaction class, no field distinguishes them, and they
+    //       contribute nothing to any signal, status, or provenance hash,
+    //       so the companion cannot infer their presence from the output
+    //       shape or from any error path.
+    //   H7. Credentials stay behind the adapter. Source credentials and
+    //       account material live only inside the adapter, behind the
+    //       opaque, salted, non-reversible `source` handle. They never
+    //       cross this interface, never enter the canonical event stream,
+    //       and never enter an immutable shared workspace such as a daily
+    //       bundle. `source` correlates; it does not identify.
 
-    /// Which family of source produced a summary. Named coarsely on purpose.
+    /// Which family of source produced a signal. Named coarsely on purpose;
+    /// the family is also the unit of consent in `consent-scope`.
     enum health-source {
         unknown,
         activity,
@@ -548,21 +602,32 @@ interface types {
 
     /// A single coarse, consented signal. Carries no measurement value, no
     /// timestamp series, and no record identifier from the source system.
+    /// Freshness is stated per signal, never only in the rollup.
     record health-signal {
         source: health-source,
         status: health-status,
         /// Hash over the minimum-necessary aggregate that produced `status`.
         provenance: object-id,
         observed-unix: u64,
+        /// Age of this signal's contributing source at build time.
+        freshness-seconds: u32,
+        source-freshness: source-freshness,
         redaction: redaction-class,
     }
 
-    /// The whole health surface available to the companion. Source
-    /// credentials live behind `source` and never leave the adapter.
-    record health-adapter {
+    /// The whole health surface available to the companion: a summary, not
+    /// a record set. Source credentials live behind `source` and never
+    /// leave the adapter (H7). The class of the ORIGINAL data behind every
+    /// field is `source-class.personal-record`, which is why nothing here
+    /// is emitted verbatim and every field is coarse, hashed, or withheld.
+    record health-adapter-summary {
         schema: schema-version,
         authority-epoch: u64,
         source: source-handle,
+        /// Class of the ORIGINAL data behind this summary. Must be
+        /// `source-class.personal-record`; any other value means the
+        /// adapter is exporting a class it was never authorized to hold.
+        origin: source-class,
         /// Families the user explicitly consented to. Empty means no
         /// consent, which is distinct from `revoked`.
         /// Bounded by limits.max-consent-scopes.
@@ -574,7 +639,8 @@ interface types {
         /// Rolled-up status across `signals`.
         status: health-status,
         freshness-seconds: u32,
-        /// Bounded by limits.max-health-signals.
+        /// Bounded by limits.max-health-signals. At most one signal per
+        /// family, ordered by ascending `health-source` ordinal.
         signals: list<health-signal>,
         provenance: object-id,
         range: event-range,
@@ -693,7 +759,7 @@ interface types {
 interface companion-export {
     use types.{
         schema-version, object-id, event-cursor, export-error, page-request,
-        page-info, session, project, progress, project-snapshot, progress-node, daily-root, health-adapter,
+        page-info, session, project, progress, project-snapshot, progress-node, daily-root, health-adapter-summary,
         worker-memory, task-intent, task-intent-receipt,
     };
 
@@ -775,9 +841,12 @@ interface companion-export {
         tz-key: string,
     ) -> result<daily-root, export-error>;
 
-    /// Coarse, consented health summary. Returns `denied` when consent was
-    /// never granted or was revoked, and `expired` once the window closes.
-    get-health-adapter: func(epoch: u64) -> result<health-adapter, export-error>;
+    /// Coarse, consented health summary, per H1..H7. Returns `denied` when
+    /// the `health` grant is missing, when consent was never granted, when
+    /// consent was revoked or the source deleted, and `expired` once the
+    /// consent window closes. Never serves a cached summary after revocation
+    /// or deletion, and never an empty summary in place of a denial.
+    get-health-adapter: func(epoch: u64) -> result<health-adapter-summary, export-error>;
 
     /// Active-versus-dormant memory for every visible worker and peer.
     list-worker-memory: func(

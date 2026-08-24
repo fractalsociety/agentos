@@ -111,7 +111,7 @@ static uint32_t record_type_for(uint32_t opcode)
     case MSG_COMPANION_LIST_PROJECTS: return COMPANION_WIRE_PROJECT_PAGE;
     case MSG_COMPANION_LIST_PROGRESS: return COMPANION_WIRE_PROGRESS_PAGE;
     case MSG_COMPANION_GET_DAILY_ROOT: return COMPANION_WIRE_DAILY_ROOT;
-    case MSG_COMPANION_GET_HEALTH_ADAPTER: return COMPANION_WIRE_HEALTH_ADAPTER;
+    case MSG_COMPANION_GET_HEALTH_ADAPTER: return COMPANION_WIRE_HEALTH_ADAPTER_SUMMARY;
     case MSG_COMPANION_LIST_WORKER_MEMORY: return COMPANION_WIRE_WORKER_MEMORY_PAGE;
     case MSG_COMPANION_SUBMIT_TASK_INTENT: return COMPANION_WIRE_TASK_INTENT_RECEIPT;
     default: return 0u;
@@ -125,7 +125,7 @@ static uint32_t record_payload_bytes_for(uint32_t opcode)
     case MSG_COMPANION_LIST_PROJECTS: return sizeof(companion_wire_project_page_t);
     case MSG_COMPANION_LIST_PROGRESS: return sizeof(companion_wire_progress_page_t);
     case MSG_COMPANION_GET_DAILY_ROOT: return sizeof(companion_wire_daily_root_t);
-    case MSG_COMPANION_GET_HEALTH_ADAPTER: return sizeof(companion_wire_health_adapter_t);
+    case MSG_COMPANION_GET_HEALTH_ADAPTER: return sizeof(companion_wire_health_adapter_summary_t);
     case MSG_COMPANION_LIST_WORKER_MEMORY:
         return sizeof(companion_wire_worker_memory_page_t);
     case MSG_COMPANION_SUBMIT_TASK_INTENT:
