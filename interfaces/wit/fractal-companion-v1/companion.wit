@@ -407,10 +407,60 @@ interface types {
     }
 
     // ── Daily root ───────────────────────────────────────────────────────
+    //
+    // Daily binding rules (normative). A DailyRoot is a DERIVED IMMUTABLE
+    // READ MODEL over already-authorized projections. It is not a calendar,
+    // message, health, or file database, and it never becomes one.
+    //
+    //   D1. Determinism. `bundle-id` is the hash over exactly the pinned
+    //       inputs: schema, project-root, event-root, range (including
+    //       head), date-key, tz-key, utc-offset-minutes, merge-policy,
+    //       merge-schema, the deduplicated conflict-heads in ascending byte
+    //       order, and each item in canonical order. Wall-clock observation
+    //       state -- `built-at-unix`, `freshness-seconds`, and
+    //       `source-freshness` -- is EXCLUDED from `bundle-id` and from
+    //       `provenance`, so a rebuild at a later instant from the same
+    //       roots and range stays byte-identical.
+    //   D2. Total order. Items are ordered by `ordering-key` UTF-8 bytes,
+    //       then by `ordinal`. `ordinal` is unique within a bundle, so the
+    //       order is total and no tie can be broken by arrival order,
+    //       adapter iteration order, or an implementation address.
+    //   D3. Rollover. An item belongs to this bundle iff its canonical
+    //       instant, shifted by `utc-offset-minutes`, has local civil date
+    //       `date-key`. The offset is the one in force at that instant for
+    //       `tz-key`; when a DST transition makes a local time ambiguous the
+    //       EARLIER (pre-transition) offset is chosen, and when it makes one
+    //       nonexistent the later offset is chosen. The same instant may
+    //       therefore appear in different `date-key`s under different
+    //       `tz-key`s; ("date-key", "tz-key") is the bundle key, and each
+    //       key builds an independent bundle with its own `bundle-id`.
+    //   D4. Freshness is never silent. A contributing source older than the
+    //       adapter's freshness window yields `source-freshness.stale`, and
+    //       an unreachable one yields `source-freshness.offline`, on both the
+    //       bundle and each affected item. A source past the hard window
+    //       fails `export-error.stale-source`. A stale or offline source is
+    //       NEVER rendered as a fresh, empty, or partial day.
+    //   D5. Conflicts are preserved, never resolved by inference. Divergent
+    //       heads are listed in `conflict-heads`, deduplicated and sorted in
+    //       ascending byte order. A non-empty `conflict-heads` with
+    //       `merge-policy.preserve-conflicts` is a valid, servable bundle;
+    //       `get-daily-root` returns `export-error.conflict` only when the
+    //       caller asked for a single merged head that does not exist.
+    //   D6. Merging is schema-authorized only. `merge-policy.schema-declared`
+    //       REQUIRES `merge-schema` to be present and to name the schema
+    //       object that declares the merge; `merge-policy.preserve-conflicts`
+    //       REQUIRES `merge-schema` to be absent. A merge is valid only when
+    //       the schema explicitly declares it -- never by last-writer-wins,
+    //       timestamp, or heuristic.
+    //   D7. No raw bodies. Neither record carries a calendar entry, message,
+    //       health record, file body, path, command, argument vector, or
+    //       credential, at any redaction class. Items reference pinned
+    //       projections by `object-id` and act only through
+    //       `task-intent-reference`.
 
     /// A reference from the daily bundle back into pinned canonical state.
     /// Deliberately holds no body: no calendar entry, message, file, or
-    /// health record ever crosses this boundary.
+    /// health record ever crosses this boundary. See D2 and D7.
     record daily-item {
         item-id: object-id,
         /// The projection this item points at.
@@ -419,6 +469,8 @@ interface types {
         /// limits.max-ordering-key-bytes.
         /// Items sort by this key's UTF-8 bytes, then by ordinal.
         ordering-key: string,
+        /// Unique within the bundle, so ordering-key + ordinal is a TOTAL
+        /// order. Never an arrival index or an adapter iteration position.
         ordinal: u32,
         event-seq: u64,
         /// Class of the ORIGINAL source. Must be `projection`.
@@ -435,7 +487,8 @@ interface types {
 
     /// One immutable, deterministically rebuildable bundle for one local
     /// calendar day. Rebuilding from the same roots and range must yield a
-    /// byte-identical `bundle-id`.
+    /// byte-identical `bundle-id`, per D1. The bundle key is the pair
+    /// ("date-key", "tz-key"); observation state never enters the identity.
     record daily-root {
         schema: schema-version,
         authority-epoch: u64,
@@ -450,6 +503,9 @@ interface types {
         tz-key: string,
         /// Offset actually used for the rollover decision, -1440 ..= 1440.
         utc-offset-minutes: s32,
+        /// When this build was observed. Observation state only: EXCLUDED
+        /// from `bundle-id` and from `provenance` so a later rebuild of the
+        /// same pinned inputs stays byte-identical.
         built-at-unix: u64,
         /// Age in seconds of the FRESHEST contributing source.
         freshness-seconds: u32,
@@ -460,11 +516,13 @@ interface types {
         /// Hash over the pinned roots, range, timezone, and projected items.
         provenance: object-id,
         /// Divergent heads preserved rather than silently merged.
-        /// Bounded by limits.max-conflict-heads.
+        /// Deduplicated and sorted in ascending byte order, so the list is
+        /// itself deterministic. Bounded by limits.max-conflict-heads.
         conflict-heads: list<object-id>,
         /// A merge is valid only when the schema explicitly declares it.
         merge-policy: merge-policy,
         /// Identifier of the schema that authorized `schema-declared`.
+        /// Present if and only if `merge-policy` is `schema-declared`.
         merge-schema: option<object-id>,
         redaction: redaction-class,
     }
@@ -694,6 +752,23 @@ interface companion-export {
 
     /// The immutable bundle for one local day. Deterministic: identical
     /// inputs must produce an identical `bundle-id`.
+    ///
+    /// `date-key` is a local civil date, exactly "YYYY-MM-DD"; `tz-key` is an
+    /// IANA zone key. Together they are the bundle key, and the server
+    /// resolves the rollover offset for that pair per D3.
+    ///
+    /// Typed failures, never a silently empty day:
+    ///   `denied`        -- caller lacks the `daily-root` grant, or a
+    ///                      requested field's source-class is not exportable.
+    ///   `redacted`      -- an authorized field could only be emitted below
+    ///                      the redaction class the caller asked for.
+    ///   `stale-source`  -- a contributing source is past its hard freshness
+    ///                      window; the day is not served as fresh.
+    ///   `conflict`      -- a single merged head was requested but only
+    ///                      divergent `conflict-heads` exist.
+    ///   `invalid`       -- malformed `date-key` or unknown `tz-key`.
+    ///   `not-found`     -- the pair names no built bundle.
+    ///   `stale-authority` / `unavailable` / `expired` as elsewhere.
     get-daily-root: func(
         epoch: u64,
         date-key: string,
