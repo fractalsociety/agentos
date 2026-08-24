@@ -157,9 +157,10 @@ invocation fail before reaching the provider.
 
 External names are collision-free under `mcp.*`. The model invokes
 `mcp.tools.list` to receive the bounded, sanitized catalog, then invokes one of
-the returned names. The host adapter speaks current MCP 2026-07-28 stdio with
-`server/discover` and per-request metadata, and has a tested fallback to the
-legacy initialize lifecycle. The administrator supplies an exact JSON argv
+the returned names. The host adapter speaks the current
+[MCP 2026-07-28 stdio protocol](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio)
+with `server/discover` and per-request metadata, and has a tested fallback to
+the legacy initialize lifecycle. The administrator supplies an exact JSON argv
 array and an explicit environment map, never a shell command. The default VM
 gate starts a hermetic real MCP stdio server; a deployment can select another:
 
@@ -270,18 +271,17 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
   --perf-output build/agent-harness-qemu-perf.json --require-perf
 ```
 
-The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
-AgentFS, ExecSvc, and the model, execution, and MCP transport PDs passed all 45
-target assertions. It measured 463.606 ms from QEMU spawn to root-task
-readiness, a 3.799 ms cold native planner turn, and 12 warm turns with 0.190 ms
-p50 and 0.536 ms p95. ModelSvc cached queries measured 0.043 ms p50 and
-0.367 ms p95. The worker reported 274,432 bytes of
-private committed memory
-and 196,608 bytes of shared client mappings under its 64 MiB private limit;
-its shared-component bitmap now includes the singleton repository index.
-Host-side proxy memory is shared system infrastructure and is intentionally not
-reported as worker-private memory. These are QEMU/host-arrival measurements,
-not bare-metal cycle counts.
+The latest 2026-08-24 detached clean-worktree AArch64 QEMU performance run with
+ModelSvc, ToolSvc, AgentFS, ExecSvc, and the model, execution, and MCP transport
+PDs passed all 45 target assertions. It measured 548.266 ms from QEMU spawn to
+root-task readiness, a 4.192 ms cold native planner turn, and 12 warm turns with
+0.238 ms p50 and 0.521 ms p95. ModelSvc cached queries measured 0.057 ms p50
+and 0.376 ms p95. The structured report captured 274,432 bytes of private
+committed worker memory and 196,608 bytes of shared client mappings under its
+64 MiB private limit; its shared-component bitmap reports 55 shared components,
+including the singleton repository index. Host-side proxy memory is shared
+system infrastructure and is intentionally not reported as worker-private
+memory. These are QEMU/host-arrival measurements, not bare-metal cycle counts.
 
 The clean-worktree authority run retained the same resource contract:
 274,432 bytes private committed, 196,608 bytes shared mapped, a 64 MiB default
