@@ -5063,7 +5063,14 @@
         "agent_label": "opencode",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T21:32:14Z"
+        "released_at": "2026-08-24T21:32:19Z"
+      },
+      "verify.reconcile_prd_beads.harness": {
+        "agent_id": "codex-luna",
+        "agent_label": "codex-luna",
+        "state": "completed",
+        "checked_out_at": "2026-08-24T21:32:19Z",
+        "completed_at": "2026-08-24T21:32:28Z"
       },
       "verify.remote_mesh_contract_tests.harness": {
         "agent_id": "codex-luna",
@@ -5073,7 +5080,7 @@
         "completed_at": "2026-08-24T21:32:14Z"
       }
     },
-    "updated_at": "2026-08-24T21:32:14Z"
+    "updated_at": "2026-08-24T21:32:29Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -5753,7 +5760,14 @@
           "version": "0.1.0"
         },
         "attempt_count": 1,
-        "outcome": "unverified_success",
+        "outcome": "verified_success",
+        "verification": {
+          "type": "automated",
+          "passed": true,
+          "evidence_refs": [
+            "evidence:verify.reconcile_prd_beads.harness:5eb4a6263283a1b160e091ca"
+          ]
+        },
         "artifacts_produced": [
           "artifact:reconcile_prd_beads:b27739d9721e743d46728251"
         ],
@@ -5883,12 +5897,15 @@
         ],
         "created_at": "2026-08-24T21:19:43Z",
         "ready_at": "2026-08-24T21:20:05Z",
-        "started_at": "2026-08-24T21:32:01Z",
+        "started_at": "2026-08-24T21:32:19Z",
+        "finished_at": "2026-08-24T21:32:19Z",
         "executor": {
           "agent": "opencode",
           "version": "0.1.0"
         },
-        "attempt_count": 25,
+        "attempt_count": 26,
+        "outcome": "failed_execution",
+        "failure_code": "tool_failure",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
@@ -5902,9 +5919,28 @@
           "reconcile_prd_beads"
         ],
         "created_at": "2026-08-24T21:32:14Z",
-        "attempt_count": 0,
-        "artifacts_produced": [],
-        "consumed_by": [],
+        "ready_at": "2026-08-24T21:32:19Z",
+        "started_at": "2026-08-24T21:32:19Z",
+        "finished_at": "2026-08-24T21:32:28Z",
+        "executor": {
+          "agent": "codex-luna",
+          "version": "0.1.0"
+        },
+        "attempt_count": 1,
+        "outcome": "verified_success",
+        "verification": {
+          "type": "automated",
+          "passed": true,
+          "evidence_refs": [
+            "evidence:verify.reconcile_prd_beads.harness:5eb4a6263283a1b160e091ca"
+          ]
+        },
+        "artifacts_produced": [
+          "artifact:verify.reconcile_prd_beads.harness:5eb4a6263283a1b160e091ca"
+        ],
+        "consumed_by": [
+          "artifact:reconcile_prd_beads:b27739d9721e743d46728251"
+        ],
         "human_intervention": false,
         "reopen_count": 0
       },
@@ -8567,7 +8603,7 @@
       "failure:unify_fractal_graph_ui:tool_failure": {
         "id": "failure:unify_fractal_graph_ui:tool_failure",
         "node_id": "unify_fractal_graph_ui",
-        "attempt": 25,
+        "attempt": 26,
         "failure_code": "tool_failure",
         "outcome": "failed_execution",
         "state": "unresolved",
@@ -8916,12 +8952,28 @@
             "observed": {
               "graph_hash": "sha256:8e7c3e2bf0cf2ebb0f65a3c0a76968e98781a0416f6b13349ae1785582e52dca"
             }
+          },
+          {
+            "attempt": 26,
+            "outcome": "failed_execution",
+            "summary": "node unify_fractal_graph_ui reported failed_execution with failure code tool_failure",
+            "evidence": [
+              {
+                "legacy_ref": "evidence:unify_fractal_graph_ui:evidence:unify_fractal_g",
+                "kind": "workspace_state"
+              }
+            ],
+            "agent": "opencode",
+            "version": "0.1.0",
+            "observed": {
+              "graph_hash": "sha256:0de25dd244355e310e8b11f7c8e5c627ef32ccf24579d8ee96a6a53a23bc9f37"
+            }
           }
         ],
         "agent": "opencode",
         "version": "0.1.0",
         "observed": {
-          "graph_hash": "sha256:8e7c3e2bf0cf2ebb0f65a3c0a76968e98781a0416f6b13349ae1785582e52dca"
+          "graph_hash": "sha256:0de25dd244355e310e8b11f7c8e5c627ef32ccf24579d8ee96a6a53a23bc9f37"
         },
         "objective_fingerprint": "sha256:d8bb099329cd3850c76c319612048e81787ac810bbed72b5a693841752e1bbb7"
       }
@@ -8929,7 +8981,7 @@
     "lessons": {},
     "edges": {},
     "cross_project_links": {},
-    "failure_graph_hash": "sha256:b65c799708549e112168d1eb9e47891f66e91cd2c21130ffe83b9ac2b68eef05"
+    "failure_graph_hash": "sha256:f7126447ea5fa366181a9512780ba2eb3928c27cbbe357ccebaab599d1fe7c6f"
   },
-  "updated_at": "2026-08-24T21:32:14Z"
+  "updated_at": "2026-08-24T21:32:29Z"
 }
