@@ -274,11 +274,12 @@ harness continuation through the provider.
 
 These dedicated model, execution, and MCP consoles are honest intermediate
 transports, not a claim of native TCP, a native compiler, arbitrary repository
-commands, or native Headscale support. The current lwIP shim does not provide a real
-packet path, so native Headscale-ready networking and device enrollment remain
-open work. The transports prove the intended authority graph without placing
-the model client, compiler process, credentials, or host sockets in every
-worker.
+commands, or native Headscale support. A separate `net_pd` now owns a real
+IRQ-driven VirtIO-net path and has target TX/RX DMA proof. The remaining model
+and mesh gap is above that device path: `net_server`/`wg_net` still need native
+UDP/IP packet plumbing, Headscale netmap consumption, rekey/roaming, and DERP.
+The transports prove the intended authority graph without placing the model
+client, compiler process, credentials, or host sockets in every worker.
 
 In another terminal, enable the opt-in live target assertion:
 

@@ -163,6 +163,26 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
+        // agentos-gz0.5: canonical Noise BLAKE2s transcript and KDF vectors.
+        name: "test_wireguard_noise",
+        sources: &[
+            "tests/test_wireguard_noise.c",
+            "kernel/agentos-root-task/src/wireguard_noise.c",
+            "kernel/agentos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // agentos-gz0.5: wg_net fail-closed handshake/session integration.
+        name: "test_wg_net_sessions",
+        sources: &[
+            "tests/test_wg_net_sessions.c",
+            "kernel/agentos-root-task/src/wireguard_noise.c",
+            "kernel/agentos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
         // agentos-681 / agentos-vsi: CC-PD polecat occupancy + log-slot model.
         // agent_pool.c pulls in the Microkit IPC layer, so force-include the
         // host shim that stubs microkit_mr_get/set.

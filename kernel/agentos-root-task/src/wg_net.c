@@ -18,8 +18,8 @@
  *   - wg_net registers itself as "wg_net" with the nameserver at startup.
  *
  * Crypto:
- *   Transport encryption uses the RFC 8439 ChaCha20-Poly1305 construction.
- *   Noise transcript/KDF/session derivation remains an integration point.
+ *   Transport encryption uses RFC 8439 ChaCha20-Poly1305. Handshake messages
+ *   use the canonical WireGuard Noise_IKpsk2 transcript and BLAKE2s KDF.
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -117,8 +117,11 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
     d[off+3] = (uint8_t)(v >> 24);
 }
 
-/* Production links the real RFC 8439 implementation.  Host API tests use a
- * deterministic stand-in; cryptographic vectors run in a separate suite. */
+/* Most host API tests use deterministic stand-ins. Session integration tests
+ * define AGENTOS_TEST_REAL_CRYPTO and link the production implementation. */
+#ifdef AGENTOS_TEST_REAL_CRYPTO
+#include "monocypher.h"
+#else
 static inline void crypto_chacha20_poly1305_lock(
                                      uint8_t *ct, uint8_t *mac,
                                      const uint8_t *key, const uint8_t *n,
@@ -143,6 +146,7 @@ static inline void crypto_x25519(uint8_t *out, const uint8_t *sk, const uint8_t 
 {
     for (int i = 0; i < 32; i++) out[i] = sk[i] ^ pk[i] ^ 0x42u;
 }
+#endif
 
 static inline void log_drain_write(int a, int b, const char *s) { (void)a;(void)b;(void)s; }
 static inline void agentos_log_boot(const char *s) { (void)s; }
@@ -195,6 +199,7 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 #endif /* AGENTOS_TEST_HOST */
 
 #include "wireguard_counter.h"
+#include "wireguard_noise.h"
 
 /* ── WireGuard / wg_net constants (identical values to old version) ──────── */
 #ifndef WG_MAX_PEERS
@@ -208,11 +213,14 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 #define OP_WG_STATUS        0xD4u
 #define OP_WG_SET_PRIVKEY   0xD5u
 #define OP_WG_HEALTH        0xD6u
+#define OP_WG_HANDSHAKE_START 0xD7u
+#define OP_WG_INGEST          0xD8u
 #define WG_OK               0u
 #define WG_ERR_NOPEER       1u
 #define WG_ERR_NOKEY        2u
 #define WG_ERR_FULL         3u
 #define WG_ERR_CRYPTO       4u
+#define WG_ERR_NOSESSION    5u
 typedef struct {
     uint8_t   peer_id;
     bool      active;
@@ -227,6 +235,14 @@ typedef struct {
     uint64_t  rx_bytes;
     uint64_t  tx_counter;
     wg_replay_window_t rx_replay;
+    wg_noise_handshake_t handshake;
+    uint8_t   send_key[WG_KEY_LEN];
+    uint8_t   receive_key[WG_KEY_LEN];
+    uint32_t  send_index;
+    uint32_t  receive_index;
+    bool      session_established;
+    uint8_t   _session_pad[3];
+    uint8_t   last_timestamp[WG_NOISE_TIMESTAMP_LEN];
     uint32_t  last_handshake;
     uint8_t   _pad[4];
 } wg_peer_t;
@@ -251,6 +267,7 @@ uintptr_t wg_staging_vaddr;
 #define WG_STAGING_RX_OFF        0x010000UL
 #define WG_STAGING_TX_MAX        0x00E000UL
 #define WG_STAGING_RX_MAX        0x00E000UL
+#define WG_STAGING_INGRESS_OFF   0x011000UL
 
 #define WG_AEAD_TAG_LEN      16u
 #define WG_TRANSPORT_HDR_LEN 16u
@@ -313,6 +330,44 @@ static void wg_zero(uint8_t *dst, uint32_t n) {
     for (uint32_t i = 0; i < n; i++) dst[i] = 0;
 }
 
+static uint64_t wg_read64_le(const volatile uint8_t *src) {
+    uint64_t value = 0u;
+    for (uint32_t i = 0u; i < 8u; i++) value |= (uint64_t)src[i] << (8u * i);
+    return value;
+}
+
+static bool wg_timestamp_after(const uint8_t candidate[WG_NOISE_TIMESTAMP_LEN],
+                               const uint8_t previous[WG_NOISE_TIMESTAMP_LEN]) {
+    for (uint32_t i = 0u; i < WG_NOISE_TIMESTAMP_LEN; i++) {
+        if (candidate[i] > previous[i]) return true;
+        if (candidate[i] < previous[i]) return false;
+    }
+    return false;
+}
+
+static bool wg_staging_range(uint32_t offset, uint32_t length,
+                             uint32_t start, uint32_t end)
+{
+    return wg_staging_vaddr != 0u && offset >= start
+        && offset + length >= offset && offset + length <= end;
+}
+
+static uint32_t wg_message_type(const volatile uint8_t *message)
+{
+    return (uint32_t)message[0] | ((uint32_t)message[1] << 8u)
+        | ((uint32_t)message[2] << 16u) | ((uint32_t)message[3] << 24u);
+}
+
+static void wg_session_install(wg_peer_t *peer)
+{
+    peer->receive_index = peer->handshake.local_index;
+    peer->send_index = peer->handshake.remote_index;
+    peer->session_established = true;
+    peer->tx_counter = 0u;
+    wg_replay_window_reset(&peer->rx_replay);
+    peer->last_handshake = timer_tick;
+}
+
 /* ── Peer table helpers ───────────────────────────────────────────────────── */
 static wg_peer_t *find_peer(uint8_t peer_id) {
     for (int i = 0; i < (int)WG_MAX_PEERS; i++) {
@@ -320,6 +375,32 @@ static wg_peer_t *find_peer(uint8_t peer_id) {
             return &peers[i];
     }
     return NULL;
+}
+static wg_peer_t *find_peer_by_handshake_index(uint32_t receiver) {
+    for (int i = 0; i < (int)WG_MAX_PEERS; i++) {
+        if (peers[i].active && peers[i].handshake.local_index == receiver)
+            return &peers[i];
+    }
+    return NULL;
+}
+static wg_peer_t *find_peer_by_session_index(uint32_t receiver) {
+    for (int i = 0; i < (int)WG_MAX_PEERS; i++) {
+        if (peers[i].active && peers[i].session_established
+            && peers[i].receive_index == receiver)
+            return &peers[i];
+    }
+    return NULL;
+}
+static bool wg_index_in_use(uint32_t index, const wg_peer_t *except) {
+    if (index == 0u) return true;
+    for (int i = 0; i < (int)WG_MAX_PEERS; i++) {
+        const wg_peer_t *peer = &peers[i];
+        if (!peer->active || peer == except) continue;
+        if (peer->handshake.local_index == index
+            || (peer->session_established && peer->receive_index == index))
+            return true;
+    }
+    return false;
 }
 static int alloc_peer_slot(void) {
     for (int i = 0; i < (int)WG_MAX_PEERS; i++) {
@@ -402,7 +483,7 @@ static void send_keepalives(void) {
 
     for (int i = 0; i < (int)WG_MAX_PEERS; i++) {
         wg_peer_t *p = &peers[i];
-        if (!p->active) continue;
+        if (!p->active || !p->session_established) continue;
 
         if (!wg_staging_vaddr) {
             log_drain_write(16, 16, "[wg_net] keepalive: staging not mapped\n");
@@ -411,17 +492,16 @@ static void send_keepalives(void) {
 
         volatile uint8_t *tx = WG_STAGING + WG_STAGING_TX_OFF;
         tx[0] = 4; tx[1] = 0; tx[2] = 0; tx[3] = 0;
-        tx[4] = p->peer_id; tx[5] = 0; tx[6] = 0; tx[7] = 0;
+        uint32_t receiver = p->send_index;
+        tx[4] = (uint8_t)receiver; tx[5] = (uint8_t)(receiver >> 8u);
+        tx[6] = (uint8_t)(receiver >> 16u); tx[7] = (uint8_t)(receiver >> 24u);
         uint8_t nonce[12];
         if (!wg_transport_next_counter(&p->tx_counter, nonce)) continue;
         for (int b = 0; b < 8; b++) tx[8 + b] = nonce[4 + b];
 
         uint8_t  cipher[WG_AEAD_TAG_LEN];
         uint32_t cipher_len = 0;
-        uint8_t  session_key[WG_KEY_LEN];
-        wg_zero(session_key, WG_KEY_LEN);
-
-        int rc = wg_encrypt(session_key, nonce, NULL, 0, cipher, &cipher_len);
+        int rc = wg_encrypt(p->send_key, nonce, NULL, 0, cipher, &cipher_len);
         if (rc != 0) continue;
 
         for (uint32_t b = 0; b < cipher_len; b++)
@@ -510,6 +590,13 @@ static uint32_t handle_add_peer(sel4_badge_t badge __attribute__((unused)),
     wg_zero(p->preshared_key, WG_KEY_LEN);
 
     wg_copy_from_staging(p->pubkey, WG_STAGING + pubkey_off, WG_KEY_LEN);
+    wg_noise_handshake_init(&p->handshake, p->pubkey, p->preshared_key);
+    wg_zero(p->send_key, WG_KEY_LEN);
+    wg_zero(p->receive_key, WG_KEY_LEN);
+    p->send_index = 0u;
+    p->receive_index = 0u;
+    wg_zero(p->last_timestamp, WG_NOISE_TIMESTAMP_LEN);
+    p->session_established = false;
 
     log_drain_write(16, 16, "[wg_net] ADD_PEER: id=");
     wg_log_dec(peer_id);
@@ -558,6 +645,13 @@ static uint32_t handle_remove_peer(sel4_badge_t badge __attribute__((unused)),
 
     wg_zero(p->pubkey, WG_KEY_LEN);
     wg_zero(p->preshared_key, WG_KEY_LEN);
+    wg_zero(p->send_key, WG_KEY_LEN);
+    wg_zero(p->receive_key, WG_KEY_LEN);
+    p->send_index = 0u;
+    p->receive_index = 0u;
+    wg_zero((uint8_t *)&p->handshake, (uint32_t)sizeof(p->handshake));
+    wg_zero(p->last_timestamp, WG_NOISE_TIMESTAMP_LEN);
+    p->session_established = false;
     p->active  = false;
     p->peer_id = 0;
 
@@ -566,6 +660,250 @@ static uint32_t handle_remove_peer(sel4_badge_t badge __attribute__((unused)),
     data_wr32(rep->data, 0, WG_OK);
     rep->length = 4;
     return SEL4_ERR_OK;
+}
+
+/* Create an initiation without exposing the resident static private key. */
+static uint32_t handle_handshake_start(
+    sel4_badge_t badge __attribute__((unused)), const sel4_msg_t *req,
+    sel4_msg_t *rep, void *ctx __attribute__((unused)))
+{
+    uint32_t peer_id = data_rd32(req->data, 0);
+    uint32_t ephemeral_off = data_rd32(req->data, 4);
+    uint32_t timestamp_off = data_rd32(req->data, 8);
+    uint32_t sender_index = data_rd32(req->data, 12);
+    wg_peer_t *peer = find_peer((uint8_t)peer_id);
+    uint8_t ephemeral[WG_NOISE_KEY_LEN], timestamp[WG_NOISE_TIMESTAMP_LEN];
+    uint8_t message[WG_NOISE_INITIATION_LEN];
+
+    if (!wg_privkey_set) {
+        data_wr32(rep->data, 0, WG_ERR_NOKEY);
+        rep->length = 4;
+        return SEL4_ERR_PERM;
+    }
+    if (peer_id >= WG_MAX_PEERS || peer == NULL) {
+        data_wr32(rep->data, 0, WG_ERR_NOPEER);
+        rep->length = 4;
+        return SEL4_ERR_NOT_FOUND;
+    }
+    if (wg_index_in_use(sender_index, peer)
+        || !wg_staging_range(ephemeral_off, WG_NOISE_KEY_LEN, 0u,
+                             (uint32_t)WG_STAGING_TX_OFF)
+        || !wg_staging_range(timestamp_off, WG_NOISE_TIMESTAMP_LEN, 0u,
+                             (uint32_t)WG_STAGING_TX_OFF)) {
+        data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+        rep->length = 4;
+        return SEL4_ERR_BAD_ARG;
+    }
+
+    wg_copy_from_staging(ephemeral, WG_STAGING + ephemeral_off,
+                         WG_NOISE_KEY_LEN);
+    wg_copy_from_staging(timestamp, WG_STAGING + timestamp_off,
+                         WG_NOISE_TIMESTAMP_LEN);
+    wg_noise_handshake_init(&peer->handshake, peer->pubkey,
+                            peer->preshared_key);
+    if (wg_noise_create_initiation(&peer->handshake, wg_privkey, wg_pubkey,
+                                   ephemeral, timestamp, sender_index,
+                                   message) != 0) {
+        wg_zero(ephemeral, sizeof(ephemeral));
+        wg_zero(timestamp, sizeof(timestamp));
+        data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+        rep->length = 4;
+        return SEL4_ERR_INTERNAL;
+    }
+    wg_zero(ephemeral, sizeof(ephemeral));
+    wg_zero(timestamp, sizeof(timestamp));
+    wg_copy_to_staging(WG_STAGING + WG_STAGING_TX_OFF, message,
+                       WG_NOISE_INITIATION_LEN);
+    wg_zero(message, sizeof(message));
+    wg_forward_to_net((uint32_t)WG_STAGING_TX_OFF,
+                      WG_NOISE_INITIATION_LEN, peer);
+
+    data_wr32(rep->data, 0, WG_OK);
+    data_wr32(rep->data, 4, (uint32_t)WG_STAGING_TX_OFF);
+    data_wr32(rep->data, 8, WG_NOISE_INITIATION_LEN);
+    rep->length = 12;
+    return SEL4_ERR_OK;
+}
+
+/* Authenticate handshake/transport messages before changing peer state. */
+static uint32_t handle_ingest(sel4_badge_t badge __attribute__((unused)),
+                              const sel4_msg_t *req, sel4_msg_t *rep,
+                              void *ctx __attribute__((unused)))
+{
+    uint32_t packet_off = data_rd32(req->data, 0);
+    uint32_t packet_len = data_rd32(req->data, 4);
+    uint32_t ephemeral_off = data_rd32(req->data, 8);
+    uint32_t sender_index = data_rd32(req->data, 12);
+    uint32_t ingress_end = (uint32_t)(WG_STAGING_RX_OFF + WG_STAGING_RX_MAX);
+
+    if (!wg_privkey_set) {
+        data_wr32(rep->data, 0, WG_ERR_NOKEY);
+        rep->length = 4;
+        return SEL4_ERR_PERM;
+    }
+    if (!wg_staging_range(packet_off, packet_len,
+                          (uint32_t)WG_STAGING_INGRESS_OFF, ingress_end)
+        || packet_len < 4u) {
+        data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+        rep->length = 4;
+        return SEL4_ERR_BAD_ARG;
+    }
+
+    volatile const uint8_t *packet = WG_STAGING + packet_off;
+    uint32_t type = wg_message_type(packet);
+    if (type == 1u) {
+        uint8_t initiation[WG_NOISE_INITIATION_LEN];
+        uint8_t response[WG_NOISE_RESPONSE_LEN];
+        uint8_t ephemeral[WG_NOISE_KEY_LEN];
+        uint8_t timestamp[WG_NOISE_TIMESTAMP_LEN];
+        wg_peer_t *matched = NULL;
+        wg_noise_handshake_t candidate;
+
+        if (packet_len != WG_NOISE_INITIATION_LEN || sender_index == 0u
+            || !wg_staging_range(ephemeral_off, WG_NOISE_KEY_LEN, 0u,
+                                 (uint32_t)WG_STAGING_TX_OFF)
+            || wg_index_in_use(sender_index, NULL)) {
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_BAD_ARG;
+        }
+        wg_copy_from_staging(initiation, packet, sizeof(initiation));
+        for (uint32_t i = 0u; i < WG_MAX_PEERS; i++) {
+            if (!peers[i].active) continue;
+            wg_noise_handshake_init(&candidate, peers[i].pubkey,
+                                    peers[i].preshared_key);
+            if (wg_noise_consume_initiation(
+                    &candidate, wg_privkey, wg_pubkey, peers[i].pubkey,
+                    initiation, timestamp) == 0
+                && wg_timestamp_after(timestamp, peers[i].last_timestamp)) {
+                matched = &peers[i];
+                break;
+            }
+        }
+        if (matched == NULL) {
+            wg_zero(initiation, sizeof(initiation));
+            wg_zero(timestamp, sizeof(timestamp));
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_PERM;
+        }
+
+        wg_copy_from_staging(ephemeral, WG_STAGING + ephemeral_off,
+                             sizeof(ephemeral));
+        matched->handshake = candidate;
+        if (wg_noise_create_response(&matched->handshake, ephemeral,
+                                     sender_index, response) != 0
+            || wg_noise_begin_session(&matched->handshake, matched->send_key,
+                                      matched->receive_key) != 0) {
+            wg_zero(ephemeral, sizeof(ephemeral));
+            wg_zero(initiation, sizeof(initiation));
+            wg_zero(timestamp, sizeof(timestamp));
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_INTERNAL;
+        }
+        wg_zero(ephemeral, sizeof(ephemeral));
+        wg_zero(initiation, sizeof(initiation));
+        wg_copy_to_staging(WG_STAGING + WG_STAGING_TX_OFF, response,
+                           sizeof(response));
+        wg_zero(response, sizeof(response));
+        for (uint32_t i = 0u; i < WG_NOISE_TIMESTAMP_LEN; i++)
+            matched->last_timestamp[i] = timestamp[i];
+        wg_zero(timestamp, sizeof(timestamp));
+        wg_session_install(matched);
+        wg_forward_to_net((uint32_t)WG_STAGING_TX_OFF,
+                          WG_NOISE_RESPONSE_LEN, matched);
+
+        data_wr32(rep->data, 0, WG_OK);
+        data_wr32(rep->data, 4, (uint32_t)WG_STAGING_TX_OFF);
+        data_wr32(rep->data, 8, WG_NOISE_RESPONSE_LEN);
+        rep->length = 12;
+        return SEL4_ERR_OK;
+    }
+
+    if (type == 2u) {
+        uint8_t response[WG_NOISE_RESPONSE_LEN];
+        uint32_t receiver;
+        wg_peer_t *peer;
+        if (packet_len != WG_NOISE_RESPONSE_LEN) {
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_BAD_ARG;
+        }
+        wg_copy_from_staging(response, packet, sizeof(response));
+        receiver = data_rd32(response, 8);
+        peer = find_peer_by_handshake_index(receiver);
+        if (peer == NULL
+            || wg_noise_consume_response(&peer->handshake, wg_privkey,
+                                         wg_pubkey, response) != 0
+            || wg_noise_begin_session(&peer->handshake, peer->send_key,
+                                      peer->receive_key) != 0) {
+            wg_zero(response, sizeof(response));
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_PERM;
+        }
+        wg_zero(response, sizeof(response));
+        wg_session_install(peer);
+        data_wr32(rep->data, 0, WG_OK);
+        data_wr32(rep->data, 4, peer->peer_id);
+        data_wr32(rep->data, 8, 0u);
+        rep->length = 12;
+        return SEL4_ERR_OK;
+    }
+
+    if (type == 4u) {
+        uint32_t receiver, plain_len = 0u;
+        uint64_t counter;
+        uint8_t nonce[12];
+        wg_peer_t *peer;
+        wg_replay_window_t proposed;
+        if (packet_len < WG_TRANSPORT_HDR_LEN + WG_AEAD_TAG_LEN) {
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_BAD_ARG;
+        }
+        receiver = data_rd32((const uint8_t *)packet, 4);
+        peer = find_peer_by_session_index(receiver);
+        counter = wg_read64_le(packet + 8u);
+        if (peer == NULL) {
+            data_wr32(rep->data, 0, WG_ERR_NOSESSION);
+            rep->length = 4;
+            return SEL4_ERR_PERM;
+        }
+        proposed = peer->rx_replay;
+        if (!wg_replay_window_accept(&proposed, counter)) {
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_PERM;
+        }
+        wg_transport_counter_nonce(counter, nonce);
+        if (wg_decrypt(peer->receive_key, nonce,
+                       (const uint8_t *)packet + WG_TRANSPORT_HDR_LEN,
+                       packet_len - WG_TRANSPORT_HDR_LEN,
+                       (uint8_t *)(wg_staging_vaddr + WG_STAGING_RX_OFF),
+                       &plain_len) != 0) {
+            data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+            rep->length = 4;
+            return SEL4_ERR_PERM;
+        }
+        peer->rx_replay = proposed;
+        peer->rx_bytes += plain_len;
+        if (plain_len != 0u) {
+            rx_pending = true;
+            rx_peer_id = peer->peer_id;
+            rx_data_len = plain_len;
+        }
+        data_wr32(rep->data, 0, WG_OK);
+        data_wr32(rep->data, 4, peer->peer_id);
+        data_wr32(rep->data, 8, plain_len);
+        rep->length = 12;
+        return SEL4_ERR_OK;
+    }
+
+    data_wr32(rep->data, 0, WG_ERR_CRYPTO);
+    rep->length = 4;
+    return SEL4_ERR_BAD_ARG;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -602,8 +940,16 @@ static uint32_t handle_send(sel4_badge_t badge __attribute__((unused)),
         return SEL4_ERR_NOT_FOUND;
     }
 
+    if (!p->session_established) {
+        data_wr32(rep->data, 0, WG_ERR_NOSESSION);
+        data_wr32(rep->data, 4, 0u);
+        rep->length = 8;
+        return SEL4_ERR_PERM;
+    }
+
     if (!wg_staging_vaddr
             || data_off + data_len < data_off
+            || data_off < WG_TRANSPORT_HDR_LEN + WG_AEAD_TAG_LEN
             || data_off + data_len > WG_STAGING_TX_MAX) {
         data_wr32(rep->data, 0, WG_ERR_CRYPTO);
         data_wr32(rep->data, 4, 0);
@@ -611,23 +957,21 @@ static uint32_t handle_send(sel4_badge_t badge __attribute__((unused)),
         return SEL4_ERR_BAD_ARG;
     }
 
-    uint8_t session_key[WG_KEY_LEN];
     uint8_t nonce[12];
-    wg_zero(session_key, WG_KEY_LEN);
     if (!wg_transport_next_counter(&p->tx_counter, nonce)) {
         data_wr32(rep->data, 0, WG_ERR_CRYPTO);
         data_wr32(rep->data, 4, 0u);
         rep->length = 8;
         return SEL4_ERR_INTERNAL;
     }
-    /* CRYPTO_INTEGRATION_POINT: derive session key via ECDH + KDF */
-
     const uint8_t *plain = (const uint8_t *)(wg_staging_vaddr
                                               + WG_STAGING_TX_OFF + data_off);
 
     volatile uint8_t *out = WG_STAGING + WG_STAGING_TX_OFF;
     out[0] = 4; out[1] = 0; out[2] = 0; out[3] = 0;
-    out[4] = p->peer_id; out[5] = 0; out[6] = 0; out[7] = 0;
+    uint32_t receiver = p->send_index;
+    out[4] = (uint8_t)receiver; out[5] = (uint8_t)(receiver >> 8u);
+    out[6] = (uint8_t)(receiver >> 16u); out[7] = (uint8_t)(receiver >> 24u);
     for (int b = 0; b < 8; b++) out[8 + b] = nonce[4 + b];
 
     uint8_t *cipher_dst = (uint8_t *)(wg_staging_vaddr
@@ -635,7 +979,8 @@ static uint32_t handle_send(sel4_badge_t badge __attribute__((unused)),
                                        + WG_TRANSPORT_HDR_LEN);
     uint32_t cipher_len = 0;
 
-    int rc = wg_encrypt(session_key, nonce, plain, data_len, cipher_dst, &cipher_len);
+    int rc = wg_encrypt(p->send_key, nonce, plain, data_len,
+                        cipher_dst, &cipher_len);
     if (rc != 0) {
         log_drain_write(16, 16, "[wg_net] SEND: encrypt failed for peer=");
         wg_log_dec(peer_id);
@@ -764,13 +1109,25 @@ static uint32_t handle_set_privkey(sel4_badge_t badge __attribute__((unused)),
     }
 
     wg_copy_from_staging(wg_privkey, WG_STAGING + key_off, WG_KEY_LEN);
+    wg_zero((uint8_t *)(wg_staging_vaddr + key_off), WG_KEY_LEN);
 
-    /* CRYPTO_INTEGRATION_POINT: derive public key via Curve25519 */
     wg_derive_pubkey(wg_privkey, wg_pubkey);
 
     wg_copy_to_staging(WG_STAGING + WG_STAGING_PUBKEY_OFF, wg_pubkey, WG_KEY_LEN);
 
     wg_privkey_set = true;
+    for (uint32_t i = 0u; i < WG_MAX_PEERS; i++) {
+        if (!peers[i].active) continue;
+        wg_noise_handshake_init(&peers[i].handshake, peers[i].pubkey,
+                                peers[i].preshared_key);
+        wg_zero(peers[i].send_key, WG_KEY_LEN);
+        wg_zero(peers[i].receive_key, WG_KEY_LEN);
+        peers[i].send_index = 0u;
+        peers[i].receive_index = 0u;
+        peers[i].session_established = false;
+        peers[i].tx_counter = 0u;
+        wg_replay_window_reset(&peers[i].rx_replay);
+    }
 
     log_drain_write(16, 16, "[wg_net] SET_PRIVKEY: key loaded, pubkey[0..3]=");
     wg_log_hex((uint32_t)(wg_pubkey[0])
@@ -792,10 +1149,14 @@ static uint32_t handle_health(sel4_badge_t badge __attribute__((unused)),
                                sel4_msg_t *rep,
                                void *ctx __attribute__((unused)))
 {
+    uint32_t sessions = 0u;
+    for (uint32_t i = 0u; i < WG_MAX_PEERS; i++)
+        if (peers[i].active && peers[i].session_established) sessions++;
     data_wr32(rep->data, 0, WG_OK);
     data_wr32(rep->data, 4, active_peer_count);
     data_wr32(rep->data, 8, wg_privkey_set ? 1u : 0u);
-    rep->length = 12;
+    data_wr32(rep->data, 12, sessions);
+    rep->length = 16;
     return SEL4_ERR_OK;
 }
 
@@ -845,6 +1206,14 @@ static void wg_net_test_init(void)
         peers[i].peer_id = 0;
         wg_zero(peers[i].pubkey, WG_KEY_LEN);
         wg_zero(peers[i].preshared_key, WG_KEY_LEN);
+        wg_zero(peers[i].send_key, WG_KEY_LEN);
+        wg_zero(peers[i].receive_key, WG_KEY_LEN);
+        peers[i].send_index = 0u;
+        peers[i].receive_index = 0u;
+        wg_zero((uint8_t *)&peers[i].handshake,
+                (uint32_t)sizeof(peers[i].handshake));
+        wg_zero(peers[i].last_timestamp, WG_NOISE_TIMESTAMP_LEN);
+        peers[i].session_established = false;
         peers[i].tx_bytes       = 0;
         peers[i].rx_bytes       = 0;
         peers[i].tx_counter     = 0u;
@@ -874,6 +1243,9 @@ static void wg_net_test_init(void)
     sel4_server_register(&g_srv, OP_WG_STATUS,      handle_status,      NULL);
     sel4_server_register(&g_srv, OP_WG_SET_PRIVKEY, handle_set_privkey, NULL);
     sel4_server_register(&g_srv, OP_WG_HEALTH,      handle_health,      NULL);
+    sel4_server_register(&g_srv, OP_WG_HANDSHAKE_START,
+                         handle_handshake_start, NULL);
+    sel4_server_register(&g_srv, OP_WG_INGEST,      handle_ingest,      NULL);
 }
 
 /* ── dispatch helper for tests ───────────────────────────────────────────── */

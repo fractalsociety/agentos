@@ -228,7 +228,8 @@ static void gf_car(gf o)
         o[i] += (1LL << 16);
         c = o[i] >> 16;
         o[(i+1) * (i<15)] += c - 1 + 37 * (c-1) * (i==15);
-        o[i] -= c << 16;
+        /* c may be negative; signed left-shift would be undefined in C. */
+        o[i] -= c * (1LL << 16);
     }
 }
 

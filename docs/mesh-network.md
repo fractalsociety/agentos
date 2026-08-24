@@ -79,3 +79,28 @@ to the `deny` NetCap.
 
 The embedded DERP configuration is present but disabled by default. Enable it
 only after publishing a reachable TLS endpoint and opening its STUN/DERP ports.
+
+## Native AgentOS data-plane status
+
+The native path is deliberately separate from the FreeBSD controller role.
+`net_pd` is the sole writable VirtIO-net MMIO/IRQ owner and has completed real
+TX completion plus host-injected RX through target IRQs. `wg_net` now contains
+the canonical `Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s` initiation/response
+transcript, X25519 session derivation, RFC 8439 transport encryption, monotonic
+nonces, and an authenticated 8,192-packet replay window. Host integration tests
+exercise both initiator and responder roles, tampered-tag denial, timestamp
+replay denial, and bidirectional transport keys. The AArch64 target gate proves
+the PD boots, wipes staged key bytes, and refuses transport before an
+authenticated session.
+
+This is not yet a native-tailnet interoperability claim. UDP/IP encapsulation
+between `wg_net` and the NIC arena, Headscale map polling/authentication, timed
+rekey, endpoint roaming, cookie replies, and DERP are still required before a
+standard Tailscale client can exchange packets with native AgentOS. Until that
+gate passes, the boot-proven FreeBSD Headscale role plus standard clients is the
+supported device-enrollment path.
+
+Tailnet identity remains connectivity metadata. Neither a successful Noise
+session nor a Headscale tag creates ModelCap, ToolCap, MemoryCap, ExecCap, or a
+worker NetCap; those must still be independently minted into the relevant
+seL4 CSpace.

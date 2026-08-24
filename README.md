@@ -326,7 +326,8 @@ below is labeled by **proof level**, not by "done / not done".
 | Guest virtual IRQ injection | stubbed | `vm_manager.c` `vmm_inject_irq` logs `(stub)`; real `virq_inject` via libvmm is a TODO |
 | Dynamic guest CREATE/LIST/DESTROY via vibe_engine | host-tested | On AArch64 the build links `vmm_mux_stub.c`; vibe_engine surfaces dynamic guests as "phantom" `RUNNING` because no real VM boots (`e70d955`). Lifecycle UX works end-to-end through CC-PD against stubbed VM backing only. |
 | serial-mux / serial PD | boot-proven | Guest console login flows through CC-PD over the serial path (`make test-guest-login`) |
-| net-service / net_isolator | host-tested | Contract + isolator logic covered by host tests (`tests/contracts/net_*`); not boot-asserted |
+| Native NIC / net-service | boot-proven | `net_pd` is the sole writable VirtIO-net MMIO/IRQ owner; the AArch64 target gate proves DMA TX completion and host-injected RX IRQ plus badge denial. Native UDP/TCP integration above the device path remains incomplete. |
+| Native WireGuard PD | target-tested | Canonical Noise/BLAKE2s and bidirectional session/transport/replay behavior pass host crypto integration tests; AArch64 proves boot, key-staging wipe, and fail-closed no-session transport. UDP encapsulation and standard-client interoperability remain open. |
 | Headscale private mesh | boot-proven | A clean FreeBSD 15 first boot installs and starts the pinned controller (`make e2e-mesh-freebsd`); two real Tailscale clients and an agent endpoint are exercised by `AGENTOS_TAILSCALE_E2E=1 make validate-headscale-role`; see `docs/mesh-network.md` |
 | block-service / block PD | host-tested | Host contract tests (`tests/contracts/block_*`); VirtIO-blk path not independently boot-asserted |
 | usb-service | stubbed | `usb_pd.c` runs in "stub mode" (simulated HID device) unless built with `AGENTOS_USB_PD` and real MMIO is wired |

@@ -23,10 +23,10 @@
  *     [0x010000 .. 0x01FFFF]  RX packet staging  (OP_WG_RECV decrypted output)
  *
  * Crypto status:
- *   Curve25519 key derivation and RFC 8439 ChaCha20-Poly1305 are implemented
- *   in the freestanding crypto library. Noise_IKpsk2 transcript/KDF/session
- *   state remains an integration point; no interoperability claim is valid
- *   until handshake, replay, rekey, and roaming tests pass.
+ *   Curve25519, RFC 8439 ChaCha20-Poly1305, and the canonical WireGuard
+ *   Noise_IKpsk2 transcript/KDF/session derivation are implemented in the
+ *   freestanding crypto library. UDP/IP encapsulation, rekey timers, cookie
+ *   replies, and roaming remain transport integration work.
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -38,6 +38,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "wireguard_counter.h"
+#include "wireguard_noise.h"
 
 /* ── Limits ──────────────────────────────────────────────────────────────── */
 #define WG_MAX_PEERS        16u   /* maximum simultaneous WireGuard peers */
@@ -79,7 +80,7 @@
  *   MR1 = bytes_sent    (ciphertext length after encryption)
  *
  *   The wg_net PD encrypts the payload at wg_staging[data_offset..data_offset+data_len]
- *   using ChaCha20-Poly1305 (CRYPTO_INTEGRATION_POINT), prepends a WireGuard transport
+ *   using ChaCha20-Poly1305, prepends a WireGuard transport
  *   header, and forwards to net_server via OP_NET_VNIC_SEND on the wg_net vNIC.
  */
 #define OP_WG_SEND          0xD2u
@@ -116,7 +117,7 @@
  *   MR0 = result (WG_OK or WG_ERR_CRYPTO if key is degenerate)
  *
  *   After setting the private key, the PD derives the public key via Curve25519
- *   scalar multiplication (CRYPTO_INTEGRATION_POINT) and stores it in
+ *   scalar multiplication and stores it in
  *   wg_staging[0x20..0x3F] for the caller to read.
  *   This opcode must be called before any OP_WG_SEND will succeed.
  */
@@ -128,8 +129,34 @@
  *   MR0 = WG_OK (0)
  *   MR1 = active_peer_count
  *   MR2 = 1 if private key is set, 0 otherwise
+ *   MR3 = authenticated_session_count
  */
 #define OP_WG_HEALTH        0xD6u
+
+/*
+ * OP_WG_HANDSHAKE_START (0xD7) — create a Noise initiation for one peer
+ *   MR1 = peer_id
+ *   MR2 = ephemeral_private_offset (absolute wg_staging offset, 32 bytes)
+ *   MR3 = TAI64N timestamp_offset   (absolute wg_staging offset, 12 bytes)
+ *   MR4 = sender_index              (non-zero local receiver index)
+ *   Reply: MR0 = result; MR1 = TX offset; MR2 = message length (148)
+ */
+#define OP_WG_HANDSHAKE_START 0xD7u
+
+/*
+ * OP_WG_INGEST (0xD8) — authenticate an incoming WireGuard packet
+ *   MR1 = packet_offset (absolute offset in the RX ingress staging range)
+ *   MR2 = packet_len
+ *   MR3 = responder ephemeral-private offset (type 1 only, 32 bytes)
+ *   MR4 = responder sender_index (type 1 only, non-zero)
+ *   Reply for type 1: MR1 = TX offset; MR2 = response length (92)
+ *   Reply for type 2: MR1 = peer_id; MR2 = 0
+ *   Reply for type 4: MR1 = peer_id; MR2 = plaintext length
+ *
+ *   Type 4 payloads are released to WG_STAGING_RX_OFF only after AEAD and
+ *   replay-window validation. Cookie messages are not yet supported.
+ */
+#define OP_WG_INGEST          0xD8u
 
 /* ── Result codes (MR0 in replies) ──────────────────────────────────────── */
 #define WG_OK               0u   /* success */
@@ -137,6 +164,7 @@
 #define WG_ERR_NOKEY        2u   /* local private key not yet configured */
 #define WG_ERR_FULL         3u   /* peer table full (WG_MAX_PEERS reached) */
 #define WG_ERR_CRYPTO       4u   /* cryptographic operation failed */
+#define WG_ERR_NOSESSION    5u   /* authenticated Noise session not established */
 
 /* ── Peer table entry ────────────────────────────────────────────────────── */
 /*
@@ -157,6 +185,14 @@ typedef struct {
     uint64_t  rx_bytes;                 /* decrypted bytes received from this peer */
     uint64_t  tx_counter;               /* next transport nonce counter */
     wg_replay_window_t rx_replay;       /* authenticated RX counter window */
+    wg_noise_handshake_t handshake;     /* in-progress Noise_IKpsk2 transcript */
+    uint8_t   send_key[WG_KEY_LEN];      /* current transport send key */
+    uint8_t   receive_key[WG_KEY_LEN];   /* current transport receive key */
+    uint32_t  send_index;                /* peer's current receiver index */
+    uint32_t  receive_index;             /* our current receiver index */
+    bool      session_established;       /* transport keys are authenticated */
+    uint8_t   _session_pad[3];
+    uint8_t   last_timestamp[WG_NOISE_TIMESTAMP_LEN]; /* replay floor */
     uint32_t  last_handshake;           /* monotonic tick of last successful handshake */
     uint8_t   _pad[4];                  /* explicit pad to 8-byte alignment */
 } wg_peer_t;                            /* includes a 1 KiB replay bitmap */

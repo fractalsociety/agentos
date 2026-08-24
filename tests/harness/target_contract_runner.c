@@ -164,6 +164,14 @@ static uint32_t tr_rd32(const uint8_t *p, uint32_t off)
          | ((uint32_t)p[off + 2u] << 16u) | ((uint32_t)p[off + 3u] << 24u);
 }
 
+static void tr_wr32(uint8_t *p, uint32_t off, uint32_t value)
+{
+    p[off] = (uint8_t)value;
+    p[off + 1u] = (uint8_t)(value >> 8u);
+    p[off + 2u] = (uint8_t)(value >> 16u);
+    p[off + 3u] = (uint8_t)(value >> 24u);
+}
+
 static void tr_copy(void *dst_ptr, const void *src_ptr, uint32_t len)
 {
     uint8_t *dst = (uint8_t *)dst_ptr;
@@ -214,15 +222,43 @@ static void target_wg_net_contract(void)
     bool live = rep.opcode == SEL4_ERR_OK
         && tr_rd32(rep.data, 8u) == 1u;
     bool pubkey_nonzero = false;
+    bool private_key_wiped = true;
     for (uint32_t i = 0u; i < WG_KEY_LEN; i++)
         pubkey_nonzero |= staging[0x20u + i] != 0u;
+    for (uint32_t i = 0u; i < WG_KEY_LEN; i++)
+        private_key_wiped &= staging[i] == 0u;
 
-    if (cold && set && live && pubkey_nonzero)
-        _tf_ok("WireGuard PD boots and derives its public key on target");
+    if (cold && set && live && pubkey_nonzero && private_key_wiped)
+        _tf_ok("WireGuard PD boots, derives public key, and wipes provisioning bytes");
     else
         _tf_fail_point(
-            "WireGuard PD boots and derives its public key on target",
-            "health, staging, or X25519 initialization failed");
+            "WireGuard PD boots, derives public key, and wipes provisioning bytes",
+            "health, staging wipe, or X25519 initialization failed");
+
+    for (uint32_t i = 0u; i < WG_KEY_LEN; i++)
+        staging[0x1000u + i] = (uint8_t)(0x80u + i);
+    tr_zero(&req, sizeof(req));
+    req.opcode = OP_WG_ADD_PEER;
+    req.length = 24u;
+    tr_wr32(req.data, 0u, 0u);
+    tr_wr32(req.data, 4u, 0x1000u);
+    tr_wr32(req.data, 12u, 51820u);
+    sel4_call((seL4_CPtr)TARGET_WG_NET_CAP, &req, &rep);
+    bool added = rep.opcode == SEL4_ERR_OK
+        && tr_rd32(rep.data, 0u) == WG_OK;
+
+    tr_zero(&req, sizeof(req));
+    req.opcode = OP_WG_SEND;
+    req.length = 12u;
+    sel4_call((seL4_CPtr)TARGET_WG_NET_CAP, &req, &rep);
+    bool denied_without_session = rep.opcode == SEL4_ERR_PERM
+        && tr_rd32(rep.data, 0u) == WG_ERR_NOSESSION;
+    if (added && denied_without_session)
+        _tf_ok("WireGuard transport fails closed without authenticated Noise session");
+    else
+        _tf_fail_point(
+            "WireGuard transport fails closed without authenticated Noise session",
+            "peer registration or no-session enforcement failed");
 }
 
 static void target_net_fastpath_contract(void)
