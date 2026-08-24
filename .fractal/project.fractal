@@ -6,7 +6,7 @@
     "prompt": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
     "visibility": "private"
   },
-  "graph_hash": "sha256:b466f16b8f798c687527193bd5db9fc22fdc02ae5e9082692ef75c632f859a34",
+  "graph_hash": "sha256:a726b893bf8d58622b78ca9c28ccf423402f65ba9c989756e380cebe2a068d70",
   "graph": {
     "compiler_version": "fractal-harnessc/0.1.0",
     "edges": [
@@ -711,9 +711,9 @@
         }
       ]
     },
-    "graph_hash": "sha256:b466f16b8f798c687527193bd5db9fc22fdc02ae5e9082692ef75c632f859a34",
-    "graph_id": "fg_46716ed5f5cae5b6e640389074397231",
-    "harness_hash": "sha256:63128179139bf283b083379f1eb39d32c1c7fba6a278ca8652d6770b3304c660",
+    "graph_hash": "sha256:a726b893bf8d58622b78ca9c28ccf423402f65ba9c989756e380cebe2a068d70",
+    "graph_id": "fg_766020ed99237288613f760ac785c4ca",
+    "harness_hash": "sha256:eebdeae152ef92647ef76c4dc81ac3e4c50707cadcb1e79a1263a5ba15df8b82",
     "nodes": [
       {
         "artifacts_produced": [],
@@ -1806,7 +1806,7 @@
           "wave": 5
         },
         "executor": {
-          "agent": "hermes"
+          "agent": "opencode"
         },
         "human_intervention": false,
         "id": "health_adapter_contract_tests",
@@ -3007,7 +3007,7 @@
         },
         "human_intervention": false,
         "id": "implement_fractal_controlplane_sdk",
-        "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests and WIT validation pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
+        "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Fix the reproduced cargo check -p agentos-sdk --no-default-features --features wit-bindings failure where generated bindings reference std. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests, WIT validation, default no_std check, and wit-bindings no_std check pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -3190,8 +3190,10 @@
           "estimated_remaining_tokens": 16000,
           "expected_artifact": "A production Hermes CLI adapter with passing fixture and live opt-in Fractal worker tests",
           "files_or_systems_affected": [
+            "tools/fractal-worker-compat/Cargo.toml",
             "tools/fractal-worker-compat/src/lib.rs",
             "tools/fractal-worker-compat/src/hermes.rs",
+            "tools/fractal-worker-compat/src/bin/fractal_hermes_worker.rs",
             "tests/compat/test_hermes_worker.rs",
             "tests/e2e/test_fractal_workers.sh"
           ],
@@ -4780,7 +4782,7 @@
   },
   "execution": {
     "schema": "fractal.execution_state.v1",
-    "phase": "halted",
+    "phase": "executing",
     "assignments": {
       "canonical_event_verify_contract_tests": {
         "agent_id": "codex-luna:1",
@@ -4808,7 +4810,7 @@
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T21:55:57Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4846,25 +4848,25 @@
         "completed_at": "2026-08-24T17:30:10Z"
       },
       "health_adapter_contract_tests": {
-        "agent_id": "hermes:1",
-        "agent_label": "hermes:1",
+        "agent_id": "hermes:3",
+        "agent_label": "hermes:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:18:46Z",
-        "released_at": "2026-08-24T22:03:37Z"
+        "released_at": "2026-08-24T22:11:57Z"
       },
       "implement_actor_memory_lifecycle": {
         "agent_id": "codex-luna:6",
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T21:55:57Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T21:55:58Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:3",
@@ -4892,7 +4894,7 @@
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T21:55:58Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_cursor_worker": {
         "agent_id": "cursor:1",
@@ -4906,14 +4908,14 @@
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T21:55:58Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_fractal_controlplane": {
         "agent_id": "codex-luna:3",
         "agent_label": "codex-luna:3",
-        "state": "completed",
+        "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "completed_at": "2026-08-24T22:09:46Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_fractal_controlplane_host": {
         "agent_id": "codex-luna",
@@ -4925,37 +4927,37 @@
       "implement_fractal_controlplane_sdk": {
         "agent_id": "opencode:3",
         "agent_label": "opencode:3",
-        "state": "completed",
+        "state": "released",
         "checked_out_at": "2026-08-24T21:39:30Z",
-        "completed_at": "2026-08-24T21:54:46Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_health_adapter": {
         "agent_id": "codex-luna:11",
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T21:55:58Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:3",
         "agent_label": "hermes:3",
-        "state": "released",
+        "state": "completed",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:04:09Z"
+        "completed_at": "2026-08-24T22:11:48Z"
       },
       "implement_project_progress_adapter": {
         "agent_id": "cursor:2",
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T21:55:58Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_remote_authority": {
         "agent_id": "hermes:1",
         "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T21:55:58Z"
+        "released_at": "2026-08-24T22:11:37Z"
       },
       "implement_remote_mesh_sessions": {
         "agent_id": "codex-luna:3",
@@ -5000,7 +5002,7 @@
         "completed_at": "2026-08-24T21:55:08Z"
       }
     },
-    "updated_at": "2026-08-24T22:11:22Z"
+    "updated_at": "2026-08-24T22:11:57Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -5016,12 +5018,12 @@
           "implement_project_progress_adapter",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "canonical_event_verify_contract_tests": {
         "node_id": "canonical_event_verify_contract_tests",
@@ -5112,12 +5114,12 @@
           "implement_actor_memory_lifecycle",
           "implement_codex_worker"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 23
+        "reopen_count": 24
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -5259,26 +5261,17 @@
           "companion_export_contract_tests",
           "reconcile_prd_beads"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
-        "ready_at": "2026-08-24T21:55:59Z",
-        "started_at": "2026-08-24T21:55:59Z",
-        "finished_at": "2026-08-24T22:03:37Z",
+        "created_at": "2026-08-24T22:11:37Z",
+        "started_at": "2026-08-24T22:11:48Z",
         "executor": {
-          "agent": "hermes:1",
+          "agent": "hermes:3",
           "version": "0.1.0"
         },
-        "attempt_count": 3,
-        "outcome": "failed_execution",
-        "failure_code": "invalid_output_schema",
-        "integration_failure": {
-          "schema": "fractal.integration_failure.v1",
-          "kind": "no_tracked_changes",
-          "summary": "hybrid build node `health_adapter_contract_tests` made no tracked source changes"
-        },
+        "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 18
+        "reopen_count": 19
       },
       "implement_actor_memory_lifecycle": {
         "node_id": "implement_actor_memory_lifecycle",
@@ -5291,12 +5284,12 @@
           "implement_agentlang_runtime",
           "implement_companion_gateway"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 22
+        "reopen_count": 23
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5307,12 +5300,12 @@
           "fractal_controlplane_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 22
+        "reopen_count": 23
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5398,12 +5391,12 @@
           "companion_export_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 21
+        "reopen_count": 22
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5441,13 +5434,12 @@
           "daily_root_contract_tests",
           "implement_fractal_controlplane"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
-        "ready_at": "2026-08-24T22:09:46Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 3,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 20
+        "reopen_count": 21
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
@@ -5457,24 +5449,12 @@
           "implement_fractal_controlplane_host",
           "implement_fractal_controlplane_sdk"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
-        "ready_at": "2026-08-24T21:55:59Z",
-        "started_at": "2026-08-24T21:55:59Z",
-        "finished_at": "2026-08-24T22:09:46Z",
-        "executor": {
-          "agent": "codex-luna:3",
-          "version": "0.1.0"
-        },
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 8,
-        "outcome": "unverified_success",
-        "artifacts_produced": [
-          "artifact:implement_fractal_controlplane:47636e33b01a3c8d334ba036"
-        ],
-        "consumed_by": [
-          "artifact:implement_fractal_controlplane_host:be0eed1174e6abc34851d3f4"
-        ],
+        "artifacts_produced": [],
+        "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 23
+        "reopen_count": 24
       },
       "implement_fractal_controlplane_host": {
         "node_id": "implement_fractal_controlplane_host",
@@ -5514,19 +5494,12 @@
           "fractal_controlplane_contract_tests",
           "implement_canonical_event_verify"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
-        "started_at": "2026-08-24T21:54:43Z",
-        "finished_at": "2026-08-24T21:54:46Z",
-        "executor": {
-          "agent": "opencode:3",
-          "version": "0.1.0"
-        },
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 2,
-        "outcome": "unverified_success",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 3
+        "reopen_count": 4
       },
       "implement_health_adapter": {
         "node_id": "implement_health_adapter",
@@ -5536,12 +5509,12 @@
           "health_adapter_contract_tests",
           "implement_daily_root_projection"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 23
+        "reopen_count": 24
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5551,26 +5524,19 @@
           "claude_hermes_compat_contract_tests",
           "implement_claude_worker"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
-        "ready_at": "2026-08-24T21:55:59Z",
-        "started_at": "2026-08-24T21:55:59Z",
-        "finished_at": "2026-08-24T22:04:09Z",
+        "created_at": "2026-08-24T22:11:37Z",
+        "started_at": "2026-08-24T22:11:46Z",
+        "finished_at": "2026-08-24T22:11:48Z",
         "executor": {
           "agent": "hermes:3",
           "version": "0.1.0"
         },
-        "attempt_count": 8,
-        "outcome": "failed_execution",
-        "failure_code": "invalid_output_schema",
-        "integration_failure": {
-          "schema": "fractal.integration_failure.v1",
-          "kind": "scope_escape",
-          "summary": "hybrid node `implement_hermes_worker` modified undeclared tracked path `tools/fractal-worker-compat/Cargo.toml`"
-        },
+        "attempt_count": 9,
+        "outcome": "unverified_success",
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 23
+        "reopen_count": 24
       },
       "implement_project_progress_adapter": {
         "node_id": "implement_project_progress_adapter",
@@ -5581,12 +5547,12 @@
           "implement_health_adapter",
           "project_progress_contract_tests"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 22
+        "reopen_count": 23
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5598,13 +5564,12 @@
           "implement_remote_mesh_sessions",
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
-        "ready_at": "2026-08-24T22:09:46Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 22
+        "reopen_count": 23
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5641,12 +5606,12 @@
           "implement_remote_authority",
           "implement_remote_mesh_sessions"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "lead_closeout": {
         "node_id": "lead_closeout",
@@ -5655,12 +5620,12 @@
         "depends_on": [
           "publish_verified_program"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "lead_plan": {
         "node_id": "lead_plan",
@@ -5717,12 +5682,12 @@
         "depends_on": [
           "run_two_device_vertical_slice"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "reconcile_prd_beads": {
         "node_id": "reconcile_prd_beads",
@@ -5809,12 +5774,12 @@
           "implement_remote_mesh_sessions",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "run_host_security_performance_gates": {
         "node_id": "run_host_security_performance_gates",
@@ -5840,12 +5805,12 @@
           "implement_remote_mesh_sessions",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "run_two_device_vertical_slice": {
         "node_id": "run_two_device_vertical_slice",
@@ -5861,12 +5826,12 @@
           "run_dual_arch_qemu_gates",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T21:52:28Z",
+        "created_at": "2026-08-24T22:11:37Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 7
+        "reopen_count": 8
       },
       "unify_fractal_graph_ui": {
         "node_id": "unify_fractal_graph_ui",
@@ -5920,92 +5885,6 @@
         "eventual_effect": {}
       }
     ],
-    "outcome": {
-      "acceptance_criteria": [
-        {
-          "id": "AC-1",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-10",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-11",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-12",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-13",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-14",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-15",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-2",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-3",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-4",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-5",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-6",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-7",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-8",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-9",
-          "passed": false,
-          "evidence_refs": []
-        }
-      ],
-      "maximum_parallelism": 0,
-      "retry_count": 149,
-      "reopened_node_count": 33,
-      "dead_or_unused_node_count": 1,
-      "human_intervention_count": 0,
-      "verification_coverage": 0.05555555555555555,
-      "verification_coverage_denominator": 36
-    },
     "acceptance_criteria": [
       "AC-1",
       "AC-10",
@@ -6431,6 +6310,55 @@
               "outcome": null
             }
           ]
+        },
+        {
+          "migrated_at": "2026-08-24T22:11:37Z",
+          "new_graph_hash": "sha256:a726b893bf8d58622b78ca9c28ccf423402f65ba9c989756e380cebe2a068d70",
+          "old_graph_hash": "sha256:b466f16b8f798c687527193bd5db9fc22fdc02ae5e9082692ef75c632f859a34",
+          "preserved": [
+            "canonical_event_verify_contract_tests",
+            "claude_hermes_compat_contract_tests",
+            "companion_export_contract_tests",
+            "cursor_compat_contract_tests",
+            "daily_root_contract_tests",
+            "finish_native_network",
+            "fix_wg_compile_regression",
+            "fractal_controlplane_contract_tests",
+            "implement_canonical_event_verify",
+            "implement_claude_worker",
+            "implement_codex_worker",
+            "implement_cursor_worker",
+            "implement_fractal_controlplane_host",
+            "implement_remote_mesh_sessions",
+            "lead_plan",
+            "project_progress_contract_tests",
+            "reconcile_prd_beads",
+            "remote_mesh_contract_tests",
+            "unify_fractal_graph_ui"
+          ],
+          "removed": [],
+          "reopened": [
+            "build_companion_pages",
+            "complete_gpu_pipeline",
+            "health_adapter_contract_tests",
+            "implement_actor_memory_lifecycle",
+            "implement_agentlang_runtime",
+            "implement_companion_gateway",
+            "implement_daily_root_projection",
+            "implement_fractal_controlplane",
+            "implement_fractal_controlplane_sdk",
+            "implement_health_adapter",
+            "implement_hermes_worker",
+            "implement_project_progress_adapter",
+            "implement_remote_authority",
+            "implement_shared_space_replication",
+            "lead_closeout",
+            "publish_verified_program",
+            "run_dual_arch_qemu_gates",
+            "run_host_security_performance_gates",
+            "run_two_device_vertical_slice"
+          ],
+          "retired_nodes": []
         }
       ],
       "schema": "fractal.plan_migrations.v1"
@@ -9263,5 +9191,5 @@
     "cross_project_links": {},
     "failure_graph_hash": "sha256:f7a17c88874263e00b8af6fca95105b8d5ef498c6cb0bf6b6dda68e36006baae"
   },
-  "updated_at": "2026-08-24T22:11:22Z"
+  "updated_at": "2026-08-24T22:11:57Z"
 }
