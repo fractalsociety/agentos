@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
 #include "../kernel/agentos-root-task/include/agentos.h"
 #include "../kernel/agentos-root-task/include/agent_task_gateway.h"
 
@@ -11,6 +12,22 @@ static uint8_t arena[HARNESS_SHMEM_SIZE];
 static uint32_t installed_caps;
 static uint32_t authority_epoch;
 static uint32_t submit_calls;
+static struct eventbus_agent_event recorded_events[128];
+static uint32_t recorded_event_count;
+
+uint32_t agentos_eventbus_record(struct eventbus_agent_event *event)
+{
+    if (event == NULL || recorded_event_count >= 128u)
+        return EVENTBUS_AGENT_EVENT_ERR_INVALID;
+    event->schema_version = EVENTBUS_AGENT_EVENT_SCHEMA_VERSION;
+    event->position = recorded_event_count + 1u;
+    if (recorded_event_count != 0u)
+        event->previous_hash = recorded_events[recorded_event_count - 1u]
+            .event_hash;
+    eventbus_agent_event_hash(event, &event->event_hash);
+    recorded_events[recorded_event_count++] = *event;
+    return EVENTBUS_AGENT_EVENT_OK;
+}
 
 static void authority(uint32_t *caps, uint32_t *epoch, void *ctx)
 {
@@ -101,6 +118,37 @@ static void write_prompt(uint32_t task_id, const char *prompt, uint32_t len)
     }
 }
 
+static uint32_t queue_calls;
+static uint32_t queue_status;
+
+static uint32_t enqueue(const struct agent_task_req_submit *req,
+                        const struct agent_task_handle *task, void *ctx)
+{
+    (void)ctx;
+    assert(req != NULL);
+    assert(task != NULL && task->slot != 0u && task->generation != 0u);
+    queue_calls++;
+    return queue_status;
+}
+
+static struct agent_task_budget fractal_budget(void)
+{
+    return (struct agent_task_budget){
+        .cpu_quanta = 100u,
+        .memory_bytes = 4096u,
+        .max_steps = 32u,
+        .max_result_bytes = 128u,
+    };
+}
+
+static uint32_t recorded_type_count(uint32_t event_type)
+{
+    uint32_t count = 0u;
+    for (uint32_t i = 0u; i < recorded_event_count; i++)
+        if (recorded_events[i].event_type == event_type) count++;
+    return count;
+}
+
 int main(void)
 {
     installed_caps = HARNESS_CAP_MODEL | HARNESS_CAP_TOOL
@@ -185,6 +233,175 @@ int main(void)
     assert(AGENT_TASK_ERR_REVOKED != AGENT_TASK_ERR_AUTHORITY);
     assert(AGENT_TASK_NONBLOCKING == 1u);
     assert(sizeof(ProgramHandle) == sizeof(TaskHandle));
+
+    /* The asynchronous bridge binds every operation to the opening badge,
+     * keeps ObjectIDs non-zero and scoped, and queues before any worker can
+     * execute. */
+    recorded_event_count = 0u;
+    queue_calls = 0u;
+    queue_status = AGENT_TASK_OK;
+    authority_epoch = 11u;
+    agent_task_gateway_init(arena, sizeof(arena), submit, metrics,
+                            authority, NULL);
+    agent_task_gateway_set_enqueue(enqueue);
+
+    struct agent_task_req_program_open open = {0};
+    open.program.program_version = 1u;
+    open.program.interface_version = AGENT_TASK_FRACTAL_V1_VERSION;
+    open.authority_epoch = authority_epoch;
+    open.nonblocking = AGENT_TASK_NONBLOCKING;
+    struct agent_task_reply_program_open open_reply;
+    assert(agent_task_gateway_program_open(AGENT_TASK_GATEWAY_RIGHT, &open,
+                                           &open_reply) == AGENT_TASK_ERR_INVALID);
+    open.program.digest[0] = 0xA5u;
+    open.authority_epoch--;
+    assert(agent_task_gateway_program_open(AGENT_TASK_GATEWAY_RIGHT, &open,
+                                           &open_reply) == AGENT_TASK_ERR_AUTHORITY);
+    open.authority_epoch = authority_epoch;
+    assert(agent_task_gateway_program_open(AGENT_TASK_GATEWAY_RIGHT,
+                                           &open, &open_reply)
+           == AGENT_TASK_OK);
+    assert(open_reply.program.slot != 0u && open_reply.program.generation != 0u);
+
+    struct agent_task_req_program_poll program_poll = {
+        .program = open_reply.program,
+        .authority_epoch = authority_epoch,
+        .nonblocking = AGENT_TASK_NONBLOCKING,
+    };
+    struct agent_task_reply_program_poll program_poll_reply;
+    assert(agent_task_gateway_program_poll(AGENT_TASK_GATEWAY_RIGHT | 4u,
+                                           &program_poll, &program_poll_reply)
+           == AGENT_TASK_ERR_DENIED);
+
+    struct agent_task_req_submit fractal_submit = {
+        .program = open_reply.program,
+        .budget = fractal_budget(),
+        .authority_epoch = authority_epoch,
+        .nonblocking = AGENT_TASK_NONBLOCKING,
+        .task_flags = HARNESS_TASK_ALLOW_PATCH | HARNESS_TASK_REQUIRE_TEST,
+    };
+    struct agent_task_reply_submit fractal_reply;
+    fractal_submit.task_flags = 4u;
+    assert(agent_task_gateway_submit(AGENT_TASK_GATEWAY_RIGHT,
+                                     &fractal_submit, &fractal_reply)
+           == AGENT_TASK_ERR_DENIED);
+    fractal_submit.task_flags = HARNESS_TASK_ALLOW_PATCH
+        | HARNESS_TASK_REQUIRE_TEST;
+    assert(agent_task_gateway_submit(AGENT_TASK_GATEWAY_RIGHT,
+                                     &fractal_submit, &fractal_reply)
+           == AGENT_TASK_OK);
+    assert(queue_calls == 1u);
+    assert(fractal_reply.state == AGENT_TASK_STATE_ACCEPTED);
+    assert(recorded_type_count(EVENTBUS_EVENT_NESTED_CALL) == 1u);
+    assert(recorded_type_count(EVENTBUS_EVENT_BUDGET) == 1u);
+    assert(!eventbus_event_hash_zero(&recorded_events[0].task_id));
+    assert(!eventbus_event_hash_zero(&recorded_events[0].scope_id));
+
+    struct agent_task_req_budget bad_budget = {
+        .task = fractal_reply.task,
+        .authority_epoch = authority_epoch,
+        .nonblocking = AGENT_TASK_NONBLOCKING,
+        .budget = fractal_budget(),
+    };
+    struct agent_task_reply_budget bad_budget_reply;
+    bad_budget.budget.cpu_quanta = 0u;
+    assert(agent_task_gateway_budget(AGENT_TASK_GATEWAY_RIGHT,
+                                     &bad_budget, &bad_budget_reply)
+           == AGENT_TASK_ERR_INVALID);
+
+    struct agent_task_req_poll fractal_poll = {
+        .task = fractal_reply.task,
+        .authority_epoch = authority_epoch,
+        .nonblocking = AGENT_TASK_NONBLOCKING,
+    };
+    struct agent_task_reply_poll fractal_poll_reply;
+    assert(agent_task_gateway_poll(AGENT_TASK_GATEWAY_RIGHT | 4u,
+                                   &fractal_poll, &fractal_poll_reply)
+           == AGENT_TASK_ERR_DENIED);
+
+    struct eventbus_agent_event completion = recorded_events[0];
+    completion.event_type = EVENTBUS_EVENT_EFFECT;
+    completion.flags = EVENTBUS_EVENT_FLAG_EXTERNAL_EFFECT
+        | EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
+    completion.payload_root.bytes[0] = 0x5Au;
+    completion.scope_id.bytes[0] ^= 1u;
+    eventbus_agent_event_hash(&completion, &completion.event_hash);
+    agent_task_gateway_authenticated_event(&completion);
+    assert(agent_task_gateway_poll(AGENT_TASK_GATEWAY_RIGHT, &fractal_poll,
+                                   &fractal_poll_reply) == AGENT_TASK_OK);
+    assert(fractal_poll_reply.state == AGENT_TASK_STATE_ACCEPTED);
+    completion.scope_id = recorded_events[0].scope_id;
+    eventbus_agent_event_hash(&completion, &completion.event_hash);
+    agent_task_gateway_authenticated_event(&completion);
+    assert(agent_task_gateway_poll(AGENT_TASK_GATEWAY_RIGHT, &fractal_poll,
+                                   &fractal_poll_reply) == AGENT_TASK_OK);
+    assert(fractal_poll_reply.state == AGENT_TASK_STATE_COMPLETE);
+
+    struct agent_task_req_verify verify = {0};
+    verify.task = fractal_reply.task;
+    verify.authority_epoch = authority_epoch;
+    verify.nonblocking = AGENT_TASK_NONBLOCKING;
+    verify.evidence.evidence_version = AGENT_TASK_VERIFY_VERSION;
+    verify.evidence.proof_level = AGENT_TASK_PROOF_HOST_CONTRACT;
+    verify.evidence.test_count = 1u;
+    verify.evidence.commit_digest[0] = 1u;
+    verify.evidence.test_digest[0] = 2u;
+    verify.evidence.evidence_digest[0] = 3u;
+    struct agent_task_reply_verify verify_reply;
+    assert(agent_task_gateway_verify(AGENT_TASK_GATEWAY_RIGHT, &verify,
+                                     &verify_reply) == AGENT_TASK_OK);
+    assert(verify_reply.verify_status == AGENT_TASK_VERIFY_ACCEPTED);
+    assert(recorded_type_count(EVENTBUS_EVENT_TASK_VERIFY) == 1u);
+
+    struct agent_task_req_terminal_result terminal = {
+        .task = fractal_reply.task,
+        .authority_epoch = authority_epoch,
+        .nonblocking = AGENT_TASK_NONBLOCKING,
+    };
+    struct agent_task_reply_terminal_result terminal_reply;
+    assert(agent_task_gateway_terminal_result(AGENT_TASK_GATEWAY_RIGHT,
+                                              &terminal, &terminal_reply)
+           == AGENT_TASK_OK);
+    assert(terminal_reply.result_kind == AGENT_TASK_RESULT_VALUE);
+    assert(terminal_reply.verify_status == AGENT_TASK_VERIFY_ACCEPTED);
+
+    /* A queue rejection is a terminal, authenticated failure rather than a
+     * lost task. Cancellation likewise records a candidate-visible event. */
+    recorded_event_count = 0u;
+    queue_calls = 0u;
+    queue_status = AGENT_TASK_ERR_HARNESS;
+    agent_task_gateway_init(arena, sizeof(arena), submit, metrics,
+                            authority, NULL);
+    agent_task_gateway_set_enqueue(enqueue);
+    assert(agent_task_gateway_program_open(AGENT_TASK_GATEWAY_RIGHT, &open,
+                                           &open_reply) == AGENT_TASK_OK);
+    fractal_submit.program = open_reply.program;
+    fractal_submit.authority_epoch = authority_epoch;
+    assert(agent_task_gateway_submit(AGENT_TASK_GATEWAY_RIGHT, &fractal_submit,
+                                     &fractal_reply) == AGENT_TASK_ERR_HARNESS);
+    assert(fractal_reply.state == AGENT_TASK_STATE_FAILED);
+    assert(recorded_type_count(EVENTBUS_EVENT_TASK) == 1u);
+
+    recorded_event_count = 0u;
+    queue_status = AGENT_TASK_OK;
+    agent_task_gateway_init(arena, sizeof(arena), submit, metrics,
+                            authority, NULL);
+    agent_task_gateway_set_enqueue(enqueue);
+    assert(agent_task_gateway_program_open(AGENT_TASK_GATEWAY_RIGHT, &open,
+                                           &open_reply) == AGENT_TASK_OK);
+    fractal_submit.program = open_reply.program;
+    assert(agent_task_gateway_submit(AGENT_TASK_GATEWAY_RIGHT, &fractal_submit,
+                                     &fractal_reply) == AGENT_TASK_OK);
+    struct agent_task_req_cancel cancel = {
+        .task = fractal_reply.task,
+        .authority_epoch = authority_epoch,
+        .nonblocking = AGENT_TASK_NONBLOCKING,
+    };
+    struct agent_task_reply_cancel cancel_reply;
+    assert(agent_task_gateway_cancel(AGENT_TASK_GATEWAY_RIGHT, &cancel,
+                                     &cancel_reply) == AGENT_TASK_OK);
+    assert(cancel_reply.state == AGENT_TASK_STATE_CANCELLED);
+    assert(recorded_type_count(EVENTBUS_EVENT_TASK) == 1u);
 
     puts("agent task gateway tests: ok");
     return 0;

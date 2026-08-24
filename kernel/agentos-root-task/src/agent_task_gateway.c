@@ -62,6 +62,7 @@ struct fractal_gateway_state {
     uint32_t authority_epoch;
     uint32_t task_flags;
     uint32_t result_bytes;
+    uint64_t owner_badge;
     eventbus_event_hash_t result_digest;
     eventbus_event_hash_t scope_id;
     eventbus_event_hash_t event_head;
@@ -96,6 +97,11 @@ static bool fractal_badge(uint64_t badge)
     return (badge & AGENT_TASK_GATEWAY_RIGHT) != 0u;
 }
 
+static bool fractal_owner(uint64_t badge)
+{
+    return g_fractal.owner_badge != 0u && badge == g_fractal.owner_badge;
+}
+
 static uint32_t fractal_authority_epoch(void)
 {
     uint32_t caps = 0u, epoch = 0u;
@@ -121,6 +127,48 @@ static bool fractal_budget_ok(const struct agent_task_budget *budget)
         && budget->max_steps <= AGENT_TASK_MAX_STEPS
         && budget->max_result_bytes != 0u
         && budget->max_result_bytes <= AGENT_TASK_MAX_RESULT_BYTES;
+}
+
+static eventbus_event_hash_t fractal_budget_hash(
+    const struct agent_task_budget *budget)
+{
+    uint8_t bytes[24];
+    eventbus_event_hash_t hash = {{0}};
+    uint32_t i;
+
+    for (i = 0u; i < 8u; i++) {
+        bytes[i] = (uint8_t)(budget->cpu_quanta >> (i * 8u));
+        bytes[8u + i] = (uint8_t)(budget->memory_bytes >> (i * 8u));
+    }
+    for (i = 0u; i < 4u; i++) {
+        bytes[16u + i] = (uint8_t)(budget->max_steps >> (i * 8u));
+        bytes[20u + i] = (uint8_t)(budget->max_result_bytes >> (i * 8u));
+    }
+    eventbus_event_hash_bytes(bytes, sizeof(bytes), &hash);
+    return hash;
+}
+
+static eventbus_event_hash_t fractal_scope_hash(
+    const struct agent_task_program_ref *program,
+    const struct agent_task_handle *task)
+{
+    uint8_t bytes[AGENT_TASK_DIGEST_BYTES + 8u];
+    eventbus_event_hash_t hash = {{0}};
+    uint32_t i;
+
+    bytes_copy(bytes, program->digest, AGENT_TASK_DIGEST_BYTES);
+    for (i = 0u; i < 2u; i++) {
+        uint32_t value = i == 0u ? task->slot : task->generation;
+        bytes[AGENT_TASK_DIGEST_BYTES + i * 4u] = (uint8_t)value;
+        bytes[AGENT_TASK_DIGEST_BYTES + i * 4u + 1u] =
+            (uint8_t)(value >> 8u);
+        bytes[AGENT_TASK_DIGEST_BYTES + i * 4u + 2u] =
+            (uint8_t)(value >> 16u);
+        bytes[AGENT_TASK_DIGEST_BYTES + i * 4u + 3u] =
+            (uint8_t)(value >> 24u);
+    }
+    eventbus_event_hash_bytes(bytes, sizeof(bytes), &hash);
+    return hash;
 }
 
 static bool fractal_program_handle_ok(const struct agent_task_program_handle *h)
@@ -333,6 +381,7 @@ uint32_t agent_task_gateway_program_open(
     g_fractal.program_ref = req->program;
     g_fractal.program = (struct agent_task_program_handle){1u, 1u};
     g_fractal.program_state = AGENT_TASK_PROGRAM_READY;
+    g_fractal.owner_badge = badge;
     g_fractal.authority_epoch = req->authority_epoch;
     g_fractal.worker = (struct agent_task_worker_identity){
         AGENT_TASK_WORKER_NATIVE, 0u, 1u, 0u};
@@ -352,6 +401,7 @@ uint32_t agent_task_gateway_program_poll(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_program_poll *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING)
         return reply->status = AGENT_TASK_ERR_INVALID;
@@ -377,6 +427,7 @@ uint32_t agent_task_gateway_submit(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_submit *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING
             || req->reserved != 0u || !fractal_budget_ok(&req->budget))
@@ -404,8 +455,10 @@ uint32_t agent_task_gateway_submit(
     g_fractal.terminal_code = 0u;
     g_fractal.result_kind = AGENT_TASK_RESULT_NONE;
     g_fractal.result_bytes = 0u;
+    g_fractal.owner_badge = badge;
     g_fractal.authority_epoch = req->authority_epoch;
-    g_fractal.scope_id = fractal_handle_hash(&g_fractal.task);
+    g_fractal.scope_id = fractal_scope_hash(&g_fractal.program_ref,
+                                            &g_fractal.task);
     g_fractal.event_head = (eventbus_event_hash_t){{0}};
     payload = fractal_handle_hash(&g_fractal.program);
     status = fractal_emit(EVENTBUS_EVENT_NESTED_CALL,
@@ -416,10 +469,39 @@ uint32_t agent_task_gateway_submit(
         g_fractal.task_valid = false;
         return reply->status = AGENT_TASK_ERR_HARNESS;
     }
+    payload = fractal_budget_hash(&g_fractal.budget);
+    status = fractal_emit(EVENTBUS_EVENT_BUDGET,
+                          EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                          &payload, (const eventbus_event_hash_t *)0,
+                          -(int32_t)req->budget.max_steps, (uint64_t *)0);
+    if (status != EVENTBUS_AGENT_EVENT_OK) {
+        g_fractal.task_valid = false;
+        return reply->status = AGENT_TASK_ERR_HARNESS;
+    }
     if (g_enqueue != (agent_task_enqueue_fn)0) {
         status = g_enqueue(req, &g_fractal.task, g_task.ctx);
         if (status != AGENT_TASK_OK) {
-            g_fractal.task_valid = false;
+            eventbus_event_hash_t failure;
+            uint8_t failure_bytes[4];
+            failure_bytes[0] = (uint8_t)status;
+            failure_bytes[1] = (uint8_t)(status >> 8u);
+            failure_bytes[2] = (uint8_t)(status >> 16u);
+            failure_bytes[3] = (uint8_t)(status >> 24u);
+            eventbus_event_hash_bytes(failure_bytes, sizeof(failure_bytes),
+                                      &failure);
+            g_fractal.state = AGENT_TASK_STATE_FAILED;
+            g_fractal.terminal_code = status;
+            g_fractal.result_kind = AGENT_TASK_RESULT_FAILURE;
+            if (fractal_emit(EVENTBUS_EVENT_TASK,
+                             EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                             &failure, (const eventbus_event_hash_t *)0,
+                             0, (uint64_t *)0) != EVENTBUS_AGENT_EVENT_OK)
+                status = AGENT_TASK_ERR_HARNESS;
+            reply->program = g_fractal.program;
+            reply->task = g_fractal.task;
+            reply->state = g_fractal.state;
+            reply->authority_epoch = g_fractal.authority_epoch;
+            reply->worker = g_fractal.worker;
             return reply->status = status;
         }
     }
@@ -441,6 +523,7 @@ uint32_t agent_task_gateway_poll(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_poll *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING)
         return reply->status = AGENT_TASK_ERR_INVALID;
@@ -467,6 +550,7 @@ uint32_t agent_task_gateway_cancel(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_cancel *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING)
         return reply->status = AGENT_TASK_ERR_INVALID;
@@ -501,6 +585,7 @@ uint32_t agent_task_gateway_budget(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_budget *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING
             || !fractal_budget_ok(&req->budget))
@@ -511,6 +596,17 @@ uint32_t agent_task_gateway_budget(
     if (status != AGENT_TASK_OK) return reply->status = status;
     if (g_fractal.state >= AGENT_TASK_STATE_COMPLETE)
         return reply->status = AGENT_TASK_ERR_TERMINAL;
+    eventbus_event_hash_t budget_root = fractal_budget_hash(&req->budget);
+    int64_t budget_delta = (int64_t)req->budget.max_steps
+        - (int64_t)g_fractal.budget.max_steps;
+    if (budget_delta > INT32_MAX) budget_delta = INT32_MAX;
+    if (budget_delta < INT32_MIN) budget_delta = INT32_MIN;
+    status = fractal_emit(EVENTBUS_EVENT_BUDGET,
+                          EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE,
+                          &budget_root, (const eventbus_event_hash_t *)0,
+                          (int32_t)budget_delta, (uint64_t *)0);
+    if (status != EVENTBUS_AGENT_EVENT_OK)
+        return reply->status = AGENT_TASK_ERR_HARNESS;
     g_fractal.budget = req->budget;
     g_fractal.remaining = req->budget;
     reply->status = AGENT_TASK_OK;
@@ -531,6 +627,7 @@ uint32_t agent_task_gateway_verify(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_verify *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING
             || req->evidence.evidence_version != AGENT_TASK_VERIFY_VERSION
@@ -573,6 +670,7 @@ uint32_t agent_task_gateway_terminal_result(
         return AGENT_TASK_ERR_INVALID;
     bytes_zero(reply, sizeof(*reply));
     if (!fractal_badge(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
+    if (!fractal_owner(badge)) return reply->status = AGENT_TASK_ERR_DENIED;
     if (req == (const struct agent_task_req_terminal_result *)0
             || req->nonblocking != AGENT_TASK_NONBLOCKING)
         return reply->status = AGENT_TASK_ERR_INVALID;
@@ -599,13 +697,24 @@ void agent_task_gateway_authenticated_event(
     const struct eventbus_agent_event *event)
 {
     eventbus_event_hash_t task_hash;
+    eventbus_event_hash_t authenticated_hash;
     if (event == (const struct eventbus_agent_event *)0 || !g_fractal.task_valid)
         return;
+    if (event->schema_version != EVENTBUS_AGENT_EVENT_SCHEMA_VERSION
+            || !(event->flags & EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE)
+            || (event->flags & EVENTBUS_EVENT_FLAG_PROMOTION_INTERNAL))
+        return;
+    eventbus_agent_event_hash(event, &authenticated_hash);
+    if (!eventbus_event_hash_equal(&authenticated_hash, &event->event_hash))
+        return;
     task_hash = fractal_handle_hash(&g_fractal.task);
-    if (!eventbus_event_hash_equal(&task_hash, &event->task_id))
+    if (!eventbus_event_hash_equal(&task_hash, &event->task_id)
+            || !eventbus_event_hash_equal(&g_fractal.scope_id,
+                                          &event->scope_id))
         return;
     if (event->event_type == EVENTBUS_EVENT_AUTHORITY_CHANGE) {
-        if (event->authority_epoch > g_fractal.authority_epoch) {
+        if (g_fractal.authority_epoch != UINT32_MAX
+                && event->authority_epoch == g_fractal.authority_epoch + 1u) {
             g_fractal.authority_epoch = event->authority_epoch;
             g_fractal.state = AGENT_TASK_STATE_REVOKED;
             g_fractal.terminal_code = AGENT_TASK_ERR_REVOKED;
@@ -614,12 +723,37 @@ void agent_task_gateway_authenticated_event(
     } else if (event->authority_epoch != g_fractal.authority_epoch) {
         return;
     } else if (event->event_type == EVENTBUS_EVENT_TASK_VERIFY) {
+        if (!(event->flags & EVENTBUS_EVENT_FLAG_TASK_VERIFY_SUCCESS)
+                || eventbus_event_hash_zero(&event->payload_root)
+                || eventbus_event_hash_zero(&event->evidence_root)
+                || g_fractal.state != AGENT_TASK_STATE_COMPLETE
+                || g_fractal.verify_status != AGENT_TASK_VERIFY_UNVERIFIED)
+            return;
         g_fractal.verify_status = AGENT_TASK_VERIFY_ACCEPTED;
         g_fractal.evidence_sequence = (uint32_t)event->position;
     } else if (event->event_type == EVENTBUS_EVENT_EFFECT) {
+        if (!(event->flags & EVENTBUS_EVENT_FLAG_EXTERNAL_EFFECT)
+                || eventbus_event_hash_zero(&event->payload_root)
+                || g_fractal.state >= AGENT_TASK_STATE_COMPLETE)
+            return;
         g_fractal.state = AGENT_TASK_STATE_COMPLETE;
         g_fractal.result_kind = AGENT_TASK_RESULT_VALUE;
         g_fractal.result_digest = event->payload_root;
+    } else if (event->event_type == EVENTBUS_EVENT_TASK) {
+        /* The host adapter uses the task ObjectID as the authenticated
+         * cancellation marker. Other task roots are failure evidence. */
+        if (g_fractal.state >= AGENT_TASK_STATE_COMPLETE)
+            return;
+        if (eventbus_event_hash_equal(&event->payload_root, &task_hash)) {
+            g_fractal.state = AGENT_TASK_STATE_CANCELLED;
+            g_fractal.terminal_code = AGENT_TASK_ERR_CANCELLED;
+            g_fractal.result_kind = AGENT_TASK_RESULT_FAILURE;
+        } else if (!eventbus_event_hash_zero(&event->payload_root)) {
+            g_fractal.state = AGENT_TASK_STATE_FAILED;
+            g_fractal.terminal_code = AGENT_TASK_ERR_HARNESS;
+            g_fractal.result_kind = AGENT_TASK_RESULT_FAILURE;
+            g_fractal.result_digest = event->payload_root;
+        }
     } else if (event->event_type == EVENTBUS_EVENT_AUTHORITY_CHANGE) {
         g_fractal.state = AGENT_TASK_STATE_REVOKED;
         g_fractal.terminal_code = AGENT_TASK_ERR_REVOKED;
@@ -697,6 +831,7 @@ uint32_t agent_task_gateway_write(const struct agent_task_req_write *req)
         return AGENT_TASK_ERR_NOT_FOUND;
     if (g_task.ran || req->len == 0u || req->len > AGENT_TASK_CHUNK_BYTES
         || req->offset != g_task.received_len
+        || g_task.received_len > g_task.prompt_len
         || req->len > g_task.prompt_len - g_task.received_len)
         return AGENT_TASK_ERR_INVALID;
     bytes_copy(g_task.arena + AGENT_TASK_PROMPT_OFFSET + req->offset,
@@ -821,7 +956,8 @@ uint32_t agent_task_gateway_run(const struct agent_task_req_run *req,
         uint32_t metrics_status = g_task.metrics(g_task.task_id, &metrics,
                                                   g_task.ctx);
         if (metrics_status != HARNESS_OK
-            || metrics.result_len >= g_task.result_capacity) {
+            || metrics.result_len > g_task.result_capacity
+            || metrics.result_len > AGENT_TASK_RESULT_CAP) {
             reply->status = AGENT_TASK_ERR_HARNESS;
             reply->harness_status = metrics_status;
             reply->state = harness_reply.state;
@@ -890,7 +1026,7 @@ uint32_t agent_task_gateway_result(const struct agent_task_req_result *req,
         reply->status = AGENT_TASK_ERR_INCOMPLETE;
         return reply->status;
     }
-    if (req->offset > g_task.result_len
+    if (req->offset > g_task.result_len || req->max_len == 0u
         || req->max_len > AGENT_TASK_RESULT_CHUNK_BYTES) {
         reply->status = AGENT_TASK_ERR_INVALID;
         return reply->status;
