@@ -1,0 +1,546 @@
+// Fractal Companion export interface, version 1.
+//
+// This is the ONLY typed surface a local companion application may consume.
+// It is a read-mostly projection of canonical agentOS state (AgentFS objects
+// plus the hash-chained canonical event stream) with exactly one mutation
+// path: a narrowly granted `task-intent`.
+//
+// Binding rules (normative, mirrored by
+// kernel/agentos-root-task/include/contracts/companion_export_contract.h):
+//
+//   1. Every projection is pinned to an `event-range` and a root `object-id`.
+//      A projection with no pin is invalid, not merely undocumented.
+//   2. Every response carries the `authority-epoch` it was produced under.
+//      A cursor minted under an older epoch is stale and must be rejected.
+//   3. Every field carries a `redaction-class`. A field whose source data is
+//      not `source-class.projection` may never be emitted verbatim.
+//   4. The following NEVER appear in this interface, in any encoding, at any
+//      redaction class: raw credentials or secret material, personal records
+//      (calendar, message, file, or medical bodies), shell commands or
+//      argument vectors, filesystem paths, and promotion / ranking data.
+//      Sources are named by opaque handles and provenance hashes only.
+//   5. Results are bounded. An adapter that cannot fit a page within
+//      `limits.max-result-bytes` returns `export-error.result-too-large`
+//      rather than truncating silently.
+//
+// Schema compatibility: `schema-version.major` must match exactly; a client
+// minor below the server minor is accepted and served at the client's minor.
+
+package agentos:fractal-companion@1.0.0;
+
+interface types {
+    // ── Versioning ───────────────────────────────────────────────────────
+
+    /// Wire schema version. Major changes are breaking; minor changes are
+    /// additive-only (new optional fields, new trailing enum cases).
+    record schema-version {
+        major: u32,
+        minor: u32,
+    }
+
+    // ── Identity and provenance ──────────────────────────────────────────
+
+    /// Content address of an immutable object. EXACTLY 32 bytes (SHA-256).
+    /// An all-zero object-id is the explicit "absent" sentinel; it is never
+    /// a valid content address.
+    type object-id = list<u8>;
+
+    /// Opaque, non-reversible handle to an external source (a worker device,
+    /// a health provider account, a mesh peer). EXACTLY 32 bytes. Derived by
+    /// hashing source identity with a per-install salt, so it is stable for
+    /// correlation but carries no credential, account name, or address.
+    type source-handle = list<u8>;
+
+    /// Half-open-at-the-front, inclusive-at-the-back range over the canonical
+    /// hash-chained event stream. `head` is the chain head hash observed at
+    /// `last-seq`; a projection is reproducible iff replaying `stream-id`
+    /// over [first-seq, last-seq] yields `head`.
+    record event-range {
+        stream-id: u32,
+        /// first-seq <= last-seq. Both are 1-based; 0 means "empty range".
+        first-seq: u64,
+        last-seq: u64,
+        head: object-id,
+    }
+
+    /// Resume token for paginated reads. Minted by the server, opaque in
+    /// meaning but transparent in structure so a client can detect staleness
+    /// locally before spending a round trip.
+    record event-cursor {
+        /// Last canonical sequence already delivered to this client.
+        event-seq: u64,
+        /// Authority epoch in force when the cursor was minted. A cursor is
+        /// stale the moment the epoch advances.
+        authority-epoch: u64,
+        stream-id: u32,
+        /// Schema major the cursor was minted for.
+        schema-major: u32,
+        /// Root the page was pinned to when the cursor was minted.
+        root: object-id,
+    }
+
+    // ── Authority ────────────────────────────────────────────────────────
+
+    /// Per-projection grants. Held by the companion gateway, minted by
+    /// CapBroker, and re-checked on every request. Absence of a bit is a
+    /// denial, never a silent empty result.
+    flags grant {
+        project,
+        progress,
+        daily-root,
+        health,
+        worker-memory,
+        task-intent,
+    }
+
+    // ── Redaction ────────────────────────────────────────────────────────
+
+    /// Classification of the ORIGINAL data behind a projected field. Only
+    /// `projection` may be emitted verbatim; every other class must be
+    /// aggregated, hashed, or withheld before it reaches this interface.
+    enum source-class {
+        /// Derived, non-reversible, safe to export.
+        projection,
+        /// Secret material of any kind. Never exported.
+        credential,
+        /// Calendar, message, file, or medical record bodies. Never exported.
+        personal-record,
+        /// A command line or argument vector. Never exported.
+        shell-command,
+        /// A host or workspace path. Never exported.
+        filesystem-path,
+        /// Ranking, promotion, or placement weighting. Never exported.
+        promotion,
+    }
+
+    /// How a field survived redaction. Every projected record states this so
+    /// the companion can render honest provenance instead of guessing.
+    enum redaction-class {
+        /// Emitted verbatim; source-class was `projection`.
+        public,
+        /// Only a coarse aggregate over the source was emitted.
+        summary,
+        /// Only a provenance hash of the source was emitted.
+        hashed,
+        /// Withheld entirely; the field is present but carries no value.
+        withheld,
+    }
+
+    // ── Honest proof state ───────────────────────────────────────────────
+
+    /// The strongest evidence that actually exists for a claim. Never
+    /// inferred upward: a host-only pass is `host`, not `target`.
+    enum proof-level {
+        none,
+        host,
+        target,
+        qemu,
+        live,
+        external,
+    }
+
+    // ── Pagination ───────────────────────────────────────────────────────
+
+    /// Client-supplied page bounds. Both fields are clamped by the server to
+    /// `limits`; a request above the ceiling is rejected, not clamped
+    /// silently, so a client can never believe it saw a complete page.
+    record page-request {
+        /// 1 ..= limits.max-page-items.
+        max-items: u32,
+        /// 1 ..= limits.max-result-bytes.
+        max-bytes: u32,
+        /// Absent on the first page of a projection.
+        cursor: option<event-cursor>,
+    }
+
+    /// Page framing returned with every projection list.
+    record page-info {
+        item-count: u32,
+        item-bytes: u32,
+        /// True iff more items remain after `next-cursor`.
+        more: bool,
+        next-cursor: event-cursor,
+        range: event-range,
+    }
+
+    /// Server-declared bounds. A client must read these before its first
+    /// paginated request; they are stable for the lifetime of an epoch.
+    record limits {
+        max-page-items: u32,
+        max-result-bytes: u32,
+        max-label-bytes: u32,
+        max-ref-bytes: u32,
+        max-note-bytes: u32,
+        max-daily-items: u32,
+        max-conflict-heads: u32,
+        max-health-signals: u32,
+    }
+
+    // ── Typed errors ─────────────────────────────────────────────────────
+
+    /// The complete typed failure set. There is no untyped/unknown case:
+    /// an adapter that cannot classify a failure returns `unavailable`.
+    enum export-error {
+        /// Malformed request: bad enum, zero-length id, inverted range.
+        invalid,
+        /// Schema major mismatch, or minor above what the server serves.
+        unsupported-schema,
+        /// Caller lacks the grant for this projection or intent.
+        denied,
+        /// Request carried an authority epoch the server has moved past.
+        stale-authority,
+        /// Cursor is from an older epoch, or points below the retained
+        /// window, or above the newest sequence.
+        stale-cursor,
+        /// The page cannot be served within the requested byte bound.
+        result-too-large,
+        /// Subject id is well formed but names nothing.
+        not-found,
+        /// Source adapter is offline, or the projection is not built yet.
+        unavailable,
+        /// Divergent heads, or a compare-and-swap against `expect-root`
+        /// lost a race.
+        conflict,
+        /// A requested field's source-class is not exportable.
+        redacted,
+        /// Per-epoch request budget exhausted.
+        rate-limited,
+        /// Consent window or source freshness window has closed.
+        expired,
+    }
+
+    // ── Project and progress ─────────────────────────────────────────────
+
+    enum progress-state {
+        proposed,
+        ready,
+        active,
+        blocked,
+        review,
+        done,
+        dormant,
+    }
+
+    /// Why a node is blocked, as evidence rather than prose. The evidence
+    /// body itself stays in AgentFS; only its content address crosses.
+    record blocker-evidence {
+        /// Absent (all-zero) when `progress-state` is not `blocked`.
+        evidence-id: object-id,
+        /// Canonical event that recorded the block.
+        event-seq: u64,
+        /// The proof level the blocked claim currently holds.
+        observed-proof: proof-level,
+        redaction: redaction-class,
+    }
+
+    /// Binding of a progress node to the worker that holds it. Identifies
+    /// the worker by kind and opaque handle only -- never by hostname,
+    /// device name, account, or path.
+    record worker-assignment {
+        worker: source-handle,
+        /// Stable worker family: "codex", "cursor", "claude", "hermes".
+        /// At most limits.max-ref-bytes.
+        kind: string,
+        assigned-event-seq: u64,
+        redaction: redaction-class,
+    }
+
+    /// A pinned, immutable snapshot of one project. Carries opaque issue
+    /// references, never writable issue-tracker internals.
+    record project {
+        schema: schema-version,
+        project-id: object-id,
+        /// Root the snapshot was built from.
+        snapshot-root: object-id,
+        range: event-range,
+        /// Opaque tracker reference, e.g. "agentos-gz0.5". Bounded by
+        /// limits.max-ref-bytes. Never a path or URL.
+        reference: string,
+        /// Human-readable title, bounded by limits.max-label-bytes.
+        title: string,
+        node-count: u32,
+        blocked-count: u32,
+        /// Weakest proof level across all nodes -- honest, not aspirational.
+        proof: proof-level,
+        updated-event-seq: u64,
+        redaction: redaction-class,
+    }
+
+    /// One node of the dependency graph. Ordering is deterministic:
+    /// ascending `depth`, then ascending `reference` byte order.
+    record progress {
+        schema: schema-version,
+        node-id: object-id,
+        project-id: object-id,
+        reference: string,
+        title: string,
+        state: progress-state,
+        proof: proof-level,
+        /// Topological rank; dependencies always have a lower depth.
+        depth: u32,
+        depends-on-count: u32,
+        /// Completion in hundredths of a percent, 0 ..= 10000.
+        percent-x100: u32,
+        event-seq: u64,
+        blocker: blocker-evidence,
+        assignment: option<worker-assignment>,
+        redaction: redaction-class,
+    }
+
+    // ── Daily root ───────────────────────────────────────────────────────
+
+    /// A reference from the daily bundle back into pinned canonical state.
+    /// Deliberately holds no body: no calendar entry, message, file, or
+    /// health record ever crosses this boundary.
+    record daily-item {
+        item-id: object-id,
+        /// The projection this item points at.
+        subject: object-id,
+        /// Deterministic ordering key within the bundle.
+        ordinal: u32,
+        event-seq: u64,
+        /// Class of the ORIGINAL source. Must be `projection`.
+        origin: source-class,
+        redaction: redaction-class,
+    }
+
+    /// One immutable, deterministically rebuildable bundle for one local
+    /// calendar day. Rebuilding from the same roots and range must yield a
+    /// byte-identical `bundle-id`.
+    record daily-root {
+        schema: schema-version,
+        bundle-id: object-id,
+        project-root: object-id,
+        event-root: object-id,
+        range: event-range,
+        /// Local civil date, exactly "YYYY-MM-DD".
+        date-key: string,
+        /// IANA zone key, e.g. "America/Los_Angeles". Bounded by
+        /// limits.max-ref-bytes.
+        tz-key: string,
+        /// Offset actually used for the rollover decision, -1440 ..= 1440.
+        utc-offset-minutes: s32,
+        built-at-unix: u64,
+        /// Age in seconds of the FRESHEST contributing source.
+        freshness-seconds: u32,
+        item-count: u32,
+        /// Divergent heads preserved rather than silently merged.
+        conflict-heads: list<object-id>,
+        redaction: redaction-class,
+    }
+
+    // ── Health adapter ───────────────────────────────────────────────────
+
+    /// Which family of source produced a summary. Named coarsely on purpose.
+    enum health-source {
+        unknown,
+        activity,
+        sleep,
+        readiness,
+        workload,
+    }
+
+    /// Coarse status. There is no numeric-measurement case by design.
+    enum health-status {
+        unknown,
+        ok,
+        attention,
+        stale,
+    }
+
+    /// A single coarse, consented signal. Carries no measurement value, no
+    /// timestamp series, and no record identifier from the source system.
+    record health-signal {
+        source: health-source,
+        status: health-status,
+        /// Hash over the minimum-necessary aggregate that produced `status`.
+        provenance: object-id,
+        observed-unix: u64,
+        redaction: redaction-class,
+    }
+
+    /// The whole health surface available to the companion. Source
+    /// credentials live behind `source` and never leave the adapter.
+    record health-adapter {
+        schema: schema-version,
+        source: source-handle,
+        /// Families the user explicitly consented to. Empty means no
+        /// consent, which is distinct from `revoked`.
+        consent-scope: list<health-source>,
+        consent-expires-unix: u64,
+        /// True once the user revoked or the source was deleted. A revoked
+        /// adapter serves `denied`, never a cached summary.
+        revoked: bool,
+        /// Rolled-up status across `signals`.
+        status: health-status,
+        freshness-seconds: u32,
+        signals: list<health-signal>,
+        provenance: object-id,
+        range: event-range,
+        redaction: redaction-class,
+    }
+
+    // ── Worker memory ────────────────────────────────────────────────────
+
+    enum worker-state {
+        offline,
+        idle,
+        active,
+        dormant,
+        reconnecting,
+        revoked,
+    }
+
+    /// Honest active-versus-dormant accounting for one worker or mesh peer.
+    /// Identifies the worker by opaque handle and family only.
+    record worker-memory {
+        schema: schema-version,
+        worker: source-handle,
+        kind: string,
+        state: worker-state,
+        /// Resident and in use right now.
+        active-bytes: u64,
+        /// Retained but paged down / idle.
+        dormant-bytes: u64,
+        target-low-bytes: u64,
+        target-high-bytes: u64,
+        /// Absent when the worker holds no task.
+        assignment: option<worker-assignment>,
+        peer-count: u32,
+        reconnect-count: u32,
+        last-event-seq: u64,
+        range: event-range,
+        redaction: redaction-class,
+    }
+
+    // ── Task intent (the only mutation) ──────────────────────────────────
+
+    /// The complete set of actions a companion may request. Every case is a
+    /// declarative statement about existing canonical state. There is
+    /// deliberately no case that carries a command, a path, or an argument
+    /// vector, so this enum cannot grow into a remote shell.
+    enum intent-kind {
+        /// Acknowledge a blocker or a completion.
+        acknowledge,
+        /// Ask for the node to be revisited later.
+        defer,
+        /// Raise the node's attention within its existing project.
+        prioritize,
+        /// Ask for stronger evidence at a named proof level.
+        request-proof,
+        /// Withdraw a previously submitted intent.
+        cancel,
+    }
+
+    /// A submitted intent. Compare-and-swap against `expect-root` makes a
+    /// stale companion view fail loudly instead of acting on old state.
+    record task-intent {
+        schema: schema-version,
+        kind: intent-kind,
+        /// Project or progress node the intent applies to.
+        subject: object-id,
+        /// Root the companion actually rendered when the user acted.
+        expect-root: object-id,
+        /// Cursor the companion held; used for staleness, not for ordering.
+        cursor: event-cursor,
+        authority-epoch: u64,
+        /// For `request-proof`; ignored otherwise.
+        requested-proof: proof-level,
+        /// Bounded free text, at most limits.max-note-bytes. Classified and
+        /// redaction-scanned like any other projected field.
+        note: string,
+    }
+
+    /// Acceptance record for a submitted intent.
+    record task-intent-receipt {
+        intent-id: object-id,
+        accepted: bool,
+        /// Canonical sequence the intent was recorded at.
+        event-seq: u64,
+        authority-epoch: u64,
+    }
+
+    /// Handshake result. A client that skips this cannot know the epoch or
+    /// the bounds, and every subsequent request will fail typed.
+    record session {
+        schema: schema-version,
+        /// Lowest minor this server still serves.
+        min-schema-minor: u32,
+        authority-epoch: u64,
+        grants: grant,
+        limits: limits,
+        /// Oldest canonical sequence still retained; cursors below this are
+        /// stale.
+        oldest-retained-seq: u64,
+        newest-seq: u64,
+    }
+}
+
+interface companion-export {
+    use types.{
+        schema-version, object-id, event-cursor, export-error, page-request,
+        page-info, session, project, progress, daily-root, health-adapter,
+        worker-memory, task-intent, task-intent-receipt,
+    };
+
+    record project-page {
+        page: page-info,
+        items: list<project>,
+    }
+
+    record progress-page {
+        page: page-info,
+        items: list<progress>,
+    }
+
+    record worker-memory-page {
+        page: page-info,
+        items: list<worker-memory>,
+    }
+
+    /// Negotiate schema, learn the current authority epoch, grants, bounds,
+    /// and the retained cursor window. Fails `unsupported-schema` on a major
+    /// mismatch or a minor above what this server serves.
+    describe: func(requested: schema-version) -> result<session, export-error>;
+
+    /// Bounded, event-pinned project snapshots.
+    list-projects: func(
+        epoch: u64,
+        page: page-request,
+    ) -> result<project-page, export-error>;
+
+    /// Bounded, dependency-ordered progress nodes for one project.
+    list-progress: func(
+        epoch: u64,
+        project-id: object-id,
+        page: page-request,
+    ) -> result<progress-page, export-error>;
+
+    /// The immutable bundle for one local day. Deterministic: identical
+    /// inputs must produce an identical `bundle-id`.
+    get-daily-root: func(
+        epoch: u64,
+        date-key: string,
+        tz-key: string,
+    ) -> result<daily-root, export-error>;
+
+    /// Coarse, consented health summary. Returns `denied` when consent was
+    /// never granted or was revoked, and `expired` once the window closes.
+    get-health-adapter: func(epoch: u64) -> result<health-adapter, export-error>;
+
+    /// Active-versus-dormant memory for every visible worker and peer.
+    list-worker-memory: func(
+        epoch: u64,
+        page: page-request,
+    ) -> result<worker-memory-page, export-error>;
+
+    /// The only mutation. Requires the `task-intent` grant, a live epoch,
+    /// a non-stale cursor, and a compare-and-swap match on `expect-root`.
+    submit-task-intent: func(
+        intent: task-intent,
+    ) -> result<task-intent-receipt, export-error>;
+}
+
+world companion-gateway {
+    export companion-export;
+}

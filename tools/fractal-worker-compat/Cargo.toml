@@ -1,0 +1,26 @@
+[package]
+name = "fractal-worker-compat"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Fractal compatibility worker protocol helpers and contract tests"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+toml = "0.8"
+regex = "1"
+
+[[test]]
+name = "test_cursor_worker"
+path = "../../tests/compat/test_cursor_worker.rs"
+
+[[test]]
+name = "test_claude_worker"
+path = "../../tests/compat/test_claude_worker.rs"
+
+[[test]]
+name = "test_hermes_worker"
+path = "../../tests/compat/test_hermes_worker.rs"

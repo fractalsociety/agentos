@@ -1,0 +1,59 @@
+# Fractal compatibility worker manifest: Hermes
+
+[worker]
+id = "hermes"
+provider = "hermes"
+protocol = "fractal-worker/v1"
+protocol_wit = "interfaces/wit/fractal-worker-v1/worker.wit"
+description = "Hermes CLI compatibility worker behind the provider-neutral Fractal worker boundary."
+
+[worker.executable]
+kind = "path-lookup"
+name = "hermes"
+aliases = []
+
+[discovery]
+version_args = ["--version"]
+expect_semver = true
+requires_real_version_preflight = true
+
+[session]
+stream_format = "jsonl"
+native_output_format = "hermes-jsonl"
+launch_args = ["run", "--jsonl"]
+requires_isolated_git_workspace = true
+workspace_path_arg = "--workspace"
+prompt_arg_mode = "stdin"
+allowed_file_enforcement = "post-run-diff-and-deny"
+
+[auth]
+mode = "opaque-secret-handle"
+handle_env = "FRACTAL_HERMES_SECRET_HANDLE"
+inherit_process_channel = true
+
+[limits]
+max_rss_bytes = 157286400
+default_deadline_ms = 600000
+
+[policy]
+grant_shell = false
+grant_network = false
+grant_filesystem = false
+grant_environment = false
+allow_absolute_workspace_paths = false
+allow_path_parent_segments = false
+persist_credentials = false
+log_credentials = false
+
+[redaction]
+credential_patterns = ["sk-[A-Za-z0-9._-]+", "(?i)(api[_-]?key|token|password)=\\S+"]
+personal_record_patterns = ["(?i)ssn[:=]\\S+", "(?i)medical-record[:=]\\S+"]
+absolute_path_patterns = ["/Users/[^ ]+", "/home/[^ ]+", "[A-Za-z]:\\\\Users\\\\[^ ]+"]
+replacement = "[REDACTED]"
+
+[terminal_result]
+schema = "fractal.worker.terminal-result.v1"
+map_exit_zero_to = "success"
+map_cancel_signal_to = "cancelled"
+include_peak_rss = true
+include_usage_tokens = true

@@ -25,6 +25,8 @@ members = [
     "tools/make-swap-image",
     "tools/trace-replay",
     "tools/agentos-mcp",
+    # Fractal compatibility workers (Codex/Cursor/Claude/Hermes adapters)
+    "tools/fractal-worker-compat",
     # Per-PD ABI table generator
     "tools/gen-abi",
     # Workspace task runner

@@ -1,0 +1,140 @@
+package fractal:worker@1.0.0;
+
+/// Provider-neutral typed worker-session boundary for Fractal compatibility
+/// workers (Codex, Cursor, Claude, Hermes). Manifests may describe an
+/// executable route but never grant authority through this ABI.
+
+interface worker {
+  type object-id = string;
+
+  enum provider-kind {
+    codex,
+    cursor,
+    claude,
+    hermes,
+  }
+
+  enum session-state {
+    pending,
+    running,
+    cancelling,
+    completed,
+    failed,
+    cancelled,
+  }
+
+  enum exit-class {
+    success,
+    failure,
+    cancelled,
+    resource-limit,
+    policy-denied,
+    launcher-error,
+  }
+
+  enum redaction-class {
+    none,
+    credential,
+    personal-record,
+    absolute-path,
+    environment,
+  }
+
+  enum session-event-kind {
+    version,
+    status,
+    message,
+    tool-call,
+    tool-result,
+    file-edit,
+    usage,
+    cancellation,
+    error,
+    terminal,
+  }
+
+  record version-record {
+    worker-id: string,
+    provider: string,
+    protocol-version: string,
+    cli-name: string,
+    cli-version: string,
+    discovered-at-unix-ms: u64,
+  }
+
+  /// Isolated workspace input. Hosts materialize a fresh Git worktree; paths
+  /// in allowed-files are workspace-relative only.
+  record workspace-input {
+    workspace-id: string,
+    root-object-id: object-id,
+    allowed-files: list<string>,
+    verify-command: option<string>,
+  }
+
+  /// Opaque credential reference. Secret values never cross this ABI.
+  record secret-handle {
+    id: string,
+    purpose: string,
+  }
+
+  record usage-metrics {
+    input-tokens: u64,
+    output-tokens: u64,
+    cached-tokens: u64,
+    peak-rss-bytes: u64,
+    wall-time-ms: u64,
+  }
+
+  record file-change {
+    path: string,
+    bytes-written: u64,
+    within-allowlist: bool,
+  }
+
+  /// Normalized event derived from provider JSONL / stream output.
+  record session-event {
+    sequence: u64,
+    kind: session-event-kind,
+    summary: string,
+    redaction: redaction-class,
+    payload-json: option<string>,
+  }
+
+  record cancel-request {
+    session-id: string,
+    reason: string,
+    deadline-unix-ms: option<u64>,
+  }
+
+  /// Common Fractal terminal-result envelope shared by all workers.
+  record terminal-result {
+    schema: string,
+    session-id: string,
+    worker-id: string,
+    provider: string,
+    state: session-state,
+    exit: exit-class,
+    exit-status: s32,
+    version: version-record,
+    usage: usage-metrics,
+    events: list<session-event>,
+    changed-files: list<file-change>,
+    secret-handle: option<secret-handle>,
+    error-message: option<string>,
+  }
+
+  resource session {
+    next-event: func() -> option<session-event>;
+    cancel: func(request: cancel-request) -> terminal-result;
+    collect-terminal: func() -> terminal-result;
+  }
+
+  discover-version: func(provider: provider-kind) -> result<version-record, string>;
+  open-session: func(workspace: workspace-input, prompt: string, secret: option<secret-handle>) -> result<session, string>;
+  enforce-allowed-files: func(workspace: workspace-input, changed: list<file-change>) -> result<list<file-change>, string>;
+  redact-text: func(input: string) -> tuple<string, redaction-class>;
+}
+
+world fractal-worker-v1 {
+  export worker;
+}

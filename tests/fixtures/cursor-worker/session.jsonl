@@ -1,0 +1,6 @@
+{"type":"status","message":"session-start","session_id":"sess-fixture-1"}
+{"type":"assistant","text":"Editing allowed file only."}
+{"type":"tool_call","name":"write","path":"src/health.c","bytes":128}
+{"type":"tool_result","name":"write","ok":true}
+{"type":"usage","input_tokens":120,"output_tokens":40,"cached_tokens":8}
+{"type":"result","subtype":"success","exit_code":0}
