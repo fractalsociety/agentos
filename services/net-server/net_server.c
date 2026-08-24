@@ -171,6 +171,7 @@ static inline void agentos_log_boot(const char *s) { (void)s; }
 #include "sel4_server.h"
 #include "sel4_client.h"
 #include "nameserver.h"
+#include "model_transport.h"
 
 /* data_rd32 / data_wr32 helpers (little-endian) */
 static inline uint32_t data_rd32(const uint8_t *d, int off)
@@ -212,6 +213,7 @@ uintptr_t net_packet_shmem_vaddr;
 uintptr_t net_mmio_vaddr;
 uintptr_t log_drain_rings_vaddr;
 uintptr_t vibe_staging_vaddr;
+static seL4_CPtr g_model_transport_ep;
 
 /* ── Module state ────────────────────────────────────────────────────────── */
 static net_vnic_t  vnics[NET_MAX_VNICS];
@@ -901,6 +903,22 @@ static uint32_t handle_net_http_post(sel4_badge_t badge __attribute__((unused)),
     uint32_t body_offset = data_rd32(req->data,  8);
     uint32_t body_len    = data_rd32(req->data, 12);
 
+#ifndef AGENTOS_TEST_HOST
+    /* Preferred native path: the capability-scoped model transport owns a
+     * dedicated VirtIO console.  NetServer remains the only caller exposed to
+     * ModelSvc; workers never receive this transport capability. */
+    if (g_model_transport_ep != seL4_CapNull) {
+        sel4_msg_t transport_rep = {0};
+        uint32_t transport_status = sel4_client_call(
+            g_model_transport_ep, MODEL_TRANSPORT_OP_POST,
+            req->data, 16u, &transport_rep);
+        if (transport_status == SEL4_ERR_OK && transport_rep.length >= 12u) {
+            *rep = transport_rep;
+            return SEL4_ERR_OK;
+        }
+    }
+#endif
+
     if (!vibe_staging_vaddr) {
         log_drain_write(16, 16, "[net_server] HTTP_POST: staging not mapped\n");
         data_wr32(rep->data, 0, 0); data_wr32(rep->data, 4, 0); data_wr32(rep->data, 8, 0);
@@ -1169,6 +1187,7 @@ void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     /* Root maps the same arena into ModelSvc and NetServer.  The historical
      * variable name is retained because OP_NET_HTTP_POST already uses it. */
     vibe_staging_vaddr = (uintptr_t)0x60000000u;
+    g_model_transport_ep = (seL4_CPtr)21u;
     agentos_log_boot("net_server");
     log_drain_write(16, 16, "[net_server] Initialising NetServer PD (raw seL4 IPC)\n");
     log_drain_write(16, 16, "[net_server] priority ordering constraint ELIMINATED\n");

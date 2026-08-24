@@ -225,6 +225,7 @@ typedef struct {
 #define SVC_ID_AGENT_HARNESS  26u   /* native Codex-style AgentHarness PD       */
 #define SVC_ID_TOOLSVC        27u   /* shared MCP-compatible tool registry       */
 #define SVC_ID_EXEC_SERVER    28u   /* isolated execution service                */
+#define SVC_ID_MODEL_TRANSPORT 29u  /* dedicated host model transport PD          */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -262,3 +263,4 @@ typedef struct {
 #define PD_CNODE_SLOT_AGENTFS_EP      18u
 #define PD_CNODE_SLOT_EXEC_SERVER_EP  19u
 #define PD_CNODE_SLOT_AGENT_HARNESS_EP 20u
+#define PD_CNODE_SLOT_MODEL_TRANSPORT_EP 21u

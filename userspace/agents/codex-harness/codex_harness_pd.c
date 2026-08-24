@@ -16,14 +16,17 @@
 #include "../../../contracts/execsvc/interface.h"
 #include "../../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
 
-#define HARNESS_SYSTEM_PROMPT_OFFSET 0xa000u
+#define HARNESS_SYSTEM_PROMPT_OFFSET 0x8000u
 #define HARNESS_SYSTEM_PROMPT_CAP    4096u
+#define HARNESS_MODEL_CONTEXT_OFFSET 0x9000u
+#define HARNESS_MODEL_CONTEXT_CAP    0x3000u
 #define HARNESS_TOOL_INPUT_OFFSET    0x8000u
 #define HARNESS_TOOL_OUTPUT_OFFSET   0x9000u
 #define HARNESS_TOOL_SCRATCH_CAP     4096u
 #define HARNESS_EXEC_OUTPUT_OFFSET   0xb000u
 #define HARNESS_INTERNAL_OFFSET      HARNESS_TOOL_INPUT_OFFSET
 #define HARNESS_INTERNAL_CAP         0x4000u
+#define HARNESS_CONTEXT_CAP          HARNESS_MODEL_CONTEXT_CAP
 
 static const char harness_system_prompt[] =
     "You are an AgentOS coding agent. Return exactly one JSON object and no "
@@ -95,6 +98,7 @@ static uint32_t runtime_private_committed_bytes;
 static uint32_t runtime_private_limit_bytes;
 static uint32_t runtime_shared_mapped_bytes;
 static uint32_t runtime_shared_components;
+static char runtime_context[HARNESS_CONTEXT_CAP];
 
 static void bytes_zero(void *ptr, uint32_t len)
 {
@@ -116,6 +120,33 @@ static bool bytes_equal(const char *a, uint32_t a_len,
     for (uint32_t i = 0u; i < a_len; i++)
         if (a[i] != b[i]) return false;
     return true;
+}
+
+static bool context_append(uint32_t *length, const char *text,
+                           uint32_t text_len)
+{
+    if (length == NULL || text == NULL || *length > HARNESS_CONTEXT_CAP
+        || text_len > HARNESS_CONTEXT_CAP - *length) return false;
+    bytes_copy(runtime_context + *length, text, text_len);
+    *length += text_len;
+    return true;
+}
+
+static bool context_append_turn(uint32_t *length,
+                                const char *action, uint32_t action_len,
+                                const char *observation,
+                                uint32_t observation_len)
+{
+    static const char action_label[] = "\nPrevious action:\n";
+    static const char observation_label[] = "\nObservation:\n";
+    static const char continuation[] =
+        "\nContinue the original task with exactly one next JSON action.\n";
+    return context_append(length, action_label, sizeof(action_label) - 1u)
+        && context_append(length, action, action_len)
+        && context_append(length, observation_label,
+                          sizeof(observation_label) - 1u)
+        && context_append(length, observation, observation_len)
+        && context_append(length, continuation, sizeof(continuation) - 1u);
 }
 
 static bool arena_range(uint32_t offset, uint32_t len)
@@ -350,9 +381,15 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
     current_task.verification_exit_code = -1;
     current_task.used_caps = HARNESS_CAP_MODEL;
 
-    const char *next_prompt = (const char *)(runtime_arena
-                                             + req->prompt_offset);
-    uint32_t next_prompt_len = req->prompt_len;
+    static const char task_label[] = "Original task:\n";
+    uint32_t context_len = 0u;
+    if (!context_append(&context_len, task_label, sizeof(task_label) - 1u)
+        || !context_append(&context_len,
+                           (const char *)(runtime_arena + req->prompt_offset),
+                           req->prompt_len))
+        return fail_task(HARNESS_ERR_PROTOCOL, rep);
+    const char *next_prompt = runtime_context;
+    uint32_t next_prompt_len = context_len;
     char *response = (char *)(runtime_arena + req->result_offset);
     char *action_input = (char *)(runtime_arena + HARNESS_TOOL_INPUT_OFFSET);
     char *observation = (char *)(runtime_arena + HARNESS_TOOL_OUTPUT_OFFSET);
@@ -449,8 +486,10 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                 || observation_len >= HARNESS_TOOL_SCRATCH_CAP)
                 return fail_task(status == HARNESS_OK
                                      ? HARNESS_ERR_TOOL : status, rep);
-            next_prompt = observation;
-            next_prompt_len = observation_len;
+            if (!context_append_turn(&context_len, json, json_len,
+                                     observation, observation_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            next_prompt_len = context_len;
             continue;
         }
 
@@ -498,8 +537,10 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                 || observation_len >= HARNESS_TOOL_SCRATCH_CAP)
                 return fail_task(status == HARNESS_OK
                                      ? HARNESS_ERR_MEMORY : status, rep);
-            next_prompt = observation;
-            next_prompt_len = observation_len;
+            if (!context_append_turn(&context_len, json, json_len,
+                                     observation, observation_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            next_prompt_len = context_len;
             continue;
         }
 
@@ -554,8 +595,11 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                 || exec_observation_len >= HARNESS_TOOL_SCRATCH_CAP)
                 return fail_task(status == HARNESS_OK
                                      ? HARNESS_ERR_EXEC : status, rep);
-            next_prompt = exec_observation;
-            next_prompt_len = exec_observation_len;
+            if (!context_append_turn(&context_len, json, json_len,
+                                     exec_observation,
+                                     exec_observation_len))
+                return fail_task(HARNESS_ERR_PROTOCOL, rep);
+            next_prompt_len = context_len;
             continue;
         }
 
@@ -647,10 +691,14 @@ static uint32_t target_model_backend(
     uint32_t *tokens_in, uint32_t *tokens_out, void *ctx)
 {
     (void)ctx;
-    if (system_prompt_len >= HARNESS_SYSTEM_PROMPT_CAP) return HARNESS_ERR_MODEL;
+    if (system_prompt_len >= HARNESS_SYSTEM_PROMPT_CAP
+        || user_prompt_len > HARNESS_MODEL_CONTEXT_CAP)
+        return HARNESS_ERR_MODEL;
     bytes_copy(runtime_arena + HARNESS_SYSTEM_PROMPT_OFFSET,
                system_prompt, system_prompt_len);
     runtime_arena[HARNESS_SYSTEM_PROMPT_OFFSET + system_prompt_len] = '\0';
+    bytes_copy(runtime_arena + HARNESS_MODEL_CONTEXT_OFFSET,
+               user_prompt, user_prompt_len);
 
     modelsvc_query_wire_t wire;
     bytes_zero(&wire, sizeof(wire));
@@ -660,8 +708,7 @@ static uint32_t target_model_backend(
         AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
     wire.system_prompt_offset = partition + HARNESS_SYSTEM_PROMPT_OFFSET;
     wire.system_prompt_len = system_prompt_len;
-    wire.user_prompt_offset = partition
-        + (uint32_t)((const uint8_t *)user_prompt - runtime_arena);
+    wire.user_prompt_offset = partition + HARNESS_MODEL_CONTEXT_OFFSET;
     wire.user_prompt_len = user_prompt_len;
     wire.response_offset = partition
         + (uint32_t)((uint8_t *)response - runtime_arena);

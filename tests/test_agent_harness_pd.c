@@ -18,6 +18,27 @@ static char memory_path[AGENTFS_PATH_MAX];
 static char memory_content[HARNESS_TOOL_SCRATCH_CAP];
 static uint32_t exec_calls;
 
+static const char *latest_observation(const char *prompt, uint32_t prompt_len,
+                                      uint32_t *observation_len)
+{
+    static const char marker[] = "\nObservation:\n";
+    static const char end[] = "\nContinue the original task";
+    const char *latest = NULL;
+    for (uint32_t i = 0u; i + sizeof(marker) - 1u <= prompt_len; i++)
+        if (memcmp(prompt + i, marker, sizeof(marker) - 1u) == 0)
+            latest = prompt + i + sizeof(marker) - 1u;
+    assert(latest != NULL);
+    uint32_t remaining = prompt_len - (uint32_t)(latest - prompt);
+    for (uint32_t i = 0u; i + sizeof(end) - 1u <= remaining; i++) {
+        if (memcmp(latest + i, end, sizeof(end) - 1u) == 0) {
+            *observation_len = i;
+            return latest;
+        }
+    }
+    assert(false);
+    return NULL;
+}
+
 static uint32_t fake_model(const char *system_prompt,
                            uint32_t system_prompt_len,
                            const char *user_prompt,
@@ -40,10 +61,14 @@ static uint32_t fake_model(const char *system_prompt,
     (void)ctx;
     model_calls++;
     if (model_status != HARNESS_OK) return model_status;
-    const char *selected = model_echo_after_first && model_calls > 1u
-        ? user_prompt : model_reply;
-    uint32_t len = model_echo_after_first && model_calls > 1u
-        ? user_prompt_len : (uint32_t)strlen(selected);
+    uint32_t len = 0u;
+    const char *selected;
+    if (model_echo_after_first && model_calls > 1u)
+        selected = latest_observation(user_prompt, user_prompt_len, &len);
+    else {
+        selected = model_reply;
+        len = (uint32_t)strlen(selected);
+    }
     assert(len + 1u <= response_capacity);
     memcpy(response, selected, len);
     response[len] = '\0';

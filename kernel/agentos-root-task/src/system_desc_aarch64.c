@@ -48,16 +48,16 @@
 
 /* CC init-ep counts include the agentos-7j5 controller endpoint (+1). */
 #if defined(AGENTOS_FAULT_INJECT) && defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (26u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_FAULT_INJECT)
-#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 7u
 #elif defined(AGENTOS_GUEST_BOTH)
-#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (25u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #else
-#define AOS_AARCH64_PD_COUNT (23u + AOS_TEST_PD_EXTRA)
+#define AOS_AARCH64_PD_COUNT (24u + AOS_TEST_PD_EXTRA)
 #define AOS_CC_INIT_EP_COUNT 6u
 #endif
 
@@ -250,10 +250,11 @@ const system_desc_t system_desc_aarch64 = {
             .cnode_size_bits = 10u,
             .priority       = 205u,
             .self_svc_id    = SVC_ID_NET_SERVER,
-            .init_ep_count  = 2u,
+            .init_ep_count  = 3u,
             .init_eps = {
                 { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
                 { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+                { SVC_ID_MODEL_TRANSPORT, PD_CNODE_SLOT_MODEL_TRANSPORT_EP },
             },
         },
 
@@ -646,5 +647,22 @@ const system_desc_t system_desc_aarch64 = {
             },
         },
 #endif
+
+        /* Dedicated capability-scoped transport for native model requests.
+         * Appended after the optional runner so existing badge-selected test
+         * partitions retain their stable descriptor indices. */
+        {
+            .name           = "model_transport",
+            .elf_path       = "model_transport.elf",
+            .stack_size     = 0x8000u,
+            .cnode_size_bits = 8u,
+            .priority       = 210u,
+            .self_svc_id    = SVC_ID_MODEL_TRANSPORT,
+            .init_ep_count  = 2u,
+            .init_eps = {
+                { SVC_ID_NAMESERVER, PD_CNODE_SLOT_NAMESERVER_EP },
+                { SVC_ID_LOG_DRAIN,  PD_CNODE_SLOT_LOG_DRAIN_EP  },
+            },
+        },
     },
 };

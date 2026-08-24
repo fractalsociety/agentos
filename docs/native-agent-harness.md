@@ -96,15 +96,15 @@ ExecCap window, and requires a zero exit code before accepting a task marked
 `HARNESS_TASK_REQUIRE_TEST`. Exact-byte verification is the first deployed
 backend; compiling or executing repository tests remains the next backend.
 
-This is a runnable native planner bootstrap, not yet a completed coding agent.
-External MCP connections and repository tools are not implemented yet,
-ExecServer does not yet compile or execute a command, and the monitor's dynamic
-CapabilityBroker records policy metadata without
-performing CNode mint/delete/revoke operations. Until those pieces and a real
-live-model repository edit/test/result workflow is proven on target, the
-project must not claim a completed native Codex agent. The built-in
-`agentos-smoke-coder` is a deterministic target-test model, not a substitute
-for live inference.
+This is now a genuine, bounded native coding-agent loop rather than only a
+deterministic planner demo. An authenticated official Codex process has driven
+the on-target harness through `memory_write`, AgentFS mutation, `verify`, an
+ExecCap-protected exact-byte check, and `final`. It is not yet a general-purpose
+Codex replacement: external MCP providers and repository indexing are not
+wired to ToolSvc, ExecServer does not yet compile or execute allowlisted
+commands, and the monitor's dynamic CapabilityBroker records policy metadata
+without performing CNode mint/delete/revoke operations. The built-in
+`agentos-smoke-coder` remains only the deterministic hermetic-test model.
 
 ## Shared services and worker memory
 
@@ -146,13 +146,22 @@ memory independently of worker count. The native worker still has no NetCap or
 credential; the heavier model client belongs to shared ModelSvc infrastructure
 rather than being duplicated into each worker.
 
-The CLI backend has been exercised locally against the authenticated official
-Codex installation. The native live target gate is still open: its 2026-08-24
-run correctly failed before contacting the bridge because the in-progress
-exclusive-NIC split gives VirtIO ownership to `net_pd`, while the HTTP client
-in `net_server` does not yet receive a working fastpath. The normal hermetic
-target suite remains 34/34. Do not cite the local bridge check as native V2
-live-model proof.
+The native live target gate passed on 2026-08-24. The AArch64 seL4 worker sent
+three ModelCap requests through ModelSvc and NetServer to a dedicated
+`model_transport` protection domain. That PD alone owns the model VirtIO
+console and maps ModelSvc's service-private transport arena; the worker has no
+transport cap, NetCap, credential, or host socket. The host proxy forwarded the
+bounded JSON frames to one already-authenticated official Codex process. Codex
+returned `memory_write(src/live.txt, "live-agentos\\n")`, then
+`verify(src/live.txt, "live-agentos\\n")`, observed exit code zero, and only
+then returned `final`. The live VM suite passed 35/35; the credential-free
+hermetic suite passed 34/34.
+
+This dedicated console is an honest intermediate transport, not a claim of
+native TCP or Headscale support. The current lwIP shim does not provide a real
+packet path, so native Headscale-ready networking and device enrollment remain
+open work. The transport does prove the intended authority graph without
+placing the model client or its credentials in every worker.
 
 In another terminal, enable the opt-in live target assertion:
 
@@ -174,17 +183,19 @@ cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180 \
   --perf-output build/agent-harness-qemu-perf.json --require-perf
 ```
 
-The 2026-08-24 AArch64 QEMU run with ModelSvc, ToolSvc, AgentFS, and ExecServer
-passed all 34 target assertions. Host monotonic timestamps measured 419.99 ms
-from QEMU spawn to root-task readiness, a 3.54 ms cold native planner turn,
-and 12 warm turns with 0.284 ms p50 and 0.538 ms p95. The bootstrap worker
-reported 253,952 bytes of private committed memory and 196,608 bytes of shared
-client mappings under its 64 MiB private limit. These are QEMU/host-arrival
-measurements, not bare-metal cycle counts.
+The latest 2026-08-24 AArch64 QEMU performance run with ModelSvc, ToolSvc,
+AgentFS, ExecServer, and the model-transport PD passed all 34 hermetic target
+assertions. Host monotonic timestamps measured 479.54 ms from QEMU spawn to
+root-task readiness, a 4.28 ms cold native planner turn, and 12 warm turns with
+0.155 ms p50 and 0.495 ms p95. ModelSvc cached queries measured 0.048 ms p50
+and 0.394 ms p95. The worker reported 270,336 bytes of private committed memory
+and 196,608 bytes of shared client mappings under its 64 MiB private limit.
+These are QEMU/host-arrival measurements, not bare-metal cycle counts.
 
 The same test originally exposed a roughly 992 ms tail caused by the generic
 10 ms/one-second MCS scheduling class. Native agent and shared agent-service
 PDs now use a 20 ms/100 ms interactive class; the repeated warm-turn p95 fell
-to sub-millisecond latency in subsequent runs. The 253,952-byte bootstrap is intentionally
-below the mature 20 MiB target floor; future context, overlay, and tool state
-must remain below the 150 MiB ceiling rather than padding the worker.
+to sub-millisecond latency in subsequent runs. The 270,336-byte bootstrap is
+intentionally below the mature 20 MiB target floor; future context, overlay,
+and tool state must remain below the 150 MiB ceiling rather than padding the
+worker.

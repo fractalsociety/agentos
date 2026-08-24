@@ -200,6 +200,16 @@ static bool bytes_equal(const char *a, uint32_t a_len,
     return true;
 }
 
+static bool bytes_contains(const char *haystack, uint32_t haystack_len,
+                           const char *needle, uint32_t needle_len)
+{
+    if (needle_len == 0u || needle_len > haystack_len) return false;
+    for (uint32_t i = 0u; i <= haystack_len - needle_len; i++)
+        if (bytes_equal(haystack + i, needle_len, needle, needle_len))
+            return true;
+    return false;
+}
+
 static uint32_t bounded_strlen(const char *value, uint32_t cap)
 {
     uint32_t len = 0u;
@@ -478,20 +488,20 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
         uint32_t local_response_len = 0u;
         if (bytes_equal(model->info.model_id, id_len,
                         smoke_model, sizeof(smoke_model) - 1u)) {
-            if (bytes_equal(user, wire->user_prompt_len,
-                            smoke_task, sizeof(smoke_task) - 1u)) {
-                local_response = write_action;
-                local_response_len = sizeof(write_action) - 1u;
-            } else if (bytes_equal(user, wire->user_prompt_len,
-                                   write_observation,
-                                   sizeof(write_observation) - 1u)) {
-                local_response = verify_action;
-                local_response_len = sizeof(verify_action) - 1u;
-            } else if (bytes_equal(user, wire->user_prompt_len,
-                                   verify_observation,
-                                   sizeof(verify_observation) - 1u)) {
+            if (bytes_contains(user, wire->user_prompt_len,
+                               verify_observation,
+                               sizeof(verify_observation) - 1u)) {
                 local_response = final_action;
                 local_response_len = sizeof(final_action) - 1u;
+            } else if (bytes_contains(user, wire->user_prompt_len,
+                                      write_observation,
+                                      sizeof(write_observation) - 1u)) {
+                local_response = verify_action;
+                local_response_len = sizeof(verify_action) - 1u;
+            } else if (bytes_contains(user, wire->user_prompt_len,
+                                      smoke_task, sizeof(smoke_task) - 1u)) {
+                local_response = write_action;
+                local_response_len = sizeof(write_action) - 1u;
             } else {
                 return MODELSVC_ERR_INVALID_ARG;
             }
@@ -502,13 +512,51 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
             bytes_copy(output, local_response, local_response_len);
             *response_len = local_response_len;
         } else {
-            if (sizeof(prefix) - 1u + wire->user_prompt_len + 1u > output_cap)
+            static const char original_marker[] = "Original task:\n";
+            static const char observation_marker[] = "\nObservation:\n";
+            static const char continuation_marker[] =
+                "\nContinue the original task";
+            const char *selected = user;
+            uint32_t selected_len = wire->user_prompt_len;
+            const char *latest_observation = NULL;
+            for (uint32_t i = 0u;
+                 i + sizeof(observation_marker) - 1u <= wire->user_prompt_len;
+                 i++) {
+                if (bytes_equal(user + i, sizeof(observation_marker) - 1u,
+                                observation_marker,
+                                sizeof(observation_marker) - 1u))
+                    latest_observation = user + i
+                        + sizeof(observation_marker) - 1u;
+            }
+            if (latest_observation != NULL) {
+                selected = latest_observation;
+                selected_len = wire->user_prompt_len
+                    - (uint32_t)(selected - user);
+                for (uint32_t i = 0u;
+                     i + sizeof(continuation_marker) - 1u <= selected_len;
+                     i++) {
+                    if (bytes_equal(selected + i,
+                                    sizeof(continuation_marker) - 1u,
+                                    continuation_marker,
+                                    sizeof(continuation_marker) - 1u)) {
+                        selected_len = i;
+                        break;
+                    }
+                }
+            } else if (wire->user_prompt_len
+                           >= sizeof(original_marker) - 1u
+                       && bytes_equal(user, sizeof(original_marker) - 1u,
+                                      original_marker,
+                                      sizeof(original_marker) - 1u)) {
+                selected += sizeof(original_marker) - 1u;
+                selected_len -= sizeof(original_marker) - 1u;
+            }
+            if (sizeof(prefix) - 1u + selected_len + 1u > output_cap)
                 return MODELSVC_ERR_NOMEM;
             bytes_copy(output, prefix, sizeof(prefix) - 1u);
-            bytes_copy(output + sizeof(prefix) - 1u, user,
-                       wire->user_prompt_len);
+            bytes_copy(output + sizeof(prefix) - 1u, selected, selected_len);
             *response_len = (uint32_t)(sizeof(prefix) - 1u)
-                + wire->user_prompt_len;
+                + selected_len;
         }
         *tokens_in = (wire->system_prompt_len + wire->user_prompt_len + 3u) / 4u;
         *tokens_out = (*response_len + 3u) / 4u;
