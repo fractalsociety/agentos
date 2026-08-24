@@ -40,6 +40,17 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#if defined(__GNUC__)
+__attribute__((weak)) void agent_task_gateway_authenticated_event(
+    const struct eventbus_agent_event *event)
+{
+    (void)event;
+}
+#else
+extern void agent_task_gateway_authenticated_event(
+    const struct eventbus_agent_event *event);
+#endif
+
 static struct eventbus_agent_event_stream g_agent_stream;
 static bool g_agent_stream_ready;
 
@@ -172,6 +183,7 @@ uint32_t agentos_eventbus_record(struct eventbus_agent_event *event)
                       (uint32_t)sizeof(g_agent_stream.events[saved_count]));
         return status;
     }
+    agent_task_gateway_authenticated_event(event);
     return EVENTBUS_AGENT_EVENT_OK;
 }
 

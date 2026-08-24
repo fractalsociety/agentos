@@ -129,13 +129,13 @@ static void test_handler_table_populated(void)
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
- * Test 4: exactly 4 inbound opcodes are registered
+ * Test 4: legacy plus Fractal task-control-plane inbound opcodes are registered
  * ─────────────────────────────────────────────────────────────────────────── */
 
 static void test_handler_count_complete(void)
 {
     setup();
-    ASSERT_EQ(controller_handler_count(), 14u,
+    ASSERT_EQ(controller_handler_count(), 22u,
               "controller_main: policy, runtime, and native task handlers registered");
 }
 

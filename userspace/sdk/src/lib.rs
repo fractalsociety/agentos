@@ -25,6 +25,15 @@ pub mod context;
 pub mod cuda;
 pub mod daily_root;
 pub mod event;
+pub mod fractalos_capabilities;
+
+#[cfg(feature = "wit-bindings")]
+pub mod wit_generated {
+    wit_bindgen::generate!({
+        path: "../../interfaces/wit/fractalos-capabilities-v1",
+        world: "agent-runtime-v1",
+    });
+}
 pub mod identity;
 pub mod message;
 pub mod memory;

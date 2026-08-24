@@ -47,6 +47,8 @@
     <!-- Controller: system coordinator, low priority to PPC into passive servers -->
     <protection_domain name="controller" priority="50" stack_size="0x10000">
         <program_image path="controller.elf" />
+        <!-- Fractal task-control-plane 0x2E01..0x2E08 is multiplexed on the
+             existing controller/EventBus contract; no extra PD is created. -->
         <map mr="monitor_stack"  vaddr="0x2000000" perms="rw" setvar_vaddr="monitor_stack_vaddr" />
         <!-- Swap code regions: controller writes WASM images here; swap slot PDs read them -->
         <map mr="swap_code_0" vaddr="0x6000000" perms="rw" setvar_vaddr="swap_code_ctrl_0" />

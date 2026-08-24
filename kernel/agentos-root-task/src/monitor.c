@@ -60,7 +60,7 @@ void cap_broker_runtime_status(struct cap_broker_reply_runtime *reply);
 #define SEL4_ERR_BUSY       6u
 #define SEL4_ERR_INTERNAL   8u
 
-#define SEL4_MSG_DATA_BYTES 48u
+#define SEL4_MSG_DATA_BYTES 256u
 
 typedef uint64_t seL4_CPtr;
 typedef uint64_t seL4_Word;
@@ -282,6 +282,14 @@ static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 #define MSG_AGENT_TASK_RESULT      0x2C04u
 #define MSG_AGENT_TASK_METRICS     0x2C05u
 #define MSG_AGENT_TASK_RESOURCES   0x2C06u
+#define MSG_FRACTAL_PROGRAM_OPEN   0x2E01u
+#define MSG_FRACTAL_PROGRAM_POLL   0x2E02u
+#define MSG_FRACTAL_TASK_SUBMIT    0x2E03u
+#define MSG_FRACTAL_TASK_POLL     0x2E04u
+#define MSG_FRACTAL_TASK_CANCEL   0x2E05u
+#define MSG_FRACTAL_TASK_BUDGET   0x2E06u
+#define MSG_FRACTAL_TASK_VERIFY   0x2E07u
+#define MSG_FRACTAL_TASK_RESULT   0x2E08u
 #define MSG_QUOTA_REVOKE           0x0B01u
 #define MSG_GPU_SUBMIT             0x0901u
 #define MSG_VMM_VCPU_SET_REGS      0x2B05u
@@ -1139,6 +1147,129 @@ static uint32_t handle_agent_task_resources(sel4_badge_t badge,
     return status;
 }
 
+/* Fractal v1 uses the same controller endpoint and badge as the legacy task
+ * adapter.  These handlers only marshal bounded records; execution and all
+ * terminal transitions remain in the gateway/EventBus path. */
+static uint32_t handle_fractal_program_open(sel4_badge_t badge,
+                                            const sel4_msg_t *req,
+                                            sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_program_open reply = {0};
+    struct agent_task_req_program_open input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_program_open(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_program_poll(sel4_badge_t badge,
+                                            const sel4_msg_t *req,
+                                            sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_program_poll reply = {0};
+    struct agent_task_req_program_poll input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_program_poll(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_submit(sel4_badge_t badge,
+                                      const sel4_msg_t *req,
+                                      sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_submit reply = {0};
+    struct agent_task_req_submit input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_submit(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_poll(sel4_badge_t badge,
+                                    const sel4_msg_t *req,
+                                    sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_poll reply = {0};
+    struct agent_task_req_poll input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_poll(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_cancel(sel4_badge_t badge,
+                                      const sel4_msg_t *req,
+                                      sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_cancel reply = {0};
+    struct agent_task_req_cancel input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_cancel(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_budget(sel4_badge_t badge,
+                                      const sel4_msg_t *req,
+                                      sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_budget reply = {0};
+    struct agent_task_req_budget input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_budget(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_verify(sel4_badge_t badge,
+                                      const sel4_msg_t *req,
+                                      sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_verify reply = {0};
+    struct agent_task_req_verify input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_verify(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
+static uint32_t handle_fractal_terminal_result(sel4_badge_t badge,
+                                               const sel4_msg_t *req,
+                                               sel4_msg_t *rep, void *ctx)
+{
+    struct agent_task_reply_terminal_result reply = {0};
+    struct agent_task_req_terminal_result input;
+    (void)ctx;
+    if (req->length != sizeof(input)) reply.status = AGENT_TASK_ERR_INVALID;
+    else { controller_task_copy(&input, req->data, sizeof(input));
+           (void)agent_task_gateway_terminal_result(badge, &input, &reply); }
+    controller_task_copy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return reply.status;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
  * Inbound handler: MSG_VMM_VCPU_SET_REGS
  * ─────────────────────────────────────────────────────────────────────────── */
@@ -1651,6 +1782,22 @@ void controller_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_RESULT, handle_agent_task_result,    (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_METRICS,handle_agent_task_metrics,   (void *)0);
     sel4_server_register(&g_srv, (uint32_t)MSG_AGENT_TASK_RESOURCES,handle_agent_task_resources,(void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_PROGRAM_OPEN,
+                         handle_fractal_program_open, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_PROGRAM_POLL,
+                         handle_fractal_program_poll, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_TASK_SUBMIT,
+                         handle_fractal_submit, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_TASK_POLL,
+                         handle_fractal_poll, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_TASK_CANCEL,
+                         handle_fractal_cancel, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_TASK_BUDGET,
+                         handle_fractal_budget, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_TASK_VERIFY,
+                         handle_fractal_verify, (void *)0);
+    sel4_server_register(&g_srv, (uint32_t)MSG_FRACTAL_TASK_RESULT,
+                         handle_fractal_terminal_result, (void *)0);
 
 #ifndef AGENTOS_TEST_HOST
     /* Enter the never-returning server dispatch loop */
