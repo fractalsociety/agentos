@@ -141,7 +141,22 @@ static void test_mint_badge_args(void)
     ASSERT_EQ(g_mint.dest_depth, 6u, "ep_mint_badge: destination depth");
     ASSERT_EQ(g_mint.src_root, 99u, "ep_mint_badge: source root is allocator CNode");
     ASSERT_EQ(g_mint.src_index, 80u, "ep_mint_badge: source endpoint cap");
+    ASSERT_EQ(g_mint.rights, seL4_CanWrite,
+              "ep_mint_badge: client capability is send-only");
     ASSERT_EQ(g_mint.badge, 0xABCDu, "ep_mint_badge: propagates badge");
+}
+
+static void test_mint_receiver_rights(void)
+{
+    stubs_reset();
+    ep_alloc_init(99u, 80u, 1u);
+
+    ASSERT_EQ(ep_mint_receiver(80u, 22u, 33u, 6u), seL4_NoError,
+              "ep_mint_receiver: returns CNode_Mint result");
+    ASSERT_EQ(g_mint_count, 1u,
+              "ep_mint_receiver: calls CNode_Mint once");
+    ASSERT_EQ(g_mint.rights, seL4_CanRead,
+              "ep_mint_receiver: service capability is receive-only");
 }
 
 static void test_service_cache(void)
@@ -166,12 +181,13 @@ static void test_service_cache(void)
 
 int main(void)
 {
-    TAP_PLAN(28);
+    TAP_PLAN(32);
 
     test_alloc_first_endpoint();
     test_alloc_increments_and_exhausts();
     test_alloc_failure_preserves_slot();
     test_mint_badge_args();
+    test_mint_receiver_rights();
     test_service_cache();
 
     return tap_exit();

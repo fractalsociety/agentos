@@ -1941,9 +1941,9 @@ void root_task_main(const seL4_BootInfo *bi)
         if (pd->self_svc_id != 0u) {
             self_ep = ep_alloc_for_service((uint16_t)pd->self_svc_id);
             if (self_ep != seL4_CapNull) {
-                ep_mint_badge(self_ep, 0u /* unbadged */,
-                              pd_cnode, PD_CNODE_SLOT_SELF_EP,
-                              pd->cnode_size_bits);
+                ep_mint_receiver(self_ep,
+                                 pd_cnode, PD_CNODE_SLOT_SELF_EP,
+                                 pd->cnode_size_bits);
                 self_ep_slot = PD_CNODE_SLOT_SELF_EP;
             }
         }

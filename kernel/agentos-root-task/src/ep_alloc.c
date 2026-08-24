@@ -87,8 +87,23 @@ seL4_Error ep_mint_badge(seL4_CPtr  src_ep,
                             g_root_cnode,   /* source root: root task CNode */
                             src_ep,          /* source index: the endpoint cap */
                             64u,             /* source depth */
-                            seL4_AllRights /* all cap rights */,
+                            seL4_CanWrite,  /* client may send only */
                             badge);
+}
+
+seL4_Error ep_mint_receiver(seL4_CPtr  src_ep,
+                            seL4_CPtr  dest_cnode,
+                            seL4_Word  dest_slot,
+                            uint32_t   dest_depth)
+{
+    return seL4_CNode_Mint(dest_cnode,
+                           dest_slot,
+                           (uint8_t)dest_depth,
+                           g_root_cnode,
+                           src_ep,
+                           64u,
+                           seL4_CanRead,
+                           0u);
 }
 
 /* ── Service-keyed endpoint table ─────────────────────────────────────────── */

@@ -11,8 +11,11 @@
  *   ep_alloc_init(root_cnode, first_slot, pool_size);
  *
  *   seL4_CPtr ep = ep_alloc();          // create raw endpoint
- *   seL4_CPtr minted = ep_mint_badge(ep, badge, dest_cnode,
- *                                     dest_slot, dest_depth);
+ *   // Client: badged send-only endpoint.
+ *   ep_mint_badge(ep, badge, client_cnode, client_slot, client_depth);
+ *
+ *   // Service: unbadged receive-only endpoint.
+ *   ep_mint_receiver(ep, service_cnode, service_slot, service_depth);
  *
  * Copyright (c) 2026 The agentOS Project
  * SPDX-License-Identifier: BSD-2-Clause
@@ -53,9 +56,11 @@ seL4_CPtr ep_alloc(void);
 /*
  * ep_mint_badge — derive a badged copy of an endpoint capability.
  *
- * Creates a copy of src_ep in dest_cnode[dest_slot] with the given badge
- * value.  The badge value encodes the sender's identity; the receiver reads
- * it from seL4_MessageInfo_get_badge().
+ * Creates a send-only copy of src_ep in dest_cnode[dest_slot] with the given
+ * badge value.  The badge value encodes the sender's identity; the receiver
+ * reads it from seL4_MessageInfo_get_badge().  The minted cap has only
+ * seL4_CanWrite: it cannot receive from, grant, or grant-reply on the service
+ * endpoint.
  *
  * Parameters:
  *   src_ep       source endpoint capability to badge
@@ -71,6 +76,18 @@ seL4_Error ep_mint_badge(seL4_CPtr  src_ep,
                          seL4_CPtr  dest_cnode,
                          seL4_Word  dest_slot,
                          uint32_t   dest_depth);
+
+/*
+ * ep_mint_receiver — install the service side of an endpoint.
+ *
+ * Creates an unbadged, receive-only copy of src_ep.  This is the capability
+ * passed to a service PD's server loop.  It has seL4_CanRead only and cannot
+ * be used to send requests or delegate the endpoint.
+ */
+seL4_Error ep_mint_receiver(seL4_CPtr  src_ep,
+                            seL4_CPtr  dest_cnode,
+                            seL4_Word  dest_slot,
+                            uint32_t   dest_depth);
 
 /*
  * ep_find_by_service_id — look up a previously-allocated endpoint by service ID.

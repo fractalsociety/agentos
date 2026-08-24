@@ -38,3 +38,16 @@ authority.
 
 The V0 task stays valuable as an interoperability and performance test. V2 is
 the default runtime target.
+
+## Implementation status
+
+The planner loop and IPC contract exist. Root-task endpoint distribution now
+mints badged client capabilities with send-only rights and installs a distinct
+receive-only capability in each service PD. Static boot topology can therefore
+enforce a least-privilege harness CSpace without trusting capability masks.
+
+The native seL4 adapter is not runnable yet. ToolSvc is still a target stub,
+ExecServer does not yet execute a command, and the monitor's dynamic
+CapabilityBroker records policy metadata without performing CNode mint/delete
+operations. Until those pieces are replaced and proven on target, the project
+must not claim a completed native Codex agent.
