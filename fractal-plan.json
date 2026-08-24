@@ -473,7 +473,7 @@
       "id": "health_adapter_contract_tests",
       "title": "Define the privacy-bounded health adapter and failing tests",
       "capability": "code.generate",
-      "agent": "hermes",
+      "agent": "opencode",
       "instruction": "Define HealthAdapterSummary and HealthSignal in interfaces/wit/fractal-companion-v1/companion.wit with source class, consent scope, freshness, coarse status, provenance hash, redaction state, and no raw medical record fields. Create tests/contract/test_health_adapter.rs that fail until the adapter enforces explicit authorization, minimum-necessary aggregation, expiry, deletion or revocation, deterministic projection, and canary-record non-disclosure. Keep source credentials opaque and outside canonical events and immutable shared workspaces.",
       "depends_on": [
         "reconcile_prd_beads",
@@ -676,7 +676,7 @@
       "title": "Complete generated Fractal WIT and Rust SDK bindings",
       "capability": "code.edit",
       "agent": "opencode",
-      "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests and WIT validation pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
+      "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Fix the reproduced cargo check -p agentos-sdk --no-default-features --features wit-bindings failure where generated bindings reference std. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests, WIT validation, default no_std check, and wit-bindings no_std check pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
       "depends_on": [
         "fractal_controlplane_contract_tests",
         "implement_canonical_event_verify"
@@ -906,8 +906,10 @@
         ],
         "expected_artifact": "A production Hermes CLI adapter with passing fixture and live opt-in Fractal worker tests",
         "files_or_systems_affected": [
+          "tools/fractal-worker-compat/Cargo.toml",
           "tools/fractal-worker-compat/src/lib.rs",
           "tools/fractal-worker-compat/src/hermes.rs",
+          "tools/fractal-worker-compat/src/bin/fractal_hermes_worker.rs",
           "tests/compat/test_hermes_worker.rs",
           "tests/e2e/test_fractal_workers.sh"
         ],
