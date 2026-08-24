@@ -218,6 +218,27 @@ make -C tools/agentctl
 
 Run `./tools/agentctl/agentctl --help` for the full command reference.
 
+### Run an official Codex agent
+
+AgentOS can be used by the official Codex CLI today through a narrow,
+read-only MCP bridge. The model-generated shell remains in Codex's
+`workspace-write` sandbox; a separate host process owns CC-PD socket access and
+exposes only pool status, guest listing, and guest status.
+
+```sh
+make build-tools
+target/release/codex-agentos \
+  --metrics \
+  --agentctl tools/agentctl/agentctl \
+  --socket build/cc_pd.sock \
+  -- exec --sandbox workspace-write --cd /path/to/worktree \
+  'Query AgentOS capacity, implement the task, and run the tests.'
+```
+
+See [`tools/agentos-mcp/README.md`](tools/agentos-mcp/README.md) for the threat
+boundary, exact setup, metrics, and live E2E command. Codex currently runs on
+the external host, not inside the minimal Linux guest fixture.
+
 ## Project Structure
 
 ```
@@ -277,6 +298,7 @@ below is labeled by **proof level**, not by "done / not done".
 | timer-service | host-tested | Host contract tests (`tests/contracts/timer_test.c`) |
 | entropy-service | host-tested | `services/entropy-service/entropy_svc.c` + contract; not target-validated |
 | CC-PD host API (list/status/console) | boot-proven | Unix socket bridge at `build/cc_pd.sock`; list/status/console-drain proven by guest-login E2E |
+| Official Codex external agent loop | boot-proven | `AGENTOS_CODEX_LIVE=1 make e2e-codex-agent` requires official Codex to query a booted CC-PD through the read-only MCP bridge, edit one C file in an isolated Git worktree, and pass its test; Codex-in-guest remains planned |
 | CC-PD snapshot relay | stubbed | Returns `CC_ERR_RELAY_FAULT` for the boot guest (snapshot not implemented) |
 | VibeOS lifecycle API (`VOS_*`) | host-tested | Contract tests build with `-DAGENTOS_TEST_HOST` (`make test-vibeos-contract`, `tests/api/test_vibeos*.c`); create/destroy/list/status logic proven on host, not on target |
 | vibe-engine WASM hot-swap | host-tested | `tests/integration/vibe_hotswap_test.c` exercises read/probe paths only; actual WASM propose+swap needs a mapped staging region (hardware-dependent) |
