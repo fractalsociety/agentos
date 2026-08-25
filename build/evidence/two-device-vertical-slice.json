@@ -1,0 +1,180 @@
+{
+  "schema": "fractalos.two_device_vertical_slice.v1",
+  "task_id": "fos-gz0.14.19",
+  "generated_at": "2026-08-25T01:53:04Z",
+  "controlplane_revision": "01dc18ed76ea22c6e29f83281cefb9de0b0c14c8",
+  "linked_issue": {
+    "id": "fos-gz0.14.19",
+    "title": "Run the two-device Fractal vertical-slice E2E gate",
+    "status": "open"
+  },
+  "proof_class": "live_vertical_slice",
+  "live_requested": true,
+  "claims_live_product": true,
+  "data_plane": {
+    "mode": "interim_tailscale_clients",
+    "note": "Headscale coordination + standard Tailscale WG clients; native wg_net join is fos-gz0.5",
+    "headscale_url": "https://127.0.0.1:56945"
+  },
+  "host_support": {
+    "suites": [
+      "test_remote_grants",
+      "test_shared_space_replication",
+      "test_local_gateway",
+      "test_companion_gateway",
+      "test_cursor_worker",
+      "test_remote_worker_sessions"
+    ],
+    "status": "PASSING"
+  },
+  "companion_sibling": {
+    "status": "PASSING",
+    "revision": "4546a202e0537ef8fb8abf34b7999c56fc04de77"
+  },
+  "mesh_smoke": {
+    "harness": "tests/e2e/test_headscale_mesh.sh",
+    "status": "PASSING"
+  },
+  "topology": {
+    "captured": true,
+    "at": "2026-08-25T01:53:04Z",
+    "headscale_url": "https://127.0.0.1:56945",
+    "node_count": 2,
+    "nodes": [
+      {
+        "id": "1",
+        "hostname": "agent-a",
+        "ip": null,
+        "raw_keys": [
+          "approvedRoutes",
+          "availableRoutes",
+          "createdAt",
+          "discoKey",
+          "expiry",
+          "givenName",
+          "id",
+          "ipAddresses",
+          "lastSeen",
+          "machineKey",
+          "name",
+          "nodeKey",
+          "online",
+          "preAuthKey",
+          "registerMethod",
+          "subnetRoutes",
+          "tags",
+          "user"
+        ]
+      },
+      {
+        "id": "2",
+        "hostname": "agent-b",
+        "ip": null,
+        "raw_keys": [
+          "approvedRoutes",
+          "availableRoutes",
+          "createdAt",
+          "discoKey",
+          "expiry",
+          "givenName",
+          "id",
+          "ipAddresses",
+          "lastSeen",
+          "machineKey",
+          "name",
+          "nodeKey",
+          "online",
+          "preAuthKey",
+          "registerMethod",
+          "subnetRoutes",
+          "tags",
+          "user"
+        ]
+      }
+    ],
+    "distinct_ids": [
+      "1",
+      "2"
+    ]
+  },
+  "checklist": {
+    "schema": "fractalos.two_device_checklist.v1",
+    "generated_at": "2026-08-25T01:53:04Z",
+    "data_plane": "interim_tailscale_clients",
+    "items": [
+      {
+        "id": "host_support_suites",
+        "status": "PASSING",
+        "note": "grants/shared-space/gateways/workers host suites"
+      },
+      {
+        "id": "mesh_two_client_smoke",
+        "status": "PASSING",
+        "note": "test_headscale_mesh.sh enroll + port 8443 reachability"
+      },
+      {
+        "id": "topology_capture",
+        "status": "PASSING",
+        "note": "NodeIDs/hostnames captured via agentctl mesh nodes"
+      },
+      {
+        "id": "two_distinct_node_ids",
+        "status": "PASSING",
+        "note": "at least two enrolled node identities"
+      },
+      {
+        "id": "policy_port_8443_reachability",
+        "status": "PASSING",
+        "note": "bidirectional agent endpoint via WireGuard/Tailscale"
+      },
+      {
+        "id": "grant_deny_host",
+        "status": "PASSING",
+        "note": "test_remote_grants supporting evidence"
+      },
+      {
+        "id": "shared_space_cas_host",
+        "status": "PASSING",
+        "note": "test_shared_space_replication supporting evidence"
+      },
+      {
+        "id": "companion_pages_sibling",
+        "status": "PASSING",
+        "note": "fractalos-companion page gate; intents via companion_gateway host"
+      },
+      {
+        "id": "reconnect_cut_30s_live",
+        "status": "PASSING",
+        "note": "AC-2 live route cut ~30s (tailscale down) + host worker reconnect suite"
+      }
+    ]
+  },
+  "live_environment": {
+    "flag": "FRACTALOS_TWO_DEVICE_LIVE",
+    "requires": [
+      "FRACTALOS_HEADSCALE_URL",
+      "FRACTALOS_HEADSCALE_TOKEN_FILE",
+      "two enrolled Tailscale/Headscale device NodeIDs"
+    ],
+    "blocker": null
+  },
+  "acceptance_map": {
+    "signed_discovery": "live: mesh enroll + topology NodeIDs when live_partial+",
+    "worker_reconnect": "live: reconnect_cut_30s (tailscale down) + host reconnect_preserves_handles suite",
+    "shared_space_cas": "host: test_shared_space_replication",
+    "grant_deny": "host: test_remote_grants",
+    "companion_intents": "host: test_companion_gateway; sibling pages when PASSING"
+  },
+  "proof_class_rules": {
+    "host_support": "host suites only; FRACTALOS_TWO_DEVICE_LIVE unset",
+    "live_partial": "mesh two-client smoke + topology (\u22652 nodes) + host suites; reconnect_cut may still be PENDING",
+    "live_vertical_slice": "all checklist items PASSING including reconnect_cut_30s_live",
+    "blocked_external": "live requested but prerequisites missing"
+  },
+  "next_action": {
+    "owner": "operator",
+    "command": "FRACTALOS_TWO_DEVICE_LIVE=1 FRACTALOS_HEADSCALE_URL=... FRACTALOS_HEADSCALE_TOKEN_FILE=... FRACTALOS_MESH_DOCKER=1 ./tests/e2e/test_two_device_fractal.sh",
+    "physical": "./tests/e2e/run_two_device_physical.sh  # same gate after tailscale up on two machines",
+    "note": "Close fos-gz0.14.19 only with proof_class=live_vertical_slice"
+  }
+}

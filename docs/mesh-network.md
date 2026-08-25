@@ -1,9 +1,9 @@
 # Private agent mesh
 
-agentOS packages Headscale as a FreeBSD `mesh-controller` guest role. Headscale
+FractalOS packages Headscale as a FreeBSD `mesh-controller` guest role. Headscale
 is the coordination plane; standard Tailscale clients provide the WireGuard
 data plane. Every enrolled device receives an authenticated tailnet identity,
-which `agentos-headscale-policy-sync` reconciles into a deny-by-default NetCap
+which `fractalos-headscale-policy-sync` reconciles into a deny-by-default NetCap
 state file.
 
 ## Build and validate the controller
@@ -18,7 +18,20 @@ make validate-headscale-role
 
 # Also enroll two standard Tailscale containers and invoke agent-a:8443 from
 # agent-b through the resulting WireGuard tailnet.
-AGENTOS_TAILSCALE_E2E=1 make validate-headscale-role
+FRACTALOS_TAILSCALE_E2E=1 make validate-headscale-role
+
+# Full fos-gz0.14.19 vertical-slice gate (host suites + Docker two-client mesh
+# + topology + live reconnect cut ~30s). Success → proof_class=live_vertical_slice.
+./tests/e2e/run_two_device_live_local.sh
+
+# After two physical/VM Tailscale clients are enrolled on a durable controller:
+FRACTALOS_HEADSCALE_URL=https://mesh.fractalos.internal:8080 \
+FRACTALOS_HEADSCALE_TOKEN_FILE=/var/db/fractalos-secrets/headscale/api.token \
+./tests/e2e/run_two_device_physical.sh
+
+# Native FractalOS path (fos-gz0.5): convert Headscale node JSON to packed
+# OP_WG_APPLY_NETMAP (host proof; live join without tailscaled still open).
+./tests/e2e/test_wg_native_netmap_feed.sh
 
 # Produce a FreeBSD disk whose first boot installs the role.
 make bootstrap-guest OS=freebsd15
@@ -28,10 +41,10 @@ make bootstrap-guest OS=freebsd15
 make e2e-mesh-freebsd
 ```
 
-The controller defaults to `https://mesh.agentos.internal:8080`. Publish that
+The controller defaults to `https://mesh.fractalos.internal:8080`. Publish that
 name in DNS before enrolling devices. The first boot generates a private TLS
 key and a one-year self-signed certificate under
-`/var/db/agentos-secrets/headscale`. For a durable deployment, replace those
+`/var/db/fractalos-secrets/headscale`. For a durable deployment, replace those
 files with a certificate issued by a CA already trusted by every joining
 device. Otherwise, install `tls.crt` into each device's operating-system trust
 store before running Tailscale.
@@ -41,8 +54,8 @@ store before running Tailscale.
 On a trusted controller host, create a short-lived, single-use enrollment key:
 
 ```bash
-export AGENTOS_HEADSCALE_URL=https://mesh.agentos.internal:8080
-export AGENTOS_HEADSCALE_TOKEN_FILE=/var/db/agentos-secrets/headscale/api.token
+export FRACTALOS_HEADSCALE_URL=https://mesh.fractalos.internal:8080
+export FRACTALOS_HEADSCALE_TOKEN_FILE=/var/db/fractalos-secrets/headscale/api.token
 agentctl mesh enroll-key --ttl-seconds 600
 ```
 
@@ -51,7 +64,7 @@ the unmodified Tailscale client on the device:
 
 ```bash
 tailscale up \
-  --login-server=https://mesh.agentos.internal:8080 \
+  --login-server=https://mesh.fractalos.internal:8080 \
   --auth-key='hskey-auth-…'
 ```
 
@@ -72,7 +85,7 @@ agentctl mesh expire-node NODE_ID
 ```
 
 Headscale keeps SQLite state in `/var/db/headscale` with WAL enabled. TLS,
-Noise, and API secrets remain in `/var/db/agentos-secrets/headscale` with mode
+Noise, and API secrets remain in `/var/db/fractalos-secrets/headscale` with mode
 0700/0600. The reconciliation job atomically writes
 `/var/db/headscale/netcap-state.json`; unrecognized or untagged identities map
 to the `deny` NetCap.
@@ -80,25 +93,56 @@ to the `deny` NetCap.
 The embedded DERP configuration is present but disabled by default. Enable it
 only after publishing a reachable TLS endpoint and opening its STUN/DERP ports.
 
-## Native AgentOS data-plane status
+## Native FractalOS data-plane status
 
-The native path is deliberately separate from the FreeBSD controller role.
-`net_pd` is the sole writable VirtIO-net MMIO/IRQ owner and has completed real
-TX completion plus host-injected RX through target IRQs. `wg_net` now contains
-the canonical `Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s` initiation/response
-transcript, X25519 session derivation, RFC 8439 transport encryption, monotonic
-nonces, and an authenticated 8,192-packet replay window. Host integration tests
-exercise both initiator and responder roles, tampered-tag denial, timestamp
-replay denial, and bidirectional transport keys. The AArch64 target gate proves
-the PD boots, wipes staged key bytes, and refuses transport before an
-authenticated session.
+`net_pd` owns the VirtIO-net MMIO/IRQ path. `wg_net` implements WireGuard
+`Noise_IKpsk2`, transport AEAD, replay windows, packed Headscale-style netmap
+apply (roam without session wipe), cookie replies, entropy-backed ephemeral
+keys, DERP frame wrap/unwrap, per-peer direct-vs-DERP path mode, and timer-tick
+rekey. Host suites cover sessions, netmap/rekey, cookies, entropy, DERP, and
+multi-peer dataplane traffic (`test_wg_dataplane`).
 
-This is not yet a native-tailnet interoperability claim. UDP/IP encapsulation
-between `wg_net` and the NIC arena, Headscale map polling/authentication, timed
-rekey, endpoint roaming, cookie replies, and DERP are still required before a
-standard Tailscale client can exchange packets with native AgentOS. Until that
-gate passes, the boot-proven FreeBSD Headscale role plus standard clients is the
-supported device-enrollment path.
+`tools/wg-headscale-netmap` converts a Headscale `/api/v1/node` listing (or a
+fixture JSON) into the packed blob consumed by `OP_WG_APPLY_NETMAP`:
+
+```bash
+cargo run -p wg-headscale-netmap -- encode \
+  --input tests/fixtures/headscale_nodes.json --output /tmp/netmap.bin
+
+# Optional live controller (API token; does not replace Noise login):
+cargo run -p wg-headscale-netmap -- fetch \
+  --url "$FRACTALOS_HEADSCALE_URL" \
+  --token-file "$FRACTALOS_HEADSCALE_TOKEN_FILE" \
+  --output /tmp/netmap.bin
+```
+
+**Still open for full AC close:** A live Headscale with a valid TLS trust
+anchor (or installed CA) plus `FRACTALOS_MESH_CONTROL_LIVE=1` must run
+`fractalos-mesh-control join` successfully. Until that live gate passes,
+enroll standard Tailscale clients against the FreeBSD Headscale role for
+device-to-device demos; native `wg_net` consumes netmaps from the join tool.
+
+Native control client (no guest `tailscaled`):
+
+```bash
+# Offline packed-netmap encode + unit tests
+./tests/e2e/test_mesh_control_join.sh
+
+# Live ts2021 Noise register + netmap (+ optional DERP):
+FRACTALOS_MESH_CONTROL_LIVE=1 \
+FRACTALOS_HEADSCALE_URL=https://mesh.fractalos.internal:8080 \
+FRACTALOS_HEADSCALE_AUTH_KEY='hskey-auth-…' \
+  ./tests/e2e/test_mesh_control_join.sh
+
+cargo run -p fractalos-mesh-control -- join \
+  --control-url "$FRACTALOS_HEADSCALE_URL" \
+  --auth-key "$FRACTALOS_HEADSCALE_AUTH_KEY" \
+  --netmap-out build/mesh-control/netmap.bin \
+  --derp-ping
+```
+
+Install the Headscale TLS CA on the host before live join (self-signed
+first-boot certs are not in the public trust store).
 
 Tailnet identity remains connectivity metadata. Neither a successful Noise
 session nor a Headscale tag creates ModelCap, ToolCap, MemoryCap, ExecCap, or a

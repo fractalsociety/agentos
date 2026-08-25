@@ -1,0 +1,25 @@
+{
+  "schema": "fractalos.two_device_checklist.v1",
+  "generated_at": "2026-08-25T01:53:04Z",
+  "data_plane": "interim_tailscale_clients",
+  "items": [
+    {"id": "host_support_suites", "status": "PASSING",
+     "note": "grants/shared-space/gateways/workers host suites"},
+    {"id": "mesh_two_client_smoke", "status": "PASSING",
+     "note": "test_headscale_mesh.sh enroll + port 8443 reachability"},
+    {"id": "topology_capture", "status": "PASSING",
+     "note": "NodeIDs/hostnames captured via agentctl mesh nodes"},
+    {"id": "two_distinct_node_ids", "status": "PASSING",
+     "note": "at least two enrolled node identities"},
+    {"id": "policy_port_8443_reachability", "status": "PASSING",
+     "note": "bidirectional agent endpoint via WireGuard/Tailscale"},
+    {"id": "grant_deny_host", "status": "PASSING",
+     "note": "test_remote_grants supporting evidence"},
+    {"id": "shared_space_cas_host", "status": "PASSING",
+     "note": "test_shared_space_replication supporting evidence"},
+    {"id": "companion_pages_sibling", "status": "PASSING",
+     "note": "fractalos-companion page gate; intents via companion_gateway host"},
+    {"id": "reconnect_cut_30s_live", "status": "PASSING",
+     "note": "AC-2 live route cut ~30s (tailscale down) + host worker reconnect suite"}
+  ]
+}

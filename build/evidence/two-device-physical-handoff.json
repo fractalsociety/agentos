@@ -1,0 +1,16 @@
+{
+  "schema": "fractalos.two_device_physical_handoff.v1",
+  "task_id": "fos-gz0.14.19",
+  "status": "READY_FOR_OPERATOR",
+  "prerequisite_docker_live_partial": "PASSING",
+  "script": "tests/e2e/run_two_device_physical.sh",
+  "steps": [
+    "Stand up durable Headscale (mesh-controller FreeBSD role or equivalent)",
+    "On machine A and B: tailscale up --login-server=$URL --auth-key=…",
+    "Export FRACTALOS_HEADSCALE_URL and FRACTALOS_HEADSCALE_TOKEN_FILE on the controller host",
+    "Run ./tests/e2e/run_two_device_physical.sh",
+    "Confirm evidence proof_class is at least live_partial with ≥2 NodeIDs"
+  ],
+  "blocker": "No second physical/VM Tailscale client was available in this Executor session; Docker live_partial already proven via run_two_device_live_local.sh",
+  "note": "Script and docs landed; operator enrolls two machines then re-runs the same gate"
+}

@@ -1,0 +1,9 @@
+{
+  "schema": "fractalos.two_device_live_local.v1",
+  "headscale_version": "0.29.3",
+  "headscale_url": "https://127.0.0.1:56945",
+  "login_url": "https://host.docker.internal:56945",
+  "gate_exit": 0,
+  "evidence": "build/evidence/two-device-vertical-slice.json",
+  "note": "ephemeral controller destroyed after run; re-run this script for a fresh live proof"
+}

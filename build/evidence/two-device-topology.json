@@ -1,0 +1,62 @@
+{
+  "captured": true,
+  "at": "2026-08-25T01:53:04Z",
+  "headscale_url": "https://127.0.0.1:56945",
+  "node_count": 2,
+  "nodes": [
+    {
+      "id": "1",
+      "hostname": "agent-a",
+      "ip": null,
+      "raw_keys": [
+        "approvedRoutes",
+        "availableRoutes",
+        "createdAt",
+        "discoKey",
+        "expiry",
+        "givenName",
+        "id",
+        "ipAddresses",
+        "lastSeen",
+        "machineKey",
+        "name",
+        "nodeKey",
+        "online",
+        "preAuthKey",
+        "registerMethod",
+        "subnetRoutes",
+        "tags",
+        "user"
+      ]
+    },
+    {
+      "id": "2",
+      "hostname": "agent-b",
+      "ip": null,
+      "raw_keys": [
+        "approvedRoutes",
+        "availableRoutes",
+        "createdAt",
+        "discoKey",
+        "expiry",
+        "givenName",
+        "id",
+        "ipAddresses",
+        "lastSeen",
+        "machineKey",
+        "name",
+        "nodeKey",
+        "online",
+        "preAuthKey",
+        "registerMethod",
+        "subnetRoutes",
+        "tags",
+        "user"
+      ]
+    }
+  ],
+  "distinct_ids": [
+    "1",
+    "2"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "fractalos.two_device_reconnect_cut.v1",
+  "task_id": "fos-gz0.14.19",
+  "method": "docker_tailscale_down",
+  "cut_seconds_requested": 30,
+  "cut_start_utc": "2026-08-25T01:53:17Z",
+  "cut_end_utc": "2026-08-25T01:53:50Z",
+  "headscale_url": "https://127.0.0.1:56945",
+  "agent_a_ip": "100.64.0.1",
+  "during_cut_reachable": false,
+  "after_resume_ok": true,
+  "pre_cut_body": "{\"agent\":\"agent-a\",\"ok\":true}",
+  "post_resume_body": "{\"agent\":\"agent-a\",\"ok\":true}",
+  "status": "PASSING",
+  "note": "AC-2 live route cut via tailscale down; session/CAS semantics covered by host worker reconnect suite"
+}
