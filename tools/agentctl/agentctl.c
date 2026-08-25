@@ -1,5 +1,5 @@
 /*
- * agentctl — agentOS Command-and-Control reference consumer
+ * agentctl — FractalOS Command-and-Control reference consumer
  *
  * Host-side CLI. Connects to cc_pd's Unix socket bridge, sends one binary
  * CC frame, prints structured output, and exits. No interactive UI.
@@ -417,7 +417,7 @@ static int cmd_agent_run(int argc, char **argv, bool from_file)
         return 1;
     }
     if (reply.mr[2] > CC_AGENT_RESULT_MAX) {
-        fprintf(stderr, "agentctl: AgentOS returned an oversized result\n");
+        fprintf(stderr, "agentctl: FractalOS returned an oversized result\n");
         return 1;
     }
     struct cc_agent_run_result result;
@@ -425,7 +425,7 @@ static int cmd_agent_run(int argc, char **argv, bool from_file)
     if (result.interface_version != CC_AGENT_INTERFACE_VERSION
         || result.metrics.task_id != reply.mr[1]
         || result.metrics.result_len != reply.mr[2]) {
-        fprintf(stderr, "agentctl: invalid AgentOS native-task response\n");
+        fprintf(stderr, "agentctl: invalid FractalOS native-task response\n");
         return 1;
     }
 

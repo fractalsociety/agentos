@@ -4,8 +4,8 @@
 //! FRACTAL_CURSOR_SECRET_HANDLE (never as embedded secrets).
 
 use fractal_worker_compat::{
-    cursor_manifest_path, CancelRequest, CursorLauncher, OpenSessionOpts, SecretHandle,
-    WorkerManifest, WorkspaceInput,
+    assess_provider_readiness_from_process, cursor_manifest_path, CancelRequest, CursorLauncher,
+    OpenSessionOpts, SecretHandle, WorkerManifest, WorkspaceInput,
 };
 use std::env;
 use std::process::ExitCode;
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  fractal-cursor-worker discover-version\n  fractal-cursor-worker open-session --workspace-id ID --root-object-id ID \\\n      --allowed-file PATH [--allowed-file PATH...] [--verify-command CMD] [--prompt TEXT] \\\n      [--seed-dir DIR] [--deadline-unix-ms MS] [--secret-handle ID]\n  fractal-cursor-worker replay-session --workspace-id ID --root-object-id ID \\\n      --allowed-file PATH --jsonl-file PATH [--peak-rss-bytes N] [--secret-handle ID]"
+        "usage:\n  fractal-cursor-worker discover-version\n  fractal-cursor-worker assess-provider-readiness\n  fractal-cursor-worker open-session --workspace-id ID --root-object-id ID \\\n      --allowed-file PATH [--allowed-file PATH...] [--verify-command CMD] [--prompt TEXT] \\\n      [--seed-dir DIR] [--deadline-unix-ms MS] [--secret-handle ID]\n  fractal-cursor-worker replay-session --workspace-id ID --root-object-id ID \\\n      --allowed-file PATH --jsonl-file PATH [--peak-rss-bytes N] [--secret-handle ID]"
     );
     std::process::exit(2);
 }
@@ -42,6 +42,24 @@ fn main() -> ExitCode {
             Err(e) => {
                 eprintln!("{e}");
                 ExitCode::from(1)
+            }
+        },
+        "assess-provider-readiness" => {
+            let report = assess_provider_readiness_from_process();
+            let cursor = report
+                .providers
+                .iter()
+                .find(|p| p.provider == "cursor")
+                .cloned();
+            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            match cursor.map(|c| c.proof_class) {
+                Some(fractal_worker_compat::ProviderProofClass::BlockedExternal) => {
+                    ExitCode::from(3)
+                }
+                Some(fractal_worker_compat::ProviderProofClass::LiveConfigured) => {
+                    ExitCode::SUCCESS
+                }
+                _ => ExitCode::SUCCESS, // HostFixture is not a live claim
             }
         },
         "open-session" => {

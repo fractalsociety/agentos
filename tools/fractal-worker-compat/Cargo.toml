@@ -7,6 +7,7 @@ description = "Fractal compatibility worker protocol helpers and contract tests"
 publish = false
 
 [dependencies]
+fractal-mesh-gateway = { path = "../fractal-mesh-gateway" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -25,6 +26,10 @@ path = "src/bin/fractal_claude_worker.rs"
 name = "fractal-hermes-worker"
 path = "src/bin/fractal_hermes_worker.rs"
 
+[[bin]]
+name = "fractal-codex-worker"
+path = "src/bin/fractal_codex_worker.rs"
+
 [[test]]
 name = "test_cursor_worker"
 path = "../../tests/compat/test_cursor_worker.rs"
@@ -36,3 +41,11 @@ path = "../../tests/compat/test_claude_worker.rs"
 [[test]]
 name = "test_hermes_worker"
 path = "../../tests/compat/test_hermes_worker.rs"
+
+[[test]]
+name = "test_codex_worker"
+path = "../../tests/compat/test_codex_worker.rs"
+
+[[test]]
+name = "test_remote_worker_sessions"
+path = "../../tests/integration/test_remote_worker_sessions.rs"

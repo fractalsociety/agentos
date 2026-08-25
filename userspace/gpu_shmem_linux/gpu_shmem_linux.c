@@ -11,7 +11,7 @@
  * Compile: gcc -std=c11 -O2 gpu_shmem_linux.c -o gpu_shmem_linux -lcuda
  * Run:     sudo ./gpu_shmem_linux --pa 0xXXXXXXXX --size 0x4000000
  *
- * Copyright 2026 agentOS Project (BSD-2-Clause)
+ * Copyright 2026 FractalOS Project (BSD-2-Clause)
  */
 
 #include <stdio.h>

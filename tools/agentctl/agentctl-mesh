@@ -55,10 +55,10 @@ class MeshClient:
 def main():
     parser = argparse.ArgumentParser(prog="agentctl mesh")
     parser.add_argument("--url", default=os.environ.get(
-        "AGENTOS_HEADSCALE_URL", "https://mesh.agentos.internal:8080"))
+        "FRACTALOS_HEADSCALE_URL", "https://mesh.fractalos.internal:8080"))
     parser.add_argument("--token-file", default=os.environ.get(
-        "AGENTOS_HEADSCALE_TOKEN_FILE", "/var/db/agentos-secrets/headscale/api.token"))
-    parser.add_argument("--ca-file", default=os.environ.get("AGENTOS_HEADSCALE_CA_FILE"))
+        "FRACTALOS_HEADSCALE_TOKEN_FILE", "/var/db/fractalos-secrets/headscale/api.token"))
+    parser.add_argument("--ca-file", default=os.environ.get("FRACTALOS_HEADSCALE_CA_FILE"))
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status")
     commands.add_parser("nodes")

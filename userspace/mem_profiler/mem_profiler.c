@@ -1,5 +1,5 @@
 /*
- * agentOS mem_profiler — per-slot WASM heap allocation tracking + leak detection
+ * FractalOS mem_profiler — per-slot WASM heap allocation tracking + leak detection
  *
  * Passive PD, priority 108.
  *
@@ -29,8 +29,8 @@
  *   Simple header + packed slot table, readable by controller via shared MR.
  */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 
 /* ── Opcodes (MR0 field) ───────────────────────────────────────────────────── */
 #define OP_MEM_ALLOC  0x60u  /* MR1=slot_id, MR2=size, MR3=ptr_hint */
@@ -117,7 +117,7 @@ static void write_ring_snapshot(void) {
     volatile uint8_t *ring = MP_RING_BASE;
     uint32_t p = 0, lim = MP_RING_SIZE;
 
-    p = ring_put_str(ring, p, lim, "# agentOS mem_profiler snapshot\n");
+    p = ring_put_str(ring, p, lim, "# FractalOS mem_profiler snapshot\n");
     p = ring_put_str(ring, p, lim,
         "# HELP wasm_bytes_allocated Live heap bytes per WASM slot\n"
         "# TYPE wasm_bytes_allocated gauge\n");
@@ -331,14 +331,14 @@ static microkit_msginfo handle_request(microkit_msginfo msg) {
 
 /* ── Microkit entry points ─────────────────────────────────────────────────── */
 void init(void) {
-    agentos_log_boot("mem_profiler");
+    fractalos_log_boot("mem_profiler");
 
     for (int i = 0; i < MAX_MEM_SLOTS; i++) {
         table[i].active = 0;
     }
 
     /* Seed ring with placeholder */
-    const char *hdr = "# agentOS mem_profiler: no data yet\n";
+    const char *hdr = "# FractalOS mem_profiler: no data yet\n";
     volatile uint8_t *ring = MP_RING_BASE;
     for (int i = 0; hdr[i]; i++) ring[i] = (uint8_t)hdr[i];
     ring[36] = 0;

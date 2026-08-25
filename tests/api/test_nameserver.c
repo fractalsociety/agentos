@@ -2,16 +2,16 @@
  * test_nameserver.c — API tests for the production NameServer PD
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
 uintptr_t log_drain_rings_vaddr;
 
-void agentos_log_boot(const char *pd_name) { (void)pd_name; }
-void agentos_log_channel(const char *pd, uint32_t ch) { (void)pd; (void)ch; }
+void fractalos_log_boot(const char *pd_name) { (void)pd_name; }
+void fractalos_log_channel(const char *pd, uint32_t ch) { (void)pd; (void)ch; }
 
-#include "../../kernel/agentos-root-task/src/nameserver.c"
+#include "../../kernel/fractalos-root-task/src/nameserver.c"
 
 static void req_set(sel4_msg_t *req, uint32_t off, uint32_t value)
 {

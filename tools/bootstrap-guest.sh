@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# tools/bootstrap-guest.sh — Create agentOS E2E guest disk images from ISO files
+# tools/bootstrap-guest.sh — Create FractalOS E2E guest disk images from ISO files
 #
 # Automates guest OS installation from installer ISOs, producing raw disk images
-# suitable for use as agentOS VMM guest disks in E2E tests.
+# suitable for use as FractalOS VMM guest disks in E2E tests.
 #
 # Usage:
 #   tools/bootstrap-guest.sh <os>
@@ -16,7 +16,7 @@
 #
 # Environment:
 #   ISO_DIR         directory containing/caching ISO files
-#                   (default: ${XDG_CACHE_HOME:-$HOME/.cache}/agentos/isos)
+#                   (default: ${XDG_CACHE_HOME:-$HOME/.cache}/fractalos/isos)
 #   GUEST_IMG_DIR   output directory (default: build/guest-images/)
 #   TMP_ROOT        host scratch directory (default: build/tmp/)
 #   E2E_SSH_PUBKEY  path to test SSH public key (default: tests/e2e/id_ed25519.pub)
@@ -68,7 +68,7 @@ sha256_file() {
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-ISO_DIR="${ISO_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/agentos/isos}"
+ISO_DIR="${ISO_DIR:-${XDG_CACHE_HOME:-${HOME}/.cache}/fractalos/isos}"
 GUEST_IMG_DIR="${GUEST_IMG_DIR:-${REPO_ROOT}/build/guest-images}"
 TMP_ROOT="${TMP_ROOT:-${REPO_ROOT}/build/tmp}"
 E2E_SSH_PUBKEY="${E2E_SSH_PUBKEY:-${REPO_ROOT}/tests/e2e/id_ed25519.pub}"
@@ -89,7 +89,7 @@ ensure_ssh_key() {
     local key_path="${REPO_ROOT}/tests/e2e/id_ed25519"
     if [ ! -f "${key_path}" ]; then
         info "Generating test SSH key..."
-        ssh-keygen -t ed25519 -N "" -f "${key_path}" -C "agentos-e2e-test" >/dev/null
+        ssh-keygen -t ed25519 -N "" -f "${key_path}" -C "fractalos-e2e-test" >/dev/null
         chmod 600 "${key_path}"
     fi
     E2E_SSH_PUBKEY="${key_path}.pub"
@@ -231,13 +231,13 @@ bootstrap_ubuntu_amd64() {
 
     # Build cloud-init seed directory
     local seed_dir
-    seed_dir="$(mktemp -d "${TMP_ROOT}/agentos-ubuntu-amd64-seed.XXXXXX")"
+    seed_dir="$(mktemp -d "${TMP_ROOT}/fractalos-ubuntu-amd64-seed.XXXXXX")"
     trap 'rm -rf "${seed_dir}"' EXIT INT TERM
 
     # meta-data (minimal)
     cat > "${seed_dir}/meta-data" << 'META'
-instance-id: agentos-e2e
-local-hostname: agentos-guest
+instance-id: fractalos-e2e
+local-hostname: fractalos-guest
 META
 
     # user-data (Ubuntu autoinstall — subiquity format)
@@ -246,7 +246,7 @@ META
 autoinstall:
   version: 1
   identity:
-    hostname: agentos-guest
+    hostname: fractalos-guest
     username: root
     password: '!'
   ssh:
@@ -324,12 +324,12 @@ bootstrap_ubuntu_arm64() {
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
 
     local seed_dir
-    seed_dir="$(mktemp -d "${TMP_ROOT}/agentos-ubuntu-arm64-seed.XXXXXX")"
+    seed_dir="$(mktemp -d "${TMP_ROOT}/fractalos-ubuntu-arm64-seed.XXXXXX")"
     trap 'rm -rf "${seed_dir}"' EXIT INT TERM
 
     cat > "${seed_dir}/meta-data" << 'META'
-instance-id: agentos-e2e-arm64
-local-hostname: agentos-guest-arm64
+instance-id: fractalos-e2e-arm64
+local-hostname: fractalos-guest-arm64
 META
 
     cat > "${seed_dir}/user-data" << AUTOINSTALL
@@ -337,7 +337,7 @@ META
 autoinstall:
   version: 1
   identity:
-    hostname: agentos-guest-arm64
+    hostname: fractalos-guest-arm64
     username: root
     password: '!'
   ssh:
@@ -549,7 +549,7 @@ bootstrap_freebsd15() {
     info "Bootstrapping FreeBSD 15.0 amd64 → ${out}"
     qemu-img create -f raw "${out}" "${DISK_SIZE_GB}G"
 
-    local role_iso="${TMP_ROOT}/agentos-mesh-controller-role.iso"
+    local role_iso="${TMP_ROOT}/fractalos-mesh-controller-role.iso"
     make_cidata_iso "${REPO_ROOT}/guest/roles/mesh-controller" "${role_iso}"
 
     local expect_script
@@ -635,11 +635,11 @@ expect "# "
 # FreeBSD 15 release media ships pkgbase packages instead of base.txz/kernel.txz.
 # Install from the disc's signed, offline repository into the mounted target.
 puts "Installing FreeBSD pkgbase system..."
-send "pkg --rootdir /mnt --repo-conf-dir /usr/freebsd-packages/repos -o IGNORE_OSVERSION=yes update && pkg --rootdir /mnt --repo-conf-dir /usr/freebsd-packages/repos -o IGNORE_OSVERSION=yes install -U -y -r FreeBSD-base FreeBSD-set-minimal FreeBSD-set-base pkg FreeBSD-kernel-generic && echo __AGENTOS_PKGBASE_OK__\r"
+send "pkg --rootdir /mnt --repo-conf-dir /usr/freebsd-packages/repos -o IGNORE_OSVERSION=yes update && pkg --rootdir /mnt --repo-conf-dir /usr/freebsd-packages/repos -o IGNORE_OSVERSION=yes install -U -y -r FreeBSD-base FreeBSD-set-minimal FreeBSD-set-base pkg FreeBSD-kernel-generic && echo __FRACTALOS_PKGBASE_OK__\r"
 set timeout 1200
 expect {
     timeout                         { puts "ERROR: pkgbase installation timed out"; exit 1 }
-    "__AGENTOS_PKGBASE_OK__"        { expect "# " }
+    "__FRACTALOS_PKGBASE_OK__"        { expect "# " }
     "# "                            { puts "ERROR: pkgbase installation failed"; exit 1 }
 }
 set timeout 600
@@ -653,7 +653,7 @@ send "echo 'sshd_enable=\"YES\"' >> /mnt/etc/rc.conf\r"
 expect "# "
 send "echo 'ifconfig_vtnet0=\"DHCP\"' >> /mnt/etc/rc.conf\r"
 expect "# "
-send "echo 'agentos_mesh_firstboot_enable=\"YES\"' >> /mnt/etc/rc.conf\r"
+send "echo 'fractalos_mesh_firstboot_enable=\"YES\"' >> /mnt/etc/rc.conf\r"
 expect "# "
 
 # SSH configuration
@@ -670,10 +670,10 @@ expect "# "
 
 # Stage the role now; its network-dependent installer runs once on first boot.
 # The release medium is read-only, so use its memory-backed /tmp as mountpoint.
-send "mkdir -p /tmp/agentos-role /mnt/usr/local/share/agentos/roles/mesh-controller /mnt/usr/local/etc/rc.d && mount_cd9660 /dev/cd1 /tmp/agentos-role && cp -R /tmp/agentos-role/. /mnt/usr/local/share/agentos/roles/mesh-controller/ && install -m 0555 /tmp/agentos-role/files/agentos_mesh_firstboot.rc /mnt/usr/local/etc/rc.d/agentos_mesh_firstboot && chmod 0555 /mnt/usr/local/share/agentos/roles/mesh-controller/install.sh && umount /tmp/agentos-role && echo __AGENTOS_ROLE_STAGED_OK__\r"
+send "mkdir -p /tmp/fractalos-role /mnt/usr/local/share/fractalos/roles/mesh-controller /mnt/usr/local/etc/rc.d && mount_cd9660 /dev/cd1 /tmp/fractalos-role && cp -R /tmp/fractalos-role/. /mnt/usr/local/share/fractalos/roles/mesh-controller/ && install -m 0555 /tmp/fractalos-role/files/fractalos_mesh_firstboot.rc /mnt/usr/local/etc/rc.d/fractalos_mesh_firstboot && chmod 0555 /mnt/usr/local/share/fractalos/roles/mesh-controller/install.sh && umount /tmp/fractalos-role && echo __FRACTALOS_ROLE_STAGED_OK__\r"
 expect {
     timeout                         { puts "ERROR: mesh-controller role staging timed out"; exit 1 }
-    "__AGENTOS_ROLE_STAGED_OK__"    { expect "# " }
+    "__FRACTALOS_ROLE_STAGED_OK__"    { expect "# " }
     "# "                            { puts "ERROR: mesh-controller role staging failed"; exit 1 }
 }
 
@@ -681,10 +681,10 @@ expect {
 # The fallback path boots even when firmware NVRAM cannot be persisted by QEMU.
 send "mkdir -p /mnt/boot/efi/efi/freebsd /mnt/boot/efi/efi/boot\r"
 expect "# "
-send "cp /mnt/boot/loader.efi /mnt/boot/efi/efi/freebsd/loader.efi && cp /mnt/boot/loader.efi /mnt/boot/efi/efi/boot/bootx64.efi && echo __AGENTOS_BOOTLOADER_OK__\r"
+send "cp /mnt/boot/loader.efi /mnt/boot/efi/efi/freebsd/loader.efi && cp /mnt/boot/loader.efi /mnt/boot/efi/efi/boot/bootx64.efi && echo __FRACTALOS_BOOTLOADER_OK__\r"
 expect {
     timeout                         { puts "ERROR: UEFI bootloader installation timed out"; exit 1 }
-    "__AGENTOS_BOOTLOADER_OK__"     { expect "# " }
+    "__FRACTALOS_BOOTLOADER_OK__"     { expect "# " }
     "# "                            { puts "ERROR: UEFI bootloader installation failed"; exit 1 }
 }
 

@@ -1,5 +1,5 @@
 /*
- * agentOS Cap-Policy Hot-Reload — Unit Test
+ * FractalOS Cap-Policy Hot-Reload — Unit Test
  *
  * Tests the CBOR policy parser and runtime policy enforcement logic by
  * exercising the parse_policy_blob() and cap_policy_rt_check() helpers
@@ -7,8 +7,8 @@
  *
  * Build:  cc -o /tmp/test_cap_policy_hotreload \
  *             tests/test_cap_policy_hotreload.c \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_cap_policy_hotreload
  */
 
@@ -23,7 +23,7 @@
  * Host-side stubs — replace Microkit primitives so the logic compiles and
  * runs on macOS / Linux without seL4.
  * ══════════════════════════════════════════════════════════════════════════ */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 static uint64_t _mrs[64];
 static inline void   microkit_mr_set(uint32_t i, uint64_t v) { _mrs[i] = v; }
@@ -57,7 +57,7 @@ uintptr_t power_ring_vaddr = 0;
 
 #define LOG(fmt, ...) printf("[test] " fmt "\n", ##__VA_ARGS__)
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Inline copy of the CBOR parser and runtime policy from
@@ -380,7 +380,7 @@ static void test_parse_truncated_blob(void) {
 
 int main(void) {
     printf("╔══════════════════════════════════════════════════╗\n");
-    printf("║  agentOS Cap-Policy Hot-Reload — Test Suite      ║\n");
+    printf("║  FractalOS Cap-Policy Hot-Reload — Test Suite      ║\n");
     printf("╚══════════════════════════════════════════════════╝\n");
 
     test_parse_empty_blob();

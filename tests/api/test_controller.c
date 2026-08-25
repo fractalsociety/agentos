@@ -1,5 +1,5 @@
 /*
- * test_controller.c — API tests for the agentOS controller PD (E5-S2)
+ * test_controller.c — API tests for the FractalOS controller PD (E5-S2)
  *
  * Covered scenarios:
  *   1.  controller_main initialises without crashing
@@ -26,26 +26,26 @@
  *   29-31. boot readiness reports enabled, disabled, and failed services truthfully
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_controller \
  *      tests/api/test_controller.c && /tmp/test_controller
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
 /*
- * Pull in the controller implementation under AGENTOS_TEST_HOST.
+ * Pull in the controller implementation under FRACTALOS_TEST_HOST.
  * All seL4/Microkit references inside monitor.c are replaced by stubs
- * defined in monitor.c itself when AGENTOS_TEST_HOST is set.
+ * defined in monitor.c itself when FRACTALOS_TEST_HOST is set.
  */
-#include "../../kernel/agentos-root-task/src/monitor.c"
+#include "../../kernel/fractalos-root-task/src/monitor.c"
 
 /* ─────────────────────────────────────────────────────────────────────────────
  * Stub implementations required by monitor.c that are elsewhere in the tree
@@ -439,6 +439,6 @@ int main(void)
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_controller_test_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_controller_test_dummy;
+#endif /* FRACTALOS_TEST_HOST */

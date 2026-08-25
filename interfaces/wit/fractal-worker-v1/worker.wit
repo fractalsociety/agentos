@@ -129,10 +129,46 @@ interface worker {
     collect-terminal: func() -> terminal-result;
   }
 
+  /// How evidence may claim a provider. Host-fixture never equals live product.
+  enum provider-proof-class {
+    host-fixture,
+    live-configured,
+    blocked-external,
+  }
+
+  record provider-readiness {
+    provider: string,
+    proof-class: provider-proof-class,
+    live-env-flag: string,
+    live-requested: bool,
+    executable-resolved: bool,
+    secret-handle-present: bool,
+    claims-live-product: bool,
+    blocker: option<string>,
+  }
+
+  record provider-readiness-report {
+    schema: string,
+    protocol-version: string,
+    generated-at-unix-ms: u64,
+    providers: list<provider-readiness>,
+  }
+
+  /// Resumable remote session handle after MeshGateway open/resume.
+  record remote-session-handle {
+    peer: string,
+    session-id: string,
+    resume-token: list<u8>,
+    next-task-sequence: u64,
+    next-event-sequence: u64,
+  }
+
   discover-version: func(provider: provider-kind) -> result<version-record, string>;
   open-session: func(workspace: workspace-input, prompt: string, secret: option<secret-handle>) -> result<session, string>;
   enforce-allowed-files: func(workspace: workspace-input, changed: list<file-change>) -> result<list<file-change>, string>;
   redact-text: func(input: string) -> tuple<string, redaction-class>;
+  /// Distinguishes host-fixture, live-configured, and blocked-external providers.
+  assess-provider-readiness: func() -> provider-readiness-report;
 }
 
 world fractal-worker-v1 {

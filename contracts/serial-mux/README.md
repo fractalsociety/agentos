@@ -2,7 +2,7 @@
 
 ## Overview
 
-SerialMux is the canonical serial console multiplexer for agentOS.  It
+SerialMux is the canonical serial console multiplexer for FractalOS.  It
 arbitrates access to the debug UART (and optionally guest UART devices) so
 that multiple PDs can share a single physical serial port without interleaving
 output.  Every guest OS and VMM must use this service for console I/O rather
@@ -15,7 +15,7 @@ protection domain.
 
 **LEGACY.**  The old `console_mux` UI-facing service has been removed from
 the active build.  New serial I/O work should use the generic serial PD
-contract in `kernel/agentos-root-task/include/contracts/serial_contract.h`.
+contract in `kernel/fractalos-root-task/include/contracts/serial_contract.h`.
 
 ## Protection Domain
 
@@ -68,4 +68,4 @@ Each session has a 4096-byte ring in the `console_ring` MR:
 ## Source Files
 
 - `contracts/serial-mux/interface.h` — legacy contract reference
-- `kernel/agentos-root-task/include/contracts/serial_contract.h` — active serial PD contract
+- `kernel/fractalos-root-task/include/contracts/serial_contract.h` — active serial PD contract

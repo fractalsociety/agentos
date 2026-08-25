@@ -1,15 +1,15 @@
 /*
- * ipc_bench.h — agentOS seL4 IPC latency/throughput benchmark types and constants
+ * ipc_bench.h — FractalOS seL4 IPC latency/throughput benchmark types and constants
  *
  * Shared between ipc_bench.c and any future harness that wants to interpret
  * the TAP output or baseline file.
  *
- * In AGENTOS_TEST_HOST mode the timing source is clock_gettime(CLOCK_MONOTONIC)
+ * In FRACTALOS_TEST_HOST mode the timing source is clock_gettime(CLOCK_MONOTONIC)
  * (nanosecond precision).  In bare-metal AArch64 mode it is the virtual counter
  * register cntvct_el0 (tick = 1/CNTFRQ_EL0; QEMU TCG runs at 62.5 MHz by
  * default but we normalise to 1 GHz reference for reporting).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -19,15 +19,15 @@
 
 /* ── Build-mode guard ────────────────────────────────────────────────────── */
 /*
- * AGENTOS_TEST_HOST:
+ * FRACTALOS_TEST_HOST:
  *   Defined when building on a POSIX host (macOS, Linux) for development and
  *   CI.  In this mode seL4 IPC is simulated via direct function calls so the
  *   benchmark measures host-OS call overhead instead of real seL4 overhead.
  *   All TAP output is still produced and the pass/fail thresholds are the same.
  *
- * Without AGENTOS_TEST_HOST:
+ * Without FRACTALOS_TEST_HOST:
  *   Bare-metal AArch64 build.  Requires the seL4 microkit headers and the
- *   agentOS sel4_ipc.h / sel4_boot.h wrappers.
+ *   FractalOS sel4_ipc.h / sel4_boot.h wrappers.
  */
 
 /* ── Benchmark parameters ────────────────────────────────────────────────── */

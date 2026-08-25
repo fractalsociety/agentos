@@ -1,5 +1,5 @@
 /*
- * framework.h — agentOS API test framework
+ * framework.h — FractalOS API test framework
  *
  * Provides:
  *   - TAP-format output helpers (TAP_PLAN, TAP_OK, TAP_FAIL, TAP_DIAG)
@@ -9,7 +9,7 @@
  * Include this header once per test file, before any other includes.
  *
  * Tests run entirely on the host — no seL4 required.  The mock IPC layer
- * matches the ABI used by the real agentOS Microkit runtime so that test code
+ * matches the ABI used by the real FractalOS Microkit runtime so that test code
  * looks identical to production driver code.
  *
  * Usage:
@@ -28,12 +28,12 @@
  *       return tap_exit();
  *   }
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifndef AGENTOS_TEST_FRAMEWORK_H
-#define AGENTOS_TEST_FRAMEWORK_H
+#ifndef FRACTALOS_TEST_FRAMEWORK_H
+#define FRACTALOS_TEST_FRAMEWORK_H
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,7 +190,7 @@ static inline int tap_exit(void) {
 /* ── Mock IPC message-register layer ─────────────────────────────────────── */
 
 /*
- * agentOS Microkit ABI: agents communicate with services by setting MRs,
+ * FractalOS Microkit ABI: agents communicate with services by setting MRs,
  * calling microkit_ppcall(channel, label, mr_count), and reading reply MRs.
  *
  * The mock layer below provides:
@@ -288,7 +288,7 @@ static inline uint64_t mock_ipc_call(
 /* ── Common error codes (mirror contracts/ when they exist) ──────────────── */
 
 /*
- * Standard agentOS IPC status codes placed in MR[0] by every service.
+ * Standard FractalOS IPC status codes placed in MR[0] by every service.
  * TODO: replace with #include "../../contracts/<service>/interface.h"
  *       once those headers are written.
  */
@@ -304,4 +304,4 @@ static inline uint64_t mock_ipc_call(
 #define AOS_ERR_TOO_LARGE   0x08u  /* payload / buffer too large           */
 #define AOS_ERR_UNIMPL      0x09u  /* opcode not implemented               */
 
-#endif /* AGENTOS_TEST_FRAMEWORK_H */
+#endif /* FRACTALOS_TEST_FRAMEWORK_H */

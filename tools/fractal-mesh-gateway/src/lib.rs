@@ -5,10 +5,24 @@
 //! streams, and only [`FrameType::Hint`] may be sent as a QUIC datagram. The
 //! [`MeshGateway`] is the one process-wide service; it keeps at most one
 //! connection for each active peer and never turns a Headscale attribute into
-//! AgentOS authority.
+//! FractalOS authority.
 
+mod discovery;
+mod remote_grant;
+
+pub use discovery::{
+    mesh_eligible_peers, sign_service_ad, verify_service_ad, ConnectionPathKind, DiscoveryError,
+    HeadscaleDiscovery, PeerAdvertisement, PeerPathState, ServiceAdvertisement,
+    SERVICE_AD_SIGNATURE_DOMAIN, SERVICE_AD_SIGNING_BYTES,
+};
+pub use remote_grant::{
+    fill_id, AdmitResult, AuthorityContext, EffectClass, ExecutionLease, GrantError,
+    RemoteAuthority, RemoteGrant, GRANT_SIGNATURE_DOMAIN, LEASE_SIGNATURE_DOMAIN,
+};
+
+use discovery::mesh_eligible_peers as eligible_from_discovery;
 use quinn::{Connection, Endpoint, ServerConfig};
-use serde_json::Value;
+use remote_grant::RemoteAuthority as AuthorityState;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::net::SocketAddr;
@@ -28,6 +42,7 @@ pub const MAX_RESUMABLE_PEERS: usize = 64;
 pub const MAX_REPLAY_STREAMS: usize = MAX_INFLIGHT_FRAMES as usize * 2;
 pub const MAX_SESSIONS_PER_PEER: usize = 256;
 pub const MAX_DISCOVERED_PEERS: usize = 256;
+pub const MAX_SERVICE_ADVERTISEMENTS: usize = 256;
 pub const DEFAULT_KEEPALIVE: Duration = Duration::from_secs(15);
 const MAX_FRAME_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD;
 
@@ -453,10 +468,28 @@ pub enum GatewayError {
     InvalidPeer(String),
     #[error("invalid session identity: {0}")]
     InvalidSession(String),
+    #[error("peer is not eligible under Headscale NetCap policy")]
+    PolicyDenied,
+    #[error("peer is absent from Headscale discovery")]
+    UndiscoveredPeer,
+    #[error("Agent ISA requires a CapBroker-derived grant; tailnet identity is insufficient")]
+    AuthorityRequired,
+    #[error("remote grant denied: {0}")]
+    GrantDenied(String),
+    #[error("service advertisement signature is invalid or expired")]
+    InvalidServiceAdvertisement,
+    #[error("discovery: {0}")]
+    Discovery(String),
     #[error("QUIC: {0}")]
     Quic(String),
     #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<GrantError> for GatewayError {
+    fn from(value: GrantError) -> Self {
+        GatewayError::GrantDenied(value.to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -584,6 +617,7 @@ impl Session {
 struct PeerState {
     connection_id: String,
     path: String,
+    path_kind: ConnectionPathKind,
     path_epoch: u64,
     last_activity: Instant,
     window: FlowWindow,
@@ -597,12 +631,18 @@ struct GatewayInner {
     peers: HashMap<String, PeerState>,
     resumable: BTreeMap<String, HashMap<String, Session>>,
     advertisements: Vec<PeerAdvertisement>,
+    /// When true, connect_peer requires a mesh-eligible discovery entry.
+    discovery_loaded: bool,
+    services: Vec<ServiceAdvertisement>,
+    authority: AuthorityState,
 }
 
 #[derive(Debug, Clone)]
 pub struct GatewayConfig {
     pub limits: Limits,
     pub resume_secret: [u8; 32],
+    /// Secret used to sign/verify host-proof service advertisements.
+    pub advertisement_secret: [u8; 32],
 }
 
 impl Default for GatewayConfig {
@@ -610,17 +650,9 @@ impl Default for GatewayConfig {
         Self {
             limits: Limits::default(),
             resume_secret: [0x42; 32],
+            advertisement_secret: [0x11; 32],
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PeerAdvertisement {
-    pub peer: String,
-    pub node_id: Option<String>,
-    pub node_key: Option<String>,
-    pub endpoints: Vec<String>,
-    pub tags: Vec<String>,
 }
 
 /// The singleton gateway state. Construct exactly one instance in the service
@@ -634,12 +666,16 @@ pub struct MeshGateway {
 
 impl MeshGateway {
     pub fn new(config: GatewayConfig) -> Self {
+        let authority = AuthorityState::new(config.advertisement_secret);
         Self {
             config,
             inner: Arc::new(Mutex::new(GatewayInner {
                 peers: HashMap::new(),
                 resumable: BTreeMap::new(),
                 advertisements: Vec::new(),
+                discovery_loaded: false,
+                services: Vec::new(),
+                authority,
             })),
         }
     }
@@ -657,24 +693,32 @@ impl MeshGateway {
             .map(|mut advertisement| {
                 advertisement.node_id = advertisement.node_id.filter(|value| value.len() <= 255);
                 advertisement.node_key = advertisement.node_key.filter(|value| value.len() <= 255);
+                advertisement.magic_dns =
+                    advertisement.magic_dns.filter(|value| value.len() <= 255);
+                advertisement.selected_tag = advertisement
+                    .selected_tag
+                    .filter(|value| value.len() <= 255);
                 advertisement
                     .endpoints
                     .retain(|value| !value.is_empty() && value.len() <= 255);
                 advertisement
                     .tags
                     .retain(|value| !value.is_empty() && value.len() <= 255);
+                advertisement.agent_endpoint_ports.retain(|port| *port != 0);
                 advertisement.endpoints.truncate(64);
                 advertisement.tags.truncate(64);
+                advertisement.agent_endpoint_ports.truncate(64);
+                advertisement.policy_allowed =
+                    advertisement.policy_allowed && advertisement.netcap != "deny";
                 advertisement
             })
             .collect();
         advertisements.sort_by(|left, right| left.peer.cmp(&right.peer));
         advertisements.dedup_by(|left, right| left.peer == right.peer);
         advertisements.truncate(MAX_DISCOVERED_PEERS);
-        self.inner
-            .lock()
-            .expect("gateway mutex poisoned")
-            .advertisements = advertisements;
+        let mut inner = self.inner.lock().expect("gateway mutex poisoned");
+        inner.advertisements = advertisements;
+        inner.discovery_loaded = true;
     }
 
     pub fn discovered_peers(&self) -> Vec<PeerAdvertisement> {
@@ -689,11 +733,38 @@ impl MeshGateway {
         self.discovered_peers()
     }
 
+    /// Peers with a non-deny NetCap and at least one agent endpoint port.
+    pub fn mesh_eligible_peers(&self) -> Vec<PeerAdvertisement> {
+        eligible_from_discovery(&self.discovered_peers())
+    }
+
+    fn discovery_allows(&self, peer: &str) -> Result<(), GatewayError> {
+        let inner = self.inner.lock().expect("gateway mutex poisoned");
+        if !inner.discovery_loaded {
+            return Ok(());
+        }
+        match inner.advertisements.iter().find(|entry| entry.peer == peer) {
+            None => Err(GatewayError::UndiscoveredPeer),
+            Some(entry) if !entry.is_mesh_eligible() => Err(GatewayError::PolicyDenied),
+            Some(_) => Ok(()),
+        }
+    }
+
     pub fn connect_peer(
         &self,
         peer: &str,
         connection_id: &str,
         path: &str,
+    ) -> Result<(), GatewayError> {
+        self.connect_peer_with_path(peer, connection_id, path, ConnectionPathKind::Unknown)
+    }
+
+    pub fn connect_peer_with_path(
+        &self,
+        peer: &str,
+        connection_id: &str,
+        path: &str,
+        path_kind: ConnectionPathKind,
     ) -> Result<(), GatewayError> {
         if peer.is_empty() || peer.len() > 255 {
             return Err(GatewayError::InvalidPeer(peer.into()));
@@ -703,6 +774,7 @@ impl MeshGateway {
                 "connection metadata too large".into(),
             ));
         }
+        self.discovery_allows(peer)?;
         let mut inner = self.inner.lock().expect("gateway mutex poisoned");
         if inner.peers.contains_key(peer) {
             return Err(GatewayError::DuplicatePeerConnection);
@@ -713,6 +785,7 @@ impl MeshGateway {
             PeerState {
                 connection_id: connection_id.into(),
                 path: path.into(),
+                path_kind,
                 path_epoch: 0,
                 last_activity: Instant::now(),
                 window: FlowWindow::new(self.config.limits),
@@ -737,6 +810,15 @@ impl MeshGateway {
     }
 
     pub fn observe_path(&self, peer: &str, path: &str) -> Result<u64, GatewayError> {
+        self.observe_path_kind(peer, path, None)
+    }
+
+    pub fn observe_path_kind(
+        &self,
+        peer: &str,
+        path: &str,
+        kind: Option<ConnectionPathKind>,
+    ) -> Result<u64, GatewayError> {
         if path.len() > 255 {
             return Err(GatewayError::InvalidPeer("path too large".into()));
         }
@@ -746,8 +828,154 @@ impl MeshGateway {
             state.path = path.into();
             state.path_epoch = state.path_epoch.saturating_add(1);
         }
+        if let Some(kind) = kind {
+            state.path_kind = kind;
+        }
         state.last_activity = Instant::now();
         Ok(state.path_epoch)
+    }
+
+    pub fn peer_path_state(&self, peer: &str) -> Result<PeerPathState, GatewayError> {
+        let inner = self.inner.lock().expect("gateway mutex poisoned");
+        let state = inner.peers.get(peer).ok_or(GatewayError::UnknownPeer)?;
+        Ok(PeerPathState {
+            peer: peer.into(),
+            path: state.path.clone(),
+            kind: state.path_kind,
+            path_epoch: state.path_epoch,
+        })
+    }
+
+    /// Publish a signed service advertisement. Discovery only — no call right.
+    pub fn publish_service(
+        &self,
+        mut advertisement: ServiceAdvertisement,
+        now_unix_ms: u64,
+    ) -> Result<(), GatewayError> {
+        if advertisement.expiry_unix_ms <= now_unix_ms {
+            return Err(GatewayError::InvalidServiceAdvertisement);
+        }
+        advertisement.sign(&self.config.advertisement_secret);
+        if !advertisement.verify(&self.config.advertisement_secret) {
+            return Err(GatewayError::InvalidServiceAdvertisement);
+        }
+        let mut inner = self.inner.lock().expect("gateway mutex poisoned");
+        if let Some(existing) = inner
+            .services
+            .iter_mut()
+            .find(|entry| entry.service_id == advertisement.service_id)
+        {
+            *existing = advertisement;
+        } else {
+            if inner.services.len() >= MAX_SERVICE_ADVERTISEMENTS {
+                return Err(GatewayError::PeerMemoryExceeded);
+            }
+            inner.services.push(advertisement);
+        }
+        Ok(())
+    }
+
+    pub fn discovered_services(&self, now_unix_ms: u64) -> Vec<ServiceAdvertisement> {
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .services
+            .iter()
+            .filter(|ad| {
+                ad.expiry_unix_ms > now_unix_ms && ad.verify(&self.config.advertisement_secret)
+            })
+            .cloned()
+            .collect()
+    }
+
+    pub fn verify_service_advertisement(
+        &self,
+        advertisement: &ServiceAdvertisement,
+        now_unix_ms: u64,
+    ) -> Result<(), GatewayError> {
+        if advertisement.expiry_unix_ms <= now_unix_ms
+            || !advertisement.verify(&self.config.advertisement_secret)
+        {
+            return Err(GatewayError::InvalidServiceAdvertisement);
+        }
+        Ok(())
+    }
+
+    /// Trust an issuer public key for RemoteGrant verification (host proof).
+    pub fn trust_grant_issuer(&self, issuer: [u8; 32], public_key: [u8; 32]) {
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .authority
+            .trust_issuer(issuer, public_key);
+    }
+
+    pub fn revoke_grant_issuer(&self, issuer: &[u8; 32]) {
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .authority
+            .revoke_issuer(issuer);
+    }
+
+    pub fn sign_remote_grant(&self, grant: &mut RemoteGrant) {
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .authority
+            .sign_grant(grant);
+    }
+
+    pub fn sign_execution_lease(&self, lease: &mut ExecutionLease, issuer: &[u8; 32]) {
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .authority
+            .sign_lease(lease, issuer);
+    }
+
+    /// Admit a RemoteGrant and derive a narrow local badge. Peer must be connected.
+    pub fn admit_remote_grant(
+        &self,
+        peer: &str,
+        grant: &RemoteGrant,
+        ctx: &AuthorityContext,
+        serialized_badge: u64,
+    ) -> Result<AdmitResult, GatewayError> {
+        let _ = self.peer_connection_id(peer)?;
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .authority
+            .admit(grant, ctx, serialized_badge)
+            .map_err(GatewayError::from)
+    }
+
+    /// Agent ISA dispatch fence: requires a previously admitted grant (+ optional lease).
+    /// Tailnet membership / discovery alone always yields [`GatewayError::AuthorityRequired`].
+    pub fn dispatch_agent_isa(
+        &self,
+        peer: &str,
+        grant: Option<&RemoteGrant>,
+        lease: Option<&ExecutionLease>,
+        ctx: Option<&AuthorityContext>,
+        local_badge: Option<u64>,
+    ) -> Result<AdmitResult, GatewayError> {
+        let _ = self.peer_connection_id(peer)?;
+        let (Some(grant), Some(ctx), Some(badge)) = (grant, ctx, local_badge) else {
+            return Err(GatewayError::AuthorityRequired);
+        };
+        self.inner
+            .lock()
+            .expect("gateway mutex poisoned")
+            .authority
+            .dispatch(grant, lease, ctx, badge)
+            .map_err(GatewayError::from)
+    }
+
+    pub fn authority_event_counts(&self) -> (u32, u32) {
+        let inner = self.inner.lock().expect("gateway mutex poisoned");
+        (inner.authority.allowed_events, inner.authority.denied_events)
     }
 
     pub fn open_session(&self, peer: &str, session: &str) -> Result<SessionStatus, GatewayError> {
@@ -1218,107 +1446,7 @@ impl InMemoryTransport {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum DiscoveryError {
-    #[error("Headscale discovery JSON must contain an array of nodes")]
-    InvalidNodes,
-    #[error("Headscale discovery returned too many nodes")]
-    TooManyPeers,
-    #[error("Headscale discovery contains an oversized field")]
-    FieldTooLarge,
-    #[error("Headscale discovery JSON: {0}")]
-    Json(#[from] serde_json::Error),
-    #[error("Headscale discovery I/O: {0}")]
-    Io(#[from] std::io::Error),
-}
-
-/// Reads the atomic `netcap-state.json` emitted by the existing
-/// mesh-controller route. This is deliberately a discovery adapter only: tags,
-/// node keys, and selected netcaps are returned as metadata and are not used
-/// to mint capabilities or authorize a session.
-pub struct HeadscaleDiscovery {
-    state_path: std::path::PathBuf,
-}
-
-impl HeadscaleDiscovery {
-    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
-        Self {
-            state_path: path.into(),
-        }
-    }
-
-    pub fn load(&self) -> Result<Vec<PeerAdvertisement>, DiscoveryError> {
-        self.load_bytes(&std::fs::read(&self.state_path)?)
-    }
-
-    pub fn load_bytes(&self, bytes: &[u8]) -> Result<Vec<PeerAdvertisement>, DiscoveryError> {
-        let root: Value = serde_json::from_slice(bytes)?;
-        let nodes: &[Value] = match root.get("nodes") {
-            Some(Value::Array(nodes)) => nodes.as_slice(),
-            // Headscale emits null for an empty node collection.
-            Some(Value::Null) => &[],
-            _ => return Err(DiscoveryError::InvalidNodes),
-        };
-        if nodes.len() > MAX_DISCOVERED_PEERS {
-            return Err(DiscoveryError::TooManyPeers);
-        }
-        let mut peers = Vec::with_capacity(nodes.len());
-        for node in nodes {
-            let peer = node
-                .get("node_id")
-                .or_else(|| node.get("nodeId"))
-                .filter(|value| !value.is_null())
-                .map(value_string)
-                .or_else(|| node.get("name").and_then(Value::as_str).map(str::to_owned));
-            let Some(peer) = peer else {
-                continue;
-            };
-            if peer.is_empty() || peer.len() > 255 {
-                return Err(DiscoveryError::FieldTooLarge);
-            }
-            let node_id = node
-                .get("node_id")
-                .or_else(|| node.get("nodeId"))
-                .filter(|value| !value.is_null())
-                .map(value_string);
-            let node_key = node
-                .get("node_key")
-                .or_else(|| node.get("nodeKey"))
-                .filter(|value| !value.is_null())
-                .map(value_string);
-            if node_id.as_ref().is_some_and(|value| value.len() > 255)
-                || node_key.as_ref().is_some_and(|value| value.len() > 255)
-            {
-                return Err(DiscoveryError::FieldTooLarge);
-            }
-            let strings = |keys: &[&str]| {
-                keys.iter()
-                    .find_map(|key| node.get(key).and_then(Value::as_array))
-                    .map(|items| {
-                        items
-                            .iter()
-                            .take(64)
-                            .filter_map(Value::as_str)
-                            .filter(|value| !value.is_empty() && value.len() <= 255)
-                            .map(str::to_owned)
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            };
-            peers.push(PeerAdvertisement {
-                peer,
-                node_id,
-                node_key,
-                endpoints: strings(&["endpoints", "addresses"]),
-                tags: strings(&["authenticated_tags", "tags"]),
-            });
-        }
-        peers.sort_by(|left, right| left.peer.cmp(&right.peer));
-        Ok(peers)
-    }
-}
-
-fn value_string(value: &Value) -> String {
+pub(crate) fn value_string(value: &serde_json::Value) -> String {
     value
         .as_str()
         .map(str::to_owned)
@@ -1626,9 +1754,212 @@ mod tests {
             .unwrap()
             .is_empty());
         let peers = discovery
-            .load_bytes(br#"{"nodes":[{"node_id":"node-7","node_key":"key","authenticated_tags":["tag:agent"]}]}"#)
+            .load_bytes(br#"{"nodes":[{"node_id":"node-7","node_key":"key","name":"agent-a.mesh.fractalos.internal","authenticated_tags":["tag:agent"],"selected_tag":"tag:agent","netcap":"mesh-agent","agent_endpoint_ports":[8443]}]}"#)
             .unwrap();
         assert_eq!(peers[0].peer, "node-7");
         assert_eq!(peers[0].tags, vec!["tag:agent"]);
+        assert_eq!(
+            peers[0].magic_dns.as_deref(),
+            Some("agent-a.mesh.fractalos.internal")
+        );
+        assert!(peers[0].is_mesh_eligible());
+    }
+
+    #[test]
+    fn missing_netcap_policy_is_rejected() {
+        let discovery = HeadscaleDiscovery::new("unused");
+        assert!(matches!(
+            discovery.load_bytes(br#"{"nodes":[{"node_id":"node-1","authenticated_tags":[]}]}"#),
+            Err(DiscoveryError::MissingPolicy)
+        ));
+    }
+
+    #[test]
+    fn deny_netcap_cannot_connect_and_tailnet_cannot_dispatch_agent_isa() {
+        let discovery = HeadscaleDiscovery::new("unused");
+        let peers = discovery
+            .load_bytes(
+                br#"{"schema":1,"nodes":[
+                {"node_id":"allowed","name":"a.mesh","authenticated_tags":["tag:agent"],"selected_tag":"tag:agent","netcap":"mesh-agent","agent_endpoint_ports":[8443],"endpoints":["100.64.0.2:8443"]},
+                {"node_id":"denied","name":"b.mesh","authenticated_tags":[],"netcap":"deny","agent_endpoint_ports":[]}
+            ]}"#,
+            )
+            .unwrap();
+        let gateway = MeshGateway::new(GatewayConfig::default());
+        gateway.set_discovery(peers);
+        assert_eq!(gateway.mesh_eligible_peers().len(), 1);
+        assert!(matches!(
+            gateway.connect_peer("denied", "c1", "path"),
+            Err(GatewayError::PolicyDenied)
+        ));
+        assert!(matches!(
+            gateway.connect_peer("unknown", "c1", "path"),
+            Err(GatewayError::UndiscoveredPeer)
+        ));
+        gateway
+            .connect_peer_with_path(
+                "allowed",
+                "c1",
+                "100.64.0.2:8443",
+                ConnectionPathKind::Direct,
+            )
+            .unwrap();
+        gateway
+            .observe_path_kind("allowed", "relay.example:443", Some(ConnectionPathKind::Relay))
+            .unwrap();
+        let path = gateway.peer_path_state("allowed").unwrap();
+        assert_eq!(path.kind, ConnectionPathKind::Relay);
+        assert_eq!(path.path_epoch, 1);
+        assert!(matches!(
+            gateway.dispatch_agent_isa("allowed", None, None, None, None),
+            Err(GatewayError::AuthorityRequired)
+        ));
+        assert!(matches!(
+            gateway.dispatch_agent_isa("allowed", None, None, None, Some(1)),
+            Err(GatewayError::AuthorityRequired)
+        ));
+    }
+
+    #[test]
+    fn signed_service_advertisements_are_discoverable_without_authority() {
+        let gateway = MeshGateway::new(GatewayConfig::default());
+        let mut ad = ServiceAdvertisement {
+            service_id: [1u8; 32],
+            provider_node: [2u8; 32],
+            interface_hash: [3u8; 32],
+            endpoint: [0u8; 64],
+            required_capability: 7,
+            health_epoch: 1,
+            expiry_unix_ms: 10_000,
+            signature: [0u8; 64],
+        };
+        ad.endpoint[..5].copy_from_slice(b"quic/");
+        gateway.publish_service(ad.clone(), 1_000).unwrap();
+        let found = gateway.discovered_services(1_000);
+        assert_eq!(found.len(), 1);
+        gateway
+            .verify_service_advertisement(&found[0], 1_000)
+            .unwrap();
+        let mut forged = found[0].clone();
+        forged.signature[0] ^= 0xff;
+        assert!(matches!(
+            gateway.verify_service_advertisement(&forged, 1_000),
+            Err(GatewayError::InvalidServiceAdvertisement)
+        ));
+        // Discovery still does not authorize Agent ISA.
+        gateway.connect_peer("local-dev", "c", "p").unwrap();
+        assert!(matches!(
+            gateway.dispatch_agent_isa("local-dev", None, None, None, None),
+            Err(GatewayError::AuthorityRequired)
+        ));
+    }
+
+    #[test]
+    fn audience_bound_grants_derive_badges_and_fence_agent_isa() {
+        let gateway = MeshGateway::new(GatewayConfig::default());
+        gateway.connect_peer("peer-a", "c1", "path").unwrap();
+
+        let issuer = fill_id(0x70);
+        let mut pubkey = [0u8; 32];
+        pubkey[0] = 0x42;
+        gateway.trust_grant_issuer(issuer, pubkey);
+
+        let ctx = AuthorityContext {
+            authenticated_tailnet_peer: fill_id(0x10),
+            local_node: fill_id(0x20),
+            expected_agent: fill_id(0x30),
+            expected_space: fill_id(0x40),
+            expected_interface: fill_id(0x50),
+            expected_object_scope: fill_id(0x60),
+            requested_operations: 1,
+            required_scope_flags: 1,
+            requested_effect_class: EffectClass::Local as u32,
+            max_effect_class: EffectClass::Shared as u32,
+            requested_budget_units: 10,
+            now_unix_ms: 1_000,
+            authority_epoch: 7,
+            revocation_epoch: 3,
+            expected_lease_fence_epoch: 99,
+        };
+
+        let mut grant = RemoteGrant {
+            issuer,
+            subject_node: ctx.authenticated_tailnet_peer,
+            subject_agent: ctx.expected_agent,
+            audience_node: ctx.local_node,
+            space_id: ctx.expected_space,
+            interface_hash: ctx.expected_interface,
+            object_scope: ctx.expected_object_scope,
+            operation_mask: 1,
+            scope_flags: 1,
+            effect_class: EffectClass::Local as u32,
+            budget_units: 10,
+            expiry_unix_ms: 2_000,
+            authority_epoch: 7,
+            revocation_epoch: 3,
+            nonce: fill_id(0x91),
+            signature: [0u8; 64],
+        };
+        gateway.sign_remote_grant(&mut grant);
+
+        let admitted = gateway
+            .admit_remote_grant("peer-a", &grant, &ctx, 0)
+            .unwrap();
+        assert_ne!(admitted.local_badge, 0);
+
+        let mut lease = ExecutionLease {
+            lease_id: 1,
+            fence_epoch: 99,
+            expires_unix_ms: 1_500,
+            authority_epoch: 7,
+            revocation_epoch: 3,
+            holder_node: ctx.authenticated_tailnet_peer,
+            subject_agent: ctx.expected_agent,
+            space_id: ctx.expected_space,
+            nonce: fill_id(0xA1),
+            signature: [0u8; 64],
+        };
+        gateway.sign_execution_lease(&mut lease, &issuer);
+
+        gateway
+            .dispatch_agent_isa(
+                "peer-a",
+                Some(&grant),
+                Some(&lease),
+                Some(&ctx),
+                Some(admitted.local_badge),
+            )
+            .unwrap();
+
+        let mut wrong_audience = grant.clone();
+        wrong_audience.audience_node[0] ^= 1;
+        gateway.sign_remote_grant(&mut wrong_audience);
+        assert!(matches!(
+            gateway.admit_remote_grant("peer-a", &wrong_audience, &ctx, 0),
+            Err(GatewayError::GrantDenied(_))
+        ));
+
+        assert!(matches!(
+            gateway.admit_remote_grant("peer-a", &grant, &ctx, 0x5245_4d4f_0000_0001),
+            Err(GatewayError::GrantDenied(_))
+        ));
+
+        let mut partitioned = lease.clone();
+        partitioned.fence_epoch = 100;
+        gateway.sign_execution_lease(&mut partitioned, &issuer);
+        assert!(matches!(
+            gateway.dispatch_agent_isa(
+                "peer-a",
+                Some(&grant),
+                Some(&partitioned),
+                Some(&ctx),
+                Some(admitted.local_badge),
+            ),
+            Err(GatewayError::GrantDenied(_))
+        ));
+
+        let (allowed, denied) = gateway.authority_event_counts();
+        assert!(allowed >= 2);
+        assert!(denied >= 2);
     }
 }

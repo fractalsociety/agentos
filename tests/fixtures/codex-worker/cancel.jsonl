@@ -1,0 +1,4 @@
+{"type":"status","message":"session-start","session_id":"sess-cancel-1"}
+{"type":"assistant","text":"Working..."}
+{"type":"cancellation","reason":"deadline-exceeded"}
+{"type":"result","subtype":"cancelled","exit_code":130}

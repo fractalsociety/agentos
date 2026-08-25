@@ -2,7 +2,7 @@
 
 ## Overview
 
-LogSvc is the centralized, structured logging and audit service for agentOS.
+LogSvc is the centralized, structured logging and audit service for FractalOS.
 It maintains a 16 384-entry circular ring buffer of structured log entries
 and exposes them to agents for introspection.  Key properties:
 
@@ -27,7 +27,7 @@ Agents write log entries by calling through the controller (which proxies to
 the LogSvc library).  AUDIT-level entries are also streamed asynchronously
 into the `audit_log` MR ring buffer accessible to the `cap_audit_log` PD.
 
-The `cap_audit_log` PD opcodes (from `agentos.h`) are:
+The `cap_audit_log` PD opcodes (from `fractalos.h`) are:
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -74,5 +74,5 @@ structured log interface:
 ## Source Files
 
 - `services/logsvc/logsvc.c` — implementation (write, query, JSON export)
-- `kernel/agentos-root-task/src/cap_audit_log.c` — capability event streaming
-- `kernel/agentos-root-task/include/agentos.h` — OP_CAP_LOG_* constants
+- `kernel/fractalos-root-task/src/cap_audit_log.c` — capability event streaming
+- `kernel/fractalos-root-task/include/fractalos.h` — OP_CAP_LOG_* constants

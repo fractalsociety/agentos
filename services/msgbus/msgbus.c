@@ -1,11 +1,11 @@
 /*
- * agentOS MsgBus — Implementation
+ * FractalOS MsgBus — Implementation
  *
  * Core message routing service. All agent communication flows through here.
  * Built on seL4 IPC primitives: endpoints for synchronous messaging,
  * notification objects for async signals, shared memory for bulk data.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

@@ -1,8 +1,8 @@
-// cmd_gen_image.rs — agentOS bootable image packer
+// cmd_gen_image.rs — FractalOS bootable image packer
 //
 // Reads a system description TOML (produced by gen-caps) and the compiled PD
-// ELFs, then packs them into an `agentos.img` flat-binary image that the
-// agentOS root task can parse at boot.
+// ELFs, then packs them into an `fractalos.img` flat-binary image that the
+// FractalOS root task can parse at boot.
 //
 // Image format is documented in docs/sel4-loader-format.md.
 
@@ -37,8 +37,8 @@ pub struct GenImageArgs {
     #[arg(long, name = "pd-dir")]
     pub pd_dir: PathBuf,
 
-    /// Output image path (default: agentos.img)
-    #[arg(long, default_value = "agentos.img")]
+    /// Output image path (default: fractalos.img)
+    #[arg(long, default_value = "fractalos.img")]
     pub out: PathBuf,
 }
 
@@ -63,8 +63,8 @@ pub struct PdDesc {
 
 // ─── Image format constants ───────────────────────────────────────────────────
 
-/// Magic number: ASCII "AGENTOS\0" as a little-endian u64.
-pub const IMAGE_MAGIC: u64 = 0x4147454E544F5300;
+/// Magic number: ASCII "FRACTALOS\0" as a little-endian u64.
+pub const IMAGE_MAGIC: u64 = 0x4652414354414C4F;
 
 /// Image format version.
 pub const IMAGE_VERSION: u32 = 1;

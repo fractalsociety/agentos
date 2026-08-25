@@ -1,10 +1,10 @@
-/* loader.ld — linker script for the agentOS AArch64 pre-seL4 loader
+/* loader.ld — linker script for the FractalOS AArch64 pre-seL4 loader
  *
  * The loader is a standalone ELF that QEMU loads via its "loader" device.
  * It must reside in DRAM outside the regions used by:
  *   - the seL4 kernel      (phys 0x60000000)
  *   - the root_task        (phys 0x41000000)
- *   - the agentos.img blob (phys 0x48000000)
+ *   - the fractalos.img blob (phys 0x48000000)
  *
  * 0x44000000 satisfies all constraints and is below the image blob.
  * The stack is placed at 0x44010000 (64 KB above the loader base).

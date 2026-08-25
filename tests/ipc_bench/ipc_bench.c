@@ -1,5 +1,5 @@
 /*
- * ipc_bench.c — agentOS seL4 IPC latency/throughput benchmark
+ * ipc_bench.c — FractalOS seL4 IPC latency/throughput benchmark
  *
  * Measures four aspects of raw seL4 IPC performance using the sel4_ipc.h API:
  *
@@ -16,16 +16,16 @@
  * Output format: TAP version 14 (machine-readable, consumed by xtask test).
  *
  * Build modes:
- *   AGENTOS_TEST_HOST   — host (macOS / Linux) build; seL4 IPC replaced by
+ *   FRACTALOS_TEST_HOST   — host (macOS / Linux) build; seL4 IPC replaced by
  *                         direct function calls; timing via clock_gettime.
  *   (no define)         — bare-metal AArch64 seL4 build; timing via
  *                         cntvct_el0 virtual counter.
  *
  * Build (host):
- *   cc -std=c11 -Wall -Wextra -DAGENTOS_TEST_HOST -o ipc_bench_host \
+ *   cc -std=c11 -Wall -Wextra -DFRACTALOS_TEST_HOST -o ipc_bench_host \
  *       tests/ipc_bench/ipc_bench.c -lm
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -33,7 +33,7 @@
 
 /* ── Platform abstraction ─────────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * Host build: pull in POSIX headers for clock_gettime and printf.
  * No seL4 or Microkit headers needed.
@@ -72,8 +72,8 @@ static void bench_putchar(char c) { putchar(c); }
 /*
  * Bare-metal build: no libc.  Include the seL4 IPC wrappers.
  */
-#include "kernel/agentos-root-task/include/sel4_ipc.h"
-#include "kernel/agentos-root-task/include/sel4_boot.h"
+#include "kernel/fractalos-root-task/include/sel4_ipc.h"
+#include "kernel/fractalos-root-task/include/sel4_boot.h"
 
 /*
  * bench_read_cycle() — read the AArch64 virtual counter.
@@ -116,7 +116,7 @@ static void bench_putchar(char c)
     __asm__ volatile("svc #0" : : "r"(a0), "r"(sc) : "memory");
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Output primitives (no libc printf in bare-metal) ─────────────────────── */
 
@@ -223,7 +223,7 @@ static void tap_header(void)
     bench_putchar('\n');
 }
 
-/* ── Simulated seL4 IPC for AGENTOS_TEST_HOST mode ──────────────────────── */
+/* ── Simulated seL4 IPC for FRACTALOS_TEST_HOST mode ──────────────────────── */
 /*
  * In the host build we have no seL4 kernel.  We simulate the round-trip by
  * calling a "server" function directly.  This measures pure function-call
@@ -233,7 +233,7 @@ static void tap_header(void)
  * from inlining the callee and removing the call entirely.
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /*
  * Simulated message struct — mirrors sel4_msg_t layout so the same benchmark
@@ -299,7 +299,7 @@ static inline void sim_call_with_cap(const sim_msg_t *req, sim_msg_t *rep,
     g_sim_handler(req, rep);
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * BENCH_PINGPONG — synchronous round-trip latency
@@ -310,7 +310,7 @@ static void bench_pingpong(void)
     bench_stat_t stat;
     bench_stat_init(&stat);
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     sim_msg_t req, rep;
     req.opcode = BENCH_OP_PING;
     req.length = 4u;
@@ -358,7 +358,7 @@ static void bench_pingpong(void)
         uint64_t delta = bench_cycles_to_ns(t1 - t0);
         bench_stat_record(&stat, delta);
     }
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
     uint64_t mean = bench_stat_mean(&stat);
     uint64_t p99  = bench_stat_p99(&stat);
@@ -389,7 +389,7 @@ static void bench_notify(void)
     bench_stat_t stat;
     bench_stat_init(&stat);
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     for (uint32_t i = 0; i < BENCH_NOTIFY_ITERS; i++) {
         uint64_t t0 = bench_read_cycle();
         sim_notify((uint64_t)(i + 1u));
@@ -445,7 +445,7 @@ static void bench_throughput(void)
     uint64_t total_calls = (uint64_t)BENCH_THROUGHPUT_CLIENTS *
                            (uint64_t)BENCH_THROUGHPUT_ITERS;
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     sim_msg_t req, rep;
     req.opcode = BENCH_OP_PING;
     req.length = 0u;
@@ -524,7 +524,7 @@ static void bench_cap_transfer(void)
     uint64_t t_nocap_start, t_nocap_end;
     uint64_t t_cap_start,   t_cap_end;
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     sim_msg_t req, rep;
     req.opcode = BENCH_OP_PING;
     req.length = 8u;
@@ -571,7 +571,7 @@ static void bench_cap_transfer(void)
     }
     t_cap_end = bench_read_cycle();
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
     uint64_t nocap_ticks = t_nocap_end - t_nocap_start;
     uint64_t cap_ticks   = t_cap_end   - t_cap_start;
@@ -597,7 +597,7 @@ static void bench_cap_transfer(void)
  * Entry point
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 int main(void)
 {
@@ -650,4 +650,4 @@ void pd_main(void)
     while (1) { seL4_Yield(); }
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

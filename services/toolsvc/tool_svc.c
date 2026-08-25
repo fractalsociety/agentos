@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 #include "../../contracts/toolsvc/interface.h"
-#include "../../kernel/agentos-root-task/include/system_desc.h"
+#include "../../kernel/fractalos-root-task/include/system_desc.h"
 
 typedef uint64_t toolsvc_badge_t;
 
@@ -413,12 +413,12 @@ uint32_t toolsvc_runtime_dispatch(toolsvc_badge_t badge, uint32_t opcode,
     return status;
 }
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 
 #include "../../contracts/execsvc/interface.h"
-#include "../../kernel/agentos-root-task/include/mcp_transport.h"
-#include "../../kernel/agentos-root-task/include/sel4_client.h"
-#include "../../kernel/agentos-root-task/include/sel4_server.h"
+#include "../../kernel/fractalos-root-task/include/mcp_transport.h"
+#include "../../kernel/fractalos-root-task/include/sel4_client.h"
+#include "../../kernel/fractalos-root-task/include/sel4_server.h"
 
 static uint32_t target_repo_backend(
     bool read, const uint8_t *input, uint32_t input_len,
@@ -442,8 +442,8 @@ static uint32_t target_repo_backend(
         .source_len = input_len,
         .output_offset = partition + output_rel,
         .output_capacity = output_capacity,
-        .profile_id = read ? EXECSVC_PROFILE_AGENTOS_REPO_READ
-                           : EXECSVC_PROFILE_AGENTOS_REPO_SEARCH,
+        .profile_id = read ? EXECSVC_PROFILE_FRACTALOS_REPO_READ
+                           : EXECSVC_PROFILE_FRACTALOS_REPO_SEARCH,
         .request_tag = read ? 0x72656164u : 0x66696e64u,
     };
     sel4_msg_t rep;

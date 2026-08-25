@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../kernel/agentos-root-task/include/wireguard_counter.h"
+#include "../kernel/fractalos-root-task/include/wireguard_counter.h"
 
 static int failures;
 #define CHECK(condition, description) do {                              \

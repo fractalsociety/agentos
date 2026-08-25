@@ -1,5 +1,5 @@
 /*
- * agentOS pd_startup_record — Host Unit Test (agentos-3ev)
+ * FractalOS pd_startup_record — Host Unit Test (fos-3ev)
  *
  * Asserts the documented, packed startup-record contract that parameterized
  * PD wrappers (swap_slot, app_slot, wg_net, vibe_swap) consume instead of
@@ -15,7 +15,7 @@
  *
  * Build:  cc -std=c11 -o /tmp/test_pd_startup_record \
  *             tests/test_pd_startup_record.c \
- *             -I kernel/agentos-root-task/include
+ *             -I kernel/fractalos-root-task/include
  * Run:    /tmp/test_pd_startup_record   (TAP output; exit 0 on success)
  */
 

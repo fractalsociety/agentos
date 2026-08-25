@@ -1,5 +1,5 @@
 /*
- * agentOS framebuffer_contract — Contract Unit Tests
+ * FractalOS framebuffer_contract — Contract Unit Tests
  *
  * Validates all MSG_FB_* opcodes, struct layouts, backend constants, pixel
  * format constants, and error codes without seL4 or Microkit.  No
@@ -10,8 +10,8 @@
  * Build:  cc -o /tmp/test_framebuffer_contract \
  *             tests/test_framebuffer_contract.c \
  *             -I tests \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_framebuffer_contract
  */
 
@@ -49,7 +49,7 @@ static int test_fb_opcodes(void)
     CHECK((MSG_FB_DESTROY      & 0xFF00u) == 0x2500u);
     CHECK((MSG_FB_FRAME_READY  & 0xFF00u) == 0x2500u);
 
-    /* Exact values per agentos.h */
+    /* Exact values per fractalos.h */
     CHECK(MSG_FB_CREATE      == 0x2501u);
     CHECK(MSG_FB_WRITE       == 0x2502u);
     CHECK(MSG_FB_FLIP        == 0x2503u);

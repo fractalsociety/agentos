@@ -17,7 +17,7 @@ const WIT: &str = include_str!("../../interfaces/wit/fractal-companion-v1/compan
 
 /// The C mirror named as normative by the WIT preamble.
 const ABI: &str =
-    include_str!("../../kernel/agentos-root-task/include/contracts/companion_export_contract.h");
+    include_str!("../../kernel/fractalos-root-task/include/contracts/companion_export_contract.h");
 
 /// Body of the first brace-balanced block introduced by `header`.
 fn body_after(header: &str) -> &str {
@@ -101,9 +101,28 @@ fn assert_wit_states(claim: &str) {
 /// rather than by keyword, so a renamed field cannot smuggle a body through.
 fn assert_daily_records_omit_raw_fields() {
     const FORBIDDEN_NAMES: &[&str] = &[
-        "calendar", "event-body", "message", "health", "medical", "file", "body", "content",
-        "credential", "token", "secret", "path", "url", "command", "args", "argv", "note",
-        "title", "summary", "text", "attendees", "location",
+        "calendar",
+        "event-body",
+        "message",
+        "health",
+        "medical",
+        "file",
+        "body",
+        "content",
+        "credential",
+        "token",
+        "secret",
+        "path",
+        "url",
+        "command",
+        "args",
+        "argv",
+        "note",
+        "title",
+        "summary",
+        "text",
+        "attendees",
+        "location",
     ];
     // `ordering-key` is an opaque sort key; the two daily-root strings are the
     // bundle key itself. Nothing else may be a string or a byte list.
@@ -393,7 +412,13 @@ fn daily_items_carry_only_typed_task_intent_references() {
         );
     }
     let kinds = body_after("enum intent-kind");
-    for kind in ["acknowledge", "defer", "prioritize", "request-proof", "cancel"] {
+    for kind in [
+        "acknowledge",
+        "defer",
+        "prioritize",
+        "request-proof",
+        "cancel",
+    ] {
         assert!(kinds.contains(kind), "intent-kind must include {kind}");
     }
     assert_wit_states("this enum cannot grow into a remote shell");

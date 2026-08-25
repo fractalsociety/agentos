@@ -1,13 +1,12 @@
-/// WASM validator for agentOS service compatibility.
+/// WASM validator for FractalOS service compatibility.
 /// Port of services/vibe-swap/src/wasm-validator.mjs
 ///
-/// Copyright (c) 2026 The agentOS Project
+/// Copyright (c) 2026 The FractalOS Project
 /// SPDX-License-Identifier: BSD-2-Clause
-
 extern crate alloc;
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
 
 const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 const WASM_VERSION: &[u8; 4] = &[0x01, 0x00, 0x00, 0x00];
@@ -21,8 +20,8 @@ const SECTION_EXPORT: u8 = 7;
 const SECTION_MEMORY: u8 = 5;
 const SECTION_CUSTOM: u8 = 0;
 
-/// Name of the required agentOS capabilities custom section.
-const AGENTOS_CAPS_SECTION: &str = "agentos.capabilities";
+/// Name of the required FractalOS capabilities custom section.
+const FRACTALOS_CAPS_SECTION: &str = "fractalos.capabilities";
 
 // WASM external kind names
 const KIND_NAMES: &[&str] = &["function", "table", "memory", "global"];
@@ -169,7 +168,10 @@ fn parse_exports(wasm: &[u8]) -> Vec<String> {
         };
         pos += consumed;
 
-        let kind_name = KIND_NAMES.get(kind_byte as usize).copied().unwrap_or("unknown");
+        let kind_name = KIND_NAMES
+            .get(kind_byte as usize)
+            .copied()
+            .unwrap_or("unknown");
         result.push(format!("{}:{}", name, kind_name));
     }
 
@@ -247,7 +249,10 @@ fn parse_imports(wasm: &[u8]) -> Vec<String> {
         };
         pos += consumed;
 
-        let kind_name = KIND_NAMES.get(kind_byte as usize).copied().unwrap_or("unknown");
+        let kind_name = KIND_NAMES
+            .get(kind_byte as usize)
+            .copied()
+            .unwrap_or("unknown");
         result.push(format!("{}.{}:{}", module, name, kind_name));
     }
 
@@ -314,7 +319,7 @@ pub fn is_wasm(bytes: &[u8]) -> bool {
     bytes.len() >= 4 && &bytes[..4] == WASM_MAGIC
 }
 
-/// Validate a WASM binary for agentOS service compatibility.
+/// Validate a WASM binary for FractalOS service compatibility.
 pub fn validate_wasm(bytes: &[u8]) -> ValidationResult {
     let mut errors: Vec<String> = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
@@ -389,21 +394,26 @@ pub fn validate_wasm(bytes: &[u8]) -> ValidationResult {
 
     // 7. Check that a linear memory section is declared
     if !has_memory_section(bytes) {
-        errors.push("No WASM memory section found; linear memory is required for agentOS services".to_string());
+        errors.push(
+            "No WASM memory section found; linear memory is required for FractalOS services"
+                .to_string(),
+        );
     }
 
-    // 8. Check for the agentos.capabilities custom section
-    if find_wasm_custom_section(bytes, AGENTOS_CAPS_SECTION).is_none() {
+    // 8. Check for the fractalos.capabilities custom section
+    if find_wasm_custom_section(bytes, FRACTALOS_CAPS_SECTION).is_none() {
         warnings.push(format!(
             "Missing custom section \"{}\"; service will run without a declared capability manifest (legacy mode)",
-            AGENTOS_CAPS_SECTION
+            FRACTALOS_CAPS_SECTION
         ));
     }
 
     // 9. Check for "aos" module imports
     let has_aos_import = imports.iter().any(|i| i.starts_with("aos."));
     if !has_aos_import {
-        warnings.push("No imports from \"aos\" module; service may not integrate with agentOS".to_string());
+        warnings.push(
+            "No imports from \"aos\" module; service may not integrate with FractalOS".to_string(),
+        );
     }
 
     // 10. Warn on unknown import modules (not "aos" or "env")
@@ -475,7 +485,10 @@ mod tests {
         let bytes = b"\x00asm";
         let result = validate_wasm(bytes);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.to_lowercase().contains("too small")));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.to_lowercase().contains("too small")));
     }
 
     #[test]
@@ -485,14 +498,17 @@ mod tests {
         let wasm: &[u8] = &[
             0x00, 0x61, 0x73, 0x6D, // magic: \0asm
             0x01, 0x00, 0x00, 0x00, // version: 1
-            0x07,                   // section id: export
-            0x01,                   // section size: 1 byte
-            0x00,                   // export count: 0
+            0x07, // section id: export
+            0x01, // section size: 1 byte
+            0x00, // export count: 0
         ];
         let result = validate_wasm(wasm);
         assert!(!result.valid);
         assert!(
-            result.errors.iter().any(|e| e.contains("Missing required export: \"init\"")),
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("Missing required export: \"init\"")),
             "Expected error about missing 'init' export, got: {:?}",
             result.errors
         );
@@ -517,8 +533,12 @@ mod tests {
         let result = validate_wasm(bad);
         assert!(!result.valid);
         assert!(
-            result.errors.iter().any(|e| e.to_lowercase().contains("magic")),
-            "expected magic error, got: {:?}", result.errors
+            result
+                .errors
+                .iter()
+                .any(|e| e.to_lowercase().contains("magic")),
+            "expected magic error, got: {:?}",
+            result.errors
         );
     }
 
@@ -532,8 +552,12 @@ mod tests {
         let result = validate_wasm(wasm);
         // Version error present
         assert!(
-            result.errors.iter().any(|e| e.contains("version") || e.contains("Version")),
-            "expected version error, got: {:?}", result.errors
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("version") || e.contains("Version")),
+            "expected version error, got: {:?}",
+            result.errors
         );
     }
 
@@ -542,22 +566,29 @@ mod tests {
         // Build a buffer just over MAX_WASM_SIZE
         let mut big = alloc::vec![0u8; MAX_WASM_SIZE + 1];
         // Write valid magic so we pass the magic check and hit the size check
-        big[0] = 0x00; big[1] = 0x61; big[2] = 0x73; big[3] = 0x6D;
-        big[4] = 0x01; big[5] = 0x00; big[6] = 0x00; big[7] = 0x00;
+        big[0] = 0x00;
+        big[1] = 0x61;
+        big[2] = 0x73;
+        big[3] = 0x6D;
+        big[4] = 0x01;
+        big[5] = 0x00;
+        big[6] = 0x00;
+        big[7] = 0x00;
         let result = validate_wasm(&big);
         assert!(
-            result.errors.iter().any(|e| e.to_lowercase().contains("large")),
-            "expected too-large error, got: {:?}", result.errors
+            result
+                .errors
+                .iter()
+                .any(|e| e.to_lowercase().contains("large")),
+            "expected too-large error, got: {:?}",
+            result.errors
         );
     }
 
     #[test]
     fn test_has_memory_section_on_minimal_binary() {
         // 8-byte binary with no sections → no memory section
-        let minimal: &[u8] = &[
-            0x00, 0x61, 0x73, 0x6D,
-            0x01, 0x00, 0x00, 0x00,
-        ];
+        let minimal: &[u8] = &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
         assert!(!has_memory_section(minimal));
     }
 
@@ -569,11 +600,8 @@ mod tests {
 
     #[test]
     fn test_find_wasm_custom_section_not_found() {
-        let minimal: &[u8] = &[
-            0x00, 0x61, 0x73, 0x6D,
-            0x01, 0x00, 0x00, 0x00,
-        ];
-        assert!(find_wasm_custom_section(minimal, "agentos.capabilities").is_none());
+        let minimal: &[u8] = &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
+        assert!(find_wasm_custom_section(minimal, "fractalos.capabilities").is_none());
     }
 
     #[test]
@@ -585,27 +613,23 @@ mod tests {
     #[test]
     fn test_validate_wasm_report_missing_exports_list() {
         // Minimal binary: magic + version, no exports
-        let wasm: &[u8] = &[
-            0x00, 0x61, 0x73, 0x6D,
-            0x01, 0x00, 0x00, 0x00,
-        ];
+        let wasm: &[u8] = &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
         let report = validate_wasm_report(wasm);
         assert!(!report.valid);
         // All required function exports (except "memory") should be listed
         for export in &["init", "handle_ppc", "health_check", "notified"] {
             assert!(
                 report.missing_exports.iter().any(|e| e == export),
-                "expected '{}' in missing_exports: {:?}", export, report.missing_exports
+                "expected '{}' in missing_exports: {:?}",
+                export,
+                report.missing_exports
             );
         }
     }
 
     #[test]
     fn test_validate_wasm_report_memory_goes_to_warnings_not_missing() {
-        let wasm: &[u8] = &[
-            0x00, 0x61, 0x73, 0x6D,
-            0x01, 0x00, 0x00, 0x00,
-        ];
+        let wasm: &[u8] = &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
         let report = validate_wasm_report(wasm);
         // "memory" is a warning, not a missing export
         assert!(
@@ -617,20 +641,22 @@ mod tests {
     #[test]
     fn test_validate_wasm_warnings_for_minimal_binary() {
         // A valid-magic binary with no imports/exports/custom sections
-        let wasm: &[u8] = &[
-            0x00, 0x61, 0x73, 0x6D,
-            0x01, 0x00, 0x00, 0x00,
-        ];
+        let wasm: &[u8] = &[0x00, 0x61, 0x73, 0x6D, 0x01, 0x00, 0x00, 0x00];
         let result = validate_wasm(wasm);
-        // Should warn about missing "agentos.capabilities" custom section
+        // Should warn about missing "fractalos.capabilities" custom section
         assert!(
-            result.warnings.iter().any(|w| w.contains("agentos.capabilities")),
-            "expected capabilities section warning, got: {:?}", result.warnings
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("fractalos.capabilities")),
+            "expected capabilities section warning, got: {:?}",
+            result.warnings
         );
         // Should warn about missing "aos" imports
         assert!(
             result.warnings.iter().any(|w| w.contains("aos")),
-            "expected aos import warning, got: {:?}", result.warnings
+            "expected aos import warning, got: {:?}",
+            result.warnings
         );
     }
 }

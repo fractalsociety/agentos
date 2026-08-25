@@ -12,7 +12,7 @@
  *   - TTBR0_EL2 pointing at the supplied L0 table
  *   - 48-bit VA, 4 KB granule, inner-shareable normal-WB caches
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

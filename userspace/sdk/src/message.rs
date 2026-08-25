@@ -1,7 +1,7 @@
 //! Typed inter-agent messaging
+use crate::identity::AgentId;
 use alloc::string::String;
 use alloc::vec::Vec;
-use crate::identity::AgentId;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageKind {
@@ -79,7 +79,9 @@ mod tests {
 
     #[test]
     fn message_target_broadcast_stores_topic() {
-        let target = MessageTarget::Broadcast { topic: "agent.events".into() };
+        let target = MessageTarget::Broadcast {
+            topic: "agent.events".into(),
+        };
         if let MessageTarget::Broadcast { topic } = target {
             assert_eq!(topic, "agent.events");
         } else {

@@ -1,7 +1,7 @@
 use crate::SetupArgs;
 
 pub fn run(args: &SetupArgs) -> anyhow::Result<()> {
-    println!("agentOS Development Environment Check");
+    println!("FractalOS Development Environment Check");
     println!("======================================");
     println!();
 
@@ -67,6 +67,7 @@ pub fn run(args: &SetupArgs) -> anyhow::Result<()> {
 }
 
 #[derive(Debug, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 enum Os {
     MacOs,
     Linux,

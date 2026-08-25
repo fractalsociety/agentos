@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# agentOS End-to-End Boot Test
+# FractalOS End-to-End Boot Test
 #
-# Launches agentOS in QEMU and waits for the expected boot-completion markers
+# Launches FractalOS in QEMU and waits for the expected boot-completion markers
 # in the serial output.  Designed for CI environments (no display, no KVM
 # required — falls back to TCG softemu automatically).
 #
@@ -11,11 +11,11 @@
 #   2 — SKIP (QEMU binary or kernel image not found; environment not set up)
 #
 # Environment variables (all optional):
-#   AGENTOS_BOOT_TIMEOUT   seconds to wait for boot markers (default: 60)
-#   AGENTOS_BOARD          override board selection (default: auto-detect)
-#   AGENTOS_QEMU           override QEMU binary (default: auto-detect)
-#   AGENTOS_IMAGE          override image path  (default: build/<board>/agentos.img)
-#   AGENTOS_DEBUG          if set, echo all QEMU serial output to stdout
+#   FRACTALOS_BOOT_TIMEOUT   seconds to wait for boot markers (default: 60)
+#   FRACTALOS_BOARD          override board selection (default: auto-detect)
+#   FRACTALOS_QEMU           override QEMU binary (default: auto-detect)
+#   FRACTALOS_IMAGE          override image path  (default: build/<board>/fractalos.img)
+#   FRACTALOS_DEBUG          if set, echo all QEMU serial output to stdout
 
 set -euo pipefail
 
@@ -36,7 +36,7 @@ warn()  { printf "${YELLOW}[WARN]${RESET} %s\n" "$*"; }
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-BOOT_TIMEOUT="${AGENTOS_BOOT_TIMEOUT:-60}"
+BOOT_TIMEOUT="${FRACTALOS_BOOT_TIMEOUT:-60}"
 
 # Locate repo root (parent of this script's directory).
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -47,8 +47,8 @@ NATIVE_ARCH="$(uname -m | sed 's/arm64/aarch64/')"
 UNAME_S="$(uname -s)"
 
 # Board selection.
-if [ -n "${AGENTOS_BOARD:-}" ]; then
-    BOARD="${AGENTOS_BOARD}"
+if [ -n "${FRACTALOS_BOARD:-}" ]; then
+    BOARD="${FRACTALOS_BOARD}"
 elif [ "${NATIVE_ARCH}" = "aarch64" ]; then
     BOARD="qemu_virt_aarch64"
 elif [ "${NATIVE_ARCH}" = "x86_64" ]; then
@@ -58,8 +58,8 @@ else
 fi
 
 # QEMU binary selection.
-if [ -n "${AGENTOS_QEMU:-}" ]; then
-    QEMU_BIN="${AGENTOS_QEMU}"
+if [ -n "${FRACTALOS_QEMU:-}" ]; then
+    QEMU_BIN="${FRACTALOS_QEMU}"
 elif [ "${BOARD}" = "qemu_virt_aarch64" ]; then
     QEMU_BIN="qemu-system-aarch64"
 elif [ "${BOARD}" = "x86_64_generic" ]; then
@@ -69,14 +69,14 @@ else
 fi
 
 # Kernel image path.
-if [ -n "${AGENTOS_IMAGE:-}" ]; then
-    IMAGE="${AGENTOS_IMAGE}"
+if [ -n "${FRACTALOS_IMAGE:-}" ]; then
+    IMAGE="${FRACTALOS_IMAGE}"
 else
-    IMAGE="${REPO_ROOT}/build/${BOARD}/agentos.img"
+    IMAGE="${REPO_ROOT}/build/${BOARD}/fractalos.img"
 fi
 
 # Temporary serial socket (matches the path used by the main Makefile).
-SERIAL_SOCK="/tmp/agentos-e2e-boot-test-$$.sock"
+SERIAL_SOCK="/tmp/fractalos-e2e-boot-test-$$.sock"
 
 # ── Boot-completion markers ───────────────────────────────────────────────────
 #
@@ -85,25 +85,25 @@ SERIAL_SOCK="/tmp/agentos-e2e-boot-test-$$.sock"
 # for the test to PASS.
 #
 # Source locations:
-#   [event_bus]     kernel/agentos-root-task/src/event_bus.c:143
-#   [net_server]    kernel/agentos-root-task/src/net_server.c:863
-#   [vibe_engine]   kernel/agentos-root-task/src/vibe_engine.c:718 (starting) +
+#   [event_bus]     kernel/fractalos-root-task/src/event_bus.c:143
+#   [net_server]    kernel/fractalos-root-task/src/net_server.c:863
+#   [vibe_engine]   kernel/fractalos-root-task/src/vibe_engine.c:718 (starting) +
 #                   the controller ack path
-#   [controller]    kernel/agentos-root-task/src/monitor.c:572
+#   [controller]    kernel/fractalos-root-task/src/monitor.c:572
 
 REQUIRED_MARKERS=(
     "[event_bus] READY"
     "[net_server] READY"
     "[vibe_engine] VibeEngine PD starting"
     "[controller] EventBus: READY"
-    "agentOS boot complete"
+    "FractalOS boot complete"
 )
 
 # ── Global state ──────────────────────────────────────────────────────────────
 
 QEMU_PID=""
 NC_PID=""
-SERIAL_LOG="/tmp/agentos-e2e-serial-$$.log"
+SERIAL_LOG="/tmp/fractalos-e2e-serial-$$.log"
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ trap cleanup EXIT INT TERM
 
 # ── Phase 1: Prerequisite checks ──────────────────────────────────────────────
 
-printf "\n${BOLD}=== agentOS End-to-End Boot Test ===${RESET}\n\n"
+printf "\n${BOLD}=== FractalOS End-to-End Boot Test ===${RESET}\n\n"
 info "Repo root : ${REPO_ROOT}"
 info "Board     : ${BOARD}"
 info "QEMU      : ${QEMU_BIN}"
@@ -336,7 +336,7 @@ if [ "${MARKERS_MISSING}" -gt 0 ]; then
     tail -40 "${SERIAL_LOG}" 2>/dev/null || true
 fi
 
-if [ -n "${AGENTOS_DEBUG:-}" ]; then
+if [ -n "${FRACTALOS_DEBUG:-}" ]; then
     printf "\n${BOLD}Full serial output:${RESET}\n"
     cat "${SERIAL_LOG}" 2>/dev/null || true
 fi

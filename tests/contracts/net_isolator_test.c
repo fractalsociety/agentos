@@ -11,12 +11,12 @@
  * TODO: replace opcode literals with
  *       #include "../../contracts/net-isolator/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define NET_OP_ISOLATE  0x01u
 #define NET_OP_PERMIT   0x02u

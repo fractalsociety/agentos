@@ -1,4 +1,4 @@
-//! Tool Registry — capability-gated tool registration and dispatch for agentOS
+//! Tool Registry — capability-gated tool registration and dispatch for FractalOS
 //!
 //! Agents register callable tools with typed schemas.
 //! Other agents invoke tools through capability-gated dispatch.
@@ -13,7 +13,7 @@
 //! 5. ToolRegistry validates Agent B's ToolCap, routes to Agent A's handler
 //! 6. Agent A processes the call, returns result through ToolRegistry
 //!
-//! This is the MCP layer for agentOS — but with hardware-enforced capability gating.
+//! This is the MCP layer for FractalOS — but with hardware-enforced capability gating.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
@@ -122,12 +122,15 @@ pub struct InvocationEntry {
 /// Ring-buffer invocation log (last `MAX_INVOCATION_LOG` entries)
 struct InvocationLog {
     entries: Vec<InvocationEntry>,
-    head:    usize,
+    head: usize,
 }
 
 impl InvocationLog {
     fn new() -> Self {
-        Self { entries: Vec::new(), head: 0 }
+        Self {
+            entries: Vec::new(),
+            head: 0,
+        }
     }
 
     fn push(&mut self, entry: InvocationEntry) {
@@ -142,8 +145,10 @@ impl InvocationLog {
     /// Return the last `n` entries in chronological order (most-recent last).
     fn recent(&self, n: usize) -> &[InvocationEntry] {
         let len = self.entries.len();
-        if len == 0 { return &[]; }
-        let want  = n.min(len);
+        if len == 0 {
+            return &[];
+        }
+        let want = n.min(len);
         let start = len.saturating_sub(want);
         &self.entries[start..]
     }
@@ -177,12 +182,12 @@ pub struct ToolRegistry {
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
-            tools:            BTreeMap::new(),
-            next_badge:       1,
-            access_grants:    BTreeMap::new(),
+            tools: BTreeMap::new(),
+            next_badge: 1,
+            access_grants: BTreeMap::new(),
             total_registered: 0,
             total_invocations: 0,
-            invocation_log:   InvocationLog::new(),
+            invocation_log: InvocationLog::new(),
         }
     }
 
@@ -207,7 +212,7 @@ impl ToolRegistry {
 
         let badge = self.next_badge;
         self.next_badge += 1;
-        tool.badge     = badge;
+        tool.badge = badge;
         tool.available = true;
 
         self.tools.insert(tool.name.clone(), tool);
@@ -268,14 +273,14 @@ impl ToolRegistry {
         if !self.tools.contains_key(&call.tool_name) {
             self.invocation_log.push(InvocationEntry {
                 timestamp_ms,
-                tool_id:    call.tool_name.clone(),
-                agent_id:   call.caller,
+                tool_id: call.tool_name.clone(),
+                agent_id: call.caller,
                 latency_us: 0,
-                success:    false,
+                success: false,
             });
             return ToolResult {
-                status:       ToolStatus::NotFound,
-                output:       Vec::new(),
+                status: ToolStatus::NotFound,
+                output: Vec::new(),
                 exec_time_us: 0,
             };
         }
@@ -283,14 +288,14 @@ impl ToolRegistry {
         if !self.check_access(call.caller_badge, &call.tool_name) {
             self.invocation_log.push(InvocationEntry {
                 timestamp_ms,
-                tool_id:    call.tool_name.clone(),
-                agent_id:   call.caller,
+                tool_id: call.tool_name.clone(),
+                agent_id: call.caller,
                 latency_us: 0,
-                success:    false,
+                success: false,
             });
             return ToolResult {
-                status:       ToolStatus::AccessDenied,
-                output:       Vec::new(),
+                status: ToolStatus::AccessDenied,
+                output: Vec::new(),
                 exec_time_us: 0,
             };
         }
@@ -300,14 +305,14 @@ impl ToolRegistry {
         if !tool.available {
             self.invocation_log.push(InvocationEntry {
                 timestamp_ms,
-                tool_id:    call.tool_name.clone(),
-                agent_id:   call.caller,
+                tool_id: call.tool_name.clone(),
+                agent_id: call.caller,
                 latency_us: 0,
-                success:    false,
+                success: false,
             });
             return ToolResult {
-                status:       ToolStatus::ProviderError("Tool unavailable".into()),
-                output:       Vec::new(),
+                status: ToolStatus::ProviderError("Tool unavailable".into()),
+                output: Vec::new(),
                 exec_time_us: 0,
             };
         }
@@ -322,15 +327,15 @@ impl ToolRegistry {
 
         self.invocation_log.push(InvocationEntry {
             timestamp_ms,
-            tool_id:    call.tool_name.clone(),
-            agent_id:   call.caller,
+            tool_id: call.tool_name.clone(),
+            agent_id: call.caller,
             latency_us: exec_time_us,
-            success:    true,
+            success: true,
         });
 
         ToolResult {
-            status:       ToolStatus::Ok,
-            output:       Vec::new(),
+            status: ToolStatus::Ok,
+            output: Vec::new(),
             exec_time_us,
         }
     }
@@ -339,7 +344,8 @@ impl ToolRegistry {
 
     /// List all tools visible to `caller_badge` (MCP-compatible tool listing)
     pub fn list(&self, caller_badge: u64) -> Vec<&ToolDef> {
-        self.tools.values()
+        self.tools
+            .values()
             .filter(|t| t.available && self.check_access(caller_badge, &t.name))
             .collect()
     }
@@ -356,11 +362,20 @@ impl ToolRegistry {
         let tools = self.list(caller_badge);
         let mut out = String::from("{\"tools\":[");
         for (i, t) in tools.iter().enumerate() {
-            if i > 0 { out.push(','); }
-            let schema = if t.input_schema.is_empty() { "{}" } else { &t.input_schema };
+            if i > 0 {
+                out.push(',');
+            }
+            let schema = if t.input_schema.is_empty() {
+                "{}"
+            } else {
+                &t.input_schema
+            };
             out.push_str(&alloc::format!(
                 "{{\"name\":\"{}\",\"description\":\"{}\",\"inputSchema\":{},\"calls\":{}}}",
-                t.name, t.description, schema, t.call_count
+                t.name,
+                t.description,
+                schema,
+                t.call_count
             ));
         }
         out.push_str("]}");
@@ -370,13 +385,16 @@ impl ToolRegistry {
     /// Search tools by keyword in name, description, or tags
     pub fn search(&self, query: &str, caller_badge: u64) -> Vec<&ToolDef> {
         let query_lower = query.to_lowercase();
-        self.tools.values()
+        self.tools
+            .values()
             .filter(|t| {
                 t.available
                     && self.check_access(caller_badge, &t.name)
                     && (t.name.to_lowercase().contains(&query_lower)
                         || t.description.to_lowercase().contains(&query_lower)
-                        || t.tags.iter().any(|tag| tag.to_lowercase().contains(&query_lower)))
+                        || t.tags
+                            .iter()
+                            .any(|tag| tag.to_lowercase().contains(&query_lower)))
             })
             .collect()
     }
@@ -397,13 +415,13 @@ impl ToolRegistry {
 
     /// Get aggregate registry statistics
     pub fn stats(&self) -> RegistryStats {
-        let available    = self.tools.values().filter(|t| t.available).count() as u64;
+        let available = self.tools.values().filter(|t| t.available).count() as u64;
         let total_calls: u64 = self.tools.values().map(|t| t.call_count).sum();
         RegistryStats {
-            total_registered:    self.total_registered,
+            total_registered: self.total_registered,
             currently_available: available,
-            total_invocations:   total_calls,
-            unique_providers:    self.count_unique_providers(),
+            total_invocations: total_calls,
+            unique_providers: self.count_unique_providers(),
         }
     }
 
@@ -427,10 +445,10 @@ impl Default for ToolRegistry {
 /// Registry statistics
 #[derive(Debug)]
 pub struct RegistryStats {
-    pub total_registered:    u64,
+    pub total_registered: u64,
     pub currently_available: u64,
-    pub total_invocations:   u64,
-    pub unique_providers:    u64,
+    pub total_invocations: u64,
+    pub unique_providers: u64,
 }
 
 // ============================================================================
@@ -444,26 +462,26 @@ mod tests {
 
     fn make_tool(name: &str, provider: [u8; 32]) -> ToolDef {
         ToolDef {
-            name:             name.into(),
-            description:      format!("Tool: {}", name),
-            input_schema:     "{}".into(),
-            output_schema:    "{}".into(),
+            name: name.into(),
+            description: format!("Tool: {}", name),
+            input_schema: "{}".into(),
+            output_schema: "{}".into(),
             provider,
             provider_channel: 0,
-            badge:            0,
-            tags:             vec!["test".into()],
-            call_count:       0,
+            badge: 0,
+            tags: vec!["test".into()],
+            call_count: 0,
             total_latency_us: 0,
-            available:        true,
+            available: true,
         }
     }
 
     fn sys_call(tool_name: &str) -> ToolCall {
         ToolCall {
-            tool_name:  tool_name.into(),
-            caller:     [0u8; 32],
+            tool_name: tool_name.into(),
+            caller: [0u8; 32],
             caller_badge: 0, // system — always allowed
-            input:      Vec::new(),
+            input: Vec::new(),
             timeout_us: 1_000,
         }
     }
@@ -473,9 +491,9 @@ mod tests {
     #[test]
     fn test_register_and_list() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
 
-        reg.register(make_tool("greet",  agent)).unwrap();
+        reg.register(make_tool("greet", agent)).unwrap();
         reg.register(make_tool("search", agent)).unwrap();
 
         let tools = reg.list(0);
@@ -485,7 +503,7 @@ mod tests {
     #[test]
     fn test_register_duplicate_same_provider() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("dup", agent)).unwrap();
         let err = reg.register(make_tool("dup", agent)).unwrap_err();
         assert_eq!(err, ToolStatus::ProviderError("Already registered".into()));
@@ -494,9 +512,10 @@ mod tests {
     #[test]
     fn test_registry_full() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         for i in 0..MAX_TOOLS {
-            reg.register(make_tool(&format!("tool-{}", i), agent)).unwrap();
+            reg.register(make_tool(&format!("tool-{}", i), agent))
+                .unwrap();
         }
         let err = reg.register(make_tool("overflow", agent)).unwrap_err();
         assert_eq!(err, ToolStatus::RegistryFull);
@@ -506,13 +525,16 @@ mod tests {
 
     #[test]
     fn test_deregister() {
-        let mut reg   = ToolRegistry::new();
-        let agent     = [0x01u8; 32];
-        let other     = [0x02u8; 32];
+        let mut reg = ToolRegistry::new();
+        let agent = [0x01u8; 32];
+        let other = [0x02u8; 32];
         reg.register(make_tool("my-tool", agent)).unwrap();
 
         // Wrong provider is denied
-        assert_eq!(reg.deregister("my-tool", &other), Err(ToolStatus::AccessDenied));
+        assert_eq!(
+            reg.deregister("my-tool", &other),
+            Err(ToolStatus::AccessDenied)
+        );
         // Correct provider succeeds
         assert_eq!(reg.deregister("my-tool", &agent), Ok(()));
         // Tool gone
@@ -522,7 +544,7 @@ mod tests {
     #[test]
     fn test_deregister_not_found() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         assert_eq!(reg.deregister("ghost", &agent), Err(ToolStatus::NotFound));
     }
 
@@ -531,16 +553,16 @@ mod tests {
     #[test]
     fn test_access_control() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("secret_tool", agent)).unwrap();
 
         // Badge 42 has no access
         let call = ToolCall {
-            tool_name:    "secret_tool".into(),
-            caller:       [0x02u8; 32],
+            tool_name: "secret_tool".into(),
+            caller: [0x02u8; 32],
             caller_badge: 42,
-            input:        Vec::new(),
-            timeout_us:   1_000,
+            input: Vec::new(),
+            timeout_us: 1_000,
         };
         assert_eq!(reg.invoke(&call, 0).status, ToolStatus::AccessDenied);
 
@@ -552,18 +574,18 @@ mod tests {
     #[test]
     fn test_wildcard_access() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("tool-a", agent)).unwrap();
         reg.register(make_tool("tool-b", agent)).unwrap();
         reg.grant_access(99, "*".into());
 
         for name in &["tool-a", "tool-b"] {
             let call = ToolCall {
-                tool_name:    alloc::string::String::from(*name),
-                caller:       [0x03u8; 32],
+                tool_name: alloc::string::String::from(*name),
+                caller: [0x03u8; 32],
                 caller_badge: 99,
-                input:        Vec::new(),
-                timeout_us:   1_000,
+                input: Vec::new(),
+                timeout_us: 1_000,
             };
             assert_eq!(reg.invoke(&call, 0).status, ToolStatus::Ok);
         }
@@ -574,7 +596,7 @@ mod tests {
     #[test]
     fn test_invoke_not_found() {
         let mut reg = ToolRegistry::new();
-        let result  = reg.invoke(&sys_call("nonexistent"), 0);
+        let result = reg.invoke(&sys_call("nonexistent"), 0);
         assert_eq!(result.status, ToolStatus::NotFound);
     }
 
@@ -582,8 +604,8 @@ mod tests {
 
     #[test]
     fn test_invoke_unavailable() {
-        let mut reg  = ToolRegistry::new();
-        let agent    = [0x01u8; 32];
+        let mut reg = ToolRegistry::new();
+        let agent = [0x01u8; 32];
         reg.register(make_tool("toggled", agent)).unwrap();
         reg.tools.get_mut("toggled").unwrap().available = false;
         let result = reg.invoke(&sys_call("toggled"), 0);
@@ -595,19 +617,19 @@ mod tests {
     #[test]
     fn test_search() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
 
         let mut web = make_tool("web_search", agent);
         web.description = "Search the web for information".into();
-        web.tags        = vec!["web".into(), "search".into()];
+        web.tags = vec!["web".into(), "search".into()];
         reg.register(web).unwrap();
 
         let mut calc = make_tool("calculator", agent);
         calc.description = "Perform mathematical calculations".into();
-        calc.tags        = vec!["math".into()];
+        calc.tags = vec!["math".into()];
         reg.register(calc).unwrap();
 
-        let results = reg.search("web",  0);
+        let results = reg.search("web", 0);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "web_search");
 
@@ -621,11 +643,11 @@ mod tests {
     #[test]
     fn test_invocation_log_records_entries() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("ping", agent)).unwrap();
 
-        reg.invoke(&sys_call("ping"),        100);
-        reg.invoke(&sys_call("ping"),        200);
+        reg.invoke(&sys_call("ping"), 100);
+        reg.invoke(&sys_call("ping"), 200);
         reg.invoke(&sys_call("nonexistent"), 300);
 
         assert_eq!(reg.invocation_log_len(), 3);
@@ -640,7 +662,7 @@ mod tests {
     #[test]
     fn test_invocation_log_recent_limited() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("p", agent)).unwrap();
 
         for ts in 0..20u64 {
@@ -653,7 +675,7 @@ mod tests {
     #[test]
     fn test_invocation_log_wraps() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("q", agent)).unwrap();
 
         for ts in 0..(MAX_INVOCATION_LOG + 20) as u64 {
@@ -664,9 +686,9 @@ mod tests {
 
     #[test]
     fn test_stats() {
-        let mut reg   = ToolRegistry::new();
-        let agent_a   = [0x01u8; 32];
-        let agent_b   = [0x02u8; 32];
+        let mut reg = ToolRegistry::new();
+        let agent_a = [0x01u8; 32];
+        let agent_b = [0x02u8; 32];
         reg.register(make_tool("t1", agent_a)).unwrap();
         reg.register(make_tool("t2", agent_b)).unwrap();
 
@@ -675,8 +697,8 @@ mod tests {
 
         let s = reg.stats();
         assert_eq!(s.currently_available, 2);
-        assert_eq!(s.total_invocations,   2);
-        assert_eq!(s.unique_providers,    2);
+        assert_eq!(s.total_invocations, 2);
+        assert_eq!(s.unique_providers, 2);
     }
 
     // ── Additional coverage ───────────────────────────────────────────────────
@@ -684,7 +706,7 @@ mod tests {
     #[test]
     fn test_register_assigns_unique_badges() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         let badge_a = reg.register(make_tool("tool-a", agent)).unwrap();
         let badge_b = reg.register(make_tool("tool-b", agent)).unwrap();
         assert_ne!(badge_a, badge_b);
@@ -692,21 +714,25 @@ mod tests {
 
     #[test]
     fn test_register_different_providers_same_name_allowed() {
-        let mut reg     = ToolRegistry::new();
-        let provider_a  = [0x01u8; 32];
-        let provider_b  = [0x02u8; 32];
+        let mut reg = ToolRegistry::new();
+        let provider_a = [0x01u8; 32];
+        let provider_b = [0x02u8; 32];
         // First registration from A
         reg.register(make_tool("shared-name", provider_a)).unwrap();
         // Second registration from B — different provider, so allowed
         // (overrides the tool entry with B's registration)
         let result = reg.register(make_tool("shared-name", provider_b));
-        assert!(result.is_ok(), "expected Ok for different provider, got {:?}", result);
+        assert!(
+            result.is_ok(),
+            "expected Ok for different provider, got {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_search_by_tag_matches() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
 
         let mut t = make_tool("embed", agent);
         t.tags = vec!["ml".into(), "embeddings".into()];
@@ -721,7 +747,7 @@ mod tests {
     #[test]
     fn test_search_case_insensitive() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         let mut t = make_tool("WeatherTool", agent);
         t.description = "Fetches WEATHER data".into();
         reg.register(t).unwrap();
@@ -734,17 +760,17 @@ mod tests {
     #[test]
     fn test_search_no_match_returns_empty() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("greet", agent)).unwrap();
         assert!(reg.search("zzz-no-match", 0).is_empty());
     }
 
     #[test]
     fn test_list_excludes_unavailable_tools() {
-        let mut reg  = ToolRegistry::new();
-        let agent    = [0x01u8; 32];
+        let mut reg = ToolRegistry::new();
+        let agent = [0x01u8; 32];
         reg.register(make_tool("available", agent)).unwrap();
-        reg.register(make_tool("disabled",  agent)).unwrap();
+        reg.register(make_tool("disabled", agent)).unwrap();
         reg.tools.get_mut("disabled").unwrap().available = false;
 
         let visible = reg.list(0);
@@ -755,7 +781,7 @@ mod tests {
     #[test]
     fn test_list_hides_tools_from_unauthorized_caller() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("private", agent)).unwrap();
         // Badge 77 has no grants — cannot see the tool
         let visible = reg.list(77);
@@ -765,7 +791,7 @@ mod tests {
     #[test]
     fn test_unregister_alias_works() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("my-tool", agent)).unwrap();
         assert!(reg.unregister("my-tool", &agent).is_ok());
         assert!(reg.list(0).is_empty());
@@ -774,7 +800,7 @@ mod tests {
     #[test]
     fn test_call_count_increments_on_each_invoke() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("counter", agent)).unwrap();
 
         reg.invoke(&sys_call("counter"), 0);
@@ -788,7 +814,7 @@ mod tests {
     #[test]
     fn test_total_registered_counts_all_registrations() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("t1", agent)).unwrap();
         reg.register(make_tool("t2", agent)).unwrap();
         // total_registered tracks how many register() calls succeeded
@@ -798,7 +824,7 @@ mod tests {
     #[test]
     fn test_stats_single_provider_unique_count() {
         let mut reg = ToolRegistry::new();
-        let agent   = [0x01u8; 32];
+        let agent = [0x01u8; 32];
         reg.register(make_tool("a", agent)).unwrap();
         reg.register(make_tool("b", agent)).unwrap();
         // Both tools from same provider

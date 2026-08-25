@@ -2,11 +2,11 @@
   "schema": "fractal.project.v1",
   "project": {
     "slug": "controlplane",
-    "title": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
-    "prompt": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
+    "title": "FractalOS Fractal Multi-Machine Worker and Companion Vertical Slice",
+    "prompt": "FractalOS Fractal Multi-Machine Worker and Companion Vertical Slice",
     "visibility": "private"
   },
-  "graph_hash": "sha256:022bd5107e6ae663c0432d4a51473f9de8585fbb729c06f9750801917c3014f3",
+  "graph_hash": "sha256:6d647d188fd80d4d46610e9e63dd0f5773e41217f3ff01e731f798d68aee405d",
   "graph": {
     "compiler_version": "fractal-harnessc/0.1.0",
     "edges": [
@@ -711,9 +711,9 @@
         }
       ]
     },
-    "graph_hash": "sha256:022bd5107e6ae663c0432d4a51473f9de8585fbb729c06f9750801917c3014f3",
-    "graph_id": "fg_99be8461a319c103d3b4b05a024e5ae9",
-    "harness_hash": "sha256:f6a080de403df08a701ccec73e89557bab00bbc3e843d56bd1132a334c1e0982",
+    "graph_hash": "sha256:6d647d188fd80d4d46610e9e63dd0f5773e41217f3ff01e731f798d68aee405d",
+    "graph_id": "fg_54ab7a95d0a4d05056178f90068761de",
+    "harness_hash": "sha256:67bb5beb88e2052e08cd79d65b32aece707a5e3540c8c7c6f4ff9a8a179d91e7",
     "nodes": [
       {
         "artifacts_produced": [],
@@ -852,8 +852,8 @@
           "estimated_remaining_tokens": 15000,
           "expected_artifact": "Versioned canonical event and TASK_VERIFY contracts with replay, tamper, leakage, and lifecycle failing tests",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/include/contracts/eventbus_contract.h",
-            "kernel/agentos-root-task/include/contracts/agent_task_contract.h",
+            "kernel/fractalos-root-task/include/contracts/eventbus_contract.h",
+            "kernel/fractalos-root-task/include/contracts/agent_task_contract.h",
             "interfaces/wit/fractalos-capabilities-v1/capabilities.wit",
             "tests/test_agent_event_stream.c",
             "tests/contracts/eventbus_test.c"
@@ -876,7 +876,7 @@
         },
         "human_intervention": false,
         "id": "canonical_event_verify_contract_tests",
-        "instruction": "Recover or define the append-only Agent event schema and TASK_VERIFY version transition in kernel/agentos-root-task/include/contracts/eventbus_contract.h, kernel/agentos-root-task/include/contracts/agent_task_contract.h, and interfaces/wit/fractalos-capabilities-v1/capabilities.wit. Add failing tests/test_agent_event_stream.c and tests/contracts/eventbus_test.c cases proving every task, nested call, object transition, mailbox event, budget, authority change, verification, effect, checkpoint, commit, disconnect, and reconnect has a hash-chained event; prove exact replay and reject tamper, truncation, reorder, cross-scope references, commit without matching TASK_VERIFY evidence, and any candidate-visible PROMOTION_VERIFY path.",
+        "instruction": "Recover or define the append-only Agent event schema and TASK_VERIFY version transition in kernel/fractalos-root-task/include/contracts/eventbus_contract.h, kernel/fractalos-root-task/include/contracts/agent_task_contract.h, and interfaces/wit/fractalos-capabilities-v1/capabilities.wit. Add failing tests/test_agent_event_stream.c and tests/contracts/eventbus_test.c cases proving every task, nested call, object transition, mailbox event, budget, authority change, verification, effect, checkpoint, commit, disconnect, and reconnect has a hash-chained event; prove exact replay and reject tamper, truncation, reorder, cross-scope references, commit without matching TASK_VERIFY evidence, and any candidate-visible PROMOTION_VERIFY path.",
         "kind": "inference",
         "memory_scopes": [
           "work:goal",
@@ -1063,8 +1063,8 @@
           "expected_artifact": "A versioned companion WIT and PD contract with failing bounded export and denial tests",
           "files_or_systems_affected": [
             "interfaces/wit/fractal-companion-v1/companion.wit",
-            "kernel/agentos-root-task/include/contracts/companion_export_contract.h",
-            "kernel/agentos-root-task/include/agentos.h",
+            "kernel/fractalos-root-task/include/contracts/companion_export_contract.h",
+            "kernel/fractalos-root-task/include/fractalos.h",
             "tests/contracts/companion_export_test.c",
             "tests/contract/test_companion_schema.rs",
             "xtask/Cargo.toml"
@@ -1088,7 +1088,7 @@
         },
         "human_intervention": false,
         "id": "companion_export_contract_tests",
-        "instruction": "Create interfaces/wit/fractal-companion-v1/companion.wit and kernel/agentos-root-task/include/contracts/companion_export_contract.h before any implementation. Define versioned Project, Progress, DailyRoot, HealthAdapter, WorkerMemory, EventCursor, and TaskIntent types with explicit field bounds, ObjectIDs, event ranges, authority epochs, redaction classes, pagination, and typed errors. Add new opcodes to kernel/agentos-root-task/include/agentos.h and failing tests/contracts/companion_export_test.c plus tests/contract/test_companion_schema.rs for every request, denial, stale cursor, oversized result, and schema compatibility path. The contract must not expose raw credentials, personal records, shell commands, filesystem paths, or promotion data.",
+        "instruction": "Create interfaces/wit/fractal-companion-v1/companion.wit and kernel/fractalos-root-task/include/contracts/companion_export_contract.h before any implementation. Define versioned Project, Progress, DailyRoot, HealthAdapter, WorkerMemory, EventCursor, and TaskIntent types with explicit field bounds, ObjectIDs, event ranges, authority epochs, redaction classes, pagination, and typed errors. Add new opcodes to kernel/fractalos-root-task/include/fractalos.h and failing tests/contracts/companion_export_test.c plus tests/contract/test_companion_schema.rs for every request, denial, stale cursor, oversized result, and schema compatibility path. The contract must not expose raw credentials, personal records, shell commands, filesystem paths, or promotion data.",
         "kind": "inference",
         "memory_scopes": [
           "work:goal",
@@ -1174,13 +1174,13 @@
           "expected_artifact": "A capability-isolated GPU command and tensor pipeline with ownership, revocation, bounds, and measured zero-copy behavior",
           "files_or_systems_affected": [
             "Makefile",
-            "kernel/agentos-root-task/include/agentos.h",
-            "kernel/agentos-root-task/include/gpu_sched.h",
-            "kernel/agentos-root-task/include/gpu_shmem.h",
-            "kernel/agentos-root-task/include/contracts/gpu_sched_contract.h",
-            "kernel/agentos-root-task/include/contracts/gpu_shmem_contract.h",
-            "kernel/agentos-root-task/src/gpu_sched.c",
-            "kernel/agentos-root-task/src/gpu_shmem.c",
+            "kernel/fractalos-root-task/include/fractalos.h",
+            "kernel/fractalos-root-task/include/gpu_sched.h",
+            "kernel/fractalos-root-task/include/gpu_shmem.h",
+            "kernel/fractalos-root-task/include/contracts/gpu_sched_contract.h",
+            "kernel/fractalos-root-task/include/contracts/gpu_shmem_contract.h",
+            "kernel/fractalos-root-task/src/gpu_sched.c",
+            "kernel/fractalos-root-task/src/gpu_shmem.c",
             "userspace/gpu_shmem_linux/gpu_shmem_linux.c",
             "tests/contracts/gpu_sched_test.c",
             "tests/contracts/gpu_shmem_test.c",
@@ -1203,7 +1203,7 @@
         },
         "human_intervention": false,
         "id": "complete_gpu_pipeline",
-        "instruction": "Complete the existing GPU scheduler and shared-memory contracts in kernel/agentos-root-task/src/gpu_sched.c, kernel/agentos-root-task/src/gpu_shmem.c, and userspace/gpu_shmem_linux/gpu_shmem_linux.c without adding guest-specific drivers. Enforce exclusive capability-scoped device and queue ownership, validated command descriptors, tensor buffer ownership transfer, bounds, synchronization, quotas, revocation cleanup, backpressure, and zero-copy where the platform supports it. Add or extend tests/contracts/gpu_sched_test.c and tests/contracts/gpu_shmem_test.c first, include emulated contract proof separately from physical-device proof, and emit performance records compatible with performance/thresholds.json.",
+        "instruction": "Complete the existing GPU scheduler and shared-memory contracts in kernel/fractalos-root-task/src/gpu_sched.c, kernel/fractalos-root-task/src/gpu_shmem.c, and userspace/gpu_shmem_linux/gpu_shmem_linux.c without adding guest-specific drivers. Enforce exclusive capability-scoped device and queue ownership, validated command descriptors, tensor buffer ownership transfer, bounds, synchronization, quotas, revocation cleanup, backpressure, and zero-copy where the platform supports it. Add or extend tests/contracts/gpu_sched_test.c and tests/contracts/gpu_shmem_test.c first, include emulated contract proof separately from physical-device proof, and emit performance records compatible with performance/thresholds.json.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -1483,11 +1483,11 @@
           "estimated_remaining_tokens": 24000,
           "expected_artifact": "A single-owner IRQ-driven native NIC and WireGuard handoff with bounded zero-copy rings and host coverage",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/src/wg_net.c",
+            "kernel/fractalos-root-task/src/wg_net.c",
             "services/net-server/net_server.c",
             "services/net-service/net_pd.c",
-            "kernel/agentos-root-task/src/system_desc_aarch64.c",
-            "kernel/agentos-root-task/src/main.c",
+            "kernel/fractalos-root-task/src/system_desc_aarch64.c",
+            "kernel/fractalos-root-task/src/main.c",
             "tests/test_net_fastpath.c",
             "tests/test_net_wg_handoff.c"
           ],
@@ -1508,7 +1508,7 @@
         },
         "human_intervention": false,
         "id": "finish_native_network",
-        "instruction": "Using the repaired host tests, finish the current network handoff across kernel/agentos-root-task/src/wg_net.c, services/net-server/net_server.c, services/net-service/net_pd.c, kernel/agentos-root-task/src/system_desc_aarch64.c, and kernel/agentos-root-task/src/main.c. Keep net_pd as the only writable NIC MMIO and DMA owner, use IRQ-driven bounded RX and TX queues, enforce ring ownership and backpressure, route WireGuard session traffic through the net_device contract, preserve Headscale netmap compatibility, and extend tests/test_net_fastpath.c and tests/test_net_wg_handoff.c before each behavioral change. Do not introduce polling as the claimed production path or overwrite unrelated dirty work.",
+        "instruction": "Using the repaired host tests, finish the current network handoff across kernel/fractalos-root-task/src/wg_net.c, services/net-server/net_server.c, services/net-service/net_pd.c, kernel/fractalos-root-task/src/system_desc_aarch64.c, and kernel/fractalos-root-task/src/main.c. Keep net_pd as the only writable NIC MMIO and DMA owner, use IRQ-driven bounded RX and TX queues, enforce ring ownership and backpressure, route WireGuard session traffic through the net_device contract, preserve Headscale netmap compatibility, and extend tests/test_net_fastpath.c and tests/test_net_wg_handoff.c before each behavioral change. Do not introduce polling as the claimed production path or overwrite unrelated dirty work.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -1588,9 +1588,9 @@
           "files_or_systems_affected": [
             "tests/test_wg_net_sessions.c",
             "tests/test_net_wg_handoff.c",
-            "kernel/agentos-root-task/include/wg_net.h",
-            "kernel/agentos-root-task/include/net_server.h",
-            "kernel/agentos-root-task/include/contracts/net_device_contract.h",
+            "kernel/fractalos-root-task/include/wg_net.h",
+            "kernel/fractalos-root-task/include/net_server.h",
+            "kernel/fractalos-root-task/include/contracts/net_device_contract.h",
             "xtask/src/cmd_host_test.rs"
           ],
           "similarity_to_other_active_nodes": {
@@ -1609,7 +1609,7 @@
         },
         "human_intervention": false,
         "id": "fix_wg_compile_regression",
-        "instruction": "Diagnose and fix the compile failure in tests/test_wg_net_sessions.c against the dirty in-progress interfaces in kernel/agentos-root-task/include/wg_net.h, kernel/agentos-root-task/include/net_server.h, kernel/agentos-root-task/include/contracts/net_device_contract.h, services/net-server/net_server.c, services/net-service/net_pd.c, and xtask/src/cmd_host_test.rs. Preserve the intended net_pd ownership and network handoff, update the test before production code when behavior changes, make the smallest coherent compatibility correction, and do not revert or overwrite unrelated dirty edits.",
+        "instruction": "Diagnose and fix the compile failure in tests/test_wg_net_sessions.c against the dirty in-progress interfaces in kernel/fractalos-root-task/include/wg_net.h, kernel/fractalos-root-task/include/net_server.h, kernel/fractalos-root-task/include/contracts/net_device_contract.h, services/net-server/net_server.c, services/net-service/net_pd.c, and xtask/src/cmd_host_test.rs. Preserve the intended net_pd ownership and network handoff, update the test before production code when behavior changes, make the smallest coherent compatibility correction, and do not revert or overwrite unrelated dirty edits.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -1678,7 +1678,7 @@
         "efficiency": {
           "confidence_still_useful": "0.98",
           "current_assumptions": [
-            "Existing AgentOS per-PD contracts remain the stable lower ABI",
+            "Existing FractalOS per-PD contracts remain the stable lower ABI",
             "Long operations must return handles rather than hold a synchronous seL4 call"
           ],
           "dependencies": [
@@ -1688,8 +1688,8 @@
           "expected_artifact": "Versioned WIT and C IPC contracts with failing host and real-target tests for the Fractal task boundary",
           "files_or_systems_affected": [
             "interfaces/wit/fractalos-capabilities-v1/capabilities.wit",
-            "kernel/agentos-root-task/include/contracts/agent_task_contract.h",
-            "kernel/agentos-root-task/include/agentos.h",
+            "kernel/fractalos-root-task/include/contracts/agent_task_contract.h",
+            "kernel/fractalos-root-task/include/fractalos.h",
             "tests/contracts/agent_task_test.c",
             "tests/test_agent_task_gateway.c",
             "tests/harness/target_contract_runner.c"
@@ -1711,7 +1711,7 @@
         },
         "human_intervention": false,
         "id": "fractal_controlplane_contract_tests",
-        "instruction": "Restore or create interfaces/wit/fractalos-capabilities-v1/capabilities.wit and define a versioned asynchronous Fractal control-plane boundary in kernel/agentos-root-task/include/contracts/agent_task_contract.h and kernel/agentos-root-task/include/agentos.h before implementation. Cover task submission, ProgramHandle and TaskHandle polling, cancellation, budget, authority epoch, TASK_VERIFY evidence, terminal results, and typed worker identity without paths, commands, URLs, credentials, or provider locators. Add failing host and target contract tests in tests/contracts/agent_task_test.c and tests/test_agent_task_gateway.c for every new opcode, error, stale handle, revocation, and nonblocking invariant, and register them in the native test runners.",
+        "instruction": "Restore or create interfaces/wit/fractalos-capabilities-v1/capabilities.wit and define a versioned asynchronous Fractal control-plane boundary in kernel/fractalos-root-task/include/contracts/agent_task_contract.h and kernel/fractalos-root-task/include/fractalos.h before implementation. Cover task submission, ProgramHandle and TaskHandle polling, cancellation, budget, authority epoch, TASK_VERIFY evidence, terminal results, and typed worker identity without paths, commands, URLs, credentials, or provider locators. Add failing host and target contract tests in tests/contracts/agent_task_test.c and tests/test_agent_task_gateway.c for every new opcode, error, stale handle, revocation, and nonblocking invariant, and register them in the native test runners.",
         "kind": "inference",
         "memory_scopes": [
           "work:goal",
@@ -1781,7 +1781,7 @@
           "confidence_still_useful": "0.97",
           "current_assumptions": [
             "Only coarse user-authorized summaries belong at the companion boundary",
-            "Health source systems remain external and are not implemented in AgentOS core"
+            "Health source systems remain external and are not implemented in FractalOS core"
           ],
           "dependencies": [
             "reconcile_prd_beads",
@@ -1791,7 +1791,7 @@
           "expected_artifact": "A minimum-necessary health summary boundary and failing privacy and revocation tests",
           "files_or_systems_affected": [
             "interfaces/wit/fractal-companion-v1/companion.wit",
-            "kernel/agentos-root-task/include/contracts/companion_export_contract.h",
+            "kernel/fractalos-root-task/include/contracts/companion_export_contract.h",
             "tests/contract/test_companion_schema.rs",
             "tests/contract/test_health_adapter.rs",
             "tests/contracts/companion_export_compile_test.c",
@@ -1900,21 +1900,21 @@
           "estimated_remaining_tokens": 29000,
           "expected_artifact": "A scoped actor lifecycle with bounded mailboxes, warm pools, topology placement, passivation, reactivation, and honest active-frontier memory telemetry",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/Makefile",
-            "kernel/agentos-root-task/include/agentos.h",
-            "kernel/agentos-root-task/include/core_affinity.h",
-            "kernel/agentos-root-task/include/contracts/actor_lifecycle_contract.h",
-            "kernel/agentos-root-task/include/contracts/agent_pool_contract.h",
-            "kernel/agentos-root-task/include/contracts/agent_task_contract.h",
-            "kernel/agentos-root-task/include/contracts/mem_profiler_contract.h",
-            "kernel/agentos-root-task/include/contracts/quota_pd_contract.h",
-            "kernel/agentos-root-task/include/contracts/snapshot_sched_contract.h",
-            "kernel/agentos-root-task/src/agent_pool.c",
-            "kernel/agentos-root-task/src/actor_lifecycle.c",
-            "kernel/agentos-root-task/src/snapshot_sched.c",
-            "kernel/agentos-root-task/src/mem_profiler.c",
-            "kernel/agentos-root-task/src/quota_pd.c",
-            "kernel/agentos-root-task/src/core_affinity.c",
+            "kernel/fractalos-root-task/Makefile",
+            "kernel/fractalos-root-task/include/fractalos.h",
+            "kernel/fractalos-root-task/include/core_affinity.h",
+            "kernel/fractalos-root-task/include/contracts/actor_lifecycle_contract.h",
+            "kernel/fractalos-root-task/include/contracts/agent_pool_contract.h",
+            "kernel/fractalos-root-task/include/contracts/agent_task_contract.h",
+            "kernel/fractalos-root-task/include/contracts/mem_profiler_contract.h",
+            "kernel/fractalos-root-task/include/contracts/quota_pd_contract.h",
+            "kernel/fractalos-root-task/include/contracts/snapshot_sched_contract.h",
+            "kernel/fractalos-root-task/src/agent_pool.c",
+            "kernel/fractalos-root-task/src/actor_lifecycle.c",
+            "kernel/fractalos-root-task/src/snapshot_sched.c",
+            "kernel/fractalos-root-task/src/mem_profiler.c",
+            "kernel/fractalos-root-task/src/quota_pd.c",
+            "kernel/fractalos-root-task/src/core_affinity.c",
             "tests/contracts/agent_pool_test.c",
             "tests/contracts/mem_profiler_test.c",
             "tests/contracts/snapshot_sched_test.c",
@@ -2026,13 +2026,13 @@
           "expected_artifact": "A deterministic AgentLang-to-WASM runtime with generated bindings, validated AOT cache, structured concurrency, and governed provider swaps",
           "files_or_systems_affected": [
             "Cargo.toml",
-            "kernel/agentos-root-task/include/agent_lang.h",
-            "kernel/agentos-root-task/include/agent_ir.h",
-            "kernel/agentos-root-task/include/agent_isa.h",
-            "kernel/agentos-root-task/include/contracts/agent_isa_contract.h",
-            "kernel/agentos-root-task/src/agent_lang.c",
-            "kernel/agentos-root-task/src/agent_ir.c",
-            "kernel/agentos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/include/agent_lang.h",
+            "kernel/fractalos-root-task/include/agent_ir.h",
+            "kernel/fractalos-root-task/include/agent_isa.h",
+            "kernel/fractalos-root-task/include/contracts/agent_isa_contract.h",
+            "kernel/fractalos-root-task/src/agent_lang.c",
+            "kernel/fractalos-root-task/src/agent_ir.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
             "libs/fractal-runtime/Cargo.toml",
             "libs/fractal-runtime/src/lib.rs",
             "libs/fractal-runtime/src/generated.rs",
@@ -2061,7 +2061,7 @@
         },
         "human_intervention": false,
         "id": "implement_agentlang_runtime",
-        "instruction": "Recover or implement kernel/agentos-root-task/include/agent_lang.h, kernel/agentos-root-task/include/agent_ir.h, their C bootstrap sources, and the production trusted no_std Rust runtime under libs/fractal-runtime. Generate AgentLang prelude and Rust/WASM bindings from interfaces/wit/fractalos-capabilities-v1/capabilities.wit; deterministically parse, type and effect check, lower to canonical Agent IR, compile and validate capability-scoped WASM, cache artifacts by full content hash, execute bounded structured concurrency, and validate immutable interface-to-provider service graphs. Every nested call must reauthorize capability, scope, budget, epoch, and provider concurrency safety. Add determinism, cache-corruption, provider-swap, undeclared-import, limit, cancellation, deadline, and child-failure tests and make them pass.",
+        "instruction": "Recover or implement kernel/fractalos-root-task/include/agent_lang.h, kernel/fractalos-root-task/include/agent_ir.h, their C bootstrap sources, and the production trusted no_std Rust runtime under libs/fractal-runtime. Generate AgentLang prelude and Rust/WASM bindings from interfaces/wit/fractalos-capabilities-v1/capabilities.wit; deterministically parse, type and effect check, lower to canonical Agent IR, compile and validate capability-scoped WASM, cache artifacts by full content hash, execute bounded structured concurrency, and validate immutable interface-to-provider service graphs. Every nested call must reauthorize capability, scope, budget, epoch, and provider concurrency safety. Add determinism, cache-corruption, provider-swap, undeclared-import, limit, cancellation, deadline, and child-failure tests and make them pass.",
         "kind": "inference",
         "memory_scopes": [
           "work:goal",
@@ -2142,8 +2142,8 @@
           "estimated_remaining_tokens": 26000,
           "expected_artifact": "A durable canonical event stream with deterministic replay, TASK_VERIFY evidence, and verified-only root publication",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/src/event_bus.c",
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
+            "kernel/fractalos-root-task/src/event_bus.c",
+            "kernel/fractalos-root-task/src/agent_task_gateway.c",
             "services/agentfs/agentfs.c",
             "tests/test_agent_event_stream.c",
             "tests/contracts/eventbus_test.c"
@@ -2166,7 +2166,7 @@
         },
         "human_intervention": false,
         "id": "implement_canonical_event_verify",
-        "instruction": "Implement the canonical hash-chained event stream and TASK_VERIFY transition required by tests/test_agent_event_stream.c across kernel/agentos-root-task/src/event_bus.c, kernel/agentos-root-task/src/agent_task_gateway.c, and services/agentfs/agentfs.c. Emit a bounded authenticated event for every model-visible byte or immutable reference, program and nested call state, object or root change, actor message, budget, authority epoch, effect, checkpoint, verification, commit, disconnect, and reconnect. Derive replayed DAG, exact context, budget, effect ledger, and root state from a pinned range; reject tamper, truncation, reorder, scope crossing, and commits without matching successful TASK_VERIFY evidence. Keep hidden PROMOTION_VERIFY outside candidate contracts and events visible to candidates.",
+        "instruction": "Implement the canonical hash-chained event stream and TASK_VERIFY transition required by tests/test_agent_event_stream.c across kernel/fractalos-root-task/src/event_bus.c, kernel/fractalos-root-task/src/agent_task_gateway.c, and services/agentfs/agentfs.c. Emit a bounded authenticated event for every model-visible byte or immutable reference, program and nested call state, object or root change, actor message, budget, authority epoch, effect, checkpoint, verification, commit, disconnect, and reconnect. Derive replayed DAG, exact context, budget, effect ledger, and root state from a pinned range; reject tamper, truncation, reorder, scope crossing, and commits without matching successful TASK_VERIFY evidence. Keep hidden PROMOTION_VERIFY outside candidate contracts and events visible to candidates.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -2238,7 +2238,7 @@
           "confidence_still_useful": "0.95",
           "current_assumptions": [
             "The live environment supplies the official Claude compatibility CLI and explicit opt-in",
-            "CLI-specific event parsing remains isolated from core AgentOS contracts"
+            "CLI-specific event parsing remains isolated from core FractalOS contracts"
           ],
           "dependencies": [
             "claude_hermes_compat_contract_tests",
@@ -2376,7 +2376,7 @@
         },
         "human_intervention": false,
         "id": "implement_codex_worker",
-        "instruction": "Refactor the existing official Codex path in tools/run-agent and tests/e2e/test_codex_agent.sh to implement interfaces/wit/fractal-worker-v1/worker.wit and the common Fractal session envelope. Preserve official codex exec --json, ephemeral isolated Git workspaces, explicit workspace-write sandboxing, the narrow AgentOS MCP allowlist, structured usage and max-RSS capture, and credential-free version preflight. Add manifests/workers/codex.toml and ensure live authentication uses an opaque secret handle or inherited ephemeral process channel that is never persisted or logged.",
+        "instruction": "Refactor the existing official Codex path in tools/run-agent and tests/e2e/test_codex_agent.sh to implement interfaces/wit/fractal-worker-v1/worker.wit and the common Fractal session envelope. Preserve official codex exec --json, ephemeral isolated Git workspaces, explicit workspace-write sandboxing, the narrow FractalOS MCP allowlist, structured usage and max-RSS capture, and credential-free version preflight. Add manifests/workers/codex.toml and ensure live authentication uses an opaque secret handle or inherited ephemeral process channel that is never persisted or logged.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -2456,11 +2456,11 @@
           "estimated_remaining_tokens": 22000,
           "expected_artifact": "A bounded, registered companion export PD with passing in-repository contract tests and no controlplane UI code",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/Makefile",
-            "kernel/agentos-root-task/src/companion_export.c",
-            "kernel/agentos-root-task/agentos.toml",
-            "kernel/agentos-root-task/agentos.system",
-            "kernel/agentos-root-task/agentos-aarch64.system",
+            "kernel/fractalos-root-task/Makefile",
+            "kernel/fractalos-root-task/src/companion_export.c",
+            "kernel/fractalos-root-task/fractalos.toml",
+            "kernel/fractalos-root-task/fractalos.system",
+            "kernel/fractalos-root-task/fractalos-aarch64.system",
             "tests/contracts/companion_export_test.c"
           ],
           "similarity_to_other_active_nodes": {
@@ -2480,7 +2480,7 @@
         },
         "human_intervention": false,
         "id": "implement_companion_gateway",
-        "instruction": "Implement only the non-UI companion export PD in kernel/agentos-root-task/src/companion_export.c using exactly kernel/agentos-root-task/include/contracts/companion_export_contract.h. The PD must project bounded event-pinned reads and narrowly scoped TaskIntent submissions, validate schema versions, enforce capability badges, request limits, pagination, stale cursors, and redaction, and register the PD in the root-task build and both Microkit system descriptions. Do not write outside this repository and do not add browser assets, JavaScript, TypeScript, HTML, CSS, WebSockets, or an HTTP server to controlplane; the separately versioned Rust gateway and companion application are an explicit external follow-up recorded by build_companion_pages.",
+        "instruction": "Implement only the non-UI companion export PD in kernel/fractalos-root-task/src/companion_export.c using exactly kernel/fractalos-root-task/include/contracts/companion_export_contract.h. The PD must project bounded event-pinned reads and narrowly scoped TaskIntent submissions, validate schema versions, enforce capability badges, request limits, pagination, stale cursors, and redaction, and register the PD in the root-task build and both Microkit system descriptions. Do not write outside this repository and do not add browser assets, JavaScript, TypeScript, HTML, CSS, WebSockets, or an HTTP server to controlplane; the separately versioned Rust gateway and companion application are an explicit external follow-up recorded by build_companion_pages.",
         "kind": "inference",
         "memory_scopes": [
           "work:goal",
@@ -2773,9 +2773,9 @@
           "estimated_remaining_tokens": 12000,
           "expected_artifact": "A build-integrated and target-checked Fractal control-plane bridge",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/agentos.toml",
-            "kernel/agentos-root-task/agentos.system",
-            "kernel/agentos-root-task/agentos-aarch64.system",
+            "kernel/fractalos-root-task/fractalos.toml",
+            "kernel/fractalos-root-task/fractalos.system",
+            "kernel/fractalos-root-task/fractalos-aarch64.system",
             "tools/topology.yaml",
             "services/event-bus/event_bus.c",
             "userspace/agents/codex-harness/codex_harness_pd.c",
@@ -2786,7 +2786,7 @@
             "implement_fractal_controlplane_host": "0.52",
             "implement_fractal_controlplane_sdk": "0.42"
           },
-          "verification_plan": "Run the focused gateway and controller suites, cargo test -p agentos-sdk, topology validation, and AArch64 plus x86_64 target compile checks."
+          "verification_plan": "Run the focused gateway and controller suites, cargo test -p fractalos-sdk, topology validation, and AArch64 plus x86_64 target compile checks."
         },
         "execution": {
           "mode": "sequential",
@@ -2799,7 +2799,7 @@
         },
         "human_intervention": false,
         "id": "implement_fractal_controlplane",
-        "instruction": "Integrate the completed C host bridge and generated Rust SDK into the existing AgentOS build only. Update the two system descriptions, root-task manifest, topology, existing EventBus service adapter, compatibility harness binding, and controller integration test without creating another PD contract or service implementation. Run the focused host suites plus both target-architecture compile checks and leave the canonical branch in a verified buildable state.",
+        "instruction": "Integrate the completed C host bridge and generated Rust SDK into the existing FractalOS build only. Update the two system descriptions, root-task manifest, topology, existing EventBus service adapter, compatibility harness binding, and controller integration test without creating another PD contract or service implementation. Run the focused host suites plus both target-architecture compile checks and leave the canonical branch in a verified buildable state.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -2882,10 +2882,10 @@
           "estimated_remaining_tokens": 12000,
           "expected_artifact": "A tested nonblocking capability-authorized C gateway and canonical EventBus adapter",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/include/agent_task_gateway.h",
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
-            "kernel/agentos-root-task/src/event_bus.c",
-            "kernel/agentos-root-task/src/monitor.c",
+            "kernel/fractalos-root-task/include/agent_task_gateway.h",
+            "kernel/fractalos-root-task/src/agent_task_gateway.c",
+            "kernel/fractalos-root-task/src/event_bus.c",
+            "kernel/fractalos-root-task/src/monitor.c",
             "tests/contracts/agent_task_test.c",
             "tests/test_agent_task_gateway.c"
           ],
@@ -2998,7 +2998,7 @@
             "fractal_controlplane_contract_tests": "0.61",
             "implement_agentlang_runtime": "0.31"
           },
-          "verification_plan": "Run WIT parsing or generation checks, cargo test -p agentos-sdk, no_std compilation where supported, formatting, Clippy, and duplicate-binding checks."
+          "verification_plan": "Run WIT parsing or generation checks, cargo test -p fractalos-sdk, no_std compilation where supported, formatting, Clippy, and duplicate-binding checks."
         },
         "execution": {
           "mode": "parallel",
@@ -3011,7 +3011,7 @@
         },
         "human_intervention": false,
         "id": "implement_fractal_controlplane_sdk",
-        "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Fix the reproduced cargo check -p agentos-sdk --no-default-features --features wit-bindings failure by adding the wit-bindgen 0.36 `std_feature` generator option inside the existing wit_bindgen::generate! block in userspace/sdk/src/lib.rs; this gates generated std::error::Error implementations without making wit-bindings imply std. Do not inspect Cargo registry paths outside the scoped worktree. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the agentos-sdk tests, WIT validation, default no_std check, and wit-bindings no_std check pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
+        "instruction": "Continue from the preserved control-plane checkpoint already present on the canonical branch. Complete only the fractalos-capabilities WIT world and generated no_std-compatible Rust SDK binding surface. Fix the reproduced cargo check -p fractalos-sdk --no-default-features --features wit-bindings failure by adding the wit-bindgen 0.36 `std_feature` generator option inside the existing wit_bindgen::generate! block in userspace/sdk/src/lib.rs; this gates generated std::error::Error implementations without making wit-bindings imply std. Do not inspect Cargo registry paths outside the scoped worktree. Keep WIT as the single source of truth, eliminate duplicate handwritten ABI types, retain explicit Result and typed handle semantics, and make the fractalos-sdk tests, WIT validation, default no_std check, and wit-bindings no_std check pass. Do not edit the C gateway, system descriptions, topology, or test contracts.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -3410,17 +3410,17 @@
           "estimated_remaining_tokens": 23000,
           "expected_artifact": "Audience-bound remote authorization with fenced leases, immediate revocation, denial events, and adversarial tests",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/Makefile",
-            "kernel/agentos-root-task/include/agent_task_gateway.h",
-            "kernel/agentos-root-task/include/remote_grant.h",
-            "kernel/agentos-root-task/include/contracts/auth_server_contract.h",
-            "kernel/agentos-root-task/include/contracts/cap_broker_contract.h",
-            "kernel/agentos-root-task/include/contracts/mesh_agent_contract.h",
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
-            "kernel/agentos-root-task/src/cap_broker.c",
-            "kernel/agentos-root-task/src/auth_server.c",
-            "kernel/agentos-root-task/src/mesh_agent.c",
-            "kernel/agentos-root-task/src/remote_grant.c",
+            "kernel/fractalos-root-task/Makefile",
+            "kernel/fractalos-root-task/include/agent_task_gateway.h",
+            "kernel/fractalos-root-task/include/remote_grant.h",
+            "kernel/fractalos-root-task/include/contracts/auth_server_contract.h",
+            "kernel/fractalos-root-task/include/contracts/cap_broker_contract.h",
+            "kernel/fractalos-root-task/include/contracts/mesh_agent_contract.h",
+            "kernel/fractalos-root-task/src/agent_task_gateway.c",
+            "kernel/fractalos-root-task/src/cap_broker.c",
+            "kernel/fractalos-root-task/src/auth_server.c",
+            "kernel/fractalos-root-task/src/mesh_agent.c",
+            "kernel/fractalos-root-task/src/remote_grant.c",
             "tools/fractal-mesh-gateway/Cargo.toml",
             "tools/fractal-mesh-gateway/src/lib.rs",
             "tools/fractal-mesh-gateway/src/auth.rs",
@@ -4086,7 +4086,7 @@
           "confidence_still_useful": "0.99",
           "current_assumptions": [
             "The authoritative PRD and accepted bootstrap artifacts are reachable in local Git history even though some are absent from the current tree",
-            "The active agentos-gz0 epic remains the parent program",
+            "The active fos-gz0 epic remains the parent program",
             "Beads mutations must be performed only through bd"
           ],
           "dependencies": [
@@ -4112,7 +4112,7 @@
         },
         "human_intervention": false,
         "id": "reconcile_prd_beads",
-        "instruction": "Run bd prime, capture the initial git status without modifying or discarding any current change, inspect all agentos-gz0 descendants and recover docs/fractal-agent-ir-v0.md plus already-accepted Fractal artifacts from reachable Git history only after diffing them against the worktree. Use bd CLI commands, never direct edits to Beads storage, to deduplicate or supersede stale duplicate nodes and create bounded issues for Cursor compatibility, Fractal-controlplane integration, remote Fractal worker sessions, companion gateway, daily-root model, health adapter boundary, project-progress adapter, companion pages, and the two-device E2E gate. Give every issue design, acceptance criteria, dependencies, proof level, affected paths, and external-environment blocker policy; preserve the active network handoff and record the planning baseline commit and dirty paths in issue notes.",
+        "instruction": "Run bd prime, capture the initial git status without modifying or discarding any current change, inspect all fos-gz0 descendants and recover docs/fractal-agent-ir-v0.md plus already-accepted Fractal artifacts from reachable Git history only after diffing them against the worktree. Use bd CLI commands, never direct edits to Beads storage, to deduplicate or supersede stale duplicate nodes and create bounded issues for Cursor compatibility, Fractal-controlplane integration, remote Fractal worker sessions, companion gateway, daily-root model, health adapter boundary, project-progress adapter, companion pages, and the two-device E2E gate. Give every issue design, acceptance criteria, dependencies, proof level, affected paths, and external-environment blocker policy; preserve the active network handoff and record the planning baseline commit and dirty paths in issue notes.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -4194,11 +4194,11 @@
           "estimated_remaining_tokens": 17000,
           "expected_artifact": "Versioned remote-session and authority contracts with adversarial failing C and Rust tests",
           "files_or_systems_affected": [
-            "kernel/agentos-root-task/include/contracts/mesh_agent_contract.h",
-            "kernel/agentos-root-task/include/contracts/auth_server_contract.h",
-            "kernel/agentos-root-task/include/contracts/cap_broker_contract.h",
-            "kernel/agentos-root-task/include/remote_grant.h",
-            "kernel/agentos-root-task/include/agentos.h",
+            "kernel/fractalos-root-task/include/contracts/mesh_agent_contract.h",
+            "kernel/fractalos-root-task/include/contracts/auth_server_contract.h",
+            "kernel/fractalos-root-task/include/contracts/cap_broker_contract.h",
+            "kernel/fractalos-root-task/include/remote_grant.h",
+            "kernel/fractalos-root-task/include/fractalos.h",
             "interfaces/wit/fractal-mesh-v1/mesh.wit",
             "tests/contracts/mesh_agent_test.c",
             "tests/test_fractal_mesh_frames.rs",
@@ -4223,7 +4223,7 @@
         },
         "human_intervention": false,
         "id": "remote_mesh_contract_tests",
-        "instruction": "Extend kernel/agentos-root-task/include/contracts/mesh_agent_contract.h, auth_server_contract.h, cap_broker_contract.h, kernel/agentos-root-task/include/remote_grant.h, and kernel/agentos-root-task/include/agentos.h contract-first for NodeID, ServiceID, SpaceID, asynchronous remote session handles, signed service advertisements, RemoteGrant audience and scope, fenced execution leases, revocation epochs, typed task, event, object, and control frames, cancellation, and reconnect resume tokens. Add tests/contracts/mesh_agent_test.c, tests/test_fractal_mesh_frames.rs, and tests/security/test_remote_grants.c failing cases for malformed lengths, replay, wrong audience, stale epoch, remote-badge injection, duplicate completion, and bounded flow control, and register the suites with xtask. Keep the wire encoding generated and transport-neutral; datagrams may carry only disposable hints.",
+        "instruction": "Extend kernel/fractalos-root-task/include/contracts/mesh_agent_contract.h, auth_server_contract.h, cap_broker_contract.h, kernel/fractalos-root-task/include/remote_grant.h, and kernel/fractalos-root-task/include/fractalos.h contract-first for NodeID, ServiceID, SpaceID, asynchronous remote session handles, signed service advertisements, RemoteGrant audience and scope, fenced execution leases, revocation epochs, typed task, event, object, and control frames, cancellation, and reconnect resume tokens. Add tests/contracts/mesh_agent_test.c, tests/test_fractal_mesh_frames.rs, and tests/security/test_remote_grants.c failing cases for malformed lengths, replay, wrong audience, stale epoch, remote-badge injection, duplicate completion, and bounded flow control, and register the suites with xtask. Keep the wire encoding generated and transport-neutral; datagrams may carry only disposable hints.",
         "kind": "inference",
         "memory_scopes": [
           "work:goal",
@@ -4341,7 +4341,7 @@
         },
         "human_intervention": false,
         "id": "run_dual_arch_qemu_gates",
-        "instruction": "Run the repository-native real-target gates after implementation: make gate, make test-target-all, make perf-gate, the AArch64 Headscale mesh-controller validation, the x86_64 target contract image, and QEMU scenarios for asynchronous Fractal submit and completion, canonical event replay, authority revocation, actor passivation and reactivation, net_pd and WireGuard handoff, AgentIPC zero-copy ownership, GPU emulated contracts, and clean AgentOS boot. Capture serial logs and normalized JSON evidence under build/evidence/target-gates.json with architecture, board, commit, command, exit code, TAP counts, boot markers, performance thresholds, and proof level. Do not change production code or claim unsupported physical hardware proof.",
+        "instruction": "Run the repository-native real-target gates after implementation: make gate, make test-target-all, make perf-gate, the AArch64 Headscale mesh-controller validation, the x86_64 target contract image, and QEMU scenarios for asynchronous Fractal submit and completion, canonical event replay, authority revocation, actor passivation and reactivation, net_pd and WireGuard handoff, AgentIPC zero-copy ownership, GPU emulated contracts, and clean FractalOS boot. Capture serial logs and normalized JSON evidence under build/evidence/target-gates.json with architecture, board, commit, command, exit code, TAP counts, boot markers, performance thresholds, and proof level. Do not change production code or claim unsupported physical hardware proof.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -4435,7 +4435,7 @@
         "efficiency": {
           "confidence_still_useful": "0.98",
           "current_assumptions": [
-            "Host tests are a prefilter and do not prove AgentOS target behavior",
+            "Host tests are a prefilter and do not prove FractalOS target behavior",
             "Live worker credentials and physical GPU access may be unavailable and must be recorded honestly"
           ],
           "dependencies": [
@@ -4482,7 +4482,7 @@
         },
         "human_intervention": false,
         "id": "run_host_security_performance_gates",
-        "instruction": "From a clean build directory, run cargo fmt --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, cargo xtask test, make test-host, make test-native-net, make test-agentos-mcp, make test-agentctl-mesh, all AgentLang determinism and cache tests, all worker compatibility fixture tests, the remote-grant adversarial suite, shared contract schema tests, secret canary scans, GPU contract tests, actor memory tests, and make perf-gate where the target prerequisites are available. Store a machine-readable command, exit-code, duration, proof-level, artifact-hash, and skip-reason record under build/evidence/host-security.json. Fix no production code in this node; file or update bounded Beads defects for failures and never treat an unavailable external prerequisite as a pass.",
+        "instruction": "From a clean build directory, run cargo fmt --check, cargo clippy --workspace --all-targets -- -D warnings, cargo test --workspace, cargo xtask test, make test-host, make test-native-net, make test-fractalos-mcp, make test-agentctl-mesh, all AgentLang determinism and cache tests, all worker compatibility fixture tests, the remote-grant adversarial suite, shared contract schema tests, secret canary scans, GPU contract tests, actor memory tests, and make perf-gate where the target prerequisites are available. Store a machine-readable command, exit-code, duration, proof-level, artifact-hash, and skip-reason record under build/evidence/host-security.json. Fix no production code in this node; file or update bounded Beads defects for failures and never treat an unavailable external prerequisite as a pass.",
         "kind": "container",
         "memory_scopes": [
           "work:goal",
@@ -4782,11 +4782,11 @@
     "policy_schema": "fractal.harness_policy.v1",
     "schema": "fractal.execution_graph.v1",
     "target": "darwin-arm64",
-    "work_hash": "sha256:cd14c9374765dab879d450a6c864e4c0478540fc6e098d5541bc284d09618dd8"
+    "work_hash": "sha256:415e684d5ce978cad681ef4a162c33e3a74f5393d69b281196f84bd1e3183ad2"
   },
   "execution": {
     "schema": "fractal.execution_state.v1",
-    "phase": "executing",
+    "phase": "halted",
     "assignments": {
       "canonical_event_verify_contract_tests": {
         "agent_id": "codex-luna:1",
@@ -4814,7 +4814,7 @@
         "agent_label": "cursor:3",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:22:01Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "cursor_compat_contract_tests": {
         "agent_id": "cursor:1",
@@ -4863,14 +4863,14 @@
         "agent_label": "codex-luna:6",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:22:01Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_agentlang_runtime": {
         "agent_id": "codex-luna:8",
         "agent_label": "codex-luna:8",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:22:01Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_canonical_event_verify": {
         "agent_id": "codex-luna:3",
@@ -4898,7 +4898,7 @@
         "agent_label": "claude:1",
         "state": "released",
         "checked_out_at": "2026-08-24T18:22:14Z",
-        "released_at": "2026-08-24T22:22:02Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_cursor_worker": {
         "agent_id": "cursor:1",
@@ -4908,11 +4908,11 @@
         "completed_at": "2026-08-24T19:47:28Z"
       },
       "implement_daily_root_projection": {
-        "agent_id": "codex/root",
-        "agent_label": "Codex",
+        "agent_id": "hermes:1",
+        "agent_label": "hermes:1",
         "state": "released",
         "checked_out_at": "2026-08-24T17:41:40Z",
-        "released_at": "2026-08-24T22:35:47Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_fractal_controlplane": {
         "agent_id": "codex/root",
@@ -4940,7 +4940,7 @@
         "agent_label": "codex-luna:11",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:22:02Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_hermes_worker": {
         "agent_id": "hermes:3",
@@ -4954,14 +4954,14 @@
         "agent_label": "cursor:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:48:29Z",
-        "released_at": "2026-08-24T22:22:02Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_remote_authority": {
-        "agent_id": "hermes:1",
-        "agent_label": "hermes:1",
+        "agent_id": "hermes:2",
+        "agent_label": "hermes:2",
         "state": "released",
         "checked_out_at": "2026-08-24T17:31:31Z",
-        "released_at": "2026-08-24T22:22:02Z"
+        "released_at": "2026-08-24T22:58:06Z"
       },
       "implement_remote_mesh_sessions": {
         "agent_id": "codex-luna:3",
@@ -5006,7 +5006,7 @@
         "completed_at": "2026-08-24T21:55:08Z"
       }
     },
-    "updated_at": "2026-08-24T22:35:47Z"
+    "updated_at": "2026-08-24T22:58:06Z"
   },
   "learning": {
     "schema": "fractal.learning.v1",
@@ -5022,12 +5022,12 @@
           "implement_project_progress_adapter",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "canonical_event_verify_contract_tests": {
         "node_id": "canonical_event_verify_contract_tests",
@@ -5118,12 +5118,12 @@
           "implement_actor_memory_lifecycle",
           "implement_codex_worker"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 27
+        "reopen_count": 29
       },
       "cursor_compat_contract_tests": {
         "node_id": "cursor_compat_contract_tests",
@@ -5290,12 +5290,12 @@
           "implement_agentlang_runtime",
           "implement_companion_gateway"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 28
       },
       "implement_agentlang_runtime": {
         "node_id": "implement_agentlang_runtime",
@@ -5306,12 +5306,12 @@
           "fractal_controlplane_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 28
       },
       "implement_canonical_event_verify": {
         "node_id": "implement_canonical_event_verify",
@@ -5397,12 +5397,12 @@
           "companion_export_contract_tests",
           "implement_remote_authority"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 4,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 25
+        "reopen_count": 27
       },
       "implement_cursor_worker": {
         "node_id": "implement_cursor_worker",
@@ -5440,17 +5440,12 @@
           "daily_root_contract_tests",
           "implement_fractal_controlplane"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
-        "started_at": "2026-08-24T22:35:21Z",
-        "executor": {
-          "agent": "Codex",
-          "version": "0.1.0"
-        },
-        "attempt_count": 4,
+        "created_at": "2026-08-24T22:58:06Z",
+        "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 24
+        "reopen_count": 26
       },
       "implement_fractal_controlplane": {
         "node_id": "implement_fractal_controlplane",
@@ -5546,12 +5541,12 @@
           "health_adapter_contract_tests",
           "implement_daily_root_projection"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 27
+        "reopen_count": 29
       },
       "implement_hermes_worker": {
         "node_id": "implement_hermes_worker",
@@ -5584,12 +5579,12 @@
           "implement_health_adapter",
           "project_progress_contract_tests"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 5,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 28
       },
       "implement_remote_authority": {
         "node_id": "implement_remote_authority",
@@ -5601,12 +5596,12 @@
           "implement_remote_mesh_sessions",
           "remote_mesh_contract_tests"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
-        "attempt_count": 5,
+        "created_at": "2026-08-24T22:58:06Z",
+        "attempt_count": 6,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 26
+        "reopen_count": 28
       },
       "implement_remote_mesh_sessions": {
         "node_id": "implement_remote_mesh_sessions",
@@ -5643,12 +5638,12 @@
           "implement_remote_authority",
           "implement_remote_mesh_sessions"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "lead_closeout": {
         "node_id": "lead_closeout",
@@ -5657,12 +5652,12 @@
         "depends_on": [
           "publish_verified_program"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "lead_plan": {
         "node_id": "lead_plan",
@@ -5719,12 +5714,12 @@
         "depends_on": [
           "run_two_device_vertical_slice"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "reconcile_prd_beads": {
         "node_id": "reconcile_prd_beads",
@@ -5811,12 +5806,12 @@
           "implement_remote_mesh_sessions",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "run_host_security_performance_gates": {
         "node_id": "run_host_security_performance_gates",
@@ -5842,12 +5837,12 @@
           "implement_remote_mesh_sessions",
           "unify_fractal_graph_ui"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "run_two_device_vertical_slice": {
         "node_id": "run_two_device_vertical_slice",
@@ -5863,12 +5858,12 @@
           "run_dual_arch_qemu_gates",
           "run_host_security_performance_gates"
         ],
-        "created_at": "2026-08-24T22:21:21Z",
+        "created_at": "2026-08-24T22:58:06Z",
         "attempt_count": 0,
         "artifacts_produced": [],
         "consumed_by": [],
         "human_intervention": false,
-        "reopen_count": 9
+        "reopen_count": 10
       },
       "unify_fractal_graph_ui": {
         "node_id": "unify_fractal_graph_ui",
@@ -5922,92 +5917,6 @@
         "eventual_effect": {}
       }
     ],
-    "outcome": {
-      "acceptance_criteria": [
-        {
-          "id": "AC-1",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-10",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-11",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-12",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-13",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-14",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-15",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-2",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-3",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-4",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-5",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-6",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-7",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-8",
-          "passed": false,
-          "evidence_refs": []
-        },
-        {
-          "id": "AC-9",
-          "passed": false,
-          "evidence_refs": []
-        }
-      ],
-      "maximum_parallelism": 0,
-      "retry_count": 157,
-      "reopened_node_count": 33,
-      "dead_or_unused_node_count": 1,
-      "human_intervention_count": 0,
-      "verification_coverage": 0.05555555555555555,
-      "verification_coverage_denominator": 36
-    },
     "acceptance_criteria": [
       "AC-1",
       "AC-10",
@@ -6520,6 +6429,55 @@
             "implement_daily_root_projection",
             "implement_fractal_controlplane",
             "implement_fractal_controlplane_sdk",
+            "implement_health_adapter",
+            "implement_project_progress_adapter",
+            "implement_remote_authority",
+            "implement_shared_space_replication",
+            "lead_closeout",
+            "publish_verified_program",
+            "run_dual_arch_qemu_gates",
+            "run_host_security_performance_gates",
+            "run_two_device_vertical_slice"
+          ],
+          "retired_nodes": []
+        },
+        {
+          "migrated_at": "2026-08-24T22:58:06Z",
+          "new_graph_hash": "sha256:6d647d188fd80d4d46610e9e63dd0f5773e41217f3ff01e731f798d68aee405d",
+          "old_graph_hash": "sha256:d398a9f1499357860090c39ea5bd33445988dbfc77ba775df9fb4ddb858cfde4",
+          "preserved": [
+            "canonical_event_verify_contract_tests",
+            "claude_hermes_compat_contract_tests",
+            "companion_export_contract_tests",
+            "cursor_compat_contract_tests",
+            "daily_root_contract_tests",
+            "finish_native_network",
+            "fix_wg_compile_regression",
+            "fractal_controlplane_contract_tests",
+            "health_adapter_contract_tests",
+            "implement_canonical_event_verify",
+            "implement_claude_worker",
+            "implement_codex_worker",
+            "implement_cursor_worker",
+            "implement_fractal_controlplane",
+            "implement_fractal_controlplane_host",
+            "implement_fractal_controlplane_sdk",
+            "implement_hermes_worker",
+            "implement_remote_mesh_sessions",
+            "lead_plan",
+            "project_progress_contract_tests",
+            "reconcile_prd_beads",
+            "remote_mesh_contract_tests",
+            "unify_fractal_graph_ui"
+          ],
+          "removed": [],
+          "reopened": [
+            "build_companion_pages",
+            "complete_gpu_pipeline",
+            "implement_actor_memory_lifecycle",
+            "implement_agentlang_runtime",
+            "implement_companion_gateway",
+            "implement_daily_root_projection",
             "implement_health_adapter",
             "implement_project_progress_adapter",
             "implement_remote_authority",
@@ -9436,5 +9394,5 @@
     "cross_project_links": {},
     "failure_graph_hash": "sha256:fa02f5e868bfd45fd78aea85bba4264798dcb26cff33228e235cf7762f129547"
   },
-  "updated_at": "2026-08-24T22:35:57Z"
+  "updated_at": "2026-08-24T22:58:06Z"
 }

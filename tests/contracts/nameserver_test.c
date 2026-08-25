@@ -10,12 +10,12 @@
  *   OP_NS_DEREGISTER               — deregister a service
  *   OP_NS_HEALTH                   — health check
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_nameserver_tests(microkit_channel ch)
 {

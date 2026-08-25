@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../kernel/agentos-root-task/include/contracts/companion_export_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/companion_export_contract.h"
 
 _Static_assert(sizeof(companion_event_cursor_t) == 72u,
                "target cursor layout");

@@ -1,4 +1,4 @@
-# agentOS Boot Guide
+# FractalOS Boot Guide
 
 This guide covers prerequisites, build steps, the QEMU boot command, external
 tool connections, and expected first-boot output.
@@ -56,7 +56,7 @@ make run
 `build/cc_pd.sock`, and prints the matching command for the external GUI:
 
 ```bash
-cd ../agentos_gui && make run
+cd ../fractalos_gui && make run
 ```
 
 To build a specific architecture without launching:
@@ -129,7 +129,7 @@ the selected target. The important runtime interfaces are:
 
 | Interface | Default |
 |---|---|
-| agentOS foreground serial | QEMU stdio |
+| FractalOS foreground serial | QEMU stdio |
 | CC-PD Unix socket | `build/cc_pd.sock` |
 | host API forward | `127.0.0.1:8789` |
 | Ubuntu SSH forward | `localhost:2222` |
@@ -143,7 +143,7 @@ seL4's AArch64 memory-access patterns. Linux uses KVM when `/dev/kvm` exists.
 
 ## Connecting External Tools
 
-agentOS does not ship an in-repository dashboard. External tools connect to
+FractalOS does not ship an in-repository dashboard. External tools connect to
 the exported IPC/API contracts. The default QEMU run exposes `build/cc_pd.sock`
 for the host-side CC-PD protocol and forwards the host API port at
 `127.0.0.1:8789`.
@@ -153,16 +153,16 @@ Reference consumers:
 ```bash
 make -C tools/agentctl
 ./tools/agentctl/agentctl --batch list-guests
-cd ../agentos_gui && make run
+cd ../fractalos_gui && make run
 ```
 
 ## Expected First-Boot Output
 
-When agentOS boots successfully in QEMU, exact logs vary by target and guest.
+When FractalOS boots successfully in QEMU, exact logs vary by target and guest.
 The stable success markers are:
 
 ```
-[controller] *** agentOS controller boot complete ***
+[controller] *** FractalOS controller boot complete ***
 [controller] Ready for agents.
 [cc_pd] VirtIO serial ready
 ```
@@ -189,12 +189,12 @@ Important runtime contracts for external users:
 
 | API surface | Contract/Header |
 |---|---|
-| CC-PD host bridge | `kernel/agentos-root-task/include/contracts/cc_contract.h` |
-| Guest lifecycle | `kernel/agentos-root-task/include/contracts/guest_contract.h` |
-| Generic VMM operations | `kernel/agentos-root-task/include/contracts/vmm_contract.h` |
-| Serial device API | `kernel/agentos-root-task/include/contracts/serial_contract.h` |
-| Framebuffer API | `kernel/agentos-root-task/include/contracts/framebuffer_contract.h` |
-| EventBus | `kernel/agentos-root-task/include/contracts/eventbus_contract.h` |
+| CC-PD host bridge | `kernel/fractalos-root-task/include/contracts/cc_contract.h` |
+| Guest lifecycle | `kernel/fractalos-root-task/include/contracts/guest_contract.h` |
+| Generic VMM operations | `kernel/fractalos-root-task/include/contracts/vmm_contract.h` |
+| Serial device API | `kernel/fractalos-root-task/include/contracts/serial_contract.h` |
+| Framebuffer API | `kernel/fractalos-root-task/include/contracts/framebuffer_contract.h` |
+| EventBus | `kernel/fractalos-root-task/include/contracts/eventbus_contract.h` |
 
 ## Known Limitations / Work in Progress
 
@@ -216,11 +216,11 @@ Important runtime contracts for external users:
 
 - **Guest image selection**: `make fetch-guest` stages Ubuntu 26.04 and
   FreeBSD 15.0 assets into `build/guest-images`. ISOs are cached in
-  `AGENTOS_ISO_DIR` (default `${XDG_CACHE_HOME:-~/.cache}/agentos/isos`); on
+  `FRACTALOS_ISO_DIR` (default `${XDG_CACHE_HOME:-~/.cache}/fractalos/isos`); on
   cache miss they are downloaded from the vendor's official site
   (`cdimage.ubuntu.com`, `download.freebsd.org`) and persisted there for
   future runs. The VMM build and QEMU runtime use those build-local images
-  by default; set `AGENTOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` only when testing
+  by default; set `FRACTALOS_FREEBSD_IMAGE`/`FREEBSD_IMAGE` only when testing
   a non-default FreeBSD image.
 
 - **WASM agent execution**: `swap_slot` PDs load and execute WASM binaries
@@ -238,9 +238,9 @@ Important runtime contracts for external users:
 
 ## Agent Signing
 
-agentOS verifies the capability manifest of every WASM agent before granting
+FractalOS verifies the capability manifest of every WASM agent before granting
 capabilities.  The verification path is implemented in
-`kernel/agentos-root-task/src/verify.c` (`verify_capabilities_manifest`) and
+`kernel/fractalos-root-task/src/verify.c` (`verify_capabilities_manifest`) and
 called from `monitor.c` before each `vibe_swap_begin` invocation.
 
 ### WASM binary layout
@@ -250,20 +250,20 @@ type `0x00`):
 
 | Section name              | Size     | Content |
 |---------------------------|----------|---------|
-| `agentos.capabilities`    | variable | Declared capability bitmask and metadata (agent-defined) |
-| `agentos.cap_signature`   | 32 bytes | SHA-256 digest of the `agentos.capabilities` section body |
-| `agentos.signature`       | 128 bytes | Ed25519 pubkey (32B) + signature (64B) + SHA-256 of WASM body (32B) |
+| `fractalos.capabilities`    | variable | Declared capability bitmask and metadata (agent-defined) |
+| `fractalos.cap_signature`   | 32 bytes | SHA-256 digest of the `fractalos.capabilities` section body |
+| `fractalos.signature`       | 128 bytes | Ed25519 pubkey (32B) + signature (64B) + SHA-256 of WASM body (32B) |
 
 ### Signing flow
 
 1. Compile your WASM agent normally.
-2. Append an `agentos.capabilities` custom section declaring the required
-   capability bitmask (see `AGENTOS_CAP_*` constants in `agentos.h`).
-3. Compute `SHA-256(agentos.capabilities section bytes)` and embed the
-   32-byte digest as the `agentos.cap_signature` custom section.
-4. Sign the WASM body (excluding the `agentos.signature` section itself)
+2. Append an `fractalos.capabilities` custom section declaring the required
+   capability bitmask (see `FRACTALOS_CAP_*` constants in `fractalos.h`).
+3. Compute `SHA-256(fractalos.capabilities section bytes)` and embed the
+   32-byte digest as the `fractalos.cap_signature` custom section.
+4. Sign the WASM body (excluding the `fractalos.signature` section itself)
    with your Ed25519 issuer key and embed the 128-byte payload as the
-   `agentos.signature` custom section.
+   `fractalos.signature` custom section.
 
 Steps 2-4 will be automated by a `sign-agent` tool (planned for a future
 release).  Until then, the reference implementation in `verify.c` documents

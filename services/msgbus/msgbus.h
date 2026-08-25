@@ -1,7 +1,7 @@
 /*
- * agentOS MsgBus — Inter-Agent Communication Service
+ * FractalOS MsgBus — Inter-Agent Communication Service
  *
- * The MsgBus is the nervous system of agentOS. It provides:
+ * The MsgBus is the nervous system of FractalOS. It provides:
  *   - Named channels (pub/sub, point-to-point)
  *   - Agent-to-agent direct messaging
  *   - Multicast groups
@@ -10,15 +10,15 @@
  *
  * Built on seL4 endpoints, notification objects, and shared memory.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifndef AGENTOS_MSGBUS_H
-#define AGENTOS_MSGBUS_H
+#ifndef FRACTALOS_MSGBUS_H
+#define FRACTALOS_MSGBUS_H
 
 #include <stdint.h>
-#include <agentOS.h>
+#include <FractalOS.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,4 +139,4 @@ int msgbus_rpc_call(agent_id_t *caller, agent_id_t *callee,
 }
 #endif
 
-#endif /* AGENTOS_MSGBUS_H */
+#endif /* FRACTALOS_MSGBUS_H */

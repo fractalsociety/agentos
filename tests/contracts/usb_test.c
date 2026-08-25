@@ -1,11 +1,11 @@
 /*
- * agentOS — usb PD contract test
+ * FractalOS — usb PD contract test
  * Covered opcodes: MSG_USB_ENUMERATE, MSG_USB_LIST, MSG_USB_OPEN, MSG_USB_CLOSE,
  *   MSG_USB_CONTROL, MSG_USB_BULK_IN, MSG_USB_BULK_OUT, MSG_USB_STATUS
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/usb_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/usb_contract.h"
 
 void run_usb_tests(microkit_channel ch) {
     TEST_SECTION("usb");

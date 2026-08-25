@@ -1,25 +1,25 @@
-# agentOS per-PD ABI spec — machine-readable source of truth.
+# FractalOS per-PD ABI spec — machine-readable source of truth.
 #
 # This file is the authoritative registry of IPC opcodes and channel IDs,
 # grouped per protection domain (PD). `tools/gen-abi` consumes it and emits
-# kernel/agentos-root-task/include/agentos_abi.h.
+# kernel/fractalos-root-task/include/fractalos_abi.h.
 #
 # The generator HARD-FAILS the build (nonzero exit) on:
 #   - a duplicate opcode value within a single PD's opcode table
 #   - a duplicate channel id within a single PD's channel scope
 #   - a `contract = "<dir>"` reference whose contracts/<dir>/ directory is
 #     missing (missing contract coverage)
-#   - a constant whose `legacy` name and value drift from agentos.h (caught at
+#   - a constant whose `legacy` name and value drift from fractalos.h (caught at
 #     C-compile time via the _Static_assert block this header emits)
 #
 # After editing, regenerate with:
 #   cargo run -p gen-abi -- tools/abi_spec.toml \
-#       -o kernel/agentos-root-task/include/agentos_abi.h
+#       -o kernel/fractalos-root-task/include/fractalos_abi.h
 # (or `cargo xtask gen-abi`, which writes the same path).
 #
-# `legacy` is the existing #define / enum name in agentos.h that this entry
+# `legacy` is the existing #define / enum name in fractalos.h that this entry
 # mirrors; the generated header emits a _Static_assert tying the two together
-# so a stale agentos.h constant fails the build.
+# so a stale fractalos.h constant fails the build.
 
 version = "1"
 

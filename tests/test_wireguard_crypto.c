@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../kernel/agentos-root-task/include/monocypher.h"
+#include "../kernel/fractalos-root-task/include/monocypher.h"
 
 static int failures;
 

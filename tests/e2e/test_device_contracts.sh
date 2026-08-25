@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — Device Contract Tests
+# FractalOS E2E — Device Contract Tests
 #
 # Tests: serial_contract.h, net_contract.h, block_contract.h, usb_contract.h
 #
@@ -39,13 +39,13 @@ HAVE_SSH="${HAVE_SSH_TOOLS:-0}"
 
 cc_post() {
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
 
 cc_get() {
-    curl -sf --max-time 5 "${CC_BASE}/api/agentos/cc/$1" 2>/dev/null
+    curl -sf --max-time 5 "${CC_BASE}/api/fractalos/cc/$1" 2>/dev/null
 }
 
 ok_field() {
@@ -185,7 +185,7 @@ if [ "${HAVE_SSH}" = "1" ] && gssh true 2>/dev/null; then
 
     # Test 8: disk I/O round-trip — write a file and read it back
     TMPF="/tmp/block_e2e_$$.txt"
-    MAGIC="agentos_e2e_block_$(date +%s 2>/dev/null || echo 42)"
+    MAGIC="fractalos_e2e_block_$(date +%s 2>/dev/null || echo 42)"
     gssh "printf '%s' '${MAGIC}' > ${TMPF}" 2>/dev/null
     READ_BACK="$(gssh "cat ${TMPF}" 2>/dev/null)"
     gssh "rm -f ${TMPF}" 2>/dev/null

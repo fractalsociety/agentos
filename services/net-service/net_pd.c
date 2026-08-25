@@ -1,5 +1,5 @@
 /*
- * agentOS Network Device Protection Domain — E5-S4: raw seL4 IPC
+ * FractalOS Network Device Protection Domain — E5-S4: raw seL4 IPC
  *
  * OS-neutral network service PD that moves lwIP behind a proper PD boundary.
  * Owns the virtio-net hardware exclusively via seL4 device frame capabilities.
@@ -18,13 +18,13 @@
  *                MSG_NET_FILTER_ADD/FILTER_REMOVE
  *   Sockets:     MSG_NET_SOCKET_OPEN/CLOSE/CONNECT/BIND/LISTEN/ACCEPT/SET_OPT
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 /* ── Conditional compilation ─────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -134,7 +134,7 @@ struct tcp_pcb;
 static inline int tcp_close(struct tcp_pcb *p) { (void)p; return 0; }
 
 static inline void log_drain_write(int a, int b, const char *s) { (void)a;(void)b;(void)s; }
-static inline void agentos_log_boot(const char *s) { (void)s; }
+static inline void fractalos_log_boot(const char *s) { (void)s; }
 static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 
 /* OP_NS_REGISTER stub */
@@ -142,10 +142,10 @@ static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 #define OP_NS_REGISTER 0xD0u
 #endif
 
-#else /* !AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 #include "contracts/net_contract.h"
 #include "lwip_sys.h"
 #include "lwip/pbuf.h"
@@ -170,13 +170,13 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
     d[off+3] = (uint8_t)(v >> 24);
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 #include "net_fastpath.h"
 #include "contracts/net_device_contract.h"
 
 /* ── Contract opcodes (keep identical to Microkit version) ───────────────── */
-/* These mirror agentos.h MSG_NET_* constants so the wire format is unchanged */
+/* These mirror fractalos.h MSG_NET_* constants so the wire format is unchanged */
 #ifndef MSG_NET_OPEN
 #define MSG_NET_OPEN           0x2101u
 #define MSG_NET_CLOSE          0x2102u
@@ -193,6 +193,12 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 #define MSG_NET_SOCKET_LISTEN  0x210Du
 #define MSG_NET_SOCKET_ACCEPT  0x210Eu
 #define MSG_NET_SOCKET_SET_OPT 0x210Fu
+#endif
+#ifndef MSG_NET_FASTPATH_SEND
+#define MSG_NET_FASTPATH_SEND   0x2110u
+#endif
+#ifndef MSG_NET_FASTPATH_STATUS
+#define MSG_NET_FASTPATH_STATUS 0x2111u
 #endif
 
 /* ── Result codes ────────────────────────────────────────────────────────── */
@@ -237,10 +243,13 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
 #define VIRTIO_NET_DEVICE_ID     1u
 #define VIRTIO_NET_F_MAC         (1u << 5)
 #define VIRTIO_F_VERSION_1_HIGH  (1u << 0)
+#define VIRTQ_DESC_F_NEXT        (1u << 0)
 #define VIRTQ_DESC_F_WRITE       (1u << 1)
 #define NET_PD_IRQ_BADGE         0x1u
 #define NET_PD_IRQ_CAP           64u
+#define NET_PD_TX_QUEUES         NETFP_MAX_QUEUES
 
+/* Remove duplicate local chain defines — use contract. */
 /* ── Shared memory ───────────────────────────────────────────────────────── */
 uintptr_t net_pd_shmem_vaddr;
 uintptr_t net_pd_mmio_vaddr;
@@ -344,7 +353,7 @@ static uint64_t iface_rx_bytes = 0, iface_tx_bytes = 0;
 static uint32_t iface_rx_errors = 0, iface_tx_errors = 0;
 static bool     iface_link_up = false;
 static netfp_state_t *fastpath;
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 static netfp_state_t fastpath_host;
 #endif
 static uint64_t dma_base_pa;
@@ -356,6 +365,16 @@ static uint32_t virtio_probe_magic;
 static uint32_t virtio_probe_version;
 static uint32_t virtio_probe_device_id;
 static uint32_t virtio_probe_detail;
+
+/* Maps HW TX head id → software queue/slot for IRQ reclaim. */
+static struct {
+    uint8_t used;
+    uint8_t queue_id;
+    uint8_t soft_slot;
+} tx_hw_map[NET_DMA_TX_CHAIN_HEADS];
+static uint32_t tx_hw_busy; /* bit i set ⇒ head i in flight */
+static uint64_t tx_zerocopy_submits;
+static uint64_t tx_payload_bytes; /* bytes referenced without memcpy */
 
 /* sel4_server_t instance */
 static sel4_server_t g_srv;
@@ -620,7 +639,12 @@ static void probe_virtio_net(void)
     virtio_zero_dma_layout();
     fastpath = (netfp_state_t *)(net_pd_shmem_vaddr
                                  + NET_DMA_FASTPATH_OFFSET);
-    netfp_init(fastpath, 1u);
+    netfp_init(fastpath, NET_PD_TX_QUEUES);
+    tx_hw_busy = 0u;
+    tx_zerocopy_submits = 0u;
+    tx_payload_bytes = 0u;
+    for (uint32_t i = 0u; i < NET_DMA_TX_CHAIN_HEADS; i++)
+        tx_hw_map[i].used = 0u;
     rx_last_used = 0u;
     tx_last_used = 0u;
     virtio_probe_stage = 4u;
@@ -737,9 +761,13 @@ static void virtio_reap_tx(void)
     uint16_t device_idx = __atomic_load_n(&used[1], __ATOMIC_ACQUIRE);
     while (tx_last_used != device_idx) {
         uint32_t id = ring[tx_last_used % NET_DMA_QUEUE_DEPTH].id;
-        if (id < NET_DMA_QUEUE_DEPTH
-            && netfp_driver_complete(fastpath, 0u, id, tx_last_used) == 0) {
-            (void)netfp_client_release(fastpath, 0u, id);
+        if (id < NET_DMA_TX_CHAIN_HEADS && tx_hw_map[id].used) {
+            uint32_t q = tx_hw_map[id].queue_id;
+            uint32_t soft = tx_hw_map[id].soft_slot;
+            if (netfp_driver_complete(fastpath, q, soft, tx_last_used) == 0)
+                (void)netfp_client_release(fastpath, q, soft);
+            tx_hw_map[id].used = 0u;
+            tx_hw_busy &= ~(1u << id);
         } else {
             iface_tx_errors++;
         }
@@ -747,63 +775,117 @@ static void virtio_reap_tx(void)
     }
 }
 
-static int virtio_submit_tx(const uint8_t *frame, uint32_t frame_len)
+static int tx_alloc_head(void)
 {
-#ifdef AGENTOS_TEST_HOST
-    /* Host softpath: ownership/backpressure without NIC MMIO. Frames remain
-     * DEVICE-owned until handle_net_irq() completes them. */
-    uint32_t slot = 0u;
-    if (netfp_client_reserve(fastpath, 0u, &slot) != 0) return -1;
-    if (net_pd_shmem_vaddr != 0u) {
-        uint8_t *buffer = (uint8_t *)(net_pd_shmem_vaddr
-            + NET_DMA_TX_BUFFER_OFFSET + slot * NET_DMA_BUFFER_STRIDE);
-        for (uint32_t i = 0u; i < NET_DMA_VIRTIO_HDR_BYTES; i++)
-            buffer[i] = 0u;
-        for (uint32_t i = 0u; i < frame_len; i++)
-            buffer[NET_DMA_VIRTIO_HDR_BYTES + i] = frame[i];
-    } else {
-        (void)frame;
+    for (uint32_t i = 0u; i < NET_DMA_TX_CHAIN_HEADS; i++) {
+        if ((tx_hw_busy & (1u << i)) == 0u) {
+            tx_hw_busy |= (1u << i);
+            return (int)i;
+        }
     }
-    if (netfp_client_submit(fastpath, 0u, slot, frame_len, 0u) != 0)
-        return -1;
+    return -1;
+}
+
+static void tx_release_soft(uint32_t queue_id, uint32_t soft_slot)
+{
+    /* Undo a failed reserve/submit: slot may still be CLIENT or DRIVER. */
+    netfp_slot_t *slot = &fastpath->queues[queue_id].slots[soft_slot];
+    uint8_t owner = __atomic_load_n(&slot->owner, __ATOMIC_ACQUIRE);
+    if (owner == NETFP_CLIENT || owner == NETFP_DRIVER
+            || owner == NETFP_DEVICE || owner == NETFP_COMPLETE) {
+        slot->len = 0u;
+        __atomic_store_n(&slot->owner, NETFP_FREE, __ATOMIC_RELEASE);
+    }
+}
+
+/*
+ * Zero-copy TX: write only the virtio-net header into the DMA TX slot; the
+ * frame payload stays at frame_offset inside the shared arena. Hardware sees
+ * a two-descriptor chain (hdr → payload).
+ */
+static int virtio_submit_tx(uint32_t frame_offset, uint32_t frame_len)
+{
+    uint32_t queue_id;
+    uint32_t soft_slot = 0u;
+    int head;
     uint32_t batched = 0u;
-    if (netfp_driver_batch(fastpath, 0u, 1u, &batched) != 1u
-        || batched != slot)
+
+    if (fastpath == (netfp_state_t *)0 || frame_len == 0u
+            || frame_len > NET_DMA_MAX_FRAME_BYTES)
         return -1;
-    return 0;
+    if (frame_offset > NET_DMA_LAYOUT_END
+            || frame_len > NET_DMA_LAYOUT_END - frame_offset)
+        return -1;
+
+    queue_id = netfp_select_queue(fastpath);
+    if (netfp_client_reserve(fastpath, queue_id, &soft_slot) != 0)
+        return -1;
+    head = tx_alloc_head();
+    if (head < 0) {
+        tx_release_soft(queue_id, soft_slot);
+        if (fastpath != (netfp_state_t *)0) fastpath->backpressure++;
+        return -1;
+    }
+
+#ifdef FRACTALOS_TEST_HOST
+    if (net_pd_shmem_vaddr != 0u) {
+        uint8_t *hdr = (uint8_t *)(net_pd_shmem_vaddr
+            + NET_DMA_TX_BUFFER_OFFSET
+            + (uint32_t)head * NET_DMA_BUFFER_STRIDE);
+        for (uint32_t i = 0u; i < NET_DMA_VIRTIO_HDR_BYTES; i++)
+            hdr[i] = 0u;
+    }
 #else
-    /* Reap only descriptors the IRQ path already published on the used ring.
-     * Fresh completions arrive via handle_net_irq(), not a poll loop. */
-    virtio_reap_tx();
-    uint32_t slot = 0u;
-    if (netfp_client_reserve(fastpath, 0u, &slot) != 0) return -1;
-
-    uint8_t *buffer = (uint8_t *)(net_pd_shmem_vaddr
-        + NET_DMA_TX_BUFFER_OFFSET + slot * NET_DMA_BUFFER_STRIDE);
-    for (uint32_t i = 0u; i < NET_DMA_VIRTIO_HDR_BYTES; i++) buffer[i] = 0u;
-    for (uint32_t i = 0u; i < frame_len; i++)
-        buffer[NET_DMA_VIRTIO_HDR_BYTES + i] = frame[i];
-    if (netfp_client_submit(fastpath, 0u, slot, frame_len, 0u) != 0)
-        return -1;
-    uint32_t batched = 0u;
-    if (netfp_driver_batch(fastpath, 0u, 1u, &batched) != 1u
-        || batched != slot)
-        return -1;
-
-    volatile net_dma_desc_t *desc = dma_desc(NET_DMA_TX_DESC_OFFSET);
-    desc[slot].addr = dma_base_pa + NET_DMA_TX_BUFFER_OFFSET
-                    + slot * NET_DMA_BUFFER_STRIDE;
-    desc[slot].len = NET_DMA_VIRTIO_HDR_BYTES + frame_len;
-    desc[slot].flags = 0u;
-    desc[slot].next = 0u;
-    volatile uint16_t *avail = dma_avail(NET_DMA_TX_AVAIL_OFFSET);
-    uint16_t avail_idx = avail[1];
-    avail[2u + (avail_idx % NET_DMA_QUEUE_DEPTH)] = (uint16_t)slot;
-    __atomic_thread_fence(__ATOMIC_RELEASE);
-    avail[1] = (uint16_t)(avail_idx + 1u);
-    mmio_write32(net_pd_mmio_vaddr, VIRTIO_MMIO_QUEUE_NOTIFY, 1u);
-    return 0;
+    {
+        uint8_t *hdr = (uint8_t *)(net_pd_shmem_vaddr
+            + NET_DMA_TX_BUFFER_OFFSET
+            + (uint32_t)head * NET_DMA_BUFFER_STRIDE);
+        for (uint32_t i = 0u; i < NET_DMA_VIRTIO_HDR_BYTES; i++)
+            hdr[i] = 0u;
+        virtio_reap_tx();
+    }
 #endif
+
+    if (netfp_client_submit(fastpath, queue_id, soft_slot, frame_len, 0u) != 0) {
+        tx_hw_busy &= ~(1u << (uint32_t)head);
+        tx_release_soft(queue_id, soft_slot);
+        return -1;
+    }
+    if (netfp_driver_batch(fastpath, queue_id, 1u, &batched) != 1u
+            || batched != soft_slot) {
+        tx_hw_busy &= ~(1u << (uint32_t)head);
+        tx_release_soft(queue_id, soft_slot);
+        return -1;
+    }
+
+    tx_hw_map[head].used = 1u;
+    tx_hw_map[head].queue_id = (uint8_t)queue_id;
+    tx_hw_map[head].soft_slot = (uint8_t)soft_slot;
+    tx_zerocopy_submits++;
+    tx_payload_bytes += frame_len;
+
+#ifndef FRACTALOS_TEST_HOST
+    {
+        uint32_t tail = NET_DMA_TX_CHAIN_TAIL0 + (uint32_t)head;
+        volatile net_dma_desc_t *desc = dma_desc(NET_DMA_TX_DESC_OFFSET);
+        desc[head].addr = dma_base_pa + NET_DMA_TX_BUFFER_OFFSET
+                        + (uint32_t)head * NET_DMA_BUFFER_STRIDE;
+        desc[head].len = NET_DMA_VIRTIO_HDR_BYTES;
+        desc[head].flags = VIRTQ_DESC_F_NEXT;
+        desc[head].next = (uint16_t)tail;
+        desc[tail].addr = dma_base_pa + frame_offset;
+        desc[tail].len = frame_len;
+        desc[tail].flags = 0u;
+        desc[tail].next = 0u;
+        volatile uint16_t *avail = dma_avail(NET_DMA_TX_AVAIL_OFFSET);
+        uint16_t avail_idx = avail[1];
+        avail[2u + (avail_idx % NET_DMA_QUEUE_DEPTH)] = (uint16_t)head;
+        __atomic_thread_fence(__ATOMIC_RELEASE);
+        avail[1] = (uint16_t)(avail_idx + 1u);
+        mmio_write32(net_pd_mmio_vaddr, VIRTIO_MMIO_QUEUE_NOTIFY, 1u);
+    }
+#endif
+    return 0;
 }
 
 static bool badge_has_fastpath(sel4_badge_t badge)
@@ -830,10 +912,10 @@ static uint32_t handle_fastpath_send(sel4_badge_t badge,
     if (len == 0u || len > NET_DMA_MAX_FRAME_BYTES
         || (!client_frame && !wg_frame))
         return SEL4_ERR_BAD_ARG;
-    const uint8_t *frame = (const uint8_t *)(net_pd_shmem_vaddr + offset);
-    if (virtio_submit_tx(frame, len) != 0) return SEL4_ERR_NO_MEM;
+    if (virtio_submit_tx(offset, len) != 0) return SEL4_ERR_NO_MEM;
     data_wr32(rep->data, 0, 1u);
-    data_wr32(rep->data, 4, 0u);
+    data_wr32(rep->data, 4, fastpath->rr_next == 0u
+              ? (fastpath->queue_count - 1u) : (fastpath->rr_next - 1u));
     rep->length = 8u;
     return SEL4_ERR_OK;
 }
@@ -847,9 +929,14 @@ static uint32_t handle_fastpath_status(sel4_badge_t badge,
     /* Do not reclaim TX from status queries — completions are IRQ-driven. */
     data_wr32(rep->data, 0, iface_link_up ? 1u : 0u);
     data_wr32(rep->data, 4, hw_present ? NET_DMA_QUEUE_DEPTH : 0u);
-    data_wr32(rep->data, 8,
-              fastpath != (netfp_state_t *)0
-                  ? fastpath->queues[0].in_flight : 0u);
+    {
+        uint32_t in_flight = 0u;
+        if (fastpath != (netfp_state_t *)0) {
+            for (uint32_t q = 0u; q < fastpath->queue_count; q++)
+                in_flight += fastpath->queues[q].in_flight;
+        }
+        data_wr32(rep->data, 8, in_flight);
+    }
     data_wr32(rep->data, 12,
               fastpath != (netfp_state_t *)0
                   ? (uint32_t)fastpath->irq_count : 0u);
@@ -866,15 +953,20 @@ static uint32_t handle_fastpath_status(sel4_badge_t badge,
 
 static void handle_net_irq(void)
 {
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     if (hw_present && fastpath != (netfp_state_t *)0) {
         netfp_record_irq(fastpath);
-        for (uint32_t id = 0u; id < NETFP_RING_SIZE; id++) {
-            if (__atomic_load_n(&fastpath->queues[0].slots[id].owner,
+        for (uint32_t head = 0u; head < NET_DMA_TX_CHAIN_HEADS; head++) {
+            if (!tx_hw_map[head].used) continue;
+            uint32_t q = tx_hw_map[head].queue_id;
+            uint32_t soft = tx_hw_map[head].soft_slot;
+            if (__atomic_load_n(&fastpath->queues[q].slots[soft].owner,
                                 __ATOMIC_ACQUIRE) != NETFP_DEVICE)
                 continue;
-            if (netfp_driver_complete(fastpath, 0u, id, fastpath->irq_count) == 0)
-                (void)netfp_client_release(fastpath, 0u, id);
+            if (netfp_driver_complete(fastpath, q, soft, fastpath->irq_count) == 0)
+                (void)netfp_client_release(fastpath, q, soft);
+            tx_hw_map[head].used = 0u;
+            tx_hw_busy &= ~(1u << head);
         }
     }
 #else
@@ -906,7 +998,7 @@ static void register_with_nameserver(seL4_CPtr ns_ep)
     req.data[16] = 'n'; req.data[17] = 'e'; req.data[18] = 't'; req.data[19] = '_';
     req.data[20] = 'p'; req.data[21] = 'd'; req.data[22] = '\0';
     req.length = 23;
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     sel4_call(ns_ep, &req, &rep);
 #else
     (void)rep;
@@ -1048,9 +1140,8 @@ static uint32_t handle_net_send_nic(net_pd_client_t *c, uint32_t handle,
     }
 
     if (hw_present) {
-#ifndef AGENTOS_TEST_HOST
-        const uint8_t *frame = (const uint8_t *)(net_pd_shmem_vaddr + slot_off);
-        if (virtio_submit_tx(frame, frame_len) != 0) {
+#ifndef FRACTALOS_TEST_HOST
+        if (virtio_submit_tx(slot_off, frame_len) != 0) {
             c->tx_errors++;
             slot_ring(c->shmem_slot)->tx_drops++;
             data_wr32(rep->data, 0, NET_ERR_NO_SLOTS);
@@ -1484,7 +1575,7 @@ static uint32_t handle_socket_close(sel4_badge_t badge __attribute__((unused)),
         return SEL4_ERR_NOT_FOUND;
     }
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     uint32_t slot = c->shmem_slot;
     if (c->proto == NET_PROTO_TCP && g_conns[slot].tcp) {
         tcp_close(g_conns[slot].tcp);
@@ -1704,9 +1795,14 @@ static void net_pd_test_init(void)
     hw_present     = false;
     iface_link_up  = false;
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     fastpath = &fastpath_host;
-    netfp_init(fastpath, 1u);
+    netfp_init(fastpath, NET_PD_TX_QUEUES);
+    tx_hw_busy = 0u;
+    tx_zerocopy_submits = 0u;
+    tx_payload_bytes = 0u;
+    for (uint32_t i = 0u; i < NET_DMA_TX_CHAIN_HEADS; i++)
+        tx_hw_map[i].used = 0u;
 #else
     fastpath = (netfp_state_t *)0;
 #endif
@@ -1743,12 +1839,12 @@ static uint32_t net_pd_dispatch_one(sel4_badge_t badge,
  *
  * E5-S4: No priority ordering constraint.  Callers block on endpoint IPC.
  * ═══════════════════════════════════════════════════════════════════════════ */
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 void net_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
     net_pd_shmem_vaddr = (uintptr_t)0x30000000u;
     net_pd_mmio_vaddr = (uintptr_t)0x10010000u;
-    agentos_log_boot("net_pd");
+    fractalos_log_boot("net_pd");
     log_drain_write(17, 17,
         "[net_pd] Initialising net_pd (raw seL4 IPC, no priority constraint)\n");
 
@@ -1792,4 +1888,4 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
     net_pd_main(my_ep, ns_ep);
 }
-#endif /* !AGENTOS_TEST_HOST */
+#endif /* !FRACTALOS_TEST_HOST */

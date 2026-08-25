@@ -1,6 +1,6 @@
 /*
- * agentOS FreeBSD VMM — seL4-native protection domain
- * Copyright 2026, agentOS Project
+ * FractalOS FreeBSD VMM — seL4-native protection domain
+ * Copyright 2026, FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * seL4 raw-IPC entry point for the FreeBSD VM multiplexer.
@@ -41,7 +41,7 @@
 #include "sel4_ipc.h"
 
 /* Phase 3 — guest OS binding contract (guest_contract.h §3.1 compliance) */
-#include "../../kernel/agentos-root-task/include/contracts/freebsd_vmm_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/freebsd_vmm_contract.h"
 
 /* PD name required by vmm_caps.h */
 const char vmm_pd_name[] = "freebsd_vmm";
@@ -109,7 +109,7 @@ void vmm_init(seL4_CPtr kernel_ep)
     g_kernel_ep = kernel_ep;
 
     vmm_dbg_puts("\n");
-    vmm_dbg_puts("agentOS FreeBSD VM Multiplexer\n");
+    vmm_dbg_puts("FractalOS FreeBSD VM Multiplexer\n");
     vmm_dbg_puts("seL4 (EL2) -> EDK2 -> FreeBSD (EL1)\n");
     vmm_dbg_puts("\n");
 
@@ -230,7 +230,7 @@ void freebsd_vmm_main(seL4_CPtr ep, seL4_CPtr kernel_ep,
     while (1) {
         seL4_MessageInfo_t info;
 #ifdef CONFIG_KERNEL_MCS
-        info = seL4_Recv(ep, &badge, AGENTOS_IPC_REPLY_CAP);
+        info = seL4_Recv(ep, &badge, FRACTALOS_IPC_REPLY_CAP);
 #else
         info = seL4_Recv(ep, &badge);
 #endif
@@ -241,7 +241,7 @@ void freebsd_vmm_main(seL4_CPtr ep, seL4_CPtr kernel_ep,
             seL4_MessageInfo_t reply =
                 vmm_fault(badge & ~VMM_FAULT_BADGE_BIT, info);
 #ifdef CONFIG_KERNEL_MCS
-            seL4_Send(AGENTOS_IPC_REPLY_CAP, reply);
+            seL4_Send(FRACTALOS_IPC_REPLY_CAP, reply);
 #else
             seL4_Reply(reply);
 #endif
@@ -252,7 +252,7 @@ void freebsd_vmm_main(seL4_CPtr ep, seL4_CPtr kernel_ep,
             /* IPC call from controller: label = opcode */
             seL4_MessageInfo_t reply = vmm_protected(badge, info);
 #ifdef CONFIG_KERNEL_MCS
-            seL4_Send(AGENTOS_IPC_REPLY_CAP, reply);
+            seL4_Send(FRACTALOS_IPC_REPLY_CAP, reply);
 #else
             seL4_Reply(reply);
 #endif

@@ -3,14 +3,14 @@
  *
  * // STATUS: IMPLEMENTED
  *
- * This is the canonical contract for the entropy-service device service in agentOS.
+ * This is the canonical contract for the entropy-service device service in FractalOS.
  * The concrete implementation is backed by the monocypher-based crypto primitives
- * in kernel/agentos-root-task/src/monocypher.c and crypto_ipc.c.  The entropy
+ * in kernel/fractalos-root-task/src/monocypher.c and crypto_ipc.c.  The entropy
  * source is the hardware RNG (platform-specific: ARM TRNG via MRS S3_3_C2_C4_0,
  * x86 RDRAND, or a seeded ChaCha20 DRBG when hardware is unavailable).
  *
  * The entropy service is the ONLY authorized source of cryptographic randomness
- * in agentOS.  Guest OSes and VMMs MUST NOT read hardware RNG registers directly
+ * in FractalOS.  Guest OSes and VMMs MUST NOT read hardware RNG registers directly
  * (/dev/hwrng, RDRAND, ARM TRNG MMIO).  All randomness must flow through this
  * service to ensure proper mixing, auditing, and rate limiting.
  *
@@ -32,7 +32,7 @@
  *   application entropy (timestamps, hardware identifiers) before use.
  *   See monocypher.h for the underlying crypto primitives.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

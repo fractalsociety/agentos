@@ -1,12 +1,12 @@
 // Fractal Companion export interface, version 1.1.
 //
 // This is the ONLY typed surface a local companion application may consume.
-// It is a read-mostly projection of canonical agentOS state (AgentFS objects
+// It is a read-mostly projection of canonical FractalOS state (AgentFS objects
 // plus the hash-chained canonical event stream) with exactly one mutation
 // path: a narrowly granted `task-intent`.
 //
 // Binding rules (normative, mirrored by
-// kernel/agentos-root-task/include/contracts/companion_export_contract.h):
+// kernel/fractalos-root-task/include/contracts/companion_export_contract.h):
 //
 //   1. Every projection is pinned to an `event-range` and a root `object-id`.
 //      A projection with no pin is invalid, not merely undocumented.
@@ -39,7 +39,7 @@
 // {offset,length} pairs and are zero padded to 8 bytes. The inline reply only
 // carries typed status, result slice, count, epoch, and optional next cursor.
 
-package agentos:fractal-companion@1.1.0;
+package fractalos:fractal-companion@1.1.0;
 
 interface types {
     // ── Versioning ───────────────────────────────────────────────────────

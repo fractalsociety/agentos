@@ -1,4 +1,4 @@
-//! agentOS WASM agent simulator.
+//! FractalOS WASM agent simulator.
 //!
 //! Provides a complete host-side simulation environment for running
 //! signed `.wasm` agents without real seL4 hardware:
@@ -16,7 +16,7 @@
 //! ## Quick start
 //!
 //! ```no_run
-//! use agentos_sim::SimEngine;
+//! use fractalos_sim::SimEngine;
 //!
 //! let mut engine = SimEngine::new();
 //! engine.caps_mut().grant_defaults("my-agent");
@@ -32,26 +32,26 @@ pub mod microkit;
 pub mod orchestrator;
 pub mod runner;
 
-use std::sync::{Arc, Mutex};
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
 
 pub use caps::SimCapStore;
 pub use eventbus::SimEventBus;
-pub use microkit::{MicrokitShim, MsgInfo, CapturedCall, PpcResult};
+pub use microkit::{CapturedCall, MicrokitShim, MsgInfo, PpcResult};
 pub use orchestrator::SimOrchestrator;
 pub use runner::{AgentRunner, AgentState, VerifyMode};
 
 /// Top-level simulation engine.  Owns shared state (caps + eventbus) and
 /// spawns agents that all share the same event fabric.
 pub struct SimEngine {
-    caps:     Arc<Mutex<SimCapStore>>,
+    caps: Arc<Mutex<SimCapStore>>,
     eventbus: Arc<Mutex<SimEventBus>>,
 }
 
 impl SimEngine {
     pub fn new() -> Self {
         Self {
-            caps:     Arc::new(Mutex::new(SimCapStore::new())),
+            caps: Arc::new(Mutex::new(SimCapStore::new())),
             eventbus: Arc::new(Mutex::new(SimEventBus::new())),
         }
     }
@@ -98,5 +98,7 @@ impl SimEngine {
 }
 
 impl Default for SimEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

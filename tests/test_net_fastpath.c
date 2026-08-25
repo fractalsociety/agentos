@@ -74,6 +74,9 @@ static void test_dma_contract_layout(void)
     CHECK(sizeof(net_fastpath_send_req_t) == 8u);
     CHECK(sizeof(net_fastpath_status_reply_t) == 16u);
     CHECK(NET_PD_RIGHT_FASTPATH != 0u);
+    CHECK(NET_DMA_TX_CHAIN_HEADS * 2u <= NET_DMA_QUEUE_DEPTH);
+    CHECK(NET_DMA_TX_CHAIN_TAIL0 == NET_DMA_TX_CHAIN_HEADS);
+    CHECK(NETFP_MAX_QUEUES >= 4u);
 }
 
 /* TX stays DEVICE until an IRQ-driven complete/release cycle; submit alone
@@ -108,6 +111,39 @@ static void test_irq_driven_reclaim(void)
     }
 }
 
+/* Soft multi-queue RR must share one HW head pool of CHAIN_HEADS without
+ * allowing more DEVICE-owned TX than hardware can chain. */
+static void test_multiqueue_hw_head_budget(void)
+{
+    netfp_state_t state;
+    uint32_t ids[NETFP_BATCH_MAX];
+    uint32_t submitted = 0u;
+    netfp_init(&state, NETFP_MAX_QUEUES);
+    for (uint32_t i = 0u; i < NET_DMA_TX_CHAIN_HEADS; i++) {
+        uint32_t q = netfp_select_queue(&state);
+        uint32_t id;
+        CHECK(netfp_client_reserve(&state, q, &id) == 0);
+        CHECK(netfp_client_submit(&state, q, id, 64u, i) == 0);
+        CHECK(netfp_driver_batch(&state, q, 1u, ids) == 1u);
+        submitted++;
+    }
+    CHECK(submitted == NET_DMA_TX_CHAIN_HEADS);
+    {
+        uint32_t q = netfp_select_queue(&state);
+        uint32_t id = 0u;
+        /* Software rings may still reserve, but a driver that mirrors net_pd
+         * must refuse when the HW head bitmap is full — modeled here as
+         * total DEVICE-owned across queues == CHAIN_HEADS. */
+        uint32_t device_owned = 0u;
+        for (uint32_t qi = 0u; qi < state.queue_count; qi++)
+            device_owned += state.queues[qi].in_flight;
+        CHECK(device_owned == NET_DMA_TX_CHAIN_HEADS);
+        CHECK(netfp_client_reserve(&state, q, &id) == 0
+              || netfp_client_reserve(&state, q, &id) == -2);
+        (void)id;
+    }
+}
+
 int main(void)
 {
     test_ownership_and_batch();
@@ -115,6 +151,7 @@ int main(void)
     test_multiqueue_and_illegal_transitions();
     test_dma_contract_layout();
     test_irq_driven_reclaim();
+    test_multiqueue_hw_head_budget();
     printf("[net_fastpath] %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

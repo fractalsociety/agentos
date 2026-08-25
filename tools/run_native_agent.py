@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, boot, and run one real capability-native AgentOS coding task."""
+"""Build, boot, and run one real capability-native FractalOS coding task."""
 
 from __future__ import annotations
 
@@ -114,9 +114,9 @@ def qemu_argv(sockets: pathlib.Path) -> list[str]:
         "virt,virtualization=on,highmem=off,secure=off", "-cpu", "cortex-a57",
         "-m", "2G", "-display", "none", "-monitor", "none", "-serial", "stdio",
         "-global", "virtio-mmio.force-legacy=off",
-        "-netdev", "user,id=agentos_net",
+        "-netdev", "user,id=fractalos_net",
         "-device",
-        "virtio-net-device,netdev=agentos_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off",
+        "virtio-net-device,netdev=fractalos_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off",
     ]
     argv += console(2, "cc", "cc.0")
     argv += console(3, "model", "model.0")
@@ -124,7 +124,7 @@ def qemu_argv(sockets: pathlib.Path) -> list[str]:
     argv += console(16, "mcp", "mcp.0")
     argv += [
         "-device", f"loader,file={BUILD / 'loader.elf'},cpu-num=0",
-        "-device", f"loader,file={BUILD / 'agentos.img'},addr=0x48000000",
+        "-device", f"loader,file={BUILD / 'fractalos.img'},addr=0x48000000",
     ]
     return argv
 
@@ -132,7 +132,7 @@ def qemu_argv(sockets: pathlib.Path) -> list[str]:
 def read_serial(child: subprocess.Popen[bytes], ready: threading.Event,
                 trace: bool) -> None:
     assert child.stdout is not None
-    marker = b"agentOS boot complete"
+    marker = b"FractalOS boot complete"
     pending = b""
     for chunk in iter(lambda: child.stdout.read(256), b""):
         if trace:
@@ -169,7 +169,7 @@ def main() -> int:
         )
         subprocess.run(["make", "-C", "tools/agentctl", "all"],
                        cwd=ROOT, check=True)
-    for required in (BUILD / "loader.elf", BUILD / "agentos.img", args.agentctl):
+    for required in (BUILD / "loader.elf", BUILD / "fractalos.img", args.agentctl):
         if not pathlib.Path(required).is_file():
             raise FileNotFoundError(required)
 
@@ -181,7 +181,7 @@ def main() -> int:
 
     children: list[subprocess.Popen[bytes]] = []
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="agentos-native-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="fractalos-native-") as temporary:
         temp = pathlib.Path(temporary)
         port = free_tcp_port()
         bridge = process(
@@ -218,7 +218,7 @@ def main() -> int:
                                       args=(qemu, ready, args.trace), daemon=True)
             reader.start()
             if not ready.wait(args.boot_timeout):
-                raise TimeoutError("AgentOS did not reach its truthful ready marker")
+                raise TimeoutError("FractalOS did not reach its truthful ready marker")
 
             command = [
                 str(args.agentctl), "--socket", str(temp / "cc.sock"),
@@ -238,7 +238,7 @@ def main() -> int:
                 sys.stdout.buffer.flush()
             elapsed_ms = int((time.monotonic() - started) * 1000)
             qemu_rss_bytes, qemu_cpu_percent = process_snapshot(qemu)
-            print("AGENTOS_NATIVE_RUN " + json.dumps({
+            print("FRACTALOS_NATIVE_RUN " + json.dumps({
                 "elapsed_ms": elapsed_ms,
                 "exit_code": completed.returncode,
                 "required_caps": args.required_caps,

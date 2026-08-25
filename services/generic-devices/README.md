@@ -2,7 +2,7 @@
 
 ## What Is This?
 
-The agentOS generic device abstraction layer defines a uniform set of IPC
+The FractalOS generic device abstraction layer defines a uniform set of IPC
 contracts between protection domains (PDs) and device services.  Each device
 type — serial console, network, block storage, USB, timers, entropy — has a
 single canonical service PD that owns the hardware and exports a versioned
@@ -33,7 +33,7 @@ If your guest OS or VMM needs a device behaviour that the generic service does
 not provide, the correct path is:
 
 1. Open a defect task describing the missing functionality.
-2. Obtain approval from the agentOS maintainers.
+2. Obtain approval from the FractalOS maintainers.
 3. Extend the canonical service and its contract header — do **not** create a
    parallel private driver.
 
@@ -112,7 +112,7 @@ PD authors do not request capabilities directly.  The flow is:
    `NET_SVC_ERR_PERM` from every net-service call.
 
 For kernel PDs (non-VM agents), capability grants are static and declared in
-`agentos.system`.  For guest OSes, they are dynamic and controlled by
+`fractalos.system`.  For guest OSes, they are dynamic and controlled by
 vm_manager.
 
 ## Interface Version Compatibility
@@ -133,10 +133,10 @@ incremented and both the service and all known clients must be updated together.
 
 2. Mark it `// STATUS: PLANNED` until a service PD exists.
 
-3. Implement the service PD under `kernel/agentos-root-task/src/` (for kernel
+3. Implement the service PD under `kernel/fractalos-root-task/src/` (for kernel
    services) or `services/<service-name>/` (for userspace services).
 
-4. Register the shared-memory region and PPC channel in `agentos.system`.
+4. Register the shared-memory region and PPC channel in `fractalos.system`.
 
 5. Update vm_manager.c to grant the new capability class to guest OSes that
    request it.

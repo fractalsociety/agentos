@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../kernel/agentos-root-task/include/harness_composition.h"
+#include "../../kernel/fractalos-root-task/include/harness_composition.h"
 
 static unsigned tests;
 static unsigned failures;

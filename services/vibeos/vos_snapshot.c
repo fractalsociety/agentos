@@ -14,12 +14,12 @@
  *   6. Resume the guest via seL4_TCB_Resume.
  *   7. Return (snap_lo, snap_hi) in the IPC reply.
  *
- * Under AGENTOS_TEST_HOST:
+ * Under FRACTALOS_TEST_HOST:
  *   seL4 primitives are stubbed.  The blob is stored in a static in-memory
  *   table via vos_test_snap_store_put().  vos_restore.c retrieves blobs from
  *   the same table via vos_test_snap_store_get().
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -33,7 +33,7 @@
 /* Pull in the public API contract for opcodes, error codes, and structs */
 #include "contracts/vibeos/interface.h"
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 #include "sel4_boot.h"
 #endif
 
@@ -43,7 +43,7 @@
  * vos_instance_t — per-guest runtime state tracked by the root task.
  *
  * On real seL4 hardware these fields hold seL4 capability indices.
- * Under AGENTOS_TEST_HOST they hold stub values used by tests.
+ * Under FRACTALOS_TEST_HOST they hold stub values used by tests.
  */
 typedef struct {
     uint32_t    handle;         /* opaque handle (slot_index + 1)            */
@@ -88,7 +88,7 @@ vos_instance_t *vos_instance_get(uint32_t handle)
 }
 
 /*
- * vos_test_alloc_instance — allocate a new blank instance (AGENTOS_TEST_HOST
+ * vos_test_alloc_instance — allocate a new blank instance (FRACTALOS_TEST_HOST
  * and real seL4 create path both use this).
  * Returns NULL if no free slot is available.
  */
@@ -130,7 +130,7 @@ void vos_test_instance_table_reset(void)
 
 /* ── seL4 primitive stubs ────────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /* Stub: suspend the guest TCB (no-op on host) */
 static inline void seL4_TCB_Suspend(uint32_t tcb_cap)  { (void)tcb_cap; }
@@ -154,7 +154,7 @@ static inline void seL4_VCPU_WriteRegs(uint32_t vcpu_cap,
     (void)vcpu_cap; (void)regs; (void)pc;
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── AgentFS blob persistence ─────────────────────────────────────────────── */
 
@@ -162,14 +162,14 @@ static inline void seL4_VCPU_WriteRegs(uint32_t vcpu_cap,
  * agentfs_put_blob — store a snapshot blob in AgentFS and return a token.
  *
  * On real seL4 hardware this would make an IPC call to the AgentFS PD.
- * Under AGENTOS_TEST_HOST it delegates to vos_test_snap_store_put().
+ * Under FRACTALOS_TEST_HOST it delegates to vos_test_snap_store_put().
  *
  * Returns VOS_ERR_OK on success, VOS_ERR_SNAPSHOT_FAILED on failure.
  */
 static uint32_t agentfs_put_blob(const void *buf, uint32_t size,
                                   uint32_t *out_snap_lo, uint32_t *out_snap_hi)
 {
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     int rc = vos_test_snap_store_put(buf, size, out_snap_lo, out_snap_hi);
     return (rc == 0) ? VOS_ERR_OK : VOS_ERR_SNAPSHOT_FAILED;
 #else
@@ -212,7 +212,7 @@ static uint32_t vos_build_snap_blob(vos_instance_t *inst,
 {
     uint32_t ram_bytes;
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     ram_bytes = VOS_SNAP_RAM_STUB_BYTES;
 #else
     ram_bytes = inst->memory_pages * 4096u;
@@ -243,7 +243,7 @@ static uint32_t vos_build_snap_blob(vos_instance_t *inst,
     uint32_t regs[32];
     uint64_t pc = 0;
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     /* Use the test register state stored in the instance */
     for (uint32_t i = 0; i < 32; i++) regs[i] = inst->test_regs[i];
     pc = inst->test_pc;
@@ -257,7 +257,7 @@ static uint32_t vos_build_snap_blob(vos_instance_t *inst,
     p += sizeof(uint64_t);
 
     /* Guest RAM */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     /*
      * Stub: fill RAM region with a deterministic pattern based on the handle
      * so that round-trip tests can verify the data was preserved.
@@ -294,7 +294,7 @@ uint32_t vos_snapshot(uint32_t guest_handle,
         return VOS_ERR_INVALID_HANDLE;
 
     /* Suspend guest for the duration of the capture */
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     seL4_TCB_Suspend(inst->tcb_cap);
 #endif
 
@@ -306,7 +306,7 @@ uint32_t vos_snapshot(uint32_t guest_handle,
 
     uint32_t blob_size = vos_build_snap_blob(inst, s_snap_buf, sizeof(s_snap_buf), 0u);
     if (blob_size == 0) {
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
         seL4_TCB_Resume(inst->tcb_cap);
 #endif
         return VOS_ERR_SNAPSHOT_FAILED;
@@ -315,16 +315,16 @@ uint32_t vos_snapshot(uint32_t guest_handle,
     uint32_t err = agentfs_put_blob(s_snap_buf, blob_size, out_snap_lo, out_snap_hi);
 
     /* Resume guest */
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     seL4_TCB_Resume(inst->tcb_cap);
 #endif
 
     return err;
 }
 
-/* ── AGENTOS_TEST_HOST shared snap store ─────────────────────────────────── */
+/* ── FRACTALOS_TEST_HOST shared snap store ─────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /*
  * The static blob store is defined here (in vos_snapshot.c) and accessed by
@@ -388,4 +388,4 @@ void vos_test_snap_store_reset(void)
     memset(s_snap_store, 0, sizeof(s_snap_store));
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

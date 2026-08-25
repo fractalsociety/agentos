@@ -1,5 +1,5 @@
 /*
- * test_power_mgr.c — unit tests for agentOS power_mgr thermal simulation
+ * test_power_mgr.c — unit tests for FractalOS power_mgr thermal simulation
  *
  * Standalone host test that mirrors the thermal model and ring buffer logic
  * from power_mgr.c and exercises the full tick/throttle/unthrottle cycle.
@@ -242,7 +242,7 @@ static void test_4_history_ring(void) {
 /* ── main ────────────────────────────────────────────────────────────────── */
 
 int main(void) {
-    printf("=== agentOS power_mgr unit tests ===\n\n");
+    printf("=== FractalOS power_mgr unit tests ===\n\n");
 
     test_1_init_state();
     test_2_high_load_throttles();

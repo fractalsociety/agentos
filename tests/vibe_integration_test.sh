@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# agentOS Vibe Integration Test
+# FractalOS Vibe Integration Test
 # Tests the full agent→generate→compile→validate→swap→verify loop.
 #
 # Environment:
-#   AGENTOS_CODEGEN_BACKEND=mock  (no real LLM; generate phase is skipped)
-#   AGENTOS_BRIDGE_PORT=8790      (default)
-#   AGENTOS_TIMEOUT=120           (seconds to wait for each phase)
+#   FRACTALOS_CODEGEN_BACKEND=mock  (no real LLM; generate phase is skipped)
+#   FRACTALOS_BRIDGE_PORT=8790      (default)
+#   FRACTALOS_TIMEOUT=120           (seconds to wait for each phase)
 #
 # Exit codes:
 #   0 — all phases passed (or skipped with acceptable reason)
@@ -41,9 +41,9 @@ phase() { printf "\n${BOLD}--- Phase %s: %s ---${RESET}\n" "$1" "$2"; }
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BRIDGE_PORT="${AGENTOS_BRIDGE_PORT:-8790}"
-TIMEOUT="${AGENTOS_TIMEOUT:-120}"
-CODEGEN_BACKEND="${AGENTOS_CODEGEN_BACKEND:-mock}"
+BRIDGE_PORT="${FRACTALOS_BRIDGE_PORT:-8790}"
+TIMEOUT="${FRACTALOS_TIMEOUT:-120}"
+CODEGEN_BACKEND="${FRACTALOS_CODEGEN_BACKEND:-mock}"
 BRIDGE_BASE="http://localhost:${BRIDGE_PORT}"
 
 BRIDGE_PID=""
@@ -119,24 +119,24 @@ set +e
 info "Checking bridge on port ${BRIDGE_PORT}..."
 
 BRIDGE_ALREADY_RUNNING=0
-if curl -sf --max-time 2 "${BRIDGE_BASE}/api/agentos/agents" >/dev/null 2>&1; then
+if curl -sf --max-time 2 "${BRIDGE_BASE}/api/fractalos/agents" >/dev/null 2>&1; then
     info "Bridge already running on port ${BRIDGE_PORT} — reusing."
     BRIDGE_ALREADY_RUNNING=1
 fi
 
 if [ "${BRIDGE_ALREADY_RUNNING}" -eq 0 ]; then
-    info "Starting bridge: cargo run --bin agentos-console ..."
+    info "Starting bridge: cargo run --bin fractalos-console ..."
     # Find the repo root (parent of this script's directory)
     SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
     REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-    # Launch bridge; suppress its output unless AGENTOS_DEBUG is set
-    if [ -n "${AGENTOS_DEBUG}" ]; then
+    # Launch bridge; suppress its output unless FRACTALOS_DEBUG is set
+    if [ -n "${FRACTALOS_DEBUG}" ]; then
         cargo run --manifest-path "${REPO_ROOT}/Cargo.toml" \
-            --bin agentos-console 2>&1 &
+            --bin fractalos-console 2>&1 &
     else
         cargo run --manifest-path "${REPO_ROOT}/Cargo.toml" \
-            --bin agentos-console >/tmp/agentos-bridge-test.log 2>&1 &
+            --bin fractalos-console >/tmp/fractalos-bridge-test.log 2>&1 &
     fi
     BRIDGE_PID=$!
     info "Bridge PID: ${BRIDGE_PID}"
@@ -145,16 +145,16 @@ if [ "${BRIDGE_ALREADY_RUNNING}" -eq 0 ]; then
     info "Waiting for bridge to become ready (up to 30 s)..."
     READY=0
     for i in $(seq 1 15); do
-        if curl -sf --max-time 2 "${BRIDGE_BASE}/api/agentos/agents" >/dev/null 2>&1; then
+        if curl -sf --max-time 2 "${BRIDGE_BASE}/api/fractalos/agents" >/dev/null 2>&1; then
             READY=1
             break
         fi
         # Check if the process already died
         if ! kill -0 "${BRIDGE_PID}" 2>/dev/null; then
             fail "Bridge process exited unexpectedly (PID ${BRIDGE_PID})"
-            if [ -f /tmp/agentos-bridge-test.log ]; then
+            if [ -f /tmp/fractalos-bridge-test.log ]; then
                 printf "Bridge log:\n"
-                tail -20 /tmp/agentos-bridge-test.log
+                tail -20 /tmp/fractalos-bridge-test.log
             fi
             exit 2
         fi
@@ -164,9 +164,9 @@ if [ "${BRIDGE_ALREADY_RUNNING}" -eq 0 ]; then
 
     if [ "${READY}" -eq 0 ]; then
         fail "Bridge did not become ready within 30 s"
-        if [ -f /tmp/agentos-bridge-test.log ]; then
+        if [ -f /tmp/fractalos-bridge-test.log ]; then
             printf "Bridge log:\n"
-            tail -20 /tmp/agentos-bridge-test.log
+            tail -20 /tmp/fractalos-bridge-test.log
         fi
         exit 2
     fi
@@ -177,17 +177,17 @@ fi
 # Phase 1 — Generate endpoint
 # ═════════════════════════════════════════════════════════════════════════════
 
-phase "1" "Generate endpoint (POST /api/agentos/vibe/generate)"
+phase "1" "Generate endpoint (POST /api/fractalos/vibe/generate)"
 
 GENERATE_RESPONSE=$(curl -sf --max-time 30 \
-    -X POST "${BRIDGE_BASE}/api/agentos/vibe/generate" \
+    -X POST "${BRIDGE_BASE}/api/fractalos/vibe/generate" \
     -H "Content-Type: application/json" \
     -d '{"prompt": "Generate a minimal storage.v1 service", "service_id": "storage.v1"}' \
     2>&1)
 GENERATE_EXIT=$?
 
 if [ "${GENERATE_EXIT}" -ne 0 ]; then
-    phase_fail "Phase 1: curl request to /api/agentos/vibe/generate failed (exit ${GENERATE_EXIT})"
+    phase_fail "Phase 1: curl request to /api/fractalos/vibe/generate failed (exit ${GENERATE_EXIT})"
 else
     # Check for ok:true and code field (real LLM response)
     if printf '%s' "${GENERATE_RESPONSE}" | grep -q '"ok":true' && \
@@ -200,9 +200,9 @@ else
     # Check for expected "no backend" error in mock mode — treat as SKIP
     elif printf '%s' "${GENERATE_RESPONSE}" | grep -q '"ok":false' && \
          printf '%s' "${GENERATE_RESPONSE}" | grep -qi 'no codegen backend\|no.*backend\|api_key\|not available'; then
-        phase_skip "Phase 1: no LLM backend available (AGENTOS_CODEGEN_BACKEND=${CODEGEN_BACKEND}) — expected in CI"
+        phase_skip "Phase 1: no LLM backend available (FRACTALOS_CODEGEN_BACKEND=${CODEGEN_BACKEND}) — expected in CI"
     else
-        phase_fail "Phase 1: unexpected response from /api/agentos/vibe/generate: ${GENERATE_RESPONSE}"
+        phase_fail "Phase 1: unexpected response from /api/fractalos/vibe/generate: ${GENERATE_RESPONSE}"
     fi
 fi
 
@@ -210,7 +210,7 @@ fi
 # Phase 2 — Compile endpoint
 # ═════════════════════════════════════════════════════════════════════════════
 
-phase "2" "Compile endpoint (POST /api/agentos/vibe/compile)"
+phase "2" "Compile endpoint (POST /api/fractalos/vibe/compile)"
 
 # Use the known-good mock_memfs.c from the vibe test suite as compile input
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -248,14 +248,14 @@ ESCAPED_SOURCE=$(printf '%s' "${MOCK_C_SOURCE}" | \
 COMPILE_BODY="{\"source_c\": \"${ESCAPED_SOURCE}\", \"service_id\": \"storage.v1\"}"
 
 COMPILE_RESPONSE=$(curl -sf --max-time "${TIMEOUT}" \
-    -X POST "${BRIDGE_BASE}/api/agentos/vibe/compile" \
+    -X POST "${BRIDGE_BASE}/api/fractalos/vibe/compile" \
     -H "Content-Type: application/json" \
     -d "${COMPILE_BODY}" \
     2>&1)
 COMPILE_EXIT=$?
 
 if [ "${COMPILE_EXIT}" -ne 0 ]; then
-    phase_fail "Phase 2: curl request to /api/agentos/vibe/compile failed (exit ${COMPILE_EXIT})"
+    phase_fail "Phase 2: curl request to /api/fractalos/vibe/compile failed (exit ${COMPILE_EXIT})"
     COMPILE_WASM_B64=""
 else
     if printf '%s' "${COMPILE_RESPONSE}" | grep -q '"ok":true' && \
@@ -271,7 +271,7 @@ else
         phase_skip "Phase 2: clang with wasm32-wasi not found — install llvm to enable compile phase"
         COMPILE_WASM_B64=""
     else
-        phase_fail "Phase 2: unexpected response from /api/agentos/vibe/compile: ${COMPILE_RESPONSE}"
+        phase_fail "Phase 2: unexpected response from /api/fractalos/vibe/compile: ${COMPILE_RESPONSE}"
         COMPILE_WASM_B64=""
     fi
 fi
@@ -305,10 +305,10 @@ fi
 # Phase 4 — Bridge health after test
 # ═════════════════════════════════════════════════════════════════════════════
 
-phase "4" "Bridge health check (GET /api/agentos/agents)"
+phase "4" "Bridge health check (GET /api/fractalos/agents)"
 
 HEALTH_RESPONSE=$(curl -sf --max-time 10 \
-    "${BRIDGE_BASE}/api/agentos/agents" \
+    "${BRIDGE_BASE}/api/fractalos/agents" \
     2>&1)
 HEALTH_EXIT=$?
 
@@ -319,7 +319,7 @@ elif printf '%s' "${HEALTH_RESPONSE}" | grep -q '"agents":\['; then
     info "Bridge returned ${AGENT_COUNT} agent(s)"
     phase_pass "Phase 4: bridge is healthy and returned agents list"
 else
-    phase_fail "Phase 4: unexpected response from /api/agentos/agents: ${HEALTH_RESPONSE}"
+    phase_fail "Phase 4: unexpected response from /api/fractalos/agents: ${HEALTH_RESPONSE}"
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════

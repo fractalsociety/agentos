@@ -2,7 +2,7 @@
  * vos_snapshot_test.c — TAP API tests for VOS_SNAPSHOT
  *
  * Tests the vos_snapshot() function (and the IPC-level VOS_OP_SNAPSHOT opcode)
- * by compiling vos_snapshot.c in AGENTOS_TEST_HOST mode and exercising all
+ * by compiling vos_snapshot.c in FRACTALOS_TEST_HOST mode and exercising all
  * observable behaviours.
  *
  * Covered cases:
@@ -34,21 +34,21 @@
  *   T26  all four VOS_MAX_INSTANCES snapshots produce unique snap_lo tokens
  *
  * Build & run (from repo root):
- *   cc -DAGENTOS_TEST_HOST \
- *      -I kernel/agentos-root-task/include \
- *      -I kernel/agentos-root-task/src \
+ *   cc -DFRACTALOS_TEST_HOST \
+ *      -I kernel/fractalos-root-task/include \
+ *      -I kernel/fractalos-root-task/src \
  *      -I contracts \
  *      -I tests/api \
  *      -o /tmp/test_vos_snapshot \
  *      tests/api/vos_snapshot_test.c \
- *      kernel/agentos-root-task/src/vos_snapshot.c \
+ *      kernel/fractalos-root-task/src/vos_snapshot.c \
  *   && /tmp/test_vos_snapshot
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
@@ -64,7 +64,7 @@ typedef uint32_t vos_err_t;
 #include "contracts/agentfs/interface.h"
 
 /* Bring in the implementation symbols (compiled as a unit) */
-#include "../../kernel/agentos-root-task/src/vos_snapshot.c"
+#include "../../kernel/fractalos-root-task/src/vos_snapshot.c"
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -179,7 +179,7 @@ static void test_header_ram_size_pages(void)
 {
     vos_snapshot_init();
     /*
-     * In AGENTOS_TEST_HOST mode the static snapshot buffer is sized for
+     * In FRACTALOS_TEST_HOST mode the static snapshot buffer is sized for
      * VOS_SNAP_BUF_PAGES (4) pages.  Allocate a 2-page instance so we are
      * safely within the host buffer limit.
      */
@@ -464,4 +464,4 @@ int main(void)
 #else
 /* Non-host builds: this file is excluded from compilation */
 typedef int _vos_snapshot_test_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# agentOS CI test harness
+# FractalOS CI test harness
 # Usage: scripts/run-tests.sh [BOARD=qemu_virt_riscv64]
 #
-# Builds agentOS for the given board, boots it in QEMU, watches serial
+# Builds FractalOS for the given board, boots it in QEMU, watches serial
 # output for known success/failure strings, and exits 0 (PASS) or 1 (FAIL).
 
 set -euo pipefail
@@ -10,11 +10,11 @@ set -euo pipefail
 BOARD="${BOARD:-${1:-qemu_virt_riscv64}}"
 TIMEOUT=30
 
-SUCCESS_STRINGS=("agentOS v0.1.0" "[event_bus] READY" "[controller] *** agentOS controller boot complete ***")
+SUCCESS_STRINGS=("FractalOS v0.1.0" "[event_bus] READY" "[controller] *** FractalOS controller boot complete ***")
 FAILURE_STRINGS=("Panic")
 
-BUILD_IMAGE="build/${BOARD}/agentos.img"
-TMPLOG=$(mktemp /tmp/agentos-qemu.XXXXXX)
+BUILD_IMAGE="build/${BOARD}/fractalos.img"
+TMPLOG=$(mktemp /tmp/fractalos-qemu.XXXXXX)
 
 cleanup() {
     kill "$QEMU_PID" 2>/dev/null || true
@@ -25,7 +25,7 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 # Step 1: Build
 # ---------------------------------------------------------------------------
-echo "[ci] Building agentOS for BOARD=${BOARD} ..."
+echo "[ci] Building FractalOS for BOARD=${BOARD} ..."
 if ! make BOARD="${BOARD}"; then
     echo ""
     echo "FAIL: build failed for BOARD=${BOARD}"

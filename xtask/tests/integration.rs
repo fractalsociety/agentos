@@ -1,5 +1,5 @@
 // Port of libvmm/ci/tests/buildroot_login.py and virtio.py
-// These run only when AGENTOS_CI=1 is set (otherwise skipped).
+// These run only when FRACTALOS_CI=1 is set (otherwise skipped).
 
 use xtask::cmd_ci_matrix::TEST_MATRIX;
 

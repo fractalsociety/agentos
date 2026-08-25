@@ -1,10 +1,10 @@
 /* Contract-only tests for the native AgentHarness authority boundary. */
 
 #include <stdint.h>
-#include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agent_harness_contract.h"
 #include "../../contracts/toolsvc/interface.h"
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include <stdio.h>
 
 static unsigned tests;

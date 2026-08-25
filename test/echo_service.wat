@@ -1,4 +1,4 @@
-;; agentOS Test WASM Module: Echo Service
+;; FractalOS Test WASM Module: Echo Service
 ;;
 ;; A minimal service that demonstrates the vibe-swap pipeline:
 ;;   - init() logs "Echo service initialized" via aos_log
@@ -23,7 +23,7 @@
   (memory (export "memory") 33)  ;; 33 pages = 2.0625 MB (covers 0x200000 + 40 bytes)
 
   ;; String data for init message
-  (data (i32.const 0) "Echo service initialized via agentOS vibe-swap!")
+  (data (i32.const 0) "Echo service initialized via FractalOS vibe-swap!")
 
   ;; === Exported functions ===
 

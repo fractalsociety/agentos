@@ -1,19 +1,19 @@
-# agentOS API Surface Audit
+# FractalOS API Surface Audit
 
 **Task:** 6 — Full API surface inventory  
 **Date:** 2026-04-15  
 **Auditor:** Claude Sonnet 4.6 (automated)  
-**Scope:** All service source files in `userspace/servers/`, `services/`, and `kernel/agentos-root-task/src/`
+**Scope:** All service source files in `userspace/servers/`, `services/`, and `kernel/fractalos-root-task/src/`
 
 ---
 
 ## Executive Summary
 
-The agentOS codebase contains **17 distinct service components** spread across three implementation layers: kernel-resident C protection domains, Rust userspace library servers, and C services that partially pre-date the Microkit architecture. The overall API surface is **large, partially duplicated, and contains at least three outright constitutional violations**.
+The FractalOS codebase contains **17 distinct service components** spread across three implementation layers: kernel-resident C protection domains, Rust userspace library servers, and C services that partially pre-date the Microkit architecture. The overall API surface is **large, partially duplicated, and contains at least three outright constitutional violations**.
 
 Key findings:
 
-1. **Two parallel implementations of every major service exist.** For example, `services/msgbus/msgbus.c` and `kernel/agentos-root-task/src/event_bus.c` both implement inter-agent messaging; `services/toolsvc/toolsvc.c` and `userspace/servers/tool-registry/src/lib.rs` both implement tool registration. Only the kernel PD version has a real seL4 IPC dispatch loop and is in the right place architecturally. The `services/` C files appear to be earlier prototypes or simulation stubs.
+1. **Two parallel implementations of every major service exist.** For example, `services/msgbus/msgbus.c` and `kernel/fractalos-root-task/src/event_bus.c` both implement inter-agent messaging; `services/toolsvc/toolsvc.c` and `userspace/servers/tool-registry/src/lib.rs` both implement tool registration. Only the kernel PD version has a real seL4 IPC dispatch loop and is in the right place architecturally. The `services/` C files appear to be earlier prototypes or simulation stubs.
 
 2. **Three services violate the language policy directly:**
    - `services/vibe-swap/` is JavaScript (Node.js) — a hard constitutional violation.
@@ -37,7 +37,7 @@ Key findings:
 | **http-gateway** | Rust | Userspace server | HTTP/1.1 on TCP (Tokio + hyper) | `GET /health`, `GET /healthz`, `GET /_gateway/health`, `GET /_gateway/routes`, all-methods proxy via IPC dispatch | No | Questionable — see §Recommendations | REDESIGN |
 | **model-proxy** (userspace) | Rust | Userspace lib | Internal (no_std lib) + optional HTTP | `register_endpoint`, `route`, `score_model`, `cache.get`, `cache.put`, `budget.check`, `budget.consume`, `budget.reset_period` | No (no tests visible) | Disputed — see §Recommendations | REDESIGN |
 | **tool-registry** (userspace) | Rust | Userspace lib | Internal (no_std lib) | `register`, `deregister`, `unregister`, `grant_access`, `invoke`, `list`, `list_tools`, `search`, `invocation_log_recent`, `stats` | Yes (unit tests in lib.rs) | Yes — but no contract file | REDESIGN |
-| **vibe-engine** (userspace) | Rust | Userspace lib + kernel PD | Internal lib + seL4 IPC PD | `validate_proposal`, `parse_agentos_caps_section`, `check_capability_policy` (lib); `OP_VIBE_PROPOSE/VALIDATE/EXECUTE/STATUS/ROLLBACK/HEALTH/REGISTER_SERVICE/LIST_SERVICES` (PD) | Partial (wasm_validator tests via sim) | Yes | KEEP |
+| **vibe-engine** (userspace) | Rust | Userspace lib + kernel PD | Internal lib + seL4 IPC PD | `validate_proposal`, `parse_fractalos_caps_section`, `check_capability_policy` (lib); `OP_VIBE_PROPOSE/VALIDATE/EXECUTE/STATUS/ROLLBACK/HEALTH/REGISTER_SERVICE/LIST_SERVICES` (PD) | Partial (wasm_validator tests via sim) | Yes | KEEP |
 | **MsgBus** (services/msgbus) | C | CAmkES + seL4 | seL4 IPC (CAmkES + direct) | `MSGBUS_OP_CREATE_CHANNEL (0x100)`, `DELETE_CHANNEL (0x101)`, `SUBSCRIBE (0x102)`, `UNSUBSCRIBE (0x103)`, `PUBLISH (0x104)`, `SEND_DIRECT (0x105)`, `RECV (0x106)`, `LIST_CHANNELS (0x107)`, `CHANNEL_INFO (0x108)`, `CALL_RPC (0x109)`, `REPLY_RPC (0x10A)` | No | Yes (C, CAmkES) — but stubs | REDESIGN |
 | **CapStore** (services/capstore) | C | seL4 service | Internal C API | `capstore_init`, `capstore_register`, `capstore_derive`, `capstore_revoke`, `capstore_query_by_owner` | No | Yes (C) — prototype quality | REDESIGN |
 | **LogSvc** (services/logsvc) | C | seL4 service | Internal C API | `logsvc_init`, `logsvc_write`, `logsvc_writef`, `logsvc_query`, `logsvc_entry_to_json` | No | Yes (C) | REDESIGN |
@@ -87,7 +87,7 @@ Audit:
 - `audit_recent(n) -> &[AuditEntry]` — line 405
 - `audit_len() -> usize` — line 411
 
-**Status:** Well-tested (14 unit tests), clean Rust, no_std. BUT: this is a library, not a deployed PD. The real kernel-resident capability broker lives in `kernel/agentos-root-task/src/cap_broker.c`. These two implementations have diverged and have different data models.
+**Status:** Well-tested (14 unit tests), clean Rust, no_std. BUT: this is a library, not a deployed PD. The real kernel-resident capability broker lives in `kernel/fractalos-root-task/src/cap_broker.c`. These two implementations have diverged and have different data models.
 
 **Disposition:** REDESIGN — consolidate into the seL4 PD. Keep the Rust lib as a simulation-layer model only, clearly labeled as such. Write a contract file.
 
@@ -111,7 +111,7 @@ Audit:
 
 Constants: `MAX_PAYLOAD_BYTES = 512`, `MAX_PENDING_PER_SUBSCRIBER = 256`
 
-**Status:** Well-tested (14 unit tests). Same architectural problem as capability-broker — it is a library, not a PD. The real EventBus PD is at `kernel/agentos-root-task/src/event_bus.c`.
+**Status:** Well-tested (14 unit tests). Same architectural problem as capability-broker — it is a library, not a PD. The real EventBus PD is at `kernel/fractalos-root-task/src/event_bus.c`.
 
 **Disposition:** REDESIGN — same strategy as capability-broker.
 
@@ -212,7 +212,7 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 **Files:**
 - `userspace/servers/vibe-engine/src/lib.rs` — Rust lib for proposal lifecycle, contract validation, WASM capability manifest parsing
 - `userspace/servers/vibe-engine/src/wasm_validator.rs` — WASM binary validator (magic, exports, section scanning)
-- `kernel/agentos-root-task/src/vibe_engine.c` — The real PD with seL4 PPC dispatch
+- `kernel/fractalos-root-task/src/vibe_engine.c` — The real PD with seL4 PPC dispatch
 
 **Kernel PD opcodes (from `vibe_engine.c`, lines 48–55):**
 - `OP_VIBE_PROPOSE = 0x40` — submit WASM binary for target service (MR1=service_id, MR2=wasm_size, staging region pre-written)
@@ -229,11 +229,11 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 
 **Rust lib operations (lib.rs):**
 - `validate_proposal(proposal, contract) -> ValidationResult` — line 218: runs 5 checks (format, size, swappable, memory budget, WASM validity + cap manifest)
-- `parse_agentos_caps_section(wasm) -> Result<Option<CapabilityManifest>, String>` — line 363
+- `parse_fractalos_caps_section(wasm) -> Result<Option<CapabilityManifest>, String>` — line 363
 - `check_capability_policy(manifest, contract) -> CapPolicyResult` — (referenced at line 291)
 
 **wasm_validator.rs required exports:** `init`, `handle_ppc`, `health_check`, `notified`, `memory`  
-**Required custom section:** `agentos.capabilities`
+**Required custom section:** `fractalos.capabilities`
 
 **Disposition:** KEEP — this is the most fully realized service in the codebase.
 
@@ -322,7 +322,7 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 
 **Limits:** 64 files max, 4KB per file, 256-char paths
 
-**Service ABI opcodes** (from `services/abi/agentos_service_abi.h`, lines 39–45):
+**Service ABI opcodes** (from `services/abi/fractalos_service_abi.h`, lines 39–45):
 - `STORAGE_OP_WRITE = 0x30`
 - `STORAGE_OP_READ = 0x31`
 - `STORAGE_OP_DELETE = 0x32`
@@ -384,11 +384,11 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 2. **HTTP server exposing operational state** — even if the language were allowed, running an HTTP management server for a kernel service violates the API-first/no-UI mandate
 3. **Duplicate of vibe_engine.c + vibe_swap.c** — this functionality exists correctly implemented in C
 
-**Disposition:** DELETE — no logic here that isn't already better expressed in `kernel/agentos-root-task/src/vibe_swap.c` and `vibe_engine.c`. The WASM validation logic (`validate()`) should be confirmed to be covered by `wasm_validator.rs` before deletion (it is: `wasm_validator.rs` checks magic bytes and exports).
+**Disposition:** DELETE — no logic here that isn't already better expressed in `kernel/fractalos-root-task/src/vibe_swap.c` and `vibe_engine.c`. The WASM validation logic (`validate()`) should be confirmed to be covered by `wasm_validator.rs` before deletion (it is: `wasm_validator.rs` checks magic bytes and exports).
 
 ---
 
-### 14. EventBus PD (kernel/agentos-root-task/src/event_bus.c)
+### 14. EventBus PD (kernel/fractalos-root-task/src/event_bus.c)
 
 **Language:** C (Microkit PD)  
 **Dispatch:** `protected(ch, msg)` — lines 131–293
@@ -408,7 +408,7 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 
 ---
 
-### 15. CapBroker PD (kernel/agentos-root-task/src/cap_broker.c)
+### 15. CapBroker PD (kernel/fractalos-root-task/src/cap_broker.c)
 
 **Language:** C (Microkit PD, compiled into monitor.elf)  
 **Dispatch:** Via `cap_broker_handle_policy_reload_ppc()` called from `monitor.c`
@@ -430,7 +430,7 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 
 ---
 
-### 16. HTTPSvc PD (kernel/agentos-root-task/src/http_svc.c)
+### 16. HTTPSvc PD (kernel/fractalos-root-task/src/http_svc.c)
 
 **Language:** C (Microkit PD, priority 140)  
 **Channels:** `HTTP_CH_CONTROLLER=0`, `HTTP_CH_APP_MANAGER=1`  
@@ -450,7 +450,7 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 
 ---
 
-### 17. AgentFS PD (kernel/agentos-root-task/src/agentfs.c)
+### 17. AgentFS PD (kernel/fractalos-root-task/src/agentfs.c)
 
 **Language:** C (Microkit PD, priority 150)  
 **Channels:** `CH_CONTROLLER=0`, `CH_EVENTBUS=1`
@@ -484,7 +484,7 @@ Constants: `MAX_TOOLS = 256`, `MAX_INVOCATION_LOG = 512`
 | GpuSched | `gpu_sched.c` | MSG_GPU_SUBMIT (0x0901)+ | GPU task queue |
 | MeshAgent | `mesh_agent.c` | MSG_MESH_ANNOUNCE (0x0A01)+ | Distributed node mesh |
 | TraceRecorder | `trace_recorder.c` | OP_TRACE_START (0x80)–OP_TRACE_DUMP (0x83) | IPC trace recording |
-| WatchdogPD | (referenced in agentos.h) | OP_WD_REGISTER (0x50)–OP_WD_RESUME (0x55) | Heartbeat-based slot watchdog |
+| WatchdogPD | (referenced in fractalos.h) | OP_WD_REGISTER (0x50)–OP_WD_RESUME (0x55) | Heartbeat-based slot watchdog |
 | QuotaPD | `quota_pd.c` | MSG_QUOTA_REVOKE (0x0B01) | Per-agent resource quota enforcement |
 | FaultHandler | `fault_handler.c` | Receives seL4 fault IPC | VM fault and cap fault processing |
 | CryptoIPC | `crypto_ipc.c` | (see crypto_ipc.h) | Cryptographic operations PD |
@@ -521,10 +521,10 @@ The following capabilities are architecturally required but have no formal, call
 #### V1 — services/vibe-swap/ (JavaScript/Node.js)
 - **Files:** `services/vibe-swap/src/index.mjs`, `services/vibe-swap/src/server.mjs`, `services/vibe-swap/test/pipeline.test.mjs`, `services/vibe-swap/package.json`
 - **Violation:** JavaScript is explicitly forbidden (CLAUDE.md §Non-Negotiable Language Policy). Node.js HTTP server violates the no-HTTP-servers policy for kernel services.
-- **Action:** DELETE all four files and the `services/vibe-swap/` directory. The pipeline logic (stage, validate, commit, rollback) is already correctly implemented in Rust (`userspace/servers/vibe-engine/`) and C (`kernel/agentos-root-task/src/vibe_swap.c`).
+- **Action:** DELETE all four files and the `services/vibe-swap/` directory. The pipeline logic (stage, validate, commit, rollback) is already correctly implemented in Rust (`userspace/servers/vibe-engine/`) and C (`kernel/fractalos-root-task/src/vibe_swap.c`).
 
-#### V2 — kernel/agentos-root-task/src/js_runtime.c (JavaScript eval in kernel PD)
-- **File:** `kernel/agentos-root-task/src/js_runtime.c`
+#### V2 — kernel/fractalos-root-task/src/js_runtime.c (JavaScript eval in kernel PD)
+- **File:** `kernel/fractalos-root-task/src/js_runtime.c`
 - **Opcodes:** `OP_JS_EVAL (0xC0)`, `OP_JS_CALL (0xC1)`, `OP_JS_LOAD_MODULE (0xC2)`, `OP_JS_DESTROY (0xC3)`, `OP_JS_HEALTH (0xC4)`
 - **Violation:** A kernel protection domain that evaluates JavaScript is a severe violation of CLAUDE.md §Non-Negotiable Language Policy. Even if the runtime itself is written in C (a JS interpreter like QuickJS), providing the capability to execute JavaScript code inside an OS kernel PD is explicitly against the project constitution and introduces an enormous attack surface.
 - **Action:** EVALUATE for deletion. If the use case (dynamic scripting) is genuinely needed, the correct approach is a WASM runtime (wasm3, which is already present), not a JavaScript runtime.
@@ -536,11 +536,11 @@ The following capabilities are architecturally required but have no formal, call
 ### Soft Violations (architectural debt, not hard bans)
 
 #### V4 — Duplicate implementations of every major service
-- `services/capstore/capstore.c` vs `userspace/servers/capability-broker/src/lib.rs` vs `kernel/agentos-root-task/src/cap_broker.c` — three implementations of capability management
-- `services/logsvc/logsvc.c` vs (no Rust counterpart yet) vs `kernel/agentos-root-task/src/log.c`
+- `services/capstore/capstore.c` vs `userspace/servers/capability-broker/src/lib.rs` vs `kernel/fractalos-root-task/src/cap_broker.c` — three implementations of capability management
+- `services/logsvc/logsvc.c` vs (no Rust counterpart yet) vs `kernel/fractalos-root-task/src/log.c`
 - `services/toolsvc/toolsvc.c` vs `userspace/servers/tool-registry/src/lib.rs` — two tool registries
 - `services/modelsvc/modelsvc.c` vs `userspace/servers/model-proxy/src/lib.rs` — two model inference services
-- `services/msgbus/msgbus.c` vs `kernel/agentos-root-task/src/event_bus.c` — two message buses
+- `services/msgbus/msgbus.c` vs `kernel/fractalos-root-task/src/event_bus.c` — two message buses
 
 **Recommended resolution:** The `kernel/` PDs are the canonical implementations. The `services/` C files should be REPLACED by proper seL4 IPC dispatch wrappers around the same logic, or deprecated and replaced by the kernel PDs entirely. The Rust userspace libraries are the simulation/test-layer models and should be explicitly labeled as such in their crate metadata.
 
@@ -578,7 +578,7 @@ See §Recommendations below.
 3. The `BackendType::HttpApi` backend is valid but the actual HTTP calls must go through the **NetServer PD** (using `OP_NET_HTTP_POST = 0x500`), not through a directly-linked HTTP client library in the model-proxy PD itself.
 4. A formal `ModelCap` capability type must be defined in `contracts/model-proxy/interface.h` and `cap_type_t` in `capstore.c` must add `CAP_TYPE_MODEL = 0x02` enforcement.
 
-**Does an OS management system need an LLM proxy?** Yes, for the following specific reason: agentOS's defining feature is that agents can propose, validate, and hot-swap OS services (the vibe-coding loop). That loop requires inference. If inference is a per-agent uncoordinated network call, the OS cannot enforce token budgets, cannot cache identical prompts, and cannot audit which agent consumed which model capacity. Centralizing inference under OS control is architecturally correct — it is the same reason POSIX put networking in the kernel rather than having each process manage its own NIC driver.
+**Does an OS management system need an LLM proxy?** Yes, for the following specific reason: FractalOS's defining feature is that agents can propose, validate, and hot-swap OS services (the vibe-coding loop). That loop requires inference. If inference is a per-agent uncoordinated network call, the OS cannot enforce token budgets, cannot cache identical prompts, and cannot audit which agent consumed which model capacity. Centralizing inference under OS control is architecturally correct — it is the same reason POSIX put networking in the kernel rather than having each process manage its own NIC driver.
 
 ---
 
@@ -587,7 +587,7 @@ See §Recommendations below.
 In order of severity:
 
 1. **DELETE** `services/vibe-swap/` (JavaScript violation, V1)
-2. **EVALUATE/DELETE** `kernel/agentos-root-task/src/js_runtime.c` (JavaScript eval PD, V2)
+2. **EVALUATE/DELETE** `kernel/fractalos-root-task/src/js_runtime.c` (JavaScript eval PD, V2)
 3. **CREATE** `contracts/` directory; write `interface.h` + `README.md` for the six KEEP-status kernel PDs with the most callers: EventBus, CapBroker, HTTPSvc, AgentFS, VibeEngine, NameServer (V3)
 4. **LABEL** the three Rust userspace libraries (capability-broker, event-bus, tool-registry) as simulation-layer models in their `Cargo.toml` descriptions and add a `[features] simulation` guard
 5. **IMPLEMENT** missing IPC dispatch loops in `services/msgbus/msgbus.c`, `services/logsvc/logsvc.c`, `services/capstore/capstore.c`, `services/toolsvc/toolsvc.c`

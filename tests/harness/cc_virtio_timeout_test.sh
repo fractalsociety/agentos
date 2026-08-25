@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# cc_virtio_timeout_test.sh — QEMU/target proof of CC-PD VirtIO timeout (agentos-45b)
+# cc_virtio_timeout_test.sh — QEMU/target proof of CC-PD VirtIO timeout (fos-45b)
 #
-# CC-PD (kernel/agentos-root-task/src/cc_pd.c) talks to its host-side controller
+# CC-PD (kernel/fractalos-root-task/src/cc_pd.c) talks to its host-side controller
 # over a VirtIO-MMIO serial console (QEMU virtconsole on a unix-socket chardev,
 # build/cc_pd.sock).  vio_serial_write() and vio_serial_read() each spin on the
 # VirtIO *used* ring with a bounded wait (CC_VIRTIO_WAIT_LIMIT).  If the used
@@ -16,7 +16,7 @@
 # merely compiled.
 #
 # How it wedges the ring:
-#   1. Boot agentOS in QEMU with the CC-PD virtconsole on a unix socket.
+#   1. Boot FractalOS in QEMU with the CC-PD virtconsole on a unix socket.
 #   2. Connect to build/cc_pd.sock and send one well-formed CC request frame
 #      (4112 bytes).  CC-PD reads it (RX used ring advances), dispatches, then
 #      tries to write the 4112-byte reply.
@@ -34,7 +34,7 @@
 #   1 — FAIL (no timeout line, or panic, or PD wedged)
 #   2 — SKIP (QEMU / built image / socket tooling unavailable)
 #
-# Copyright (c) 2026 The agentOS Project
+# Copyright (c) 2026 The FractalOS Project
 # SPDX-License-Identifier: BSD-2-Clause
 
 set -uo pipefail
@@ -48,7 +48,7 @@ TIMEOUT="${CC_TIMEOUT_TEST_SECS:-120}"
 WEDGE_WAIT="${CC_WEDGE_WAIT_SECS:-45}"
 
 CC_SOCK="${REPO_ROOT}/build/cc_pd.sock"
-SERIAL_LOG="$(mktemp /tmp/agentos-cc-timeout.XXXXXX)"
+SERIAL_LOG="$(mktemp /tmp/fractalos-cc-timeout.XXXXXX)"
 BUILD_DIR="${REPO_ROOT}/build/${BOARD}-test"
 
 QEMU_PID=""
@@ -62,9 +62,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-skip() { echo "SKIP [agentos-45b]: $*"; exit 2; }
-fail() { echo "FAIL [agentos-45b]: $*"; exit 1; }
-pass() { echo "PASS [agentos-45b]: $*"; exit 0; }
+skip() { echo "SKIP [fos-45b]: $*"; exit 2; }
+fail() { echo "FAIL [fos-45b]: $*"; exit 1; }
+pass() { echo "PASS [fos-45b]: $*"; exit 0; }
 
 # ── Preconditions ──────────────────────────────────────────────────────────────
 QEMU_BIN="qemu-system-aarch64"
@@ -76,7 +76,7 @@ esac
 command -v "${QEMU_BIN}" >/dev/null 2>&1 || skip "${QEMU_BIN} not installed"
 
 LOADER_ELF="${BUILD_DIR}/loader.elf"
-IMAGE="${BUILD_DIR}/agentos.img"
+IMAGE="${BUILD_DIR}/fractalos.img"
 if [ ! -f "${LOADER_ELF}" ] || [ ! -f "${IMAGE}" ]; then
     skip "test image not built — run: make sel4-test-image BOARD=${BOARD}"
 fi
@@ -90,8 +90,8 @@ fi
 
 rm -f "${CC_SOCK}"
 
-# ── Step 1: boot agentOS test image in QEMU, CC-PD console on a unix socket ──
-echo "[agentos-45b] booting ${BOARD} test image; CC-PD socket=${CC_SOCK}"
+# ── Step 1: boot FractalOS test image in QEMU, CC-PD console on a unix socket ──
+echo "[fos-45b] booting ${BOARD} test image; CC-PD socket=${CC_SOCK}"
 "${QEMU_BIN}" \
     -machine virt,virtualization=on,highmem=off,secure=off \
     -cpu cortex-a57 -m 2G \
@@ -130,7 +130,7 @@ done
     echo "=== serial log ==="; cat "${SERIAL_LOG}"; echo "=================="
     skip "CC-PD never reported VirtIO-serial-ready (image may lack CC-PD on this board)"
 }
-echo "[agentos-45b] CC-PD is up; wedging the VirtIO used ring"
+echo "[fos-45b] CC-PD is up; wedging the VirtIO used ring"
 
 # ── Step 3: connect to the CC-PD socket, send one frame, then STOP draining ──
 #

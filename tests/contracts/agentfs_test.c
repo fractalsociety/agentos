@@ -12,17 +12,17 @@
  * Channel: CH_AGENTFS_CONTROLLER (0) from the agentfs PD's perspective.
  * From the controller's perspective the channel is CH_CONTROLLER_AGENTFS (5).
  * We use channel 0 as a placeholder; update to the real controller-side
- * channel ID once agentos.system assigns it.
+ * channel ID once fractalos.system assigns it.
  *
  * TODO: replace opcode literals with
  *       #include "../../contracts/agentfs/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 /* AgentFS opcodes (from contracts/agentfs/interface.h when available) */
 #define AGENTFS_OP_STORE   0x01u

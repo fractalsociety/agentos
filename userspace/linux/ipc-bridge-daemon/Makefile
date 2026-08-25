@@ -1,6 +1,6 @@
 # Makefile — ipc_bridge_daemon
 #
-# Build the Linux-side IPC bridge daemon for the agentOS guest.
+# Build the Linux-side IPC bridge daemon for the FractalOS guest.
 # Requires a C99-capable gcc.  Cross-compile by setting CC, e.g.:
 #   make CC=aarch64-linux-gnu-gcc
 

@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AGENTOS_TEST_REAL_CRYPTO 1
-#include "../kernel/agentos-root-task/src/wg_net.c"
+#define FRACTALOS_TEST_REAL_CRYPTO 1
+#include "../kernel/fractalos-root-task/src/wg_net.c"
 
 static int test_no;
 static int failed;

@@ -1,5 +1,5 @@
 /*
- * agentctl-ng — agentOS Command-and-Control Reference Consumer
+ * agentctl-ng — FractalOS Command-and-Control Reference Consumer
  *
  * Standalone terminal UI that consumes only the cc_contract.h public API
  * via the agentctl bridge (Unix socket IPC).  No kernel/ or services/ headers
@@ -21,7 +21,7 @@
  * Build:
  *   make
  *
- * Copyright 2026 agentOS Project (BSD-2-Clause)
+ * Copyright 2026 FractalOS Project (BSD-2-Clause)
  */
 
 #include <stdio.h>
@@ -38,12 +38,12 @@
 #include <ncurses.h>
 
 /* ─── CC Contract: re-declared from contracts/cc_contract.h ─────────────────
- * Source: kernel/agentos-root-task/include/contracts/cc_contract.h
+ * Source: kernel/fractalos-root-task/include/contracts/cc_contract.h
  * These constants must stay in sync with cc_contract.h.  Any divergence will
  * be caught by tests/e2e/test_agentctl_ng.sh which exercises the live API.
  */
 
-/* Opcodes (from agentos.h MSG_CC_*) */
+/* Opcodes (from fractalos.h MSG_CC_*) */
 #define MSG_CC_CONNECT              0x2601u
 #define MSG_CC_DISCONNECT           0x2602u
 #define MSG_CC_STATUS               0x2605u
@@ -552,7 +552,7 @@ static void draw_header(void)
 {
     attron(COLOR_PAIR(CP_HEADER) | A_BOLD);
     mvhline(0, 0, ' ', COLS);
-    mvprintw(0, 2, "agentctl-ng v%s  —  agentOS C&C", AGENTCTL_NG_VERSION);
+    mvprintw(0, 2, "agentctl-ng v%s  —  FractalOS C&C", AGENTCTL_NG_VERSION);
     if (g_session >= 0)
         mvprintw(0, COLS - 22, "session:%d  polecats:%u", g_session,
                  g_total_polecats);
@@ -1143,7 +1143,7 @@ static int batch_fb_dump(uint32_t guest_handle, uint32_t fb_handle,
      * consumer would wait in notified().  Off-host consumers receive frames
      * through the agentctl push channel.  This batch command confirms the
      * subscription succeeded and dumps the frame_seq so callers can verify.
-     * Actual pixel capture requires a running agentOS environment; in headless
+     * Actual pixel capture requires a running FractalOS environment; in headless
      * CI this command exits with success once the attach is confirmed.
      */
     printf("fb: attach OK — use agentctl-ng TUI for live frame rendering\n");
@@ -1177,7 +1177,7 @@ static int batch_send_input(uint32_t guest_handle, uint32_t keycode)
 static void usage(const char *prog)
 {
     fprintf(stderr,
-            "agentctl-ng v%s — agentOS C&C reference consumer\n"
+            "agentctl-ng v%s — FractalOS C&C reference consumer\n"
             "\n"
             "Usage:\n"
             "  %s [--sock PATH]             Interactive TUI\n"
@@ -1193,8 +1193,8 @@ static void usage(const char *prog)
             "                Also honoured via CC_PD_SOCK environment variable.\n"
             "\n"
             "The bridge socket connects to the agentctl IPC bridge which relays\n"
-            "MSG_CC_* calls to cc_pd inside the running agentOS QEMU instance.\n"
-            "Start agentOS first, then run agentctl-ng.\n",
+            "MSG_CC_* calls to cc_pd inside the running FractalOS QEMU instance.\n"
+            "Start FractalOS first, then run agentctl-ng.\n",
             AGENTCTL_NG_VERSION,
             prog, prog, prog, prog, prog, prog, prog,
             DEFAULT_SOCK_PATH);

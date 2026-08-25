@@ -1,4 +1,4 @@
-# agentOS Top-Level Makefile
+# FractalOS Top-Level Makefile
 #
 # Quick start:
 #   make help
@@ -8,12 +8,12 @@
 #   make help         — show important top-level targets and defaults
 #   make install      — install all build dependencies
 #   make build        — build the kernel image for BOARD/TARGET_ARCH
-#   make run          — build + boot agentOS with Unix guest support in QEMU
+#   make run          — build + boot FractalOS with Unix guest support in QEMU
 #   make test         — CI boot test (exit 0/1)
 #   make test-guest-login — prove Ubuntu/FreeBSD serial login via CC-PD
 #   make clean        — remove build artifacts for current board
 
-.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-native-net test-mesh-controller-role test-agentctl-mesh test-agentos-mcp validate-headscale-role test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-codex-agent e2e-mesh e2e-mesh-freebsd e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools perf-gate perf-gate-aarch64 perf-gate-x86_64
+.PHONY: all install deps deps-tools submodules channels run run-fast test test-guest-login sel4-test-image run-tests test-snapshot-sched test-power-mgr test-proc-server test-vibeos-contract test-integration test-native-net test-mesh-controller-role test-agentctl-mesh test-fractalos-mcp validate-headscale-role test-host gate gate-aarch64 gate-x86_64 e2e e2e-guest e2e-contract e2e-codex-agent e2e-mesh e2e-mesh-freebsd e2e-dual-os e2e-ubuntu-amd64 e2e-ubuntu-arm64 e2e-nixos e2e-freebsd15 e2e-all bootstrap-guest clean clean-all clean-images help release release-minor release-major fetch-guest build-tools perf-gate perf-gate-aarch64 perf-gate-x86_64
 
 # ─── Read config.yaml (if present) ───────────────────────────────────────────
 CONFIG_TARGET := $(shell grep '^target_arch:' config.yaml 2>/dev/null | sed 's/target_arch:[[:space:]]*//' | tr -d '[:space:]')
@@ -36,7 +36,7 @@ QEMU_TEST_GUEST_OS = $(if $(filter x86_64,$(ARCH)),none,$(GUEST_OS))
 # $(lastword $(MAKEFILE_LIST)) resolves to the board.mk path, not the
 # repo root.
 ROOT_DIR     := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-KERNEL_DIR   := $(ROOT_DIR)kernel/agentos-root-task
+KERNEL_DIR   := $(ROOT_DIR)kernel/fractalos-root-task
 
 # ─── BOARD_NAME: selects a boards/<name>/board.mk configuration ──────────────
 # Derive from TARGET_ARCH when not explicitly provided.  Override with
@@ -56,7 +56,7 @@ endif
 # BOARD_ARCH, BOARD_NATIVE, BOARD_UART_*, and optional QEMU_* flags.
 -include boards/$(BOARD_NAME)/board.mk
 
-# Target/QEMU-backed test gates (agentos-0h4, agentos-45b).
+# Target/QEMU-backed test gates (fos-0h4, fos-45b).
 -include mk/target-tests.mk
 
 # Let board.mk override the board name and arch when present.
@@ -91,8 +91,8 @@ SEL4_PROFILE ?= release
 
 # BUILD_DIR and IMAGE depend on BOARD (resolved after board.mk override above)
 BUILD_DIR    := $(ROOT_DIR)build/$(BOARD)
-IMAGE        := $(BUILD_DIR)/agentos.img
-AGENTOS_IMAGES ?= $(ROOT_DIR)build/guest-images
+IMAGE        := $(BUILD_DIR)/fractalos.img
+FRACTALOS_IMAGES ?= $(ROOT_DIR)build/guest-images
 BUILD_TMP_DIR := $(ROOT_DIR)build/tmp
 
 # ─── OS / arch detection ──────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ ifeq ($(UNAME_S),Darwin)
     # aarch64 memory access patterns (hvf_vcpu_exec isv assertion, hvf.c).
     # Use TCG (software emulation) until this is resolved upstream in QEMU.
     #
-    # Quarterly retest tracker — agentos-3jn.
+    # Quarterly retest tracker — fos-3jn.
     # Last reviewed: 2026-06-07
     #   Host:  Apple M-series, macOS 26.5.1 (Darwin 25.5.0)
     #   QEMU:  11.0.1 (Homebrew)
@@ -176,7 +176,7 @@ ifeq ($(NATIVE_ARCH),aarch64)
                         -cpu $(_NATIVE_CPU) -m 2G \
                         -display none -monitor none \
                         -global virtio-mmio.force-legacy=off \
-                        -chardev socket,id=char0,path=$(ROOT_DIR)build/agentos-serial.sock,server=on,wait=off \
+                        -chardev socket,id=char0,path=$(ROOT_DIR)build/fractalos-serial.sock,server=on,wait=off \
                         -serial chardev:char0 \
                         -chardev socket,id=cc_pd_char,path=$(ROOT_DIR)build/cc_pd.sock,server=on,wait=off \
                         -device virtio-serial-device,bus=virtio-mmio-bus.2,id=vser0 \
@@ -190,7 +190,7 @@ else
   NATIVE_BOARD      := x86_64_generic
   NATIVE_QEMU       := qemu-system-x86_64
   NATIVE_QEMU_FLAGS  = -machine q35 -cpu host -m 2G \
-                        -display none -monitor none -serial unix:$(ROOT_DIR)build/agentos-serial.sock \
+                        -display none -monitor none -serial unix:$(ROOT_DIR)build/fractalos-serial.sock \
                         $(QEMU_ACCEL_NATIVE) \
                         -netdev user,id=net0,hostfwd=tcp:127.0.0.1:8789-:8789 \
                         -device e1000,netdev=net0 \
@@ -198,7 +198,7 @@ else
 endif
 
 NATIVE_BUILD_DIR := $(ROOT_DIR)build/$(NATIVE_BOARD)
-NATIVE_IMAGE     := $(NATIVE_BUILD_DIR)/agentos.img
+NATIVE_IMAGE     := $(NATIVE_BUILD_DIR)/fractalos.img
 
 channels:
 	python3 tools/gen-channels/gen_channels.py
@@ -217,7 +217,7 @@ deps: install
 deps-tools:
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║        agentOS — installing deps         ║"
+	@echo "║        FractalOS — installing deps         ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 ifeq ($(UNAME_S),Darwin)
@@ -312,10 +312,10 @@ submodules:
 # build-tools: compile all Rust tool binaries in release mode
 # =============================================================================
 build-tools:
-	@echo "Building agentOS Rust tools..."
+	@echo "Building FractalOS Rust tools..."
 	@cargo build --release \
 		-p run-agent -p gen-sdf -p gen-ringbuf -p sign-wasm -p attest-verify \
-		-p make-swap-image -p trace-replay -p agentos-mcp -p xtask
+		-p make-swap-image -p trace-replay -p fractalos-mcp -p xtask
 	@echo "✓ Tools built → target/release/"
 
 # =============================================================================
@@ -323,14 +323,14 @@ build-tools:
 # =============================================================================
 fetch-guest:
 ifeq ($(GUEST_OS),freebsd)
-	@cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES)
+	@cargo xtask fetch-guest --os freebsd --output-dir $(FRACTALOS_IMAGES)
 else ifeq ($(GUEST_OS),codex)
-	@cargo xtask fetch-guest --os codex --output-dir $(AGENTOS_IMAGES)
+	@cargo xtask fetch-guest --os codex --output-dir $(FRACTALOS_IMAGES)
 else ifeq ($(GUEST_OS),ubuntu)
-	@cargo xtask fetch-guest --os ubuntu --output-dir $(AGENTOS_IMAGES)
+	@cargo xtask fetch-guest --os ubuntu --output-dir $(FRACTALOS_IMAGES)
 else ifeq ($(GUEST_OS),both)
-	@cargo xtask fetch-guest --os ubuntu --output-dir $(AGENTOS_IMAGES)
-	@cargo xtask fetch-guest --os freebsd --output-dir $(AGENTOS_IMAGES)
+	@cargo xtask fetch-guest --os ubuntu --output-dir $(FRACTALOS_IMAGES)
+	@cargo xtask fetch-guest --os freebsd --output-dir $(FRACTALOS_IMAGES)
 endif
 
 # =============================================================================
@@ -339,7 +339,7 @@ endif
 build: fetch-guest submodules
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║   agentOS — building kernel ($(BOARD))   ║"
+	@echo "║   FractalOS — building kernel ($(BOARD))   ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 ifeq ($(UNAME_S),Darwin)
@@ -356,10 +356,10 @@ endif
 	@mkdir -p $(BUILD_DIR)
 	@PATH="$(LLVM_BIN):$(LLD_BIN):$$PATH" $(MAKE) -C $(KERNEL_DIR) build \
 		BUILD_DIR=$(BUILD_DIR) \
-		AGENTOS_BOARD=$(BOARD) \
-		AGENTOS_ARCH=$(ARCH) \
+		FRACTALOS_BOARD=$(BOARD) \
+		FRACTALOS_ARCH=$(ARCH) \
 		SEL4_PROFILE=$(SEL4_PROFILE) \
-		AGENTOS_FREEBSD_IMAGE=$(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(FREEBSD_IMAGE)) \
+		FRACTALOS_FREEBSD_IMAGE=$(if $(FRACTALOS_FREEBSD_IMAGE),$(FRACTALOS_FREEBSD_IMAGE),$(FREEBSD_IMAGE)) \
 		GUEST_OS=$(GUEST_OS) \
 		BOARD_NAME=$(BOARD_NAME) \
 		BOARD_NATIVE=$(BOARD_NATIVE) \
@@ -393,8 +393,8 @@ else
   _RUN_CPU := $(if $(filter aarch64,$(NATIVE_ARCH)),cortex-a53,qemu64)
   _QEMU_FAST_FLAGS :=
 endif
-FREEBSD_IMAGE ?= $(if $(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_FREEBSD_IMAGE),$(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso)
-_UBUNTU_BLK = -drive file=$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,if=none,id=ubuntu_hd,readonly=on,file.locking=off \
+FREEBSD_IMAGE ?= $(if $(FRACTALOS_FREEBSD_IMAGE),$(FRACTALOS_FREEBSD_IMAGE),$(FRACTALOS_IMAGES)/freebsd-15.0-aarch64.iso)
+_UBUNTU_BLK = -drive file=$(FRACTALOS_IMAGES)/ubuntu-26.04-aarch64.iso,format=raw,if=none,id=ubuntu_hd,readonly=on,file.locking=off \
               -device virtio-blk-device,drive=ubuntu_hd,bus=virtio-mmio-bus.1
 _FREEBSD_BLK = -drive file=$(FREEBSD_IMAGE),format=raw,if=none,id=freebsd_hd,readonly=on,file.locking=off \
                -device virtio-blk-device,drive=freebsd_hd,bus=virtio-mmio-bus.31
@@ -431,7 +431,7 @@ run:
 	@$(MAKE) build BOARD=$(NATIVE_BOARD) TARGET_ARCH=$(NATIVE_ARCH)
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║  agentOS — QEMU ($(NATIVE_ARCH))         ║"
+	@echo "║  FractalOS — QEMU ($(NATIVE_ARCH))         ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@echo "Arch   : $(NATIVE_ARCH)"
@@ -441,7 +441,7 @@ run:
 	@echo "Guest  : $(GUEST_OS)"
 	@echo "Image  : $(NATIVE_IMAGE)"
 	@echo "CC-PD  : $(ROOT_DIR)build/cc_pd.sock"
-	@echo "GUI    : cd $(abspath $(ROOT_DIR)../agentos_gui) && make run"
+	@echo "GUI    : cd $(abspath $(ROOT_DIR)../fractalos_gui) && make run"
 	@echo ""
 	@echo "Guest SSH: ssh -p 2222 ubuntu@localhost    (Ubuntu)"
 	@echo "           ssh -p 2223 root@localhost      (FreeBSD)"
@@ -463,7 +463,7 @@ run-fast:
 # test: CI boot test (exits 0 on success, 1 on failure)
 # =============================================================================
 test: build
-	@AGENTOS_FREEBSD_IMAGE="$(FREEBSD_IMAGE)" cargo xtask qemu-test --board $(BOARD) --guest-os $(QEMU_TEST_GUEST_OS) --timeout-secs $(QEMU_TEST_TIMEOUT)
+	@FRACTALOS_FREEBSD_IMAGE="$(FREEBSD_IMAGE)" cargo xtask qemu-test --board $(BOARD) --guest-os $(QEMU_TEST_GUEST_OS) --timeout-secs $(QEMU_TEST_TIMEOUT)
 
 # =============================================================================
 # gate: MANDATORY dual-arch target/QEMU quality gate.
@@ -471,10 +471,10 @@ test: build
 # This is the gate that MUST pass before any OS-level behavior may be claimed
 # "complete" / "boot-proven" in README, DESIGN, PLAN, or a release.  It runs the
 # real seL4 target build + QEMU boot test on BOTH supported architectures with
-# GUEST_OS=none, exactly as required by agentos-46q.
+# GUEST_OS=none, exactly as required by fos-46q.
 #
 #   HOST-ONLY tests (test-integration / test-host): compile C suites with
-#     -DAGENTOS_TEST_HOST and run them on the build host.  They exercise logic
+#     -DFRACTALOS_TEST_HOST and run them on the build host.  They exercise logic
 #     but stub out seL4 IPC, so per the PLAN priority rules they are NOT proof
 #     of production OS behavior — they are a fast pre-filter only.
 #
@@ -507,11 +507,11 @@ gate: test-host gate-aarch64 gate-x86_64
 
 # test-host: alias for the host-only integration suite.  Named explicitly so
 # callers and CI cannot mistake host-only coverage for target/QEMU proof.
-test-host: test-integration test-native-net test-agentctl-mesh test-agentos-mcp
+test-host: test-integration test-native-net test-agentctl-mesh test-fractalos-mcp
 
-test-agentos-mcp:
-	@cargo test -p agentos-mcp
-	@cargo clippy -p agentos-mcp -- -D warnings
+test-fractalos-mcp:
+	@cargo test -p fractalos-mcp
+	@cargo clippy -p fractalos-mcp -- -D warnings
 
 e2e-codex-agent:
 	@sh tests/e2e/test_codex_agent.sh
@@ -537,7 +537,7 @@ sel4-test-image:
 		BUILD_DIR=$(ROOT_DIR)build/$(BOARD)-test \
 		GUEST_OS=none \
 		SEL4_TEST_IMAGE=1
-	@echo "✓ seL4 target TAP image: $(ROOT_DIR)build/$(BOARD)-test/agentos.img"
+	@echo "✓ seL4 target TAP image: $(ROOT_DIR)build/$(BOARD)-test/fractalos.img"
 
 run-tests:
 	@cargo xtask run-tests --board $(BOARD) --timeout-secs $(QEMU_TEST_TIMEOUT)
@@ -576,11 +576,11 @@ test-guest-login:
 test-snapshot-sched:
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║   agentOS — snapshot_sched unit tests    ║"
+	@echo "║   FractalOS — snapshot_sched unit tests    ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@mkdir -p $(BUILD_TMP_DIR)
-	cc tests/test_snapshot_sched.c -o $(BUILD_TMP_DIR)/test_snapshot_sched -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST -DAGENTOS_SNAPSHOT_SCHED
+	cc tests/test_snapshot_sched.c -o $(BUILD_TMP_DIR)/test_snapshot_sched -I kernel/fractalos-root-task/include -DFRACTALOS_TEST_HOST -DFRACTALOS_SNAPSHOT_SCHED
 	@$(BUILD_TMP_DIR)/test_snapshot_sched
 	@echo "✓ snapshot_sched tests passed"
 	@echo ""
@@ -591,11 +591,11 @@ test-snapshot-sched:
 test-power-mgr:
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║   agentOS — power_mgr unit tests         ║"
+	@echo "║   FractalOS — power_mgr unit tests         ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@mkdir -p $(BUILD_TMP_DIR)
-	cc tests/test_power_mgr.c -o $(BUILD_TMP_DIR)/test_power_mgr -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
+	cc tests/test_power_mgr.c -o $(BUILD_TMP_DIR)/test_power_mgr -I kernel/fractalos-root-task/include -DFRACTALOS_TEST_HOST
 	@$(BUILD_TMP_DIR)/test_power_mgr
 	@echo "✓ power_mgr tests passed"
 	@echo ""
@@ -606,11 +606,11 @@ test-power-mgr:
 test-proc-server:
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║   agentOS — proc_server unit tests       ║"
+	@echo "║   FractalOS — proc_server unit tests       ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@mkdir -p $(BUILD_TMP_DIR)
-	cc tests/test_proc_server.c -o $(BUILD_TMP_DIR)/test_proc_server -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
+	cc tests/test_proc_server.c -o $(BUILD_TMP_DIR)/test_proc_server -I kernel/fractalos-root-task/include -DFRACTALOS_TEST_HOST
 	@$(BUILD_TMP_DIR)/test_proc_server
 	@echo "✓ proc_server tests passed"
 	@echo ""
@@ -621,11 +621,11 @@ test-proc-server:
 test-vibeos-contract:
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║   agentOS — VibeOS contract tests        ║"
+	@echo "║   FractalOS — VibeOS contract tests        ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@mkdir -p $(BUILD_TMP_DIR)
-	cc tests/vibe/test_vibeos_contract.c -o $(BUILD_TMP_DIR)/test_vibeos_contract -I tests -I kernel/agentos-root-task/include -DAGENTOS_TEST_HOST
+	cc tests/vibe/test_vibeos_contract.c -o $(BUILD_TMP_DIR)/test_vibeos_contract -I tests -I kernel/fractalos-root-task/include -DFRACTALOS_TEST_HOST
 	@$(BUILD_TMP_DIR)/test_vibeos_contract
 	@echo "✓ vibeos contract tests passed"
 	@echo ""
@@ -634,12 +634,12 @@ test-vibeos-contract:
 # test-integration: compile and run C integration tests on the host
 #
 # Each test file is self-contained: all seL4/Microkit primitives are stubbed
-# via #ifdef AGENTOS_TEST_HOST.  No QEMU required.
+# via #ifdef FRACTALOS_TEST_HOST.  No QEMU required.
 # =============================================================================
 test-integration:
 	@echo ""
 	@echo "╔══════════════════════════════════════════╗"
-	@echo "║   agentOS — integration tests (host)     ║"
+	@echo "║   FractalOS — integration tests (host)     ║"
 	@echo "╚══════════════════════════════════════════╝"
 	@echo ""
 	@echo "[make] Running integration tests..."
@@ -660,12 +660,12 @@ test-integration:
 	    tests/test_e13_agent_boot.c \
 	    tests/vibe/test_vibeos_contract.c; do \
 	    if gcc -I tests \
-	        -I kernel/agentos-root-task/include \
-	        -DAGENTOS_TEST_HOST \
-	        -DAGENTOS_SNAPSHOT_SCHED \
+	        -I kernel/fractalos-root-task/include \
+	        -DFRACTALOS_TEST_HOST \
+	        -DFRACTALOS_SNAPSHOT_SCHED \
 	        $$test \
-	        -o $(BUILD_TMP_DIR)/agentos_test 2>&1 \
-	    && $(BUILD_TMP_DIR)/agentos_test; then \
+	        -o $(BUILD_TMP_DIR)/fractalos_test 2>&1 \
+	    && $(BUILD_TMP_DIR)/fractalos_test; then \
 	        echo "PASS: $$test"; \
 	    else \
 	        echo "FAIL: $$test"; \
@@ -728,11 +728,11 @@ e2e-all:
 	for gos in freebsd ubuntu-amd64 ubuntu-arm64 nixos freebsd15; do \
 	    img=""; \
 	    case "$$gos" in \
-	        freebsd)       img="$(AGENTOS_IMAGES)/freebsd-15.0-aarch64.iso" ;; \
-	        ubuntu-amd64)  img="$(AGENTOS_IMAGES)/ubuntu-amd64.img" ;; \
-	        ubuntu-arm64)  img="$(AGENTOS_IMAGES)/ubuntu-26.04-aarch64.iso" ;; \
-	        nixos)         img="$(AGENTOS_IMAGES)/nixos.img" ;; \
-	        freebsd15)     img="$(AGENTOS_IMAGES)/freebsd15-amd64.img" ;; \
+	        freebsd)       img="$(FRACTALOS_IMAGES)/freebsd-15.0-aarch64.iso" ;; \
+	        ubuntu-amd64)  img="$(FRACTALOS_IMAGES)/ubuntu-amd64.img" ;; \
+	        ubuntu-arm64)  img="$(FRACTALOS_IMAGES)/ubuntu-26.04-aarch64.iso" ;; \
+	        nixos)         img="$(FRACTALOS_IMAGES)/nixos.img" ;; \
+	        freebsd15)     img="$(FRACTALOS_IMAGES)/freebsd15-amd64.img" ;; \
 	    esac; \
 	    if [ -f "$$img" ]; then \
 	        echo ""; echo "══ E2E: $$gos ══"; \
@@ -744,7 +744,7 @@ e2e-all:
 	[ "$$failed" -eq 0 ] || (echo ""; echo "$$failed guest OS(es) failed E2E"; exit 1)
 
 # bootstrap-guest: create a guest disk image from installer ISOs.
-# ISOs are cached in $$AGENTOS_ISO_DIR (default ~/.cache/agentos/isos)
+# ISOs are cached in $$FRACTALOS_ISO_DIR (default ~/.cache/fractalos/isos)
 # and auto-downloaded from the vendor's official site on cache miss.
 # Usage: make bootstrap-guest OS=nixos
 #        make bootstrap-guest OS=ubuntu-amd64
@@ -764,7 +764,7 @@ clean:
 	@rm -rf $(ROOT_DIR)util
 	@rm -f  $(ROOT_DIR).libvmm_cflags.*
 	@rm -f  $(KERNEL_DIR)/report.txt
-	@rm -f  $(ROOT_DIR)build/cc_pd.sock $(ROOT_DIR)build/agentos-serial.sock
+	@rm -f  $(ROOT_DIR)build/cc_pd.sock $(ROOT_DIR)build/fractalos-serial.sock
 	@echo "✓ Clean."
 
 clean-all:
@@ -778,8 +778,8 @@ clean-all:
 	@echo "✓ Clean."
 
 clean-images:
-	@echo "Removing guest OS image cache: $(AGENTOS_IMAGES)"
-	@rm -rf $(AGENTOS_IMAGES)
+	@echo "Removing guest OS image cache: $(FRACTALOS_IMAGES)"
+	@rm -rf $(FRACTALOS_IMAGES)
 	@echo "✓ Done. Re-fetch with: make fetch-guest GUEST_OS=codex|ubuntu|freebsd"
 
 # =============================================================================
@@ -799,7 +799,7 @@ release-major:
 # =============================================================================
 help:
 	@echo ""
-	@echo "agentOS - top-level make targets"
+	@echo "FractalOS - top-level make targets"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make <target> [TARGET_ARCH=aarch64|x86_64|riscv64] [GUEST_OS=codex|buildroot|ubuntu|freebsd|both|none]"
@@ -811,13 +811,13 @@ help:
 	@echo "  GUEST_OS        $(GUEST_OS)"
 	@echo "  QEMU_RUN_MEM    $(QEMU_RUN_MEM)"
 	@echo "  BUILD_DIR       $(BUILD_DIR)"
-	@echo "  AGENTOS_IMAGES  $(AGENTOS_IMAGES)"
+	@echo "  FRACTALOS_IMAGES  $(FRACTALOS_IMAGES)"
 	@echo ""
 	@echo "Primary targets:"
 	@echo "  make help             Show this help text"
 	@echo "  make install          Install host build dependencies (alias: make deps)"
-	@echo "  make build            Fetch the selected guest image and build agentOS"
-	@echo "  make run              Build native agentOS and boot QEMU with CC-PD socket"
+	@echo "  make build            Fetch the selected guest image and build FractalOS"
+	@echo "  make run              Build native FractalOS and boot QEMU with CC-PD socket"
 	@echo "                        Uses QEMU_RUN_MEM=3G automatically for GUEST_OS=both"
 	@echo "  make run GUEST_OS=buildroot"
 	@echo "                        Boot linux_vmm hosting buildroot Linux to a '#' prompt"
@@ -849,9 +849,9 @@ help:
 	@echo "  make test-host        Host-only suite (alias of test-integration; NOT OS proof)"
 	@echo "  make test-integration Run host-side contract/integration tests"
 	@echo "  make validate-headscale-role  Run pinned Headscale config/API validation"
-	@echo "  make test-agentos-mcp Test and lint the read-only Codex control bridge"
+	@echo "  make test-fractalos-mcp Test and lint the read-only Codex control bridge"
 	@echo "  make e2e              Run the default QEMU/guest/CC end-to-end suite"
-	@echo "  AGENTOS_CODEX_LIVE=1 make e2e-codex-agent"
+	@echo "  FRACTALOS_CODEX_LIVE=1 make e2e-codex-agent"
 	@echo "                        Official Codex live pool-query/edit/test proof"
 	@echo "  make e2e-mesh         Enroll two Tailscale nodes and invoke an agent endpoint"
 	@echo "  make e2e-mesh-freebsd Boot and prove the FreeBSD Headscale controller role"
@@ -863,19 +863,19 @@ help:
 	@echo "  make clean-all        Remove all build artifacts under build/"
 	@echo "  make clean-images     Remove staged guest images"
 	@echo "  make build-tools      Build Rust host tools in release mode"
-	@echo "  target/release/codex-agentos -- exec ..."
-	@echo "                        Run official Codex with read-only AgentOS MCP tools"
+	@echo "  target/release/codex-fractalos -- exec ..."
+	@echo "                        Run official Codex with read-only FractalOS MCP tools"
 	@echo ""
 	@echo "Quick start:"
 	@echo "  make install && make run"
 	@echo ""
 	@echo "Common examples:"
-	@echo "  make run-fast GUEST_OS=codex       # boot official Codex inside agentOS"
+	@echo "  make run-fast GUEST_OS=codex       # boot official Codex inside FractalOS"
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=ubuntu"
 	@echo "  make build TARGET_ARCH=aarch64 GUEST_OS=both"
 	@echo "  make run GUEST_OS=freebsd"
 	@echo "  make run-fast GUEST_OS=buildroot   # fast dev loop on Apple Silicon"
 	@echo "  make gate                          # full release gate, both arches"
 	@echo "  make test-guest-login QEMU_TEST_TIMEOUT=420"
-	@echo "  cd ../agentos_gui && make run"
+	@echo "  cd ../fractalos_gui && make run"
 	@echo ""

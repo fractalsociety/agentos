@@ -1,13 +1,13 @@
-# agentOS Tests: Host Unit Tests vs Target Proof
+# FractalOS Tests: Host Unit Tests vs Target Proof
 
-agentOS has **two distinct layers** of automated test, and they prove different
+FractalOS has **two distinct layers** of automated test, and they prove different
 things. Conflating them is a category error: a green host run does **not** mean
 the IPC contract holds on real seL4.
 
 | Layer            | What runs                                   | seL4 IPC?        | How to run                                  |
 |------------------|---------------------------------------------|------------------|---------------------------------------------|
-| Host unit/mock   | `tests/**/*_test.c` under `-DAGENTOS_TEST_HOST` | **No** — `tests/microkit.h` stub echoes MR0 | `make test-integration`, `xtask host-test`  |
-| Simulator        | `userspace/sim/` in-memory seL4 model       | Modeled, in-process | `cargo test -p agentos-sim`                 |
+| Host unit/mock   | `tests/**/*_test.c` under `-DFRACTALOS_TEST_HOST` | **No** — `tests/microkit.h` stub echoes MR0 | `make test-integration`, `xtask host-test`  |
+| Simulator        | `userspace/sim/` in-memory seL4 model       | Modeled, in-process | `cargo test -p fractalos-sim`                 |
 | **Target proof** | seL4 root task + PDs in QEMU/hardware        | **Yes** — real `microkit_ppcall` | `make test-target`, `make run-tests`        |
 
 > Rule of record (CLAUDE.md): never mock seL4 IPC for tests — the host stub is a
@@ -18,7 +18,7 @@ the IPC contract holds on real seL4.
 
 `tests/microkit.h` provides a stub `microkit_ppcall()` that simply returns its
 argument and leaves the message registers untouched. So a contract test built
-with `-DAGENTOS_TEST_HOST -I tests` exercises the *test body's* logic and the
+with `-DFRACTALOS_TEST_HOST -I tests` exercises the *test body's* logic and the
 struct/opcode definitions, but the PD under test is never invoked. Useful as a
 fast compile gate and for pure-logic PDs (DVFS model, schedulers); useless as
 proof that a live PD honours its contract.
@@ -28,7 +28,7 @@ Driven by:
 - `make test-snapshot-sched`, `make test-power-mgr`, `make test-proc-server`,
   `make test-vibeos-contract` — individual host suites.
 
-## Target proof layer (real seL4 IPC) — agentos-0h4
+## Target proof layer (real seL4 IPC) — fos-0h4
 
 The target suite boots the actual seL4 root task and PDs in QEMU and issues
 **real** `microkit_ppcall()`s across real channels, then reads the live replies.
@@ -51,11 +51,11 @@ make test-target TARGET_ARCH=aarch64 GUEST_OS=none
 make test-target TARGET_ARCH=x86_64  GUEST_OS=none
 ```
 
-## CC-PD VirtIO timeout proof — agentos-45b
+## CC-PD VirtIO timeout proof — fos-45b
 
 CC-PD reaches its host controller over a VirtIO-MMIO serial console
 (`build/cc_pd.sock`). `vio_serial_write()` / `vio_serial_read()` in
-`kernel/agentos-root-task/src/cc_pd.c` spin on the VirtIO *used* ring with a
+`kernel/fractalos-root-task/src/cc_pd.c` spin on the VirtIO *used* ring with a
 bounded wait (`CC_VIRTIO_WAIT_LIMIT`). If the ring never advances they log
 `[cc_pd] TX timeout waiting for used ring` / `[cc_pd] RX timeout ...` and return
 `false`, and the main loop `continue`s — the PD stays responsive.
@@ -74,7 +74,7 @@ Gate (in `mk/target-tests.mk`):
 make test-cc-virtio-timeout BOARD=qemu_virt_aarch64
 ```
 
-## How the runner is wired (agentos-8f5, DONE)
+## How the runner is wired (fos-8f5, DONE)
 
 The root `Makefile` includes the gates (`-include mk/target-tests.mk`), and on
 aarch64 a dedicated `test_runner` PD runs the contract suites against real seL4
@@ -86,12 +86,12 @@ IPC. The pieces:
    (`microkit_dbg_*`, `microkit_name`, `microkit_pps`) that routes output to the
    PL011 UART — the release kernel disables `CONFIG_PRINTING` — and provides
    `pd_main`, which calls `target_contract_runner_main()` then emits `TAP_DONE`.
-2. **Build** — `kernel/agentos-root-task/Makefile` compiles `target_contract_runner.o`
+2. **Build** — `kernel/fractalos-root-task/Makefile` compiles `target_contract_runner.o`
    (with `-Itests -Itests/harness`), links `test_runner.elf`, adds it to `IMAGES`,
-   and appends a `test_runner` entry to a generated `agentos-test.toml` so
+   and appends a `test_runner` entry to a generated `fractalos-test.toml` so
    `gen-pd-bundle` embeds it — all under `SEL4_TEST_IMAGE` only.
 3. **Spawn + caps** — `system_desc_aarch64.c` appends the `test_runner` PD
-   (`AGENTOS_SEL4_TEST_IMAGE` only) with the EventBus/serial_pd/log_drain
+   (`FRACTALOS_SEL4_TEST_IMAGE` only) with the EventBus/serial_pd/log_drain
    endpoints minted at CNode slots `74 + ch` (`microkit_ppcall(ch)` =
    `seL4_Call(BASE_ENDPOINT_CAP + ch)`), priority 250 so a busy-polling PD can't
    starve it. `main.c` maps UART0 into the runner's vspace and, on aarch64,
@@ -102,7 +102,7 @@ Result: `make test-target TARGET_ARCH=aarch64 GUEST_OS=none` boots the image and
 the runner emits real-IPC TAP (`ok 1..14`, `TAP_DONE:0`). On x86_64 (reduced
 smoke, no runner) the root task still emits the boot-proof stub TAP.
 
-### Not yet covered (tracked in agentos-yni)
+### Not yet covered (tracked in fos-yni)
 
 - **cc_pd** — speaks its protocol over virtio-serial, not a seL4 endpoint, so a
   `microkit_ppcall` would block; needs a virtio-serial test driver.
@@ -111,5 +111,5 @@ smoke, no runner) the root task still emits the boot-proof stub TAP.
 
 Also: EventBus STATUS/INIT return `AOS_ERR_INVAL` on target because its ring is
 never mapped there (`eventbus_ring_vaddr` is only set by the host unit test) —
-defect **agentos-gom**. The eventbus assertions accept that and tighten to strict
+defect **fos-gom**. The eventbus assertions accept that and tighten to strict
 `OK` once the ring is wired.

@@ -8,7 +8,7 @@ use xtask::{
 };
 
 #[derive(Parser)]
-#[command(name = "xtask", about = "agentOS workspace task runner")]
+#[command(name = "xtask", about = "FractalOS workspace task runner")]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,
@@ -42,7 +42,7 @@ enum Cmd {
     /// Generate deterministic root-task capability slot layout constants
     #[command(name = "gen-caps")]
     GenCaps(GenCapsArgs),
-    /// Pack ELFs + cap init data into a bootable agentos.img (replaces microkit binary)
+    /// Pack ELFs + cap init data into a bootable fractalos.img (replaces microkit binary)
     GenImage(GenImageArgs),
     /// Pack PD ELFs into a .pd_bundle blob for embedding into root_task.elf
     #[command(name = "gen-pd-bundle")]

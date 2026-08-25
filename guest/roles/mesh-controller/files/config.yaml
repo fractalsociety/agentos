@@ -1,11 +1,11 @@
-server_url: https://mesh.agentos.internal:8080
+server_url: https://mesh.fractalos.internal:8080
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 127.0.0.1:9090
 grpc_listen_addr: 127.0.0.1:50443
 grpc_allow_insecure: false
 
 noise:
-  private_key_path: /var/db/agentos-secrets/headscale/noise_private.key
+  private_key_path: /var/db/fractalos-secrets/headscale/noise_private.key
 
 prefixes:
   v4: 100.64.0.0/10
@@ -16,10 +16,10 @@ derp:
   server:
     enabled: false
     region_id: 999
-    region_code: agentos
-    region_name: agentOS private DERP
+    region_code: fractalos
+    region_name: FractalOS private DERP
     stun_listen_addr: 0.0.0.0:3478
-    private_key_path: /var/db/agentos-secrets/headscale/derp_private.key
+    private_key_path: /var/db/fractalos-secrets/headscale/derp_private.key
     automatically_add_embedded_derp_region: true
     ipv4: 0.0.0.0
     ipv6: "::"
@@ -35,8 +35,8 @@ database:
     path: /var/db/headscale/db.sqlite
     write_ahead_log: true
 
-tls_cert_path: /var/db/agentos-secrets/headscale/tls.crt
-tls_key_path: /var/db/agentos-secrets/headscale/tls.key
+tls_cert_path: /var/db/fractalos-secrets/headscale/tls.crt
+tls_key_path: /var/db/fractalos-secrets/headscale/tls.key
 
 log:
   format: json

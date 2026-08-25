@@ -1,4 +1,4 @@
-# agentOS — Design Document
+# FractalOS — Design Document
 
 **Version:** 0.1.0-draft
 **Author:** Jordan Hubbard
@@ -14,7 +14,7 @@
 
 ## 0. Implementation Status (Proof Levels)
 
-agentOS is **alpha**. Per the project proof policy (`PLAN.md`), host-only mocks
+FractalOS is **alpha**. Per the project proof policy (`PLAN.md`), host-only mocks
 may exist but **cannot** be cited as proof of production IPC or bare-metal
 behavior. Each subsystem below is labeled by how strongly it is actually proven,
 not by whether code exists. When a level is uncertain, the more conservative
@@ -24,7 +24,7 @@ label is chosen.
 |-------|---------|
 | **boot-proven** | Run on a booted seL4 target under QEMU (or hardware) and asserted by an automated E2E/boot test. |
 | **target-tested** | Built into the seL4 target image and validated against the target, short of full end-to-end boot of the feature. |
-| **host-tested** | Validated only by host-compiled tests (`-DAGENTOS_TEST_HOST`) with seL4/Microkit IPC stubbed. Proves contract/logic shape, not IPC or hardware. |
+| **host-tested** | Validated only by host-compiled tests (`-DFRACTALOS_TEST_HOST`) with seL4/Microkit IPC stubbed. Proves contract/logic shape, not IPC or hardware. |
 | **stubbed** | Links and returns a defined value, but the behavior is a placeholder / `not implemented` / no-op. |
 | **planned** | Described here; little or no implementation. |
 
@@ -41,12 +41,12 @@ label is chosen.
 | serial-mux / serial PD | boot-proven | Guest console login over the serial path |
 | net-service / net_isolator | host-tested | `tests/contracts/net_*`; not boot-asserted |
 | block-service / block PD | host-tested | `tests/contracts/block_*`; VirtIO-blk path not independently boot-asserted |
-| usb-service | stubbed | `usb_pd.c` "stub mode" unless built with `AGENTOS_USB_PD` and real MMIO |
+| usb-service | stubbed | `usb_pd.c` "stub mode" unless built with `FRACTALOS_USB_PD` and real MMIO |
 | timer-service | host-tested | `tests/contracts/timer_test.c` |
 | entropy-service | host-tested | `services/entropy-service/`; not target-validated |
 | CC-PD host API (list/status/console) | boot-proven | `build/cc_pd.sock`; proven by guest-login E2E |
 | CC-PD snapshot relay | stubbed | Returns `CC_ERR_RELAY_FAULT` for the boot guest |
-| VibeOS lifecycle API (`VOS_*`) | host-tested | `make test-vibeos-contract`, `tests/api/test_vibeos*.c` (`-DAGENTOS_TEST_HOST`) |
+| VibeOS lifecycle API (`VOS_*`) | host-tested | `make test-vibeos-contract`, `tests/api/test_vibeos*.c` (`-DFRACTALOS_TEST_HOST`) |
 | vibe-engine WASM hot-swap | host-tested | `tests/integration/vibe_hotswap_test.c` exercises read/probe paths only |
 | Tracing (trace_recorder PD) | host-tested | 512-entry ring (START/STOP/QUERY/DUMP); host contract tests |
 | Agent-facing services (CapStore, MsgBus, MemFS, ToolSvc, ModelSvc, NetStack, BlobSvc, LogSvc) | host-tested | Contracts in `contracts/`; host tests; not boot-proven as live PDs |
@@ -56,7 +56,7 @@ label is chosen.
 
 ## 1. Vision
 
-agentOS is the world's first real operating system built *for* agents, not humans. It's not a Python framework with "OS" in the name. It's a bootable, capability-secured, formally-verifiable microkernel OS where:
+FractalOS is the world's first real operating system built *for* agents, not humans. It's not a Python framework with "OS" in the name. It's a bootable, capability-secured, formally-verifiable microkernel OS where:
 
 - **Agents are first-class citizens** — not processes pretending to be agents
 - **Everything is a capability** — memory, IPC, tools, models, storage, comms
@@ -82,7 +82,7 @@ Existing "agent OSes" (AIOS, OctopusOS, etc.) are Python libraries running on Li
 - Don't control the hardware
 - Are "OS" only in name
 
-agentOS boots bare metal. Agents run in isolated address spaces with capability-mediated access to everything. An agent can't access a tool, model, or memory region it doesn't have a capability for. Period.
+FractalOS boots bare metal. Agents run in isolated address spaces with capability-mediated access to everything. An agent can't access a tool, model, or memory region it doesn't have a capability for. Period.
 
 ---
 
@@ -144,7 +144,7 @@ Every agent has a cryptographic identity:
 
 ### 3.2 Capability Model
 
-seL4's capability system is extended with agentOS semantics:
+seL4's capability system is extended with FractalOS semantics:
 
 | Capability Type | Description |
 |----------------|-------------|
@@ -204,7 +204,7 @@ services**. (Proof level: **host-tested** — the hot-swap pipeline's read/probe
 paths are validated; a real propose+validate+swap on a booted target is not yet
 proven. See Section 0.)
 
-Each system service is a CAmkES component with a well-defined interface. The agentOS SDK provides:
+Each system service is a CAmkES component with a well-defined interface. The FractalOS SDK provides:
 
 1. **Service Interface Definitions (SIDs)** — like `.camkes` interface files but agent-oriented
 2. **Reference implementations** — basic FS, basic message bus, basic tool registry
@@ -288,7 +288,7 @@ Example: An agent decides the default flat filesystem sucks for its retrieval pa
 
 ---
 
-## 5. agentOS SDK (libagent)
+## 5. FractalOS SDK (libagent)
 
 The SDK that agents use to interact with the OS:
 
@@ -367,11 +367,11 @@ agent_status_t aos_service_swap(service_id_t sid, uint32_t validation_token);
 
 ### Phase 2: Raspberry Pi 4 / RISC-V
 - **Platform:** Real hardware for validation
-- **Goal:** Network-connected agentOS node
+- **Goal:** Network-connected FractalOS node
 
 ### Phase 3: Cloud / VM
 - **Platform:** KVM guests, cloud instances
-- **Goal:** Multi-node agentOS clusters, agent migration
+- **Goal:** Multi-node FractalOS clusters, agent migration
 
 ---
 
@@ -380,10 +380,10 @@ agent_status_t aos_service_swap(service_id_t sid, uint32_t validation_token);
 Based on seL4's CMake + repo manifest system:
 
 ```
-agentos/
+fractalos/
 ├── kernel/              # seL4 kernel (submodule)
 ├── libs/
-│   ├── libagent/        # agentOS SDK
+│   ├── libagent/        # FractalOS SDK
 │   ├── libsel4/         # seL4 bindings (from seL4)
 │   └── libmuslc/        # C library
 ├── services/            # System service CAmkES components
@@ -467,10 +467,10 @@ agentos/
 
 Every "agent OS" today is a userland framework. A nice abstraction over Linux/macOS/Windows. The agents share a kernel with browsers, games, and desktop apps. There's no real isolation, no formal guarantees, no capability security.
 
-agentOS aims to be different because:
+FractalOS aims to be different because:
 
 1. **Agents own the machine.** There's no human desktop environment taking up resources. *(Design goal.)*
-2. **Capabilities are hardware-enforced.** seL4's model means an agent cannot access memory it doesn't have a capability for — the MMU enforces it, seL4 proves it. *(This is the seL4 foundation; the agentOS-level capability services on top are still host-tested — see Section 0.)*
+2. **Capabilities are hardware-enforced.** seL4's model means an agent cannot access memory it doesn't have a capability for — the MMU enforces it, seL4 proves it. *(This is the seL4 foundation; the FractalOS-level capability services on top are still host-tested — see Section 0.)*
 3. **Agents can redesign their own environment.** The vibe-coding layer is intended to free agents from human-designed abstractions. *(Proof level: host-tested; not yet proven on target.)*
 4. **Formally verified foundation.** The seL4 kernel has a mathematical proof of correctness. You can build trust from first principles.
 5. **It actually boots.** It's not a pip package — the seL4 boot path and Linux/FreeBSD guest boot are boot-proven under QEMU. The agent-facing layers above are still maturing (see Section 0).
@@ -490,7 +490,7 @@ agentOS aims to be different because:
 
 `gpu_tensor_buf` is a 64MB seL4 Memory Region mapped into both the
 `controller` PD (producer) and `linux_vmm` PD (consumer).  It is intended to
-provide a zero-copy path for tensor exchange between agentOS WASM agents and
+provide a zero-copy path for tensor exchange between FractalOS WASM agents and
 CUDA/PyTorch workloads running in the Linux guest on sparky's GB10 GPU.
 
 ### Physical layout
@@ -500,7 +500,7 @@ CUDA/PyTorch workloads running in the Linux guest on sparky's GB10 GPU.
 ```
 
 ### Protocol
-1. agentOS agent calls `gpu_shmem_enqueue(&desc)` with tensor offset+size.
+1. FractalOS agent calls `gpu_shmem_enqueue(&desc)` with tensor offset+size.
 2. `microkit_notify(ctrl_gpu_notify)` wakes `linux_vmm`.
 3. `linux_vmm` drains the ring; injects a virtual IRQ into Linux guest.
 4. Linux `gpu_shmem_linux` daemon reads descriptors, dispatches CUDA ops.
@@ -509,8 +509,8 @@ CUDA/PyTorch workloads running in the Linux guest on sparky's GB10 GPU.
 7. Agent polls `gpu_shmem_dequeue_result()` for the result.
 
 ### Files
-- `kernel/agentos-root-task/src/gpu_shmem.c` — seL4 ring implementation
-- `kernel/agentos-root-task/include/gpu_shmem.h` — API header
-- `kernel/agentos-root-task/src/linux_vmm.c` — VMM notification handler
+- `kernel/fractalos-root-task/src/gpu_shmem.c` — seL4 ring implementation
+- `kernel/fractalos-root-task/include/gpu_shmem.h` — API header
+- `kernel/fractalos-root-task/src/linux_vmm.c` — VMM notification handler
 - `userspace/gpu_shmem_linux/gpu_shmem_linux.c` — Linux side daemon
 - `tools/topology.yaml` — MR, PD, and channel definitions

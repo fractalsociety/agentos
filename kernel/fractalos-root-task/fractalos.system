@@ -1,0 +1,1723 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FractalOS v0.3.0 System Description File
+  
+  Protection Domain topology:
+  
+    controller   (prio 201)  - raised above passive servers to prevent priority inversion
+    event_bus    (prio 200)  - passive pub/sub server (ring buffer)
+    init_agent   (prio 100)  - agent ecosystem bootstrapper
+    worker_0..7  (prio 80)   - agent pool workers (dynamic task assignment)
+    vibe_engine  (prio 140)  - passive VibeEngine: WASM hot-swap lifecycle
+    log_drain    (prio 160)  - passive log drain (ring buffer -> UART)
+    trace_recorder (prio 128) - passive inter-PD dispatch event logger (stub)
+    mem_profiler (prio 108)  - passive heap alloc tracker + leak detector
+    net_isolator (prio 160)  - passive per-agent outbound network firewall
+  
+  Channel map:
+    0:  controller <-> event_bus    (controller PPCs into passive event_bus)
+    1:  controller <-> init_agent   (notify: controller starts init_agent)
+    2:  event_bus  <-> init_agent   (init_agent PPCs into event_bus to subscribe)
+    5:  controller <-> agentfs        (controller PPCs into passive agentfs)
+    6:  controller <-> trace_recorder (PPC: START/STOP/QUERY/DUMP)
+    7:  controller -> trace_recorder  (notify on each inter-PD dispatch)
+    10: controller <-> worker_0     (task assignment + completion notify)
+    11: controller <-> worker_1
+    12: controller <-> worker_2
+    13: controller <-> worker_3
+    14: controller <-> worker_4
+    15: controller <-> worker_5
+    16: controller <-> worker_6
+    17: controller <-> worker_7
+    
+  Worker <-> EventBus channels (workers subscribe to events):
+    20: event_bus <-> worker_0
+    21: event_bus <-> worker_1
+    ...
+    27: event_bus <-> worker_7
+    30: controller <-> swap_slot_0  (WASM hot-swap)
+    31: controller <-> swap_slot_1
+    32: controller <-> swap_slot_2
+    33: controller <-> swap_slot_3
+
+  VibeEngine channels:
+    40: controller <-> vibe_engine  (vibe_engine notifies controller: swap approved)
+    41: init_agent <-> vibe_engine  (init_agent PPCs into vibe_engine to propose swaps)
+
+  Console Multiplexer channels:
+    60: controller   <-> log_drain  (log status queries)
+    61: init_agent   <-> log_drain  (init_agent output)
+    62: event_bus    <-> log_drain  (eventbus output notification)
+
+  Network Isolator channels:
+    63: controller   <-> net_isolator  (pp=true: CONNECT check, STATUS query)
+    64: init_agent   <-> net_isolator  (pp=true: ACL_SET on spawn, ACL_CLEAR on teardown)
+    65: net_isolator <-> event_bus     (deny event notifications)
+
+  Reserved contract-first endpoints (no capability minted yet):
+    77: controller -> companion_export (CH_COMPANION_EXPORT; implementation pending)
+-->
+<system>
+    <!-- Controller: system coordinator, priority raised above passive servers to prevent
+         priority inversion when PPCing into event_bus (prio 200) and other passive PDs -->
+    <protection_domain name="controller" priority="50">
+        <program_image path="controller.elf" />
+        <!-- Fractal task-control-plane 0x2E01..0x2E08 is multiplexed on the
+             existing controller/EventBus contract; no extra PD is created. -->
+        <map mr="monitor_stack"  vaddr="0x2000000" perms="rw" setvar_vaddr="monitor_stack_vaddr" />
+        <!-- Swap code regions: controller writes WASM images here; swap slot PDs read them -->
+        <map mr="swap_code_0" vaddr="0x6000000" perms="rw" setvar_vaddr="swap_code_ctrl_0" />
+        <map mr="swap_code_1" vaddr="0x6400000" perms="rw" setvar_vaddr="swap_code_ctrl_1" />
+        <map mr="swap_code_2" vaddr="0x6800000" perms="rw" setvar_vaddr="swap_code_ctrl_2" />
+        <map mr="swap_code_3" vaddr="0x6C00000" perms="rw" setvar_vaddr="swap_code_ctrl_3" />
+        <!-- VibeEngine staging: controller reads WASM proposals from here (r) -->
+        <map mr="vibe_staging" vaddr="0x7000000" perms="r" setvar_vaddr="vibe_staging_ctrl_vaddr" />
+        <!-- cap_policy hot-reload: caller writes policy blob here before PPC -->
+        <map mr="cap_policy_shmem" vaddr="0x7400000" perms="rw" setvar_vaddr="cap_policy_shmem_vaddr" />
+        <!-- NameServer registry dump: controller reads after OP_NS_LIST call -->
+        <map mr="ns_registry_shmem" vaddr="0xB000000" perms="r" setvar_vaddr="ns_registry_shmem_ctrl_vaddr" />
+        <!-- VFS I/O shmem: request descriptor + path/data buffers -->
+        <map mr="vfs_io_shmem"       vaddr="0xC000000"  perms="rw" setvar_vaddr="vfs_io_shmem_ctrl_vaddr" />
+        <!-- SpawnServer ELF staging area -->
+        <map mr="spawn_elf_shmem"    vaddr="0xD000000"  perms="rw" setvar_vaddr="spawn_elf_shmem_ctrl_vaddr" />
+        <!-- Spawn config shmem: app name/path/list -->
+        <map mr="spawn_config_shmem" vaddr="0xD100000"  perms="rw" setvar_vaddr="spawn_config_shmem_ctrl_vaddr" />
+        <!-- Network packet shmem: vNIC ring headers + packet data -->
+        <map mr="net_packet_shmem"   vaddr="0xE000000"  perms="r"  setvar_vaddr="net_packet_shmem_ctrl_vaddr" />
+        <!-- [removed] http_req_shmem mapping — http_svc removed (Phase 0.5 cleanup) -->
+        <!-- App manifest shmem: controller writes manifests for AppManager -->
+        <map mr="app_manifest_shmem" vaddr="0x10000000" perms="rw" setvar_vaddr="app_manifest_shmem_ctrl_vaddr" />
+        <!-- vm_list_shmem r-only: controller reads OP_VM_LIST results from vm_manager -->
+        <map mr="vm_list_shmem" vaddr="0x3100000" perms="r" cached="true"
+             setvar_vaddr="vm_list_shmem_ctrl_vaddr" />
+        <!-- ext2_shmem r-only: controller reads stat/readdir results from ext2fs -->
+        <map mr="ext2_shmem" vaddr="0x3400000" perms="r" cached="true"
+             setvar_vaddr="ext2_shmem_ctrl_vaddr" />
+        <!-- block_shmem rw: controller writes data before MSG_BLOCK_WRITE,
+             reads data after MSG_BLOCK_READ -->
+        <map mr="block_shmem" vaddr="0x3500000" perms="rw" cached="true"
+             setvar_vaddr="block_shmem_ctrl_vaddr" />
+    </protection_domain>
+    
+    <!-- EventBus: passive pub/sub backbone.  The controller's Fractal v1
+         stream is authenticated by the existing kernel adapter and uses this
+         singleton transport; no Fractal-specific PD or ring is added. -->
+    <protection_domain name="event_bus" priority="200" passive="true">
+        <program_image path="event_bus.elf" />
+        <map mr="eventbus_ring" vaddr="0x3000000" perms="rw" setvar_vaddr="eventbus_ring_vaddr" />
+    </protection_domain>
+    
+    <!-- InitAgent: bootstrap agent -->
+    <protection_domain name="init_agent" priority="100">
+        <program_image path="init_agent.elf" />
+    </protection_domain>
+    
+    <!-- Agent pool workers: static PDs, dynamic task assignment -->
+    <protection_domain name="worker_0" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_1" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_2" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_3" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_4" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_5" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_6" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    <protection_domain name="worker_7" priority="80">
+        <program_image path="worker.elf" />
+    </protection_domain>
+    
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      Capability Class Reference (FRACTALOS_CAP_* in fractalos.h)
+
+      The following constants gate access to shared memory regions in a
+      full capability system.  They are enforced at runtime by cap_broker
+      and checked at WASM load time by verify_capabilities_manifest().
+
+        FRACTALOS_CAP_COMPUTE     0x01  CPU time budget
+        FRACTALOS_CAP_MEMORY      0x02  heap allocation
+        FRACTALOS_CAP_OBJECTSTORE 0x04  AgentFS (hot store + VFS reads)
+        FRACTALOS_CAP_NETWORK     0x08  outbound network endpoints
+        FRACTALOS_CAP_SPAWN       0x10  spawn child agents
+        FRACTALOS_CAP_AUDIT       0x20  read cap_audit_log
+        FRACTALOS_CAP_SWAP_WRITE  0x40  write WASM binary to a swap region
+        FRACTALOS_CAP_SWAP_READ   0x80  read/execute WASM from a swap region
+
+      Each <memory_region> annotation below lists:
+        Write access  — which PD(s) may write and why
+        Read access   — which PD(s) may read and why
+        Cap class     — the FRACTALOS_CAP_* constant that would gate it
+        Threat        — the attack mitigated by the cap gate
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- Memory regions -->
+
+    <!-- monitor_stack: private stack for the controller PD.
+         Write access: controller only (seL4 stack frame writes).
+         Read access:  controller only.
+         Cap class:    N/A (private PD region, not shared).
+         Threat:       stack smashing; mitigated by seL4 address-space isolation. -->
+    <memory_region name="monitor_stack"   size="0x10000" />
+
+    <!-- eventbus_ring: 256KB publish/subscribe ring buffer.
+         Write access: event_bus PD only (ring head + event slots).
+         Read access:  event_bus (admin), init_agent, worker_0..7 (tail reads).
+         Cap class:    FRACTALOS_CAP_NETWORK (IPC-like pub/sub backbone).
+         Threat:       rogue PD injecting fake events; mitigated by passive-PD
+                       write-gate — only event_bus holds the rw mapping. -->
+    <memory_region name="eventbus_ring"   size="0x40000" />
+
+    <!-- cap_policy_shmem: 4KB hot-reload policy blob staging.
+         Write access: controller only (writes new policy before OP_CAP_POLICY_RELOAD PPC).
+         Read access:  cap_policy PD (parses blob on reload).
+         Cap class:    FRACTALOS_CAP_AUDIT (policy admin requires audit access).
+         Threat:       unauthorized policy injection escalating agent caps;
+                       mitigated by controller-only write mapping + PPC gate. -->
+    <memory_region name="cap_policy_shmem" size="0x1000" />
+    
+    <!-- Core service channels -->
+    <channel>
+        <end pd="controller" id="0" pp="true" />
+        <end pd="event_bus"  id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="1" />
+        <end pd="init_agent" id="1" />
+    </channel>
+    <channel>
+        <end pd="event_bus"  id="2" />
+        <end pd="init_agent" id="2" pp="true" />
+    </channel>
+    
+    <!-- Worker pool channels (controller <-> worker_N) -->
+    <channel>
+        <end pd="controller" id="10" />
+        <end pd="worker_0"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="11" />
+        <end pd="worker_1"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="12" />
+        <end pd="worker_2"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="13" />
+        <end pd="worker_3"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="14" />
+        <end pd="worker_4"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="15" />
+        <end pd="worker_5"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="16" />
+        <end pd="worker_6"   id="0" />
+    </channel>
+    <channel>
+        <end pd="controller" id="17" />
+        <end pd="worker_7"   id="0" />
+    </channel>
+    
+    <!-- AgentFS: passive object store, priority 150 -->
+    <!-- Channels: CH0=controller (PPC in), CH1=event_bus (notify out) -->
+    <protection_domain name="agentfs" priority="150" passive="true">
+        <program_image path="agentfs.elf" />
+        <map mr="agentfs_store" vaddr="0x5000000" perms="rw" setvar_vaddr="agentfs_store_vaddr" />
+    </protection_domain>
+
+    <!-- agentfs_store: 320KB AgentFS hot store (index + blob data).
+         Write access: agentfs PD only (manages index + blob pool).
+         Read access:  agentfs PD only (all access is mediated via PPC).
+         Cap class:    FRACTALOS_CAP_OBJECTSTORE (object storage backend).
+         Threat:       direct memory read bypassing AgentFS ACLs;
+                       mitigated by agentfs-only mapping — callers must PPC. -->
+    <memory_region name="agentfs_store" size="0x50000" />  <!-- 320KB: index + blobs -->
+
+    <!-- Channel 5: controller <-> agentfs (controller PPCs into passive agentfs) -->
+    <channel>
+        <end pd="controller" id="5" pp="true" />
+        <end pd="agentfs"    id="0" />
+    </channel>
+    <!-- Channel 6: agentfs -> event_bus (agentfs notifies on mutations) -->
+    <channel>
+        <end pd="agentfs"   id="1" />
+        <end pd="event_bus" id="6" />
+    </channel>
+
+    <!-- Worker <-> EventBus channels (workers can subscribe to events) -->
+    <channel>
+        <end pd="event_bus" id="20" />
+        <end pd="worker_0"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="21" />
+        <end pd="worker_1"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="22" />
+        <end pd="worker_2"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="23" />
+        <end pd="worker_3"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="24" />
+        <end pd="worker_4"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="25" />
+        <end pd="worker_5"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="26" />
+        <end pd="worker_6"  id="1" pp="true" />
+    </channel>
+    <channel>
+        <end pd="event_bus" id="27" />
+        <end pd="worker_7"  id="1" pp="true" />
+    </channel>
+
+    <!--
+      Swap slots: 4 pre-allocated PDs for live WASM hot-swap.
+      Controller maps each code region rw (writes WASM image + header).
+      Swap slot maps it r (reads and interprets via wasm3).
+      Channels: controller id=30..33 <-> swap_slot_N id=0
+    -->
+
+    <!-- swap_code_0: WASM hot-swap staging for slot 0.
+         Write access: controller only (writes WASM binary + swap_slot_header_t).
+         Read access:  swap_slot_0 (interprets WASM via wasm3).
+         Cap class:    FRACTALOS_CAP_SWAP_WRITE (controller) / FRACTALOS_CAP_SWAP_READ (slot).
+         Threat:       unauthorized write could inject malicious WASM;
+                       mitigated by controller-only rw mapping + ELF SHA-256 check
+                       in verify_capabilities_manifest(). -->
+    <memory_region name="swap_code_0" size="0x400000" />
+
+    <!-- swap_code_1: WASM hot-swap staging for slot 1.
+         Write access: controller only (writes WASM binary + swap_slot_header_t).
+         Read access:  swap_slot_1 (interprets WASM via wasm3).
+         Cap class:    FRACTALOS_CAP_SWAP_WRITE (controller) / FRACTALOS_CAP_SWAP_READ (slot).
+         Threat:       same as swap_code_0. -->
+    <memory_region name="swap_code_1" size="0x400000" />
+
+    <!-- swap_code_2: WASM hot-swap staging for slot 2.
+         Write access: controller only (writes WASM binary + swap_slot_header_t).
+         Read access:  swap_slot_2 (interprets WASM via wasm3).
+         Cap class:    FRACTALOS_CAP_SWAP_WRITE (controller) / FRACTALOS_CAP_SWAP_READ (slot).
+         Threat:       same as swap_code_0. -->
+    <memory_region name="swap_code_2" size="0x400000" />
+
+    <!-- swap_code_3: WASM hot-swap staging for slot 3.
+         Write access: controller only (writes WASM binary + swap_slot_header_t).
+         Read access:  swap_slot_3 (interprets WASM via wasm3).
+         Cap class:    FRACTALOS_CAP_SWAP_WRITE (controller) / FRACTALOS_CAP_SWAP_READ (slot).
+         Threat:       same as swap_code_0. -->
+    <memory_region name="swap_code_3" size="0x400000" />
+
+    <protection_domain name="swap_slot_0" priority="75">
+        <program_image path="swap_slot.elf" />
+        <map mr="swap_code_0" vaddr="0x2000000" perms="r" setvar_vaddr="swap_code_vaddr" />
+    </protection_domain>
+    <protection_domain name="swap_slot_1" priority="75">
+        <program_image path="swap_slot.elf" />
+        <map mr="swap_code_1" vaddr="0x2000000" perms="r" setvar_vaddr="swap_code_vaddr" />
+    </protection_domain>
+    <protection_domain name="swap_slot_2" priority="75">
+        <program_image path="swap_slot.elf" />
+        <map mr="swap_code_2" vaddr="0x2000000" perms="r" setvar_vaddr="swap_code_vaddr" />
+    </protection_domain>
+    <protection_domain name="swap_slot_3" priority="75">
+        <program_image path="swap_slot.elf" />
+        <map mr="swap_code_3" vaddr="0x2000000" perms="r" setvar_vaddr="swap_code_vaddr" />
+    </protection_domain>
+
+    <!-- Channels: controller <-> swap slots -->
+    <channel>
+        <end pd="controller"  id="30" />
+        <end pd="swap_slot_0" id="0" />
+    </channel>
+    <channel>
+        <end pd="controller"  id="31" />
+        <end pd="swap_slot_1" id="0" />
+    </channel>
+    <channel>
+        <end pd="controller"  id="32" />
+        <end pd="swap_slot_2" id="0" />
+    </channel>
+    <channel>
+        <end pd="controller"  id="33" />
+        <end pd="swap_slot_3" id="0" />
+    </channel>
+
+    <!--
+      VibeEngine: passive hot-swap lifecycle server (priority 140)
+
+      Channels:
+        id=0: agents PPC in to propose/validate/execute swaps
+        id=1: vibe_engine notifies controller when a swap is approved
+
+      Shared memory:
+        vibe_staging (4MB): WASM binary staging area
+          - Agents write WASM bytes here before calling OP_VIBE_PROPOSE
+          - VibeEngine reads + validates
+          - Controller reads and feeds to vibe_swap_begin
+    -->
+    <!-- vibe_staging: 4MB WASM proposal staging area for VibeEngine.
+         Write access: vibe_engine PD only (validates WASM + writes 64-byte metadata footer).
+         Read access:  controller (reads proposal metadata + WASM pointer after approval),
+                       init_agent (submits WASM bytes via OP_VIBE_PROPOSE PPC).
+         Cap class:    FRACTALOS_CAP_SWAP_WRITE (vibe_engine / proposing agent).
+         Threat:       agent writing oversized or malformed WASM to escalate to swap;
+                       mitigated by vibe_engine validation pass + controller manifest check. -->
+    <memory_region name="vibe_staging" size="0x400000" />  <!-- 4MB staging -->
+
+    <protection_domain name="vibe_engine" priority="140" passive="true">
+        <program_image path="vibe_engine.elf" />
+        <!-- rw: vibe_engine reads staged WASM and writes metadata footer -->
+        <map mr="vibe_staging" vaddr="0x4000000" perms="rw" setvar_vaddr="vibe_staging_vaddr" />
+    </protection_domain>
+
+    <!--
+      Channel 40: controller(id=40) <-> vibe_engine(id=1)
+      vibe_engine notifies controller when a swap proposal is approved.
+      Controller wakes up, reads staging metadata, calls vibe_swap_begin.
+    -->
+    <channel>
+        <end pd="controller"   id="40" />
+        <end pd="vibe_engine"  id="1" />
+    </channel>
+
+    <!--
+      Channel 41: init_agent(id=3) <-> vibe_engine(id=0) pp=true
+      init_agent can PPC into vibe_engine to propose/validate/execute swaps.
+      Used by the demo sequence (Step 4: hot-swap toolsvc with echo_service.wasm).
+    -->
+    <channel>
+        <end pd="init_agent"   id="3" pp="true" />
+        <end pd="vibe_engine"  id="0" />
+    </channel>
+
+    <!--
+      MemProfiler: passive WASM heap allocation tracker (priority 108)
+
+      Tracks per-slot live alloc count + bytes. Workers call
+      OP_MEM_ALLOC_HOOK / OP_MEM_FREE_HOOK via PPC. Controller sends
+      tick notifications every scheduling quantum; mem_profiler writes
+      heap snapshots into the 256KB mem_ring every 30 ticks and fires
+      OP_MEM_LEAK_ALERT to the controller if a slot shows 100 consecutive
+      ticks of monotonically growing live allocation count.
+
+      Channels:
+        id=0: controller <-> mem_profiler
+              - controller notifies (tick); mem_profiler PPCs (leak alert)
+        id=1..8: worker_0..7 <-> mem_profiler (pp=true: workers PPC in)
+
+      Shared memory:
+        mem_ring (256KB): ring buffer of 64-byte per-slot heap snapshots
+    -->
+
+    <!-- mem_ring: 256KB heap snapshot ring for mem_profiler.
+         Write access: mem_profiler only (writes per-slot allocation snapshots).
+         Read access:  mem_profiler (admin); controller (future: leak report export).
+         Cap class:    FRACTALOS_CAP_AUDIT (profiling data is audit-class telemetry).
+         Threat:       rogue PD forging allocation records to suppress leak alerts;
+                       mitigated by mem_profiler-only rw mapping. -->
+    <memory_region name="mem_ring" size="0x40000" />   <!-- 256KB snapshot ring -->
+
+    <protection_domain name="mem_profiler" priority="108" passive="true">
+        <program_image path="mem_profiler.elf" />
+        <map mr="mem_ring" vaddr="0x8000000" perms="rw" setvar_vaddr="mem_ring_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 50: controller(id=50) <-> mem_profiler(id=0)
+         Controller notifies mem_profiler for each tick.
+         mem_profiler PPCs controller for leak alerts. -->
+    <channel>
+        <end pd="controller"    id="50" />
+        <end pd="mem_profiler"  id="0" />
+    </channel>
+
+    <!-- Channels 51–58: worker_N(id=9) <-> mem_profiler(id=1..8) pp=true
+         Workers PPC into mem_profiler for alloc/free hook recording. -->
+    <channel>
+        <end pd="worker_0"     id="9" pp="true" />
+        <end pd="mem_profiler" id="1" />
+    </channel>
+    <channel>
+        <end pd="worker_1"     id="9" pp="true" />
+        <end pd="mem_profiler" id="2" />
+    </channel>
+    <channel>
+        <end pd="worker_2"     id="9" pp="true" />
+        <end pd="mem_profiler" id="3" />
+    </channel>
+    <channel>
+        <end pd="worker_3"     id="9" pp="true" />
+        <end pd="mem_profiler" id="4" />
+    </channel>
+    <channel>
+        <end pd="worker_4"     id="9" pp="true" />
+        <end pd="mem_profiler" id="5" />
+    </channel>
+    <channel>
+        <end pd="worker_5"     id="9" pp="true" />
+        <end pd="mem_profiler" id="6" />
+    </channel>
+    <channel>
+        <end pd="worker_6"     id="9" pp="true" />
+        <end pd="mem_profiler" id="7" />
+    </channel>
+    <channel>
+        <end pd="worker_7"     id="9" pp="true" />
+        <end pd="mem_profiler" id="8" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      TimePartition: seL4 MCS time-partitioning scheduler (passive, prio 250)
+
+      Highest user-space priority (250). Enforces fixed CPU budget windows
+      per agent class via seL4 SchedContext manipulation.
+
+      Defaults: gpu_worker(5ms/10ms), mesh_agent(2ms/10ms), watchdog(1ms/5ms).
+      Override via OP_TP_SET_POLICY at runtime or cap_policy DSL.
+
+      Channels (90–99):
+        90: controller(id=90, pp=true) <-> time_partition(id=0)
+        91..98: worker_0..7(id=11, pp=true) <-> time_partition(id=1..8)
+        99: init_agent(id=5, pp=true) <-> time_partition(id=9)
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <protection_domain name="time_partition" priority="250" passive="true">
+        <program_image path="time_partition.elf" />
+    </protection_domain>
+
+    <!-- Channel 41: controller(id=41, pp=true) <-> time_partition(id=0) -->
+    <channel>
+        <end pd="controller"     id="41" pp="true" />
+        <end pd="time_partition" id="0" />
+    </channel>
+
+    <!-- Channels 91–98: worker_N(id=11, pp=true) <-> time_partition(id=1..8) -->
+    <channel>
+        <end pd="worker_0"       id="11" pp="true" />
+        <end pd="time_partition" id="1" />
+    </channel>
+    <channel>
+        <end pd="worker_1"       id="11" pp="true" />
+        <end pd="time_partition" id="2" />
+    </channel>
+    <channel>
+        <end pd="worker_2"       id="11" pp="true" />
+        <end pd="time_partition" id="3" />
+    </channel>
+    <channel>
+        <end pd="worker_3"       id="11" pp="true" />
+        <end pd="time_partition" id="4" />
+    </channel>
+    <channel>
+        <end pd="worker_4"       id="11" pp="true" />
+        <end pd="time_partition" id="5" />
+    </channel>
+    <channel>
+        <end pd="worker_5"       id="11" pp="true" />
+        <end pd="time_partition" id="6" />
+    </channel>
+    <channel>
+        <end pd="worker_6"       id="11" pp="true" />
+        <end pd="time_partition" id="7" />
+    </channel>
+    <channel>
+        <end pd="worker_7"       id="11" pp="true" />
+        <end pd="time_partition" id="8" />
+    </channel>
+
+    <!-- Channel 99: init_agent(id=5, pp=true) <-> time_partition(id=9) -->
+    <channel>
+        <end pd="init_agent"     id="5" pp="true" />
+        <end pd="time_partition" id="9" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      PerfCounters: continuous IPC latency histograms (passive, prio 95)
+
+      Every PD that makes PPC calls wraps them with OP_PERF_BEGIN/END
+      (via PERF_PPC macro in fractalos.h) to record per-pair latencies.
+
+      Channels (70–78):
+        70: controller(id=70, pp=true) <-> perf_counters(id=0)
+        71..78: worker_0..7(id=10, pp=true) <-> perf_counters(id=1..8)
+
+      Shared memory:
+        perf_ring (4KB): packed 64-byte export records per PD pair.
+        Written on OP_PERF_EXPORT; read by metrics_exporter or Grafana.
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- perf_ring: 4KB IPC latency histogram export records (64 × 64B).
+         Write access: perf_counters PD only (writes histogram on OP_PERF_EXPORT).
+         Read access:  perf_counters (admin); future: metrics_exporter (r-only).
+         Cap class:    FRACTALOS_CAP_AUDIT (performance telemetry is audit-class data).
+         Threat:       rogue PD injecting fake latency data to mask real anomalies;
+                       mitigated by perf_counters-only write mapping. -->
+    <memory_region name="perf_ring" size="0x1000" />   <!-- 4KB: 64 × 64B records -->
+
+    <protection_domain name="perf_counters" priority="95" passive="true">
+        <program_image path="perf_counters.elf" />
+        <map mr="perf_ring" vaddr="0xA000000" perms="rw" setvar_vaddr="perf_ring_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 42: controller(id=42, pp=true) <-> perf_counters(id=0) -->
+    <channel>
+        <end pd="controller"    id="42" pp="true" />
+        <end pd="perf_counters" id="0" />
+    </channel>
+
+    <!-- Channels 71–78: worker_N(id=10, pp=true) <-> perf_counters(id=1..8) -->
+    <channel>
+        <end pd="worker_0"      id="10" pp="true" />
+        <end pd="perf_counters" id="1" />
+    </channel>
+    <channel>
+        <end pd="worker_1"      id="10" pp="true" />
+        <end pd="perf_counters" id="2" />
+    </channel>
+    <channel>
+        <end pd="worker_2"      id="10" pp="true" />
+        <end pd="perf_counters" id="3" />
+    </channel>
+    <channel>
+        <end pd="worker_3"      id="10" pp="true" />
+        <end pd="perf_counters" id="4" />
+    </channel>
+    <channel>
+        <end pd="worker_4"      id="10" pp="true" />
+        <end pd="perf_counters" id="5" />
+    </channel>
+    <channel>
+        <end pd="worker_5"      id="10" pp="true" />
+        <end pd="perf_counters" id="6" />
+    </channel>
+    <channel>
+        <end pd="worker_6"      id="10" pp="true" />
+        <end pd="perf_counters" id="7" />
+    </channel>
+    <channel>
+        <end pd="worker_7"      id="10" pp="true" />
+        <end pd="perf_counters" id="8" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      Console Multiplexer: "tmux for FractalOS"
+
+      Passive PD (priority 160) that drains per-PD output rings to the debug UART.
+
+      Shared memory: log_drain_rings (64KB = 16 × 4KB per-PD output rings)
+
+      Channels (60-62, after mem_profiler's 50-58):
+        60: controller <-> log_drain (PPC: status queries)
+        61: init_agent <-> log_drain (notify: init_agent output ready)
+        62: event_bus  <-> log_drain (notify: eventbus output ready)
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- log_drain_rings: 64KB per-PD output ring buffer (16 × 4KB slots).
+         Write access: each PD writes into its own 4KB slot (head pointer only).
+         Read access:  log_drain (drains all slots); PDs (own slot head writes).
+         Cap class:    N/A (debug I/O; not gated by agent capability system). -->
+    <!-- Log drain ring buffer: 16 × 4KB = 64KB shared output rings -->
+    <memory_region name="log_drain_rings" size="0x10000" />
+
+    <protection_domain name="log_drain" priority="160" passive="true">
+        <program_image path="log_drain.elf" />
+        <map mr="log_drain_rings" vaddr="0x9000000" perms="rw" setvar_vaddr="log_drain_rings_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 60: controller(id=60) <-> log_drain(id=0) pp=true
+         Controller PPCs into log_drain for status queries -->
+    <channel>
+        <end pd="controller"  id="60" pp="true" />
+        <end pd="log_drain"   id="0" />
+    </channel>
+
+    <!-- Channel 61: init_agent(id=4) <-> log_drain(id=1)
+         init_agent notifies log_drain when it has output to drain -->
+    <channel>
+        <end pd="init_agent"  id="4" />
+        <end pd="log_drain"   id="1" />
+    </channel>
+
+    <!-- Channel 62: event_bus(id=60) <-> log_drain(id=2)
+         event_bus notifies log_drain on event activity -->
+    <channel>
+        <end pd="event_bus"   id="60" />
+        <end pd="log_drain"   id="2" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      Trace Recorder: inter-PD dispatch event logger
+
+      Passive PD (priority 128) that receives best-effort notifications
+      from the controller on every inter-PD dispatch (microkit_notify,
+      microkit_ppcall).  Useful for debugging sequencing and liveness.
+
+      No shared memory in this stub — a full implementation would map a
+      ring buffer here for post-mortem trace dumps.
+
+      Channels (6-7, from controller's perspective):
+        6: controller <-> trace_recorder  (pp=true: START/STOP/QUERY/DUMP)
+        7: controller -> trace_recorder   (notify on each dispatch event)
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <protection_domain name="trace_recorder" priority="128" passive="true">
+        <program_image path="trace_recorder.elf" />
+    </protection_domain>
+
+    <!-- Channel 6: controller(id=6) <-> trace_recorder(id=0) pp=true
+         Controller PPCs into trace_recorder for START/STOP/QUERY/DUMP -->
+    <channel>
+        <end pd="controller"       id="6" pp="true" />
+        <end pd="trace_recorder"   id="0" />
+    </channel>
+
+    <!-- Channel 7: controller(id=7) -> trace_recorder(id=1)
+         Controller notifies trace_recorder on each inter-PD dispatch -->
+    <channel>
+        <end pd="controller"       id="7" />
+        <end pd="trace_recorder"   id="1" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      Network Isolator: per-agent outbound firewall
+
+      Passive PD (priority 160) that intercepts agent outbound connection
+      requests and validates them against per-slot ACL tables.
+      Each slot has up to 16 allow rules (hostname:port patterns).
+      Denied connections are logged to cap_audit_log.
+
+      Shared memory: net_isolator_ring (256KB): ACL table mirror + stats.
+
+      Channels (63-65):
+        63: controller   <-> net_isolator  (pp=true: workers + controller PPC in)
+        64: init_agent   <-> net_isolator  (init_agent sets ACLs on spawn)
+        65: net_isolator <-> event_bus     (deny events published to bus)
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- net_isolator_ring: 256KB per-slot ACL table mirror + deny statistics.
+         Write access: net_isolator PD only (updates ACL entries + deny counters).
+         Read access:  net_isolator (admin); init_agent (sets ACLs via PPC, not direct).
+         Cap class:    FRACTALOS_CAP_NETWORK (ACL configuration gates network access).
+         Threat:       rogue PD clearing its own ACL entry to bypass outbound firewall;
+                       mitigated by net_isolator-only write mapping — ACL changes
+                       must go through the PPC gate. -->
+    <!-- net_isolator ring: 256KB ACL + stats shared memory -->
+    <memory_region name="net_isolator_ring" size="0x40000" />
+
+    <protection_domain name="net_isolator" priority="160" passive="true">
+        <program_image path="net_isolator.elf" />
+        <map mr="net_isolator_ring" vaddr="0xA000000" perms="rw" setvar_vaddr="net_isolator_ring_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 61: controller(id=61) <-> net_isolator(id=0) pp=true
+         Controller and workers PPC into net_isolator for CONNECT/STATUS checks -->
+    <channel>
+        <end pd="controller"    id="61" pp="true" />
+        <end pd="net_isolator"  id="0" />
+    </channel>
+
+    <!-- Channel 64: init_agent(id=6) <-> net_isolator(id=1)
+         init_agent PPCs into net_isolator to configure per-slot ACLs on spawn
+         and clear ACLs on teardown -->
+    <channel>
+        <end pd="init_agent"    id="6" pp="true" />
+        <end pd="net_isolator"  id="1" />
+    </channel>
+
+    <!-- Channel 65: net_isolator(id=2) <-> event_bus(id=61)
+         net_isolator notifies event_bus on deny events (audit trail) -->
+    <channel>
+        <end pd="net_isolator"  id="2" />
+        <end pd="event_bus"     id="61" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      NameServer: runtime service discovery registry (passive, prio 170)
+
+      Replaces hardcoded channel-constant wiring with a named registry.
+      Callers PPC in to register, look up, or query service metadata.
+      Controller pre-registers all static services at boot.
+      SpawnServer (future) will query NameServer when minting capability
+      bundles for newly spawned application PDs.
+
+      Channel map (from NameServer's perspective):
+        id=0:  controller (pp=true: register + admin)
+        id=1:  init_agent (pp=true: lookup during bootstrap)
+        id=2:  worker_0   (pp=true: lookup)
+        id=3:  worker_1
+        id=4:  worker_2
+        id=5:  worker_3
+        id=6:  worker_4
+        id=7:  worker_5
+        id=8:  worker_6
+        id=9:  worker_7
+
+      Shared memory:
+        ns_registry_shmem (8KB): OP_NS_LIST dump buffer
+          NameServer writes ns_list_header_t + entries here.
+          Controller maps rw (reads after OP_NS_LIST call).
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- ns_registry_shmem: 8KB NameServer service registry dump buffer.
+         Write access: nameserver PD only (writes ns_list_header_t + entries on OP_NS_LIST).
+         Read access:  controller (r-only, reads after OP_NS_LIST PPC call).
+         Cap class:    FRACTALOS_CAP_SPAWN (service discovery is prerequisite for spawn).
+         Threat:       rogue PD injecting fake service registrations to redirect IPC;
+                       mitigated by nameserver-only write mapping. -->
+    <memory_region name="ns_registry_shmem" size="0x2000" />  <!-- 8KB list dump -->
+
+    <protection_domain name="nameserver" priority="170" passive="true">
+        <program_image path="nameserver.elf" />
+        <map mr="ns_registry_shmem" vaddr="0xB000000" perms="rw"
+             setvar_vaddr="ns_registry_shmem_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 80: controller(id=80, pp=true) <-> nameserver(id=0)
+         Controller PPCs into nameserver to register services + admin ops -->
+    <channel>
+        <end pd="controller"  id="18" pp="true" />
+        <end pd="nameserver"  id="0" />
+    </channel>
+
+    <!-- Channel 81: init_agent(id=7, pp=true) <-> nameserver(id=1)
+         init_agent queries nameserver during agent bootstrap sequence -->
+    <channel>
+        <end pd="init_agent"  id="7" pp="true" />
+        <end pd="nameserver"  id="1" />
+    </channel>
+
+    <!-- Channels 82–89: worker_N(id=12, pp=true) <-> nameserver(id=2..9)
+         Workers look up services when dispatching agent tasks -->
+    <channel>
+        <end pd="worker_0"   id="12" pp="true" />
+        <end pd="nameserver" id="2" />
+    </channel>
+    <channel>
+        <end pd="worker_1"   id="12" pp="true" />
+        <end pd="nameserver" id="3" />
+    </channel>
+    <channel>
+        <end pd="worker_2"   id="12" pp="true" />
+        <end pd="nameserver" id="4" />
+    </channel>
+    <channel>
+        <end pd="worker_3"   id="12" pp="true" />
+        <end pd="nameserver" id="5" />
+    </channel>
+    <channel>
+        <end pd="worker_4"   id="12" pp="true" />
+        <end pd="nameserver" id="6" />
+    </channel>
+    <channel>
+        <end pd="worker_5"   id="12" pp="true" />
+        <end pd="nameserver" id="7" />
+    </channel>
+    <channel>
+        <end pd="worker_6"   id="12" pp="true" />
+        <end pd="nameserver" id="8" />
+    </channel>
+    <channel>
+        <end pd="worker_7"   id="12" pp="true" />
+        <end pd="nameserver" id="9" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      SERVICE LAYER: VFS, virtio-blk, SpawnServer, app slots,
+                     NetServer, AppManager, HTTP service
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- ── Shared memory regions ──────────────────────────────────────── -->
+
+    <!-- vfs_io_shmem: 128KB VFS request descriptor + path buffer + data buffer.
+         Write access: controller, workers, spawn_server, app_manager (request side);
+                       vfs_server (response side).
+         Read access:  vfs_server (reads requests); callers (read responses).
+         Cap class:    FRACTALOS_CAP_OBJECTSTORE (filesystem access).
+         Threat:       agent injecting crafted VFS paths to read out-of-bounds data;
+                       mitigated by vfs_server path validation + caller capability check. -->
+    <memory_region name="vfs_io_shmem"       size="0x20000" />
+
+    <!-- blk_dma_shmem: 32KB DMA buffer shared between vfs_server, block_pd, and virtio_blk.
+         Write access: vfs_server (writes block I/O requests); virtio_blk (DMA fills);
+                       block_pd (stages data for forwarded I/O).
+         Read access:  vfs_server (reads DMA results); virtio_blk (reads request headers);
+                       block_pd (reads DMA results from virtio_blk).
+         Cap class:    FRACTALOS_CAP_OBJECTSTORE (block device is a storage backend).
+         Threat:       rogue PD corrupting DMA buffer to inject block data;
+                       mitigated by restricted mapping — only vfs_server, block_pd,
+                       and virtio_blk hold rw mappings.
+         Safety note:  all three PDs are passive; seL4 scheduler serialises execution
+                       so concurrent DMA access is impossible. -->
+    <memory_region name="blk_dma_shmem"      size="0x8000"  />
+
+    <!-- block_shmem: 64KB data buffer shared between block_pd and its callers.
+         Write access: callers write sector data here before MSG_BLOCK_WRITE;
+                       block_pd writes sector data here after MSG_BLOCK_READ.
+         Read access:  callers read sector data here after MSG_BLOCK_READ.
+         Cap class:    FRACTALOS_CAP_OBJECTSTORE (block I/O requires storage capability).
+         Threat:       cross-guest data exfiltration via shared buffer; mitigated by
+                       block_pd handle ownership enforcement (per-channel validation). -->
+    <memory_region name="block_shmem"        size="0x10000" />
+
+    <!-- virtio_net_mmio: 4KB MMIO for virtio-net (riscv64: 0x10001000, IRQ 1).
+         Write access: net_server only (device configuration + queue doorbell).
+         Read access:  net_server only.
+         Cap class:    FRACTALOS_CAP_NETWORK (network device control).
+         Threat:       MMIO register manipulation to redirect network traffic;
+                       mitigated by net_server-only mapping. -->
+    <memory_region name="virtio_net_mmio"    size="0x1000"  phys_addr="0x10001000" />
+
+    <!-- virtio_blk_mmio: 4KB MMIO for virtio-blk (riscv64: 0x10002000, IRQ 2).
+         Write access: virtio_blk PD only (device configuration + queue doorbell).
+         Read access:  virtio_blk PD only.
+         Cap class:    FRACTALOS_CAP_OBJECTSTORE (block device control).
+         Threat:       MMIO register manipulation to corrupt disk I/O;
+                       mitigated by virtio_blk-only mapping. -->
+    <memory_region name="virtio_blk_mmio"    size="0x1000"  phys_addr="0x10002000" />
+
+    <!-- spawn_elf_shmem: 512KB ELF staging area for SpawnServer.
+         Write access: spawn_server (stages ELF image + spawn_header_t);
+                       vfs_server (writes ELF bytes via block read path).
+         Read access:  app_slot_0..3 (interprets spawn_header_t + ELF image).
+         Cap class:    FRACTALOS_CAP_SPAWN (launching new application PDs).
+         Threat:       agent staging a malicious ELF to hijack an app slot;
+                       mitigated by spawn_server ELF validation + cap gate. -->
+    <memory_region name="spawn_elf_shmem"    size="0x80000" />
+
+    <!-- spawn_config_shmem: 4KB app name/path/list staging.
+         Write access: controller (writes config for AppManager); spawn_server / app_manager.
+         Read access:  spawn_server, app_manager (reads launch config).
+         Cap class:    FRACTALOS_CAP_SPAWN (required to configure application launch).
+         Threat:       injecting crafted launch config to spawn unintended binaries;
+                       mitigated by controller-only write path + app_manager validation. -->
+    <memory_region name="spawn_config_shmem" size="0x1000"  />
+
+    <!-- net_packet_shmem: 256KB vNIC ring — 16 × 16KB per-vNIC packet slots.
+         Write access: net_server (receives from virtio-net, writes to slots).
+         Read access:  controller (observes stats, r-only); workers (r-only, vNIC consumers).
+         Cap class:    FRACTALOS_CAP_NETWORK (outbound network access).
+         Threat:       agent reading other agents' raw packet data (cross-slot snooping);
+                       mitigated by per-vNIC slot assignment gated by net_server. -->
+    <memory_region name="net_packet_shmem"   size="0x40000" />
+
+    <!-- net_pd_shmem: 256KB net_pd packet I/O and socket data area.
+         16 × 16KB handle slots; layout matches net_server shmem geometry.
+         Write access: net_pd (ring head writes, inbound frame delivery).
+         Read access:  net_pd clients via handle-gated slot assignment.
+         Cap class:    FRACTALOS_CAP_NETWORK.
+         Threat:       cross-handle snooping; mitigated by per-handle slot assignment. -->
+    <memory_region name="net_pd_shmem"       size="0x40000" />
+
+    <!-- app_manifest_shmem: 16KB key=value application manifests.
+         Write access: controller (writes manifests before OP_APP_LAUNCH PPC).
+         Read access:  app_manager (parses manifest on launch request).
+         Cap class:    FRACTALOS_CAP_SPAWN (app launch config requires spawn capability).
+         Threat:       rogue PD submitting a crafted manifest to escalate app capabilities;
+                       mitigated by controller-only write mapping + app_manager validation. -->
+    <memory_region name="app_manifest_shmem" size="0x4000"  />
+
+    <!-- [removed] http_req_shmem — http_svc removed (Phase 0.5 cleanup) -->
+
+    <!--
+      ── virtio-blk: block device driver (passive, prio 175) ──
+
+      Probes QEMU virtio-MMIO at init; returns BLK_ERR_NODEV gracefully
+      if no device is present.
+
+      Channels:
+        id=0: controller  (pp=true)
+        id=1: vfs_server  (pp=true — block I/O requests)
+    -->
+    <protection_domain name="virtio_blk" priority="175" passive="true">
+        <program_image path="virtio_blk.elf" />
+        <map mr="blk_dma_shmem"   vaddr="0x5000000" perms="rw"
+             setvar_vaddr="blk_dma_shmem_vaddr" />
+        <map mr="virtio_blk_mmio" vaddr="0x6000000" perms="rw" cached="false"
+             setvar_vaddr="blk_mmio_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"  id="22" pp="true" />
+        <end pd="virtio_blk"  id="0" />
+    </channel>
+
+    <!--
+      ── VFS Server: POSIX-flavoured filesystem (passive, prio 155) ──
+
+      MemBackend always available.  BlkBackend wired to virtio_blk via ch 12.
+
+      Channels:
+        id=0:  controller      (pp=true)
+        id=1:  init_agent      (pp=true)
+        id=2..9: worker_0..7   (pp=true)
+        id=10: spawn_server    (pp=true — ELF reads)
+        id=11: app_manager     (pp=true — manifest reads)
+        id=12: virtio_blk      (pp=true OUT — block I/O)
+    -->
+    <protection_domain name="vfs_server" priority="155" passive="true">
+        <program_image path="vfs_server.elf" />
+        <map mr="vfs_io_shmem"    vaddr="0x5000000" perms="rw"
+             setvar_vaddr="vfs_io_shmem_vaddr" />
+        <map mr="blk_dma_shmem"   vaddr="0x6000000" perms="rw"
+             setvar_vaddr="blk_dma_shmem_vaddr" />
+        <map mr="spawn_elf_shmem" vaddr="0x7000000" perms="rw"
+             setvar_vaddr="spawn_elf_shmem_vfs_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller" id="19" pp="true" />
+        <end pd="vfs_server" id="0" />
+    </channel>
+    <channel>
+        <end pd="init_agent"  id="8" pp="true" />
+        <end pd="vfs_server"  id="1" />
+    </channel>
+    <channel>
+        <end pd="worker_0"   id="13" pp="true" />
+        <end pd="vfs_server" id="2" />
+    </channel>
+    <channel>
+        <end pd="worker_1"   id="13" pp="true" />
+        <end pd="vfs_server" id="3" />
+    </channel>
+    <channel>
+        <end pd="worker_2"   id="13" pp="true" />
+        <end pd="vfs_server" id="4" />
+    </channel>
+    <channel>
+        <end pd="worker_3"   id="13" pp="true" />
+        <end pd="vfs_server" id="5" />
+    </channel>
+    <channel>
+        <end pd="worker_4"   id="13" pp="true" />
+        <end pd="vfs_server" id="6" />
+    </channel>
+    <channel>
+        <end pd="worker_5"   id="13" pp="true" />
+        <end pd="vfs_server" id="7" />
+    </channel>
+    <channel>
+        <end pd="worker_6"   id="13" pp="true" />
+        <end pd="vfs_server" id="8" />
+    </channel>
+    <channel>
+        <end pd="worker_7"   id="13" pp="true" />
+        <end pd="vfs_server" id="9" />
+    </channel>
+    <!-- vfs_server PPCs OUT into virtio_blk for block I/O -->
+    <channel>
+        <end pd="vfs_server" id="12" pp="true" />
+        <end pd="virtio_blk" id="1" />
+    </channel>
+
+    <!--
+      ── SpawnServer: dynamic application launcher (active, prio 120) ──
+
+      Manages 4 pre-allocated app_slot PDs.  Reads ELF via VFS,
+      stages it with a spawn_header_t in spawn_elf_shmem, notifies slot.
+
+      Channels:
+        id=0: controller    (pp=true)
+        id=1: init_agent    (pp=true)
+        id=2: app_manager   (pp=true)
+        id=3: vfs_server    (pp=true OUT — ELF reads)
+        id=4..7: app_slot_0..3 (notify both ways)
+    -->
+    <protection_domain name="spawn_server" priority="145">
+        <program_image path="spawn_server.elf" />
+        <map mr="spawn_elf_shmem"    vaddr="0x5000000" perms="rw"
+             setvar_vaddr="spawn_elf_shmem_vaddr" />
+        <map mr="spawn_config_shmem" vaddr="0x6000000" perms="rw"
+             setvar_vaddr="spawn_config_shmem_vaddr" />
+        <map mr="vfs_io_shmem"       vaddr="0x7000000" perms="rw"
+             setvar_vaddr="vfs_io_shmem_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"   id="20" pp="true" />
+        <end pd="spawn_server" id="0" />
+    </channel>
+    <channel>
+        <end pd="init_agent"   id="9" pp="true" />
+        <end pd="spawn_server" id="1" />
+    </channel>
+    <!-- spawn_server PPCs OUT into vfs_server to read ELF files -->
+    <channel>
+        <end pd="spawn_server" id="3" pp="true" />
+        <end pd="vfs_server"   id="10" />
+    </channel>
+
+    <!--
+      ── App Slots: 4 pre-allocated application PDs (active, prio 70) ──
+
+      All slots share app_slot.elf.  SpawnServer stages an ELF in
+      spawn_elf_shmem, writes a spawn_header_t at offset 0, and notifies
+      the appropriate slot.  MVP: slot acknowledges immediately.
+    -->
+    <protection_domain name="app_slot_0" priority="70">
+        <program_image path="app_slot.elf" />
+        <map mr="spawn_elf_shmem" vaddr="0x5000000" perms="r"
+             setvar_vaddr="spawn_elf_shmem_vaddr" />
+    </protection_domain>
+    <protection_domain name="app_slot_1" priority="70">
+        <program_image path="app_slot.elf" />
+        <map mr="spawn_elf_shmem" vaddr="0x5000000" perms="r"
+             setvar_vaddr="spawn_elf_shmem_vaddr" />
+    </protection_domain>
+    <protection_domain name="app_slot_2" priority="70">
+        <program_image path="app_slot.elf" />
+        <map mr="spawn_elf_shmem" vaddr="0x5000000" perms="r"
+             setvar_vaddr="spawn_elf_shmem_vaddr" />
+    </protection_domain>
+    <protection_domain name="app_slot_3" priority="70">
+        <program_image path="app_slot.elf" />
+        <map mr="spawn_elf_shmem" vaddr="0x5000000" perms="r"
+             setvar_vaddr="spawn_elf_shmem_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="spawn_server" id="4" />
+        <end pd="app_slot_0"   id="0" />
+    </channel>
+    <channel>
+        <end pd="spawn_server" id="5" />
+        <end pd="app_slot_1"   id="0" />
+    </channel>
+    <channel>
+        <end pd="spawn_server" id="6" />
+        <end pd="app_slot_2"   id="0" />
+    </channel>
+    <channel>
+        <end pd="spawn_server" id="7" />
+        <end pd="app_slot_3"   id="0" />
+    </channel>
+
+    <!--
+      ── NetServer: virtual NIC manager + ACL enforcer (passive, prio 160) ──
+
+      Manages 16 vNICs, virtio-net detection, packet routing.
+      smoltcp TCP/IP integration points marked in net_server.c.
+
+      Channels:
+        id=0:  controller      (pp=true)
+        id=1:  init_agent      (pp=true)
+        id=2..9: worker_0..7   (pp=true)
+        id=10: app_manager     (pp=true)
+    -->
+    <protection_domain name="net_server" priority="160" passive="true">
+        <program_image path="net_server.elf" />
+        <map mr="net_packet_shmem"  vaddr="0x5000000" perms="rw"
+             setvar_vaddr="net_packet_shmem_vaddr" />
+        <map mr="virtio_net_mmio"   vaddr="0x6000000" perms="rw" cached="false"
+             setvar_vaddr="net_mmio_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller" id="21" pp="true" />
+        <end pd="net_server" id="0" />
+    </channel>
+    <channel>
+        <end pd="init_agent"  id="10" pp="true" />
+        <end pd="net_server"  id="1" />
+    </channel>
+    <channel>
+        <end pd="worker_0"   id="14" pp="true" />
+        <end pd="net_server" id="2" />
+    </channel>
+    <channel>
+        <end pd="worker_1"   id="14" pp="true" />
+        <end pd="net_server" id="3" />
+    </channel>
+    <channel>
+        <end pd="worker_2"   id="14" pp="true" />
+        <end pd="net_server" id="4" />
+    </channel>
+    <channel>
+        <end pd="worker_3"   id="14" pp="true" />
+        <end pd="net_server" id="5" />
+    </channel>
+    <channel>
+        <end pd="worker_4"   id="14" pp="true" />
+        <end pd="net_server" id="6" />
+    </channel>
+    <channel>
+        <end pd="worker_5"   id="14" pp="true" />
+        <end pd="net_server" id="7" />
+    </channel>
+    <channel>
+        <end pd="worker_6"   id="14" pp="true" />
+        <end pd="net_server" id="8" />
+    </channel>
+    <channel>
+        <end pd="worker_7"   id="14" pp="true" />
+        <end pd="net_server" id="9" />
+    </channel>
+
+    <!--
+      ── net_pd: OS-neutral network device PD (passive, prio 160) ──────────────
+
+      Owns virtio-net hardware via seL4 device frame caps and moves lwIP behind
+      a proper PD boundary.  Guest OSes and agents obtain network handles via
+      MSG_NET_OPEN (raw Ethernet frames) or MSG_NET_SOCKET_OPEN (TCP/UDP sockets).
+      WireGuard overlay integration is marked WG_INTEGRATION_POINT in net_pd.c.
+
+      Multiple virtual NICs per guest slot are supported via the 16-entry handle
+      table.  lwIP drives all TCP/IP processing internally.
+
+      Channel:
+        id=0: controller (CH_NET_PD=68, pp=true) — all client requests routed in
+        id=1: timer notify (10ms lwIP tick from controller, CH_NET_TIMER=59 equiv)
+
+      Shared memory:
+        net_pd_shmem (256KB at 0x5000000, rw): 16 × 16KB handle slots
+        virtio_net_mmio (0x6000000, rw, cached=false): hardware registers
+
+      Note: net_server and net_pd both map virtio_net_mmio for the QEMU prototype.
+      In production, net_pd holds exclusive hardware ownership; net_server would
+      route through net_pd for packet I/O (future migration).
+    -->
+    <protection_domain name="net_pd" priority="160" passive="true">
+        <program_image path="net_pd.elf" />
+        <map mr="net_pd_shmem"      vaddr="0x5000000" perms="rw"
+             setvar_vaddr="net_pd_shmem_vaddr" />
+        <map mr="virtio_net_mmio"   vaddr="0x6000000" perms="rw" cached="false"
+             setvar_vaddr="net_pd_mmio_vaddr" />
+        <map mr="log_drain_rings"   vaddr="0x7000000" perms="rw"
+             setvar_vaddr="log_drain_rings_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 48: controller(id=48, pp=true) → net_pd(id=0)
+         Controller and any authorised client PPC into net_pd for network I/O. -->
+    <channel>
+        <end pd="controller" id="48" pp="true" />
+        <end pd="net_pd"     id="0" />
+    </channel>
+
+    <!--
+      ── AppManager: full-stack app orchestrator (active, prio 130) ──
+
+      Parses manifests, creates vNICs, launches ELFs, registers HTTP routes.
+
+      Channels:
+        id=0: controller    (pp=true)
+        id=1: spawn_server  (OUT — OP_SPAWN_LAUNCH)
+        id=2: vfs_server    (OUT — future manifest/config reads)
+        id=3: net_server    (OUT — OP_NET_VNIC_CREATE/DESTROY)
+        id=4: [removed] http_svc (Phase 0.5 cleanup)
+    -->
+    <protection_domain name="app_manager" priority="130">
+        <program_image path="app_manager.elf" />
+        <map mr="app_manifest_shmem"  vaddr="0x5000000" perms="rw"
+             setvar_vaddr="app_manifest_shmem_vaddr" />
+        <map mr="spawn_config_shmem"  vaddr="0x8000000" perms="rw"
+             setvar_vaddr="spawn_config_shmem_appmgr_vaddr" />
+        <map mr="vfs_io_shmem"        vaddr="0x9000000" perms="rw"
+             setvar_vaddr="vfs_io_shmem_appmgr_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"  id="23" pp="true" />
+        <end pd="app_manager" id="0" />
+    </channel>
+    <!-- app_manager PPCs OUT into spawn_server -->
+    <channel>
+        <end pd="app_manager"  id="1" pp="true" />
+        <end pd="spawn_server" id="2" />
+    </channel>
+    <!-- app_manager PPCs OUT into vfs_server -->
+    <channel>
+        <end pd="app_manager" id="2" pp="true" />
+        <end pd="vfs_server"  id="11" />
+    </channel>
+    <!-- app_manager PPCs OUT into net_server -->
+    <channel>
+        <end pd="app_manager" id="3" pp="true" />
+        <end pd="net_server"  id="10" />
+    </channel>
+
+    <!-- [removed] http_svc PD + channels + http_req_shmem — API-first violation (Phase 0.5 cleanup)
+         Was: HTTP route registry + dispatcher (active, prio 140).
+         Superseded by API-first IPC contracts. -->
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      vm_manager: Multi-VM lifecycle manager (passive, prio 145)
+      Track D — HURD-parity plan
+
+      Manages up to 4 simultaneous AArch64 guest VMs via the vmm_mux
+      multiplexer.  Controller PPCs in on CH_VM_MANAGER (id=45) to
+      create, destroy, pause, resume, switch console, query, and list
+      running VMs.
+
+      Shared memory:
+        vm_list_shmem (4KB): OP_VM_LIST output region
+          vm_manager writes vm_list_entry_t[] here.
+          Controller maps r-only to read VM inventory after OP_VM_LIST.
+
+      Channel map:
+        id=45: controller(pp=true) → vm_manager(id=0)
+               controller PPCs into vm_manager for all VM lifecycle ops
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- vm_list_shmem: 4KB output region for OP_VM_LIST.
+         Write access: vm_manager (writes vm_list_entry_t[] on OP_VM_LIST).
+         Read access:  controller (r-only introspection after OP_VM_LIST call).
+         Cap class:    N/A (VM inventory read; not gated by agent cap system).
+         Threat:       rogue PD forging VM list to mislead controller;
+                       mitigated by vm_manager-only write mapping. -->
+    <memory_region name="vm_list_shmem" size="0x1000" />
+
+    <protection_domain name="vm_manager" priority="145" passive="true">
+        <program_image path="vm_manager.elf" />
+        <!-- rw: vm_manager writes vm_list_entry_t[] on OP_VM_LIST -->
+        <map mr="vm_list_shmem" vaddr="0x3100000" perms="rw" cached="true"
+             setvar_vaddr="vm_list_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 45: controller(id=45, pp=true) → vm_manager(id=0)
+         Controller PPCs into vm_manager for VM lifecycle operations. -->
+    <channel>
+        <end pd="controller"  id="45" pp="true" />
+        <end pd="vm_manager"  id="0" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      AuthServer: user/group capability token service (passive, prio 170)
+
+      HURD-equivalent: auth server.
+      Maps uid→cap_mask identity records to short-lived capability tokens.
+      Pre-creates root (uid=0, cap_mask=0xFF) and admin (uid=1, cap_mask=0x3F)
+      at init.  Controller PPCs in to LOGIN/VERIFY/REVOKE/ADDUSER/STATUS.
+
+      Channel map (from auth_server's perspective):
+        id=0: controller (pp=true)
+
+      Shared memory:
+        auth_shmem (4KB): caller writes null-terminated user name here
+                          before OP_AUTH_ADDUSER PPC.
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- auth_shmem: 4KB shared memory for user name staging on OP_AUTH_ADDUSER.
+         Write access: controller only (writes name before PPC).
+         Read access:  auth_server (reads name during ADDUSER handler).
+         Cap class:    FRACTALOS_CAP_AUDIT (identity management is audit-class).
+         Threat:       rogue PD injecting crafted names to create privileged users;
+                       mitigated by controller-only write mapping + PPC gate. -->
+    <memory_region name="auth_shmem" size="0x1000" />
+
+    <protection_domain name="auth_server" priority="170" passive="true">
+        <program_image path="auth_server.elf" />
+        <map mr="auth_shmem" vaddr="0x3200000" perms="rw" cached="true"
+             setvar_vaddr="auth_shmem_vaddr" />
+    </protection_domain>
+
+    <!-- Controller PPCs into auth_server -->
+    <channel>
+        <end pd="controller"  id="29" pp="true" />
+        <end pd="auth_server" id="0" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      ext2fs: persistent ext2 filesystem over virtio_blk (passive, prio 140)
+
+      HURD-equivalent: ext2fs translator.
+      Reads/writes blocks via OP_BLK_READ/OP_BLK_WRITE to virtio_blk.
+      Exposes OP_EXT2_{MOUNT,STAT,READ,WRITE,READDIR,STATUS} to controller.
+      Phase 1: read-only (OP_EXT2_WRITE returns EXT2_ERR_READONLY).
+
+      Channel map (from ext2fs's perspective):
+        id=0: controller   (pp=true — receives OP_EXT2_* PPCs)
+        id=1: virtio_blk   (pp=true OUT — block I/O)
+
+      Shared memory:
+        ext2_shmem (64KB):         I/O buffer for paths, read data, readdir results.
+                                   Mapped rw into ext2fs; r into controller.
+        ext2_blk_dma_shmem (32KB): DMA buffer shared between ext2fs and virtio_blk.
+                                   Mapped rw into both PDs; virtio_blk uses it for
+                                   block DMA on channel id=2.
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- ext2_shmem: 64KB path/data I/O buffer.
+         Write access: ext2fs (writes readdir/read results); controller (writes paths).
+         Read access:  both.
+         Threat:       rogue PD injecting crafted paths to traverse filesystem;
+                       mitigated by ext2fs path validation + controller-only write mapping
+                       for the path half. -->
+    <memory_region name="ext2_shmem" size="0x10000" />
+
+    <protection_domain name="ext2fs" priority="140" passive="true">
+        <program_image path="ext2fs.elf" />
+        <!-- ext2_shmem: rw — ext2fs writes results here and reads paths here -->
+        <map mr="ext2_shmem"    vaddr="0x3400000" perms="rw" cached="true"
+             setvar_vaddr="ext2_shmem_vaddr" />
+        <!-- blk_dma_shmem: rw — shared DMA region with virtio_blk (same physical
+             memory as vfs_server; safe because all three PDs are passive and
+             the seL4 scheduler serialises their execution). -->
+        <map mr="blk_dma_shmem" vaddr="0x4000000" perms="rw" cached="true"
+             setvar_vaddr="ext2_blk_dma_shmem_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 47: controller(id=47, pp=true) → ext2fs(id=0)
+         Controller PPCs into ext2fs for filesystem operations. -->
+    <channel>
+        <end pd="controller" id="47" pp="true" />
+        <end pd="ext2fs"     id="0" />
+    </channel>
+
+    <!-- Channel: ext2fs(id=1, pp=true) → virtio_blk(id=2)
+         ext2fs PPCs out to virtio_blk for raw block I/O. -->
+    <channel>
+        <end pd="ext2fs"     id="1" pp="true" />
+        <end pd="virtio_blk" id="2" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      proc_server: HURD proc server — process table and signals (passive, prio 160)
+      ══════════════════════════════════════════════════════════════════
+    -->
+    <memory_region name="proc_shmem" size="0x2000" />
+
+    <protection_domain name="proc_server" priority="160" passive="true">
+        <program_image path="proc_server.elf" />
+        <map mr="proc_shmem" vaddr="0x3600000" perms="rw" cached="true"
+             setvar_vaddr="proc_shmem_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"   id="27" pp="true" />
+        <end pd="proc_server"  id="0" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      vm_snapshot: VM state snapshot/restore to AgentFS (passive, prio 130)
+      ══════════════════════════════════════════════════════════════════
+    -->
+    <memory_region name="vm_state_shmem" size="0x4000000" />
+
+    <protection_domain name="vm_snapshot" priority="130" passive="true">
+        <program_image path="vm_snapshot.elf" />
+        <map mr="vm_state_shmem" vaddr="0x40000000" perms="rw" cached="true"
+             setvar_vaddr="vm_state_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"   id="46" pp="true" />
+        <end pd="vm_snapshot"  id="0" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      ProcServer: process table and signal delivery (passive, prio 160)
+      Track F — HURD-parity proc server
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      pflocal_server: AF-UNIX domain socket emulation (passive, prio 155)
+      HURD-equivalent: pflocal translator
+      ══════════════════════════════════════════════════════════════════
+    -->
+    <memory_region name="pflocal_shmem" size="0x10000" />
+
+    <protection_domain name="pflocal_server" priority="155" passive="true">
+        <program_image path="pflocal_server.elf" />
+        <map mr="pflocal_shmem" vaddr="0x3700000" perms="rw" cached="true"
+             setvar_vaddr="pflocal_shmem_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"      id="26" pp="true" />
+        <end pd="pflocal_server"  id="0" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      exec_server: ELF/WASM loader and execution dispatcher (passive, prio 150)
+      HURD-equivalent: exec server
+      (NOTE: canonical block moved below pflocal_server with expanded exec_shmem)
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      term_server: PTY multiplexer and line discipline (passive, prio 150)
+      HURD-equivalent: term translator
+      ══════════════════════════════════════════════════════════════════
+    -->
+    <memory_region name="term_shmem" size="0x4000" />
+
+    <protection_domain name="term_server" priority="150" passive="true">
+        <program_image path="term_server.elf" />
+        <map mr="term_shmem" vaddr="0x3900000" perms="rw" cached="true"
+             setvar_vaddr="term_shmem_vaddr" />
+    </protection_domain>
+
+    <channel>
+        <end pd="controller"  id="43" pp="true" />
+        <end pd="term_server" id="0" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      block_pd: OS-neutral block device service PD (passive, prio 165)
+
+      Abstracts virtio_blk behind a PD boundary.  Exposes a partition-level
+      block I/O service (MSG_BLOCK_*) to guest OSes and other consumers.
+      VirtIO transport is an internal implementation detail.
+
+      Per-guest capability enforcement: each MSG_BLOCK_OPEN allocates a
+      handle bound to the calling channel.  Handles are not transferable;
+      a guest PD cannot access another guest's handle.
+
+      Channel map (from block_pd's perspective):
+        id=0: callers PPC in  (MSG_BLOCK_* requests)
+        id=1: block_pd PPCs out to virtio_blk (OP_BLK_*)
+
+      Shared memory:
+        block_shmem (64KB): data exchange with callers
+          block_pd writes read results here; callers write write data here.
+        blk_dma_shmem (32KB): DMA staging for virtio_blk
+          Shared physical region — safe because all PDs are passive.
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <protection_domain name="block_pd" priority="165" passive="true">
+        <program_image path="block_pd.elf" />
+        <!-- block_shmem rw: read/write sector data on behalf of callers -->
+        <map mr="block_shmem"  vaddr="0x5000000" perms="rw" cached="true"
+             setvar_vaddr="block_shmem_vaddr" />
+        <!-- blk_dma_shmem rw: DMA staging region shared with virtio_blk
+             fixed_mr constraint: vaddr must equal paddr for virtio DMA correctness;
+             same physical region as vfs_server and ext2fs mappings. -->
+        <map mr="blk_dma_shmem" vaddr="0x6000000" perms="rw" cached="false"
+             setvar_vaddr="blk_dma_shmem_vaddr" />
+    </protection_domain>
+
+    <!-- Channel CH_BLOCK_PD (49): controller(id=49, pp=true) → block_pd(id=0)
+         Controller PPCs into block_pd for MSG_BLOCK_* operations. -->
+    <channel>
+        <end pd="controller" id="49" pp="true" />
+        <end pd="block_pd"   id="0" />
+    </channel>
+
+    <!-- Channel: block_pd(id=1, pp=true) → virtio_blk(id=3)
+         block_pd PPCs into virtio_blk to forward block I/O (OP_BLK_*). -->
+    <channel>
+        <end pd="block_pd"   id="1" pp="true" />
+        <end pd="virtio_blk" id="3" />
+    </channel>
+
+    <!-- (duplicate proc_server channel removed — canonical one is above at channel id=27) -->
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      GPU Scheduler: CUDA workload router (passive, prio 120)
+
+      Routes agent compute jobs to WASM slots via OP_GPU_SUBMIT and
+      dispatches virtio-gpu command buffers via OP_GPU_SUBMIT_CMD.
+      Also serves as the Sparky GB10 / NUC real-GPU integration point
+      for framebuffer_pd's HW_DIRECT backend.
+
+      Channel map (from gpu_sched's perspective):
+        id=1: controller (CH_CONTROLLER) — dispatch + completion notify
+        id=7: framebuffer_pd (pp=true) — OP_GPU_SUBMIT_CMD from fb PD
+
+      Note: virtio_gpu_mmio is NOT mapped here — framebuffer_pd owns the
+      virtio-gpu device for display output (Phase 4a-hw requirement).
+      gpu_sched operates in stub mode for its internal virtio-gpu probe
+      and handles real Blackwell GB10 compute routing via its own path.
+      ══════════════════════════════════════════════════════════════════
+    -->
+    <protection_domain name="gpu_sched" priority="180" passive="true">
+        <program_image path="gpu_sched.elf" />
+        <!-- log_drain_rings: optional; gpu_sched falls back to microkit_dbg_puts if unmapped -->
+        <map mr="log_drain_rings" vaddr="0x9000000" perms="rw"
+             setvar_vaddr="log_drain_rings_vaddr" />
+    </protection_domain>
+
+    <!-- Channel: controller(id=25) ↔ gpu_sched(id=1, CH_CONTROLLER)
+         gpu_sched notifies controller at init and on task dispatch.
+         Controller notifies gpu_sched on slot-complete events. -->
+    <channel>
+        <end pd="controller" id="25" />
+        <end pd="gpu_sched"  id="1" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      framebuffer_pd: virtual framebuffer service (passive, prio 175)
+
+      Manages up to 8 virtual framebuffers for guest OSes.
+      Backend dispatch (selected at MSG_FB_CREATE time):
+        FB_BACKEND_NULL       — headless; frames discarded
+        FB_BACKEND_HW_DIRECT  — QEMU: virtio-gpu MMIO; Sparky: gpu_sched IPC
+        FB_BACKEND_REMOTE_API — display server relay (Phase 4a-remote, ag-tz2)
+
+      Channel map (from framebuffer_pd's perspective):
+        id=0: callers PPC in  (MSG_FB_* requests; CH_FB_PD=71 on controller)
+        id=1: framebuffer_pd → EventBus (pending; Phase 4a-remote wires this)
+        id=2: framebuffer_pd → gpu_sched (Sparky HW_DIRECT path)
+
+      Shared memory:
+        fb_shmem (8MB): pixel data exchange — callers write frames here
+        virtio_gpu_mmio (4KB, uncached): virtio-gpu MMIO registers
+          Mapped ONLY to framebuffer_pd; no other PD holds this capability.
+
+      Physical address note:
+        RISC-V virt (QEMU): virtio-gpu MMIO at 0x10003000
+        For AArch64 virt, see fractalos-aarch64.system (address differs).
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- fb_shmem: 8MB pixel data buffer (≥ 1920×1080×4 bytes for full-HD).
+         Write access: callers (write pixel data before MSG_FB_WRITE / MSG_FB_FLIP).
+         Read access:  framebuffer_pd (reads on FLIP for backend dispatch).
+         Cap class:    N/A (display output; not gated by agent capability system).
+         Threat:       guest pixel data is display-only; no secret data in this path. -->
+    <memory_region name="fb_shmem" size="0x800000" />
+
+    <!-- virtio_gpu_mmio: 4KB MMIO for virtio-gpu (RISC-V virt: 0x10003000).
+         Write access: framebuffer_pd ONLY (device init + queue doorbell).
+         Read access:  framebuffer_pd ONLY (device probe).
+         Cap class:    N/A (display hardware; exclusive to framebuffer_pd).
+         Threat:       MMIO register manipulation to corrupt display output;
+                       mitigated by framebuffer_pd-only mapping. -->
+    <memory_region name="virtio_gpu_mmio" size="0x1000" phys_addr="0x10003000" />
+
+    <protection_domain name="framebuffer_pd" priority="175" passive="true">
+        <program_image path="framebuffer_pd.elf" />
+        <!-- fb_shmem rw: framebuffer_pd reads pixel data from callers on FLIP -->
+        <map mr="fb_shmem"        vaddr="0x5000000" perms="rw" cached="true"
+             setvar_vaddr="fb_shmem_vaddr" />
+        <!-- virtio_gpu_mmio: exclusive MMIO capability for QEMU HW_DIRECT path -->
+        <map mr="virtio_gpu_mmio" vaddr="0x6000000" perms="rw" cached="false"
+             setvar_vaddr="virtio_gpu_mmio_vaddr" />
+        <!-- log_drain_rings: optional debug output -->
+        <map mr="log_drain_rings" vaddr="0x7000000" perms="rw"
+             setvar_vaddr="log_drain_rings_vaddr" />
+    </protection_domain>
+
+    <!-- Channel CH_FB_PD (51): controller(id=51, pp=true) → framebuffer_pd(id=0)
+         All MSG_FB_* client requests are routed through the controller. -->
+    <channel>
+        <end pd="controller"     id="51" pp="true" />
+        <end pd="framebuffer_pd" id="0" />
+    </channel>
+
+    <!-- Channel: framebuffer_pd(id=2, pp=true) → gpu_sched(id=7)
+         framebuffer_pd PPCs into gpu_sched for OP_GPU_SUBMIT_CMD on Sparky path. -->
+    <channel>
+        <end pd="framebuffer_pd" id="2" pp="true" />
+        <end pd="gpu_sched"      id="7" />
+    </channel>
+
+    <!--
+      ══════════════════════════════════════════════════════════════════
+      pflocal_server: AF_UNIX-equivalent local socket server (passive, prio 155)
+      Track G — HURD-parity pflocal server
+
+      Provides AF_UNIX-like local sockets via shared memory rings.
+      Each socket gets a 4KB slot in pflocal_shmem (16 slots × 4KB = 64KB).
+      Supports: socket, bind, listen, connect, accept, send, recv, close, status.
+
+      Channel:
+        id=0: controller (pp=true) — all pflocal_server operations
+
+      Shared memory:
+        pflocal_shmem (64KB): socket ring buffers + path staging area
+          pflocal_server owns all ring buffer writes.
+          Callers write data before OP_PFLOCAL_SEND; read after OP_PFLOCAL_RECV.
+      ══════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- exec_shmem: 64KB shared memory for ELF path staging on OP_EXEC_LAUNCH.
+         Write access: controller only (writes null-terminated path before PPC).
+         Read access:  exec_server (reads path string during LAUNCH handler).
+         Cap class:    FRACTALOS_CAP_SPAWN (exec launch requires spawn capability).
+         Threat:       rogue PD injecting crafted paths to execute arbitrary ELFs;
+                       mitigated by controller-only write mapping + PPC gate. -->
+    <memory_region name="exec_shmem" size="0x10000" />
+
+    <protection_domain name="exec_server" priority="150" passive="true">
+        <program_image path="exec_server.elf" />
+        <map mr="exec_shmem" vaddr="0x3500000" perms="rw" cached="true"
+             setvar_vaddr="exec_shmem_vaddr" />
+    </protection_domain>
+
+    <!-- Channel 28: controller(id=28, pp=true) → exec_server(id=0)
+         Controller PPCs into exec_server for all ELF launch/status operations. -->
+    <channel>
+        <end pd="controller"  id="28" pp="true" />
+        <end pd="exec_server" id="0" />
+    </channel>
+
+    <!-- Channels 34-37: exec_server ↔ app_slot_0..3 (bidirectional notify).
+         exec_server notifies slot to begin loading; slot notifies back when done.
+         exec_server sees these as ids 34-37 (CH_APP_SLOT_0 + slot_id).
+         app_slot sees exec_server as id=1 (CH_EXEC). -->
+    <channel>
+        <end pd="exec_server" id="34" />
+        <end pd="app_slot_0"  id="1" />
+    </channel>
+    <channel>
+        <end pd="exec_server" id="35" />
+        <end pd="app_slot_1"  id="1" />
+    </channel>
+    <channel>
+        <end pd="exec_server" id="36" />
+        <end pd="app_slot_2"  id="1" />
+    </channel>
+    <channel>
+        <end pd="exec_server" id="37" />
+        <end pd="app_slot_3"  id="1" />
+    </channel>
+
+    <!-- exec_shmem controller mapping moved into controller PD block (line ~83) -->
+</system>

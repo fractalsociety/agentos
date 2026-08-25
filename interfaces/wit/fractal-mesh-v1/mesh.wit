@@ -2,7 +2,7 @@ package fractal:mesh@1.0.0;
 
 /// Transport-neutral typed mesh sessions. The native implementation uses one
 /// QUIC connection per active peer with ALPN `fractalos-agent/1`; Headscale
-/// identity is connectivity metadata and never grants AgentOS authority.
+/// identity is connectivity metadata and never grants FractalOS authority.
 interface mesh {
   type peer-id = string;
   type session-id = string;
@@ -48,8 +48,42 @@ interface mesh {
     peer: peer-id,
     node-id: option<string>,
     node-key: option<string>,
+    /// MagicDNS / given name from Headscale reconciliation.
+    magic-dns: option<string>,
     endpoints: list<string>,
     tags: list<string>,
+    selected-tag: option<string>,
+    /// Reconciled NetCap (`mesh-agent`, `mesh-control`, `deny`, …).
+    netcap: string,
+    agent-endpoint-ports: list<u16>,
+    /// False when NetCap is deny or ports are empty.
+    policy-allowed: bool,
+  }
+
+  enum connection-path-kind {
+    direct,
+    relay,
+    derp,
+    unknown,
+  }
+
+  record peer-path-state {
+    peer: peer-id,
+    path: string,
+    kind: connection-path-kind,
+    path-epoch: u64,
+  }
+
+  /// Signed Fractal service advertisement. Discovery only — grants no call right.
+  record service-advertisement {
+    service-id: list<u8>,
+    provider-node: list<u8>,
+    interface-hash: list<u8>,
+    endpoint: list<u8>,
+    required-capability: u64,
+    health-epoch: u64,
+    expiry-unix-ms: u64,
+    signature: list<u8>,
   }
 
   record task-request {
@@ -74,6 +108,17 @@ interface mesh {
   }
 
   discover-peers: func() -> list<peer-advertisement>;
+  /// Peers with non-deny NetCap and at least one agent endpoint port.
+  mesh-eligible-peers: func() -> list<peer-advertisement>;
+  peer-path-state: func(peer: peer-id) -> result<peer-path-state, string>;
+  discovered-services: func(now-unix-ms: u64) -> list<service-advertisement>;
+  /// Always fails without an admitted CapBroker-derived grant; tailnet identity is never enough.
+  dispatch-agent-isa: func(
+    peer: peer-id,
+    grant-present: bool,
+    local-badge: option<u64>,
+  ) -> result<u64, string>;
+  admit-remote-grant: func(peer: peer-id) -> result<u64, string>;
   open-task: func(peer: peer-id, request: task-request) -> result<session-status, string>;
   cancel: func(peer: peer-id, request: cancel-request) -> result<session-status, string>;
   resume: func(peer: peer-id, session: session-id, token: list<u8>) -> result<session-status, string>;

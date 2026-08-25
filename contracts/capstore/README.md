@@ -2,7 +2,7 @@
 
 ## Overview
 
-CapStore is the agentOS semantic capability database.  It sits above seL4's
+CapStore is the FractalOS semantic capability database.  It sits above seL4's
 own CNode/CDT machinery and provides application-level capability tracking for
 the AI workload layer:
 
@@ -78,7 +78,7 @@ caller's own MR.
 ## Source Files
 
 - `services/capstore/capstore.c` — implementation
-- `kernel/agentos-root-task/src/cap_audit_log.c` — seL4 PD wrapper
-- `kernel/agentos-root-task/include/agentos.h` — opcode constants
+- `kernel/fractalos-root-task/src/cap_audit_log.c` — seL4 PD wrapper
+- `kernel/fractalos-root-task/include/fractalos.h` — opcode constants
   (`OP_CAP_LOG`, `OP_CAP_LOG_STATUS`, `OP_CAP_LOG_DUMP`, `OP_CAP_ATTEST`)
 - `userspace/servers/capability-broker/src/lib.rs` — Rust userspace broker

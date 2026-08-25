@@ -1,4 +1,4 @@
-name: agentOS CI
+name: FractalOS CI
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --workspace --exclude health-monitor --exclude log-aggregator --exclude agentos-pd
+        run: cargo test --workspace --exclude health-monitor --exclude log-aggregator --exclude fractalos-pd
 
   # ---------------------------------------------------------------------------
   # WASM agent example builds
@@ -68,14 +68,14 @@ jobs:
       - name: Validate topology.yaml
         run: cargo run -p gen-sdf -- tools/topology.yaml --validate-only
 
-      - name: SDF diff (detect changes vs checked-in agentos.system)
+      - name: SDF diff (detect changes vs checked-in fractalos.system)
         run: |
-          cargo run -p gen-sdf -- tools/topology.yaml -o /tmp/agentos-generated.system
-          if [ -f kernel/agentos-root-task/agentos.system ]; then
+          cargo run -p gen-sdf -- tools/topology.yaml -o /tmp/fractalos-generated.system
+          if [ -f kernel/fractalos-root-task/fractalos.system ]; then
             echo "=== SDF diff (generated vs committed) ==="
-            diff kernel/agentos-root-task/agentos.system /tmp/agentos-generated.system || true
+            diff kernel/fractalos-root-task/fractalos.system /tmp/fractalos-generated.system || true
           else
-            echo "No committed agentos.system found — skipping diff"
+            echo "No committed fractalos.system found — skipping diff"
           fi
 
   build-and-test:
@@ -126,7 +126,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       # Topology validation (gen_sdf.py)
-      # Runs on every PR touching topology.yaml or agentos.system.
+      # Runs on every PR touching topology.yaml or fractalos.system.
       # Fails if validation errors are found; shows SDF diff if regenerated.
       # -----------------------------------------------------------------------
       - uses: dtolnay/rust-toolchain@stable
@@ -137,14 +137,14 @@ jobs:
           cargo run -p gen-sdf -- tools/topology.yaml --validate-only
           echo "✓ topology.yaml validated"
 
-      - name: Check generated SDF matches checked-in agentos.system
+      - name: Check generated SDF matches checked-in fractalos.system
         run: |
-          cargo run -p gen-sdf -- tools/topology.yaml -o /tmp/agentos_generated.system
-          if diff -u kernel/agentos-root-task/agentos.system \
-                     /tmp/agentos_generated.system > /tmp/sdf_diff.txt 2>&1; then
-            echo "✓ agentos.system is up to date with topology.yaml"
+          cargo run -p gen-sdf -- tools/topology.yaml -o /tmp/fractalos_generated.system
+          if diff -u kernel/fractalos-root-task/fractalos.system \
+                     /tmp/fractalos_generated.system > /tmp/sdf_diff.txt 2>&1; then
+            echo "✓ fractalos.system is up to date with topology.yaml"
           else
-            echo "⚠ agentos.system differs from what gen_sdf.py would generate:"
+            echo "⚠ fractalos.system differs from what gen_sdf.py would generate:"
             cat /tmp/sdf_diff.txt
             echo "(Note: diff is informational — CI does not fail on SDF content drift)"
           fi
@@ -163,8 +163,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: agentos-${{ matrix.board }}
-          path: build/${{ matrix.board }}/agentos.img
+          name: fractalos-${{ matrix.board }}
+          path: build/${{ matrix.board }}/fractalos.img
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
@@ -207,7 +207,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build agentOS with IPC harness (CONFIG_IPC_HARNESS=1)
+      - name: Build FractalOS with IPC harness (CONFIG_IPC_HARNESS=1)
         run: |
           make build BOARD=qemu_virt_aarch64 CONFIG_IPC_HARNESS=1
 
@@ -221,7 +221,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: contract-tests-qemu_virt_aarch64
-          path: build/qemu_virt_aarch64/agentos.img
+          path: build/qemu_virt_aarch64/fractalos.img
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
@@ -258,7 +258,7 @@ jobs:
         run: make test TARGET_ARCH=x86_64 GUEST_OS=none
 
   # ---------------------------------------------------------------------------
-  # MANDATORY dual-arch OS-claim gate (agentos-46q)
+  # MANDATORY dual-arch OS-claim gate (fos-46q)
   #
   # This job is the single, explicit gate that backs any OS-level "complete" /
   # "boot-proven" claim.  It runs BOTH required target/QEMU-backed commands in
@@ -365,14 +365,14 @@ jobs:
 
       - name: Compile HURD service PDs
         run: |
-          cd kernel/agentos-root-task
+          cd kernel/fractalos-root-task
           # Compile each new PD source file to verify no syntax errors
           for src in src/pflocal_server.c src/exec_server.c src/term_server.c \
                      src/auth_server.c src/proc_server.c src/vm_manager.c \
                      src/vm_snapshot.c src/ext2fs.c; do
             echo "Checking $src ..."
             clang -fsyntax-only -std=c11 \
-              -DAGENTOS_TEST_HOST=1 \
+              -DFRACTALOS_TEST_HOST=1 \
               -I include \
               "$src" && echo "  OK: $src"
           done
@@ -380,7 +380,7 @@ jobs:
 
       - name: Dry-run Makefile syntax check
         run: |
-          make -n -C kernel/agentos-root-task \
+          make -n -C kernel/fractalos-root-task \
             ARCH=aarch64 \
             MICROKIT_SDK=/opt/microkit \
             MICROKIT_BOARD=qemu_virt_aarch64 \
@@ -394,7 +394,7 @@ jobs:
             auth_server.c proc_server.c pflocal_server.c exec_server.c \
             term_server.c vm_manager.c vm_snapshot.c ext2fs.c \
             lwip_sys.c lwip_shim.c monocypher.c; do
-            if test -f kernel/agentos-root-task/src/$f; then
+            if test -f kernel/fractalos-root-task/src/$f; then
               echo "✓ $f"
             else
               echo "✗ $f MISSING"
@@ -420,9 +420,9 @@ jobs:
 
       - name: Build and run proc_server tests
         run: |
-          cd kernel/agentos-root-task
+          cd kernel/fractalos-root-task
           if [ -f tests/test_proc_server.c ]; then
-            cc -std=c11 -Wall -DAGENTOS_TEST_HOST=1 -I include \
+            cc -std=c11 -Wall -DFRACTALOS_TEST_HOST=1 -I include \
                tests/test_proc_server.c src/proc_server.c \
                -o /tmp/test_proc_server
             /tmp/test_proc_server
@@ -431,8 +431,8 @@ jobs:
             f=tests/test_proc_server.c
             if grep -q 'int main' "$f" 2>/dev/null; then
               cc -o /tmp/test_proc_server "$f" \
-                -I kernel/agentos-root-task/include \
-                -DAGENTOS_HOST_TEST \
+                -I kernel/fractalos-root-task/include \
+                -DFRACTALOS_HOST_TEST \
                 && /tmp/test_proc_server \
                 && echo "✓ proc_server tests passed" \
                 || echo "WARN: proc_server test compile/run failed (may need target headers)"
@@ -481,7 +481,7 @@ jobs:
 
       - name: Check lwipopts.h contains required defines
         run: |
-          f=kernel/agentos-root-task/include/lwipopts.h
+          f=kernel/fractalos-root-task/include/lwipopts.h
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           grep -q 'NO_SYS'  "$f" || { echo "FAIL: NO_SYS not found in $f";  exit 1; }
           grep -q 'MEM_SIZE' "$f" || { echo "FAIL: MEM_SIZE not found in $f"; exit 1; }
@@ -489,7 +489,7 @@ jobs:
 
       - name: Check lwip_sys.c is non-trivial (> 100 lines)
         run: |
-          f=kernel/agentos-root-task/src/lwip_sys.c
+          f=kernel/fractalos-root-task/src/lwip_sys.c
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           lines=$(wc -l < "$f")
           echo "lwip_sys.c: $lines lines"
@@ -519,7 +519,7 @@ jobs:
 
       - name: Check monocypher.c exists and is non-trivial (> 500 lines)
         run: |
-          f=kernel/agentos-root-task/src/monocypher.c
+          f=kernel/fractalos-root-task/src/monocypher.c
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           lines=$(wc -l < "$f")
           echo "monocypher.c: $lines lines"
@@ -528,7 +528,7 @@ jobs:
 
       - name: Check ed25519_verify.c has no stubs
         run: |
-          f=kernel/agentos-root-task/src/ed25519_verify.c
+          f=kernel/fractalos-root-task/src/ed25519_verify.c
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           if grep -qiE '\bTODO\b|\bstub\b' "$f"; then
             echo "FAIL: $f still contains TODO or stub markers"
@@ -539,13 +539,13 @@ jobs:
 
       - name: Check monocypher.h exists
         run: |
-          f=kernel/agentos-root-task/include/monocypher.h
+          f=kernel/fractalos-root-task/include/monocypher.h
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           echo "✓ monocypher.h exists"
 
       - name: Verify monocypher implementation present
         run: |
-          if grep -q "crypto_ed25519_check\|fe25519_mul\|ge25519" kernel/agentos-root-task/src/monocypher.c; then
+          if grep -q "crypto_ed25519_check\|fe25519_mul\|ge25519" kernel/fractalos-root-task/src/monocypher.c; then
             echo "OK: Ed25519 field arithmetic found in monocypher.c"
           else
             echo "FAIL: expected Ed25519 functions not found in monocypher.c"
@@ -560,7 +560,7 @@ jobs:
 
       - name: Check vm_manager.c exists
         run: |
-          f=kernel/agentos-root-task/src/vm_manager.c
+          f=kernel/fractalos-root-task/src/vm_manager.c
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           echo "✓ vm_manager.c exists"
 
@@ -570,28 +570,28 @@ jobs:
           test -f "$f" || { echo "MISSING: $f"; exit 1; }
           echo "✓ vmm_mux.c exists"
 
-      - name: Verify vm_manager opcodes and agentos.system entry
+      - name: Verify vm_manager opcodes and fractalos.system entry
         run: |
           # Check opcodes defined
           for op in OP_VM_CREATE OP_VM_DESTROY OP_VM_START OP_VM_STOP \
                     OP_VM_PAUSE OP_VM_RESUME OP_VM_LIST OP_VM_SNAPSHOT; do
-            grep -q "$op" kernel/agentos-root-task/include/agentos.h || \
-              { echo "FAIL: $op not defined in agentos.h"; exit 1; }
+            grep -q "$op" kernel/fractalos-root-task/include/fractalos.h || \
+              { echo "FAIL: $op not defined in fractalos.h"; exit 1; }
           done
           echo "OK: all VM manager opcodes defined"
-          # Check vm_manager in agentos.system
-          f=kernel/agentos-root-task/agentos.system
-          test -f "$f" || f=agentos.system
-          test -f "$f" || { echo "MISSING: agentos.system"; exit 1; }
+          # Check vm_manager in fractalos.system
+          f=kernel/fractalos-root-task/fractalos.system
+          test -f "$f" || f=fractalos.system
+          test -f "$f" || { echo "MISSING: fractalos.system"; exit 1; }
           grep -q 'vm_manager' "$f" || { echo "FAIL: vm_manager not found in $f"; exit 1; }
-          echo "OK: vm_manager in agentos.system"
-          grep -q 'OP_VM_CREATE' kernel/agentos-root-task/include/agentos.h || \
-            { echo "FAIL: OP_VM_CREATE not found in agentos.h"; exit 1; }
-          echo "✓ agentos.h contains OP_VM_CREATE"
+          echo "OK: vm_manager in fractalos.system"
+          grep -q 'OP_VM_CREATE' kernel/fractalos-root-task/include/fractalos.h || \
+            { echo "FAIL: OP_VM_CREATE not found in fractalos.h"; exit 1; }
+          echo "✓ fractalos.h contains OP_VM_CREATE"
 
   # ---------------------------------------------------------------------------
   # E8-S4: Host-side TAP test suite — compile and run tests/api/ suites
-  # Uses xtask test which compiles each suite with -DAGENTOS_TEST_HOST and
+  # Uses xtask test which compiles each suite with -DFRACTALOS_TEST_HOST and
   # parses TAP output to determine pass/fail.
   # ---------------------------------------------------------------------------
   host-tests:

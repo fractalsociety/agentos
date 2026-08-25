@@ -2,8 +2,8 @@ use fractal_worker_compat::{
     apply_peak_rss, collect_changed_paths, enforce_allowed_files, extract_usage,
     map_terminal_result, normalize_jsonl_events, parse_version_output, redact_text,
     scan_manifest_safety, validate_workspace_input, worker_wit_path, CancelRequest, ExitClass,
-    RedactionClass, SecretHandle, SessionEvent, SessionEventKind, SessionState,
-    UsageMetrics, VersionRecord, WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
+    RedactionClass, SecretHandle, SessionEvent, SessionEventKind, SessionState, UsageMetrics,
+    VersionRecord, WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
 };
 use std::fs;
 use std::path::PathBuf;

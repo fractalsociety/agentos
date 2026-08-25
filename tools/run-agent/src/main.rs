@@ -35,7 +35,7 @@ struct Cli {
     #[arg(long, default_value = "codex")]
     codex: PathBuf,
 
-    /// AgentOS MCP bridge executable.
+    /// FractalOS MCP bridge executable.
     #[arg(long)]
     mcp: Option<PathBuf>,
 
@@ -97,7 +97,7 @@ fn canonical_socket(path: &Path) -> Result<PathBuf> {
 
 fn default_mcp_path() -> Result<PathBuf> {
     let launcher = std::env::current_exe().context("cannot resolve run-agent executable")?;
-    let mut name = OsString::from("agentos-mcp");
+    let mut name = OsString::from("fractalos-mcp");
     if let Some(extension) = launcher.extension() {
         name.push(".");
         name.push(extension);
@@ -111,8 +111,8 @@ fn default_mcp_path() -> Result<PathBuf> {
 fn toml_string(value: &OsStr) -> Result<String> {
     let value = value
         .to_str()
-        .context("AgentOS integration paths must be valid UTF-8")?;
-    serde_json::to_string(value).context("failed to encode AgentOS integration path")
+        .context("FractalOS integration paths must be valid UTF-8")?;
+    serde_json::to_string(value).context("failed to encode FractalOS integration path")
 }
 
 fn mcp_config_args(mcp: &Path, agentctl: &Path, socket: &Path) -> Result<Vec<OsString>> {
@@ -121,17 +121,17 @@ fn mcp_config_args(mcp: &Path, agentctl: &Path, socket: &Path) -> Result<Vec<OsS
     let socket = toml_string(socket.as_os_str())?;
     let transport_args = format!("[\"--agentctl\",{agentctl},\"--socket\",{socket}]");
     let values = [
-        format!("mcp_servers.agentos.command={mcp}"),
-        format!("mcp_servers.agentos.args={transport_args}"),
-        "mcp_servers.agentos.required=true".to_string(),
+        format!("mcp_servers.fractalos.command={mcp}"),
+        format!("mcp_servers.fractalos.args={transport_args}"),
+        "mcp_servers.fractalos.required=true".to_string(),
         concat!(
-            "mcp_servers.agentos.enabled_tools=[",
-            "\"agentos_pool_status\",",
-            "\"agentos_list_guests\",",
-            "\"agentos_guest_status\"]"
+            "mcp_servers.fractalos.enabled_tools=[",
+            "\"fractalos_pool_status\",",
+            "\"fractalos_list_guests\",",
+            "\"fractalos_guest_status\"]"
         )
         .to_string(),
-        "mcp_servers.agentos.default_tools_approval_mode=\"auto\"".to_string(),
+        "mcp_servers.fractalos.default_tools_approval_mode=\"auto\"".to_string(),
     ];
     Ok(values
         .into_iter()
@@ -464,7 +464,7 @@ fn run(cli: &Cli, manifest: &WorkerManifest) -> Result<i32> {
     let codex = &cli.codex;
     let mcp = canonical_file(
         cli.mcp.as_deref().unwrap_or(&default_mcp_path()?),
-        "agentos-mcp executable",
+        "fractalos-mcp executable",
     )?;
     let agentctl = canonical_file(&cli.agentctl, "agentctl executable")?;
     let socket = canonical_socket(&cli.socket)?;
@@ -549,7 +549,7 @@ fn run(cli: &Cli, manifest: &WorkerManifest) -> Result<i32> {
     emit_result(cli, &result)?;
     if cli.metrics {
         eprintln!(
-            "AGENTOS_CODEX_METRICS {}",
+            "FRACTALOS_CODEX_METRICS {}",
             serde_json::json!({
                 "elapsed_ms": elapsed_ms,
                 "max_rss_bytes": max_rss,
@@ -595,7 +595,7 @@ mod tests {
     #[test]
     fn mcp_config_contains_only_the_read_only_allowlist() {
         let args = mcp_config_args(
-            Path::new("/opt/agentos-mcp"),
+            Path::new("/opt/fractalos-mcp"),
             Path::new("/opt/agentctl"),
             Path::new("/run/cc.sock"),
         )
@@ -605,10 +605,10 @@ mod tests {
             .map(|value| value.to_string_lossy())
             .collect::<Vec<_>>()
             .join(" ");
-        assert!(rendered.contains("agentos_pool_status"));
-        assert!(rendered.contains("agentos_list_guests"));
-        assert!(rendered.contains("agentos_guest_status"));
-        assert!(!rendered.contains("agentos_run_native_task"));
+        assert!(rendered.contains("fractalos_pool_status"));
+        assert!(rendered.contains("fractalos_list_guests"));
+        assert!(rendered.contains("fractalos_guest_status"));
+        assert!(!rendered.contains("fractalos_run_native_task"));
         assert!(!rendered.contains("raw"));
         assert!(rendered.contains("required=true"));
     }

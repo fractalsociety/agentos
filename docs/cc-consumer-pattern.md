@@ -1,10 +1,10 @@
-# agentOS CC Consumer Pattern
+# FractalOS CC Consumer Pattern
 
 This document describes how external tools — remote desktop clients, web UIs,
-mobile apps, monitoring dashboards — interact with the agentOS
+mobile apps, monitoring dashboards — interact with the FractalOS
 Command-and-Control Protection Domain (`cc_pd`).
 
-**Target audience:** Developers building on top of agentOS who need to observe
+**Target audience:** Developers building on top of FractalOS who need to observe
 or control guest VMs, subscribe to framebuffer output, inject input, or query
 system state.  You do not need to read any kernel source to implement a
 compliant consumer.
@@ -42,7 +42,7 @@ result is returned to you.  You never call service PDs directly.
 ### Channel ID
 
 `cc_pd` listens on channel **72** (`CH_CC_PD`).  This is a fixed assignment in
-the agentOS system manifest; it does not change at runtime.
+the FractalOS system manifest; it does not change at runtime.
 
 ### Transport
 
@@ -84,7 +84,7 @@ handles it transparently.  What matters to you:
   / `CC_MAX_RESP_BYTES`).
 
 > **Note:** `MSG_CC_SEND` (0x2603) and `MSG_CC_RECV` (0x2604) are defined in
-> `agentos.h` for future generic command streaming.  They are not used by the
+> `fractalos.h` for future generic command streaming.  They are not used by the
 > direct relay API documented here and should not be called by consumers in
 > the current release.
 
@@ -550,7 +550,7 @@ cc_close_channel(conn)
 
 ## 8. What MUST NOT Be Done
 
-These patterns violate the agentOS security model and will break across
+These patterns violate the FractalOS security model and will break across
 future versions without notice.
 
 ### No Direct Service PD Access
@@ -569,7 +569,7 @@ obtain those capabilities without violating the seL4 capability model.
 ### No kernel/ Code in Consumer Projects
 
 Consumer projects **must not** include or import headers from
-`kernel/agentos-root-task/`.  The only public API surface is:
+`kernel/fractalos-root-task/`.  The only public API surface is:
 
 - `cc_contract.h` — opcodes, request/reply structs, error codes
 - The IPC protocol described in this document

@@ -5,13 +5,13 @@
  * list, kill, and setcap operations.
  *
  * Build:
- *   cc -DAGENTOS_TEST_HOST -I kernel/agentos-root-task/include \
+ *   cc -DFRACTALOS_TEST_HOST -I kernel/fractalos-root-task/include \
  *      tests/test_proc_server.c -o /tmp/test_proc_server
  * Run:
  *   /tmp/test_proc_server
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include <stdio.h>
 #include <stdint.h>
@@ -32,10 +32,10 @@ static inline microkit_msginfo microkit_msginfo_new(uint64_t l, uint64_t c) {
 static inline void microkit_dbg_puts(const char *s) { (void)s; }
 
 /* proc_shmem_vaddr — declared here; proc_server.c references it as extern-less
- * global when AGENTOS_TEST_HOST is defined */
+ * global when FRACTALOS_TEST_HOST is defined */
 static uintptr_t proc_shmem_vaddr;
 
-/* ── seL4 IPC stubs (proc_server.c uses these when AGENTOS_TEST_HOST) ────── */
+/* ── seL4 IPC stubs (proc_server.c uses these when FRACTALOS_TEST_HOST) ────── */
 #ifndef SEL4_BADGE_DEFINED
 typedef uint64_t sel4_badge_t;
 #define SEL4_BADGE_DEFINED 1
@@ -58,7 +58,7 @@ static inline void rep_u32(sel4_msg_t *m, uint32_t off, uint32_t v) {
 }
 static inline void sel4_dbg_puts(const char *s) { (void)s; }
 
-/* ── proc_server opcodes (must match agentos.h) ──────────────────────────── */
+/* ── proc_server opcodes (must match fractalos.h) ──────────────────────────── */
 #define OP_PROC_SPAWN   0xD0u
 #define OP_PROC_EXIT    0xD1u
 #define OP_PROC_WAIT    0xD2u
@@ -68,7 +68,7 @@ static inline void sel4_dbg_puts(const char *s) { (void)s; }
 #define OP_PROC_SETCAP  0xD6u
 
 /* ── Pull in the implementation ─────────────────────────────────────────── */
-#include "../kernel/agentos-root-task/src/proc_server.c"
+#include "../kernel/fractalos-root-task/src/proc_server.c"
 
 /* ── Microkit→seL4 IPC shims ─────────────────────────────────────────────── *
  * proc_server.c was migrated from Microkit to raw seL4 IPC; the test still
@@ -251,4 +251,4 @@ int main(void)
     return tests_failed ? 1 : 0;
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

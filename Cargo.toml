@@ -24,11 +24,17 @@ members = [
     "tools/attest-verify",
     "tools/make-swap-image",
     "tools/trace-replay",
-    "tools/agentos-mcp",
+    "tools/fractalos-mcp",
     # Fractal compatibility workers (Codex/Cursor/Claude/Hermes adapters)
     "tools/fractal-worker-compat",
     # Singleton QUIC gateway for typed, resumable Fractal mesh sessions
     "tools/fractal-mesh-gateway",
+    # Headscale node list → packed OP_WG_APPLY_NETMAP encoder
+    "tools/wg-headscale-netmap",
+    # Native ts2021 Noise join + TLS DERP → packed netmap for wg_net
+    "tools/fractalos-mesh-control",
+    # Deterministic Agent IR → capability-scoped WASM compiler + AOT cache
+    "libs/fractal-runtime",
     # Per-PD ABI table generator
     "tools/gen-abi",
     # Workspace task runner
@@ -39,9 +45,9 @@ members = [
 version = "0.1.3"
 edition = "2021"
 license = "Apache-2.0"
-repository = "https://github.com/agentOS/agentos"
+repository = "https://github.com/FractalOS/fractalos"
 
-# agentos-pd is no_std + staticlib; needs abort panic in all profiles.
+# fractalos-pd is no_std + staticlib; needs abort panic in all profiles.
 # abort is safe for all other workspace members too (no unwinding in kernel code).
 [profile.dev]
 panic = "abort"

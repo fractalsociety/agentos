@@ -7,17 +7,17 @@
  *   0xC2 — MEMPROF_SAMPLE  : request an immediate sample from a worker slot
  *
  * Channel: 0 (placeholder — CH_CONTROLLER_MEM_PROFILER is 50 from the
- *          controller's perspective but not yet a named constant in agentos.h).
+ *          controller's perspective but not yet a named constant in fractalos.h).
  *
  * TODO: replace opcode literals with
  *       #include "../../contracts/mem-profiler/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define MEMPROF_OP_STATUS  0xC0u
 #define MEMPROF_OP_RESET   0xC1u

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AGENTOS_TEST_HOST 1
+#define FRACTALOS_TEST_HOST 1
 #include "../services/toolsvc/tool_svc.c"
 
 #define BADGE(service, client, rights) \

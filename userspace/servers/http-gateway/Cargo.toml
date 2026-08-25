@@ -1,11 +1,11 @@
 [package]
-name = "agentos-http-gateway"
+name = "fractalos-http-gateway"
 version = "0.1.3"
 edition = "2021"
-description = "HTTP Gateway — hyper-based HTTP/1.1 server that dispatches requests to agentOS apps via http_svc"
+description = "HTTP Gateway — hyper-based HTTP/1.1 server that dispatches requests to FractalOS apps via http_svc"
 
 [dependencies]
-agentos-sdk = { path = "../../sdk" }
+fractalos-sdk = { path = "../../sdk" }
 tokio        = { version = "1", features = ["net", "io-util", "sync", "rt-multi-thread", "macros", "time"] }
 hyper        = { version = "1", features = ["http1", "server", "client"] }
 hyper-util   = { version = "0.1", features = ["tokio"] }

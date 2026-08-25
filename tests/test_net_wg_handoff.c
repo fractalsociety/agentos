@@ -1,5 +1,5 @@
 /* Capability and frame-contract tests for wg_net -> NetServer -> net_pd. */
-#define AGENTOS_TEST_HOST 1
+#define FRACTALOS_TEST_HOST 1
 #define OP_NS_REGISTER 0xD0u
 
 #include <stdint.h>

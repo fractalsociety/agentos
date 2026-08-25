@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# agentOS E2E — cap_policy.c ring-1 enforcement tests
+# FractalOS E2E — cap_policy.c ring-1 enforcement tests
 #
-# Verifies that the agentOS capability policy correctly rejects ring-0
+# Verifies that the FractalOS capability policy correctly rejects ring-0
 # escalation attempts from guest VMs.  Tests two vectors:
 #
 #   1. Host-side (via CC bridge):
@@ -15,7 +15,7 @@
 #      be absent entirely on a capability-hardened kernel).
 #
 #   3. Serial log inspection:
-#      After attempting escalations, check the agentOS serial log for
+#      After attempting escalations, check the FractalOS serial log for
 #      [cap_policy] rejection messages.
 #
 # The acceptance criterion (from the bead) is:
@@ -51,7 +51,7 @@ FREEBSD_BOOTED="${FREEBSD_BOOTED:-0}"
 
 cc_post() {
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
@@ -83,7 +83,7 @@ if [ "${BRIDGE_AVAIL}" = "1" ]; then
     printf "  ${BOLD}cap_policy: host-side escalation via CC bridge${RESET}\n"
 
     # Test 1: Attempt to grant a guest capability to CH_AGENTFS (ring-0 channel)
-    # CH_AGENTFS = 5 (from agentos.h) — guests must NOT have this
+    # CH_AGENTFS = 5 (from fractalos.h) — guests must NOT have this
     RESP="$(cc_post "cap/grant" \
         '{"target_pd":42,"cap_class":5,"rights":3}')"
     # cap_class=5 corresponds to CH_AGENTFS region; target_pd=42 is freebsd_vmm
@@ -215,18 +215,18 @@ else
     skip "Serial log: no cap_policy rejections logged (rejections may not be logged at INFO)"
 fi
 
-# Test 11: Verify agentOS is still responsive after escalation attempts
+# Test 11: Verify FractalOS is still responsive after escalation attempts
 if [ "${BRIDGE_AVAIL}" = "1" ]; then
     RESP="$(cc_post "connect" '{"client_badge":99,"flags":1}' 2>/dev/null)"
     if ok_field "${RESP}"; then
         SID="$(printf '%s' "${RESP}" | grep -o '"session_id":[0-9]*' | grep -o '[0-9]*')"
         cc_post "disconnect" "{\"session_id\":${SID:-0}}" >/dev/null 2>&1 || true
-        pass "Post-escalation: agentOS still responsive (CC bridge connects)"
+        pass "Post-escalation: FractalOS still responsive (CC bridge connects)"
     else
-        fail "Post-escalation: agentOS not responsive! (CC bridge failed)"
+        fail "Post-escalation: FractalOS not responsive! (CC bridge failed)"
     fi
 elif [ "${HAVE_SSH}" = "1" ] && gssh true 2>/dev/null; then
-    pass "Post-escalation: agentOS still responsive (SSH still works)"
+    pass "Post-escalation: FractalOS still responsive (SSH still works)"
 fi
 
 # ── Summary ────────────────────────────────────────────────────────────────────

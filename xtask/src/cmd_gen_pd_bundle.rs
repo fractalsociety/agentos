@@ -1,4 +1,4 @@
-// cmd_gen_pd_bundle.rs — agentOS PD-bundle generator
+// cmd_gen_pd_bundle.rs — FractalOS PD-bundle generator
 //
 // Produces a compact binary blob containing the PD entry table and all PD ELFs.
 // This blob is injected into root_task.elf's `.pd_bundle` section via
@@ -8,14 +8,14 @@
 // walking the seL4 extra-BootInfo region (which seL4 uses only for DTB data,
 // not our custom PD payloads).
 //
-// Bundle format — a strict subset of the agentos.img format:
+// Bundle format — a strict subset of the fractalos.img format:
 //
-//   [0..64)           agentos_img_hdr_t  (magic + num_pds + offsets)
-//   [64..64+N*64)     agentos_pd_entry_t table  (N = num_pds)
+//   [0..64)           fractalos_img_hdr_t  (magic + num_pds + offsets)
+//   [64..64+N*64)     fractalos_pd_entry_t table  (N = num_pds)
 //   [pd_elf_data..)   PD ELF blobs, concatenated
 //
 // kernel_off and root_off are both set to 0 (the bundle has no kernel or
-// root task ELF; those are in the main agentos.img loaded by the loader).
+// root task ELF; those are in the main fractalos.img loaded by the loader).
 
 use std::fs;
 use std::io::Write;
@@ -64,7 +64,7 @@ pub fn run(args: &GenPdBundleArgs) -> Result<()> {
 
     // 3. Compute offsets
     //
-    //   [0..HEADER_SIZE)           agentos_img_hdr_t
+    //   [0..HEADER_SIZE)           fractalos_img_hdr_t
     //   [HEADER_SIZE..pd_data_off) PD entry table  (N × PD_ENTRY_SIZE)
     //   [pd_data_off..)            PD ELF blobs
 

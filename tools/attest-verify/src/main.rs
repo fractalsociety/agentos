@@ -27,10 +27,18 @@ fn cap_kind_name(kind: u8) -> &'static str {
 /// Decode capability rights bitmask into a human-readable string.
 pub fn decode_rights(rights: u32) -> String {
     let mut parts = Vec::new();
-    if rights & 0x01 != 0 { parts.push("read"); }
-    if rights & 0x02 != 0 { parts.push("write"); }
-    if rights & 0x04 != 0 { parts.push("grant"); }
-    if rights & 0x08 != 0 { parts.push("grant_reply"); }
+    if rights & 0x01 != 0 {
+        parts.push("read");
+    }
+    if rights & 0x02 != 0 {
+        parts.push("write");
+    }
+    if rights & 0x04 != 0 {
+        parts.push("grant");
+    }
+    if rights & 0x08 != 0 {
+        parts.push("grant_reply");
+    }
     if parts.is_empty() {
         "none".to_string()
     } else {
@@ -97,14 +105,14 @@ pub fn parse_attestation(text: &str) -> AttestationRecord {
                     }
                 };
                 caps.push(CapEntry {
-                    handle:     parts[1].parse().unwrap_or(0),
-                    owner_pd:   parts[2].parse().unwrap_or(0),
+                    handle: parts[1].parse().unwrap_or(0),
+                    owner_pd: parts[2].parse().unwrap_or(0),
                     granted_to: parts[3].parse().unwrap_or(0),
-                    cptr:       parts[4].to_string(),
-                    rights:     parse_u32_hex(parts[5]),
-                    kind:       parse_u8_hex(parts[6]),
-                    badge:      parts[7].to_string(),
-                    revokable:  parts[8] == "1",
+                    cptr: parts[4].to_string(),
+                    rights: parse_u32_hex(parts[5]),
+                    kind: parse_u8_hex(parts[6]),
+                    badge: parts[7].to_string(),
+                    revokable: parts[8] == "1",
                     grant_time: parts[9].parse().unwrap_or(0),
                 });
             }
@@ -113,7 +121,11 @@ pub fn parse_attestation(text: &str) -> AttestationRecord {
         }
     }
 
-    AttestationRecord { seq, timestamp_us, caps }
+    AttestationRecord {
+        seq,
+        timestamp_us,
+        caps,
+    }
 }
 
 // ── Signed attestation file format ───────────────────────────────────── //
@@ -126,7 +138,11 @@ pub fn load_signed_attestation(data: &[u8]) -> Result<(Vec<u8>, [u8; 64])> {
     }
     let body_len = u32::from_be_bytes([data[0], data[1], data[2], data[3]]) as usize;
     if 4 + body_len + 64 > data.len() {
-        bail!("truncated: claimed body_len={} but file is {} bytes", body_len, data.len());
+        bail!(
+            "truncated: claimed body_len={} but file is {} bytes",
+            body_len,
+            data.len()
+        );
     }
     let body = data[4..4 + body_len].to_vec();
     let mut sig = [0u8; 64];
@@ -153,7 +169,7 @@ pub fn print_report(rec: &AttestationRecord, verified: Option<bool>) {
     let w = 80;
     let sep: String = "=".repeat(w);
     println!("{}", sep);
-    println!("  agentOS Capability Attestation Report");
+    println!("  FractalOS Capability Attestation Report");
     println!("  Sequence:    {}", rec.seq);
 
     // Format timestamp
@@ -167,16 +183,16 @@ pub fn print_report(rec: &AttestationRecord, verified: Option<bool>) {
     println!("  Timestamp:   {}", ts.to_rfc3339());
     println!("  Active caps: {}", rec.caps.len());
     match verified {
-        Some(true)  => println!("  Signature:   VERIFIED"),
+        Some(true) => println!("  Signature:   VERIFIED"),
         Some(false) => println!("  Signature:   INVALID -- report may be tampered!"),
-        None        => println!("  Signature:   ? (public key not provided)"),
+        None => println!("  Signature:   ? (public key not provided)"),
     }
     println!("{}", sep);
     println!();
 
     println!(
-        "{:>6}  {:>8}  {:>8}  {:<16}  {:<24}  {:<10}  {}",
-        "Handle", "Owner PD", "Granted->", "Kind", "Rights", "cptr", "Rev"
+        "{:>6}  {:>8}  {:>8}  {:<16}  {:<24}  {:<10}  Rev",
+        "Handle", "Owner PD", "Granted->", "Kind", "Rights", "cptr"
     );
     println!("{}", "-".repeat(w));
 
@@ -206,10 +222,19 @@ pub fn diff_attestations(prev: &AttestationRecord, curr: &AttestationRecord) {
     let prev_map: HashMap<u64, &CapEntry> = prev.caps.iter().map(|c| (c.handle, c)).collect();
     let curr_map: HashMap<u64, &CapEntry> = curr.caps.iter().map(|c| (c.handle, c)).collect();
 
-    let added: Vec<&CapEntry>   = curr_map.values().filter(|c| !prev_map.contains_key(&c.handle)).copied().collect();
-    let removed: Vec<&CapEntry> = prev_map.values().filter(|c| !curr_map.contains_key(&c.handle)).copied().collect();
-    let changed: Vec<&CapEntry> = curr_map.values()
-        .filter(|c| prev_map.get(&c.handle).map_or(false, |p| *p != **c))
+    let added: Vec<&CapEntry> = curr_map
+        .values()
+        .filter(|c| !prev_map.contains_key(&c.handle))
+        .copied()
+        .collect();
+    let removed: Vec<&CapEntry> = prev_map
+        .values()
+        .filter(|c| !curr_map.contains_key(&c.handle))
+        .copied()
+        .collect();
+    let changed: Vec<&CapEntry> = curr_map
+        .values()
+        .filter(|c| prev_map.get(&c.handle).is_some_and(|p| *p != **c))
         .copied()
         .collect();
 
@@ -219,10 +244,21 @@ pub fn diff_attestations(prev: &AttestationRecord, curr: &AttestationRecord) {
         return;
     }
     for c in &added {
-        println!("  + handle {}: {} owner={} granted={}", c.handle, cap_kind_name(c.kind), c.owner_pd, c.granted_to);
+        println!(
+            "  + handle {}: {} owner={} granted={}",
+            c.handle,
+            cap_kind_name(c.kind),
+            c.owner_pd,
+            c.granted_to
+        );
     }
     for c in &removed {
-        println!("  - handle {}: {} owner={}", c.handle, cap_kind_name(c.kind), c.owner_pd);
+        println!(
+            "  - handle {}: {} owner={}",
+            c.handle,
+            cap_kind_name(c.kind),
+            c.owner_pd
+        );
     }
     for c in &changed {
         println!("  ~ handle {}: modified", c.handle);
@@ -234,7 +270,7 @@ pub fn diff_attestations(prev: &AttestationRecord, curr: &AttestationRecord) {
 
 fn fetch_latest(agentfs_url: &str, token: Option<&str>) -> Result<Vec<u8>> {
     let client = reqwest::blocking::Client::new();
-    let list_url = format!("{}/ls?prefix=agentos/attestation/", agentfs_url);
+    let list_url = format!("{}/ls?prefix=fractalos/attestation/", agentfs_url);
 
     let mut req = client.get(&list_url);
     if let Some(tok) = token {
@@ -258,7 +294,9 @@ fn fetch_latest(agentfs_url: &str, token: Option<&str>) -> Result<Vec<u8>> {
     if files.is_empty() {
         bail!("no attestation files found");
     }
-    let latest = files.iter().max()
+    let latest = files
+        .iter()
+        .max()
         .expect("non-empty vec always has a max — checked above");
     let fetch_url = format!("{}/get?hash={}", agentfs_url, latest);
 
@@ -266,7 +304,8 @@ fn fetch_latest(agentfs_url: &str, token: Option<&str>) -> Result<Vec<u8>> {
     if let Some(tok) = token {
         req2 = req2.header("Authorization", format!("Bearer {}", tok));
     }
-    let data = req2.send()
+    let data = req2
+        .send()
         .with_context(|| format!("GET {}", fetch_url))?
         .bytes()
         .context("reading response body")?;
@@ -276,7 +315,10 @@ fn fetch_latest(agentfs_url: &str, token: Option<&str>) -> Result<Vec<u8>> {
 // ── CLI ───────────────────────────────────────────────────────────────── //
 
 #[derive(Parser, Debug)]
-#[command(name = "attest-verify", about = "agentOS capability attestation verifier")]
+#[command(
+    name = "attest-verify",
+    about = "FractalOS capability attestation verifier"
+)]
 struct Cli {
     /// Fetch the latest attestation from AgentFS
     #[arg(long)]
@@ -358,7 +400,11 @@ fn main() -> Result<()> {
                 Some(verify_ed25519(&pk32, &body, &sig))
             }
             Ok(pk) => {
-                eprintln!("Warning: pubkey {} is {} bytes (expected 32)", pubkey_path, pk.len());
+                eprintln!(
+                    "Warning: pubkey {} is {} bytes (expected 32)",
+                    pubkey_path,
+                    pk.len()
+                );
                 None
             }
             Err(_) => None, // key not found — skip verification
@@ -371,8 +417,8 @@ fn main() -> Result<()> {
 
     // Diff
     if let Some(ref diff_path) = cli.diff {
-        let diff_raw = std::fs::read(diff_path)
-            .with_context(|| format!("reading {}", diff_path.display()))?;
+        let diff_raw =
+            std::fs::read(diff_path).with_context(|| format!("reading {}", diff_path.display()))?;
         let diff_body = match load_signed_attestation(&diff_raw) {
             Ok((b, _)) => b,
             Err(_) => diff_raw,
@@ -413,7 +459,7 @@ END\t2\n";
         assert_eq!(c0.handle, 1);
         assert_eq!(c0.owner_pd, 100);
         assert_eq!(c0.granted_to, 200);
-        assert_eq!(c0.kind, 1);  // endpoint
+        assert_eq!(c0.kind, 1); // endpoint
         assert!(c0.revokable);
 
         let c1 = &rec.caps[1];
@@ -431,8 +477,8 @@ END\t2\n";
         data.extend_from_slice(body);
         data.extend_from_slice(&sig);
 
-        let (parsed_body, parsed_sig) = load_signed_attestation(&data)
-            .expect("well-formed attestation payload should parse");
+        let (parsed_body, parsed_sig) =
+            load_signed_attestation(&data).expect("well-formed attestation payload should parse");
         assert_eq!(parsed_body, body);
         assert_eq!(parsed_sig, sig);
     }

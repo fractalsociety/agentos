@@ -1,5 +1,5 @@
 /*
- * test_runner.c — agentOS Phase 5 test orchestrator PD
+ * test_runner.c — FractalOS Phase 5 test orchestrator PD
  *
  * This is the Microkit protection domain that runs all Phase 5 contract and
  * integration tests in sequence.  It acts as the "controller" in the test
@@ -14,16 +14,16 @@
  *
  * Build notes:
  *   Include paths required:
- *     -I kernel/agentos-root-task/include   (agentos.h, microkit.h)
+ *     -I kernel/fractalos-root-task/include   (fractalos.h, microkit.h)
  *     -I tests/harness                      (test_framework.h)
  *     -I tests/contracts                    (run_*_tests declarations)
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 /* ── Forward declarations for each contract test suite ───────────────────── */
 
@@ -66,7 +66,7 @@ void run_vibe_hotswap_tests(void);
 
 void init(void)
 {
-    tf_tap_init("agentOS-phase5");
+    tf_tap_init("FractalOS-phase5");
 
     /* ── Contract tests (one suite per PD) ──────────────────────────────── */
     run_eventbus_tests(MONITOR_CH_EVENTBUS);

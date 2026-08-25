@@ -4,7 +4,7 @@
  * // STATUS: PLANNED
  *
  * This header defines the planned contract for the usb-service device service
- * in agentOS.  No implementation exists yet.  This contract specifies the
+ * in FractalOS.  No implementation exists yet.  This contract specifies the
  * interface that the future USB protection domain must implement and that all
  * guest OS USB stacks must consume.
  *
@@ -31,7 +31,7 @@
  *   Devices will be assigned by the USB service during enumeration; the guest
  *   OS must call USB_SVC_OP_ENUMERATE to discover what is available.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

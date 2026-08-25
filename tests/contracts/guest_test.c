@@ -11,12 +11,12 @@
  *   MSG_GUEST_DESTROY              — destroy a guest
  *   MSG_GUEST_SEND_INPUT           — send input event to guest
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_guest_tests(microkit_channel ch)
 {

@@ -7,20 +7,20 @@
  *
  * Channel: CH_LOG_DRAIN (55 on qemu-virt-aarch64, 60 otherwise).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/system_desc.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/system_desc.h"
 
 /* The production image installs LogDrain at its native well-known capability
  * slot. Host contract tests retain the Microkit channel shim. */
 static microkit_msginfo log_drain_call(microkit_channel ch,
                                        microkit_msginfo request)
 {
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     return microkit_ppcall(ch, request);
 #else
     (void)ch;
@@ -33,7 +33,7 @@ static microkit_msginfo log_drain_call(microkit_channel ch,
  * migration and still places its synthetic status in MR0. */
 static uint64_t log_drain_reply_status(microkit_msginfo reply)
 {
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     (void)reply;
     return microkit_mr_get(0);
 #else

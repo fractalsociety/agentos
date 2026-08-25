@@ -3,7 +3,7 @@
 ## Overview
 
 EntropyService is the sole authorized source of cryptographic randomness in
-agentOS.  Guest OSes and VMMs must not read hardware RNG registers directly
+FractalOS.  Guest OSes and VMMs must not read hardware RNG registers directly
 (`/dev/hwrng`, `RDRAND`, ARM TRNG MMIO).  All randomness flows through this
 service for proper mixing, auditing, and rate limiting.
 
@@ -13,7 +13,7 @@ Hardware entropy sources (in priority order):
 3. Seeded ChaCha20 DRBG (fallback when hardware is unavailable)
 
 The implementation uses monocypher primitives from
-`kernel/agentos-root-task/src/monocypher.c`.
+`kernel/fractalos-root-task/src/monocypher.c`.
 
 ## Status
 
@@ -38,6 +38,6 @@ a PPC capability to its endpoint at initialization time.
 ## Source Files
 
 - `contracts/entropy-service/interface.h` — canonical IPC contract
-- `kernel/agentos-root-task/src/crypto_ipc.c` — implementation
-- `kernel/agentos-root-task/include/crypto_ipc.h` — internal header
-- `kernel/agentos-root-task/include/monocypher.h` — crypto primitives
+- `kernel/fractalos-root-task/src/crypto_ipc.c` — implementation
+- `kernel/fractalos-root-task/include/crypto_ipc.h` — internal header
+- `kernel/fractalos-root-task/include/monocypher.h` — crypto primitives

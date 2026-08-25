@@ -1,6 +1,6 @@
 //! Memory management for agents
 //!
-//! In agentOS, memory is a capability. You ask for it; it's either granted or not.
+//! In FractalOS, memory is a capability. You ask for it; it's either granted or not.
 //! No sbrk(), no mmap() without a cap.
 
 use alloc::string::String;
@@ -39,13 +39,18 @@ pub struct ContextWindow {
 
 impl ContextWindow {
     pub fn new(id: u64, size_tokens: u64) -> Self {
-        Self { id, size_tokens, used_tokens: 0, snapshot_id: None }
+        Self {
+            id,
+            size_tokens,
+            used_tokens: 0,
+            snapshot_id: None,
+        }
     }
-    
+
     pub fn fill_pct(&self) -> f64 {
         self.used_tokens as f64 / self.size_tokens as f64 * 100.0
     }
-    
+
     pub fn is_near_full(&self) -> bool {
         self.fill_pct() > 80.0
     }
@@ -125,9 +130,9 @@ mod tests {
 
     #[test]
     fn memory_pressure_boundary_values() {
-        assert_eq!(MemoryPressure::from_raw(0),   MemoryPressure::None);
-        assert_eq!(MemoryPressure::from_raw(63),  MemoryPressure::None);
-        assert_eq!(MemoryPressure::from_raw(64),  MemoryPressure::Low);
+        assert_eq!(MemoryPressure::from_raw(0), MemoryPressure::None);
+        assert_eq!(MemoryPressure::from_raw(63), MemoryPressure::None);
+        assert_eq!(MemoryPressure::from_raw(64), MemoryPressure::Low);
         assert_eq!(MemoryPressure::from_raw(127), MemoryPressure::Low);
         assert_eq!(MemoryPressure::from_raw(128), MemoryPressure::Medium);
         assert_eq!(MemoryPressure::from_raw(191), MemoryPressure::Medium);
@@ -139,9 +144,9 @@ mod tests {
     #[test]
     fn memory_pressure_ordering() {
         assert!(MemoryPressure::Critical > MemoryPressure::High);
-        assert!(MemoryPressure::High    > MemoryPressure::Medium);
-        assert!(MemoryPressure::Medium  > MemoryPressure::Low);
-        assert!(MemoryPressure::Low     > MemoryPressure::None);
+        assert!(MemoryPressure::High > MemoryPressure::Medium);
+        assert!(MemoryPressure::Medium > MemoryPressure::Low);
+        assert!(MemoryPressure::Low > MemoryPressure::None);
     }
 
     // ── MemoryKind ────────────────────────────────────────────────────────────

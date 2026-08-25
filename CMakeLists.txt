@@ -1,7 +1,7 @@
 #
-# agentOS — Top-Level CMake Build
+# FractalOS — Top-Level CMake Build
 #
-# Builds the agentOS system image on top of seL4.
+# Builds the FractalOS system image on top of seL4.
 # Supports QEMU simulation and hardware targets.
 #
 # Usage:
@@ -13,56 +13,56 @@
 #     ..
 #   ninja
 #
-# Copyright (c) 2026 The agentOS Project
+# Copyright (c) 2026 The FractalOS Project
 # SPDX-License-Identifier: BSD-2-Clause
 #
 
 cmake_minimum_required(VERSION 3.18)
-project(agentOS C ASM)
+project(FractalOS C ASM)
 
 # =============================================================================
-# Generated per-PD ABI tables (agentos-685)
+# Generated per-PD ABI tables (fos-685)
 # =============================================================================
 #
 # tools/gen-abi reads the source-of-truth tools/abi_spec.toml and emits the
-# per-PD ABI table header kernel/agentos-root-task/include/agentos_abi.h.
+# per-PD ABI table header kernel/fractalos-root-task/include/fractalos_abi.h.
 #
 # The generator HARD-FAILS (nonzero exit) on a duplicate opcode within a PD, a
 # duplicate channel id, or a contract reference with no contracts/<dir>/. We
 # bind it to the build via a custom command whose OUTPUT every PD that includes
-# agentos.h depends on; if gen-abi fails, no build artifacts are produced.
+# fractalos.h depends on; if gen-abi fails, no build artifacts are produced.
 #
 # We run gen-abi in --check mode at configure time so a bad spec aborts cmake
 # before any compilation begins, and as a build-time custom command so the
 # header is regenerated whenever the spec changes.
 
-set(AGENTOS_ABI_SPEC   ${CMAKE_CURRENT_SOURCE_DIR}/tools/abi_spec.toml)
-set(AGENTOS_ABI_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/kernel/agentos-root-task/include/agentos_abi.h)
+set(FRACTALOS_ABI_SPEC   ${CMAKE_CURRENT_SOURCE_DIR}/tools/abi_spec.toml)
+set(FRACTALOS_ABI_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/kernel/fractalos-root-task/include/fractalos_abi.h)
 
 find_program(CARGO_EXECUTABLE cargo)
 if(CARGO_EXECUTABLE)
     # Configure-time gate: fail cmake immediately on a collision/coverage error.
     execute_process(
-        COMMAND ${CARGO_EXECUTABLE} run -q -p gen-abi -- ${AGENTOS_ABI_SPEC} --check
+        COMMAND ${CARGO_EXECUTABLE} run -q -p gen-abi -- ${FRACTALOS_ABI_SPEC} --check
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        RESULT_VARIABLE AGENTOS_ABI_CHECK_RESULT
+        RESULT_VARIABLE FRACTALOS_ABI_CHECK_RESULT
     )
-    if(NOT AGENTOS_ABI_CHECK_RESULT EQUAL 0)
-        message(FATAL_ERROR "gen-abi: ABI spec ${AGENTOS_ABI_SPEC} failed validation; refusing to build")
+    if(NOT FRACTALOS_ABI_CHECK_RESULT EQUAL 0)
+        message(FATAL_ERROR "gen-abi: ABI spec ${FRACTALOS_ABI_SPEC} failed validation; refusing to build")
     endif()
 
     # Build-time regeneration: re-emit the header when the spec changes.
     add_custom_command(
-        OUTPUT ${AGENTOS_ABI_HEADER}
-        COMMAND ${CARGO_EXECUTABLE} run -q -p gen-abi -- ${AGENTOS_ABI_SPEC} -o ${AGENTOS_ABI_HEADER}
-        DEPENDS ${AGENTOS_ABI_SPEC}
+        OUTPUT ${FRACTALOS_ABI_HEADER}
+        COMMAND ${CARGO_EXECUTABLE} run -q -p gen-abi -- ${FRACTALOS_ABI_SPEC} -o ${FRACTALOS_ABI_HEADER}
+        DEPENDS ${FRACTALOS_ABI_SPEC}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-        COMMENT "Generating per-PD ABI tables (agentos_abi.h) from abi_spec.toml"
+        COMMENT "Generating per-PD ABI tables (fractalos_abi.h) from abi_spec.toml"
         VERBATIM
     )
-    add_custom_target(gen-abi DEPENDS ${AGENTOS_ABI_HEADER})
+    add_custom_target(gen-abi DEPENDS ${FRACTALOS_ABI_HEADER})
 else()
-    message(WARNING "cargo not found; using checked-in ${AGENTOS_ABI_HEADER} without regeneration")
+    message(WARNING "cargo not found; using checked-in ${FRACTALOS_ABI_HEADER} without regeneration")
 endif()
 
 # =============================================================================
@@ -86,10 +86,10 @@ set(KernelDebugBuild ON CACHE BOOL "Debug build")
 set(KernelPrinting ON CACHE BOOL "Kernel debug printing")
 
 # =============================================================================
-# agentOS Libraries
+# FractalOS Libraries
 # =============================================================================
 
-# libagent — agentOS SDK
+# libagent — FractalOS SDK
 add_library(libagent STATIC
     libs/libagent/libagent.c
 )
@@ -149,13 +149,13 @@ target_link_libraries(logsvc libagent)
 # Init Task (Root Task)
 # =============================================================================
 
-add_executable(agentos-init
+add_executable(fractalos-init
     agents/init/main.c
     agents/init/init_services.c
     agents/init/init_agents.c
 )
 
-target_link_libraries(agentos-init
+target_link_libraries(fractalos-init
     libagent
     capstore
     msgbus
@@ -177,11 +177,11 @@ target_link_libraries(agentos-init
 # Hello Agent
 # =============================================================================
 
-add_executable(agentos-hello
+add_executable(fractalos-hello
     agents/hello/main.c
 )
 
-target_link_libraries(agentos-hello
+target_link_libraries(fractalos-hello
     libagent
     sel4
     muslc
@@ -196,7 +196,7 @@ target_link_libraries(agentos-hello
 # Build the bootable system image with elfloader
 # The init task is loaded first, then it bootstraps everything else
 include(rootserver)
-DeclareRootserver(agentos-init)
+DeclareRootserver(fractalos-init)
 
 # Include agent binaries in the boot image
 # (init task will load these from the image and start them)
@@ -213,9 +213,9 @@ if(SIMULATION)
             -cpu cortex-a53
             -nographic
             -m 512
-            -kernel ${CMAKE_BINARY_DIR}/images/agentos-init-image-arm-qemu-arm-virt
-        DEPENDS agentos-init
-        COMMENT "Running agentOS in QEMU (aarch64)"
+            -kernel ${CMAKE_BINARY_DIR}/images/fractalos-init-image-arm-qemu-arm-virt
+        DEPENDS fractalos-init
+        COMMENT "Running FractalOS in QEMU (aarch64)"
     )
 endif()
 
@@ -225,7 +225,7 @@ endif()
 
 message(STATUS "")
 message(STATUS "╔═══════════════════════════════════════════╗")
-message(STATUS "║         agentOS Build Configuration        ║")
+message(STATUS "║         FractalOS Build Configuration        ║")
 message(STATUS "╠═══════════════════════════════════════════╣")
 message(STATUS "║  Platform:    ${KernelPlatform}")
 message(STATUS "║  Arch:        ${KernelArch}")

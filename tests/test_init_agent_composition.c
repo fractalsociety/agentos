@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AGENTOS_TEST_HOST 1
-#include "../kernel/agentos-root-task/src/harness_composition.c"
-#include "../kernel/agentos-root-task/src/init_agent.c"
+#define FRACTALOS_TEST_HOST 1
+#include "../kernel/fractalos-root-task/src/harness_composition.c"
+#include "../kernel/fractalos-root-task/src/init_agent.c"
 
 static void dispatch(uint32_t opcode, const void *payload, uint32_t length,
                      struct initagent_reply_compose *reply)

@@ -1,12 +1,12 @@
-//! CUDA PTX compute offload for agentOS
+//! CUDA PTX compute offload for FractalOS
 //!
 //! Agents can submit GPU kernels as WASM modules with an embedded PTX
-//! payload in the `agentos.cuda` custom section.  The VibeEngine extracts
+//! payload in the `fractalos.cuda` custom section.  The VibeEngine extracts
 //! and validates the PTX; the gpu_scheduler PD binds it to a GPU slot.
 //!
 //! # Example
 //! ```no_run
-//! use agentos_sdk::cuda::CudaKernel;
+//! use fractalos_sdk::cuda::CudaKernel;
 //!
 //! let ptx = b".version 7.0\n.target sm_80\n.address_size 64\n";
 //! let kernel = CudaKernel::new(ptx.to_vec(), "matmul_kernel".to_string());
@@ -32,10 +32,10 @@ pub enum CudaError {
 impl core::fmt::Display for CudaError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CudaError::InvalidPtx       => write!(f, "Invalid PTX: must start with .version"),
-            CudaError::NoSlotAvailable  => write!(f, "All GPU slots busy"),
-            CudaError::PtxTooLarge      => write!(f, "PTX payload exceeds 2MB"),
-            CudaError::IpcError(code)   => write!(f, "IPC error: {}", code),
+            CudaError::InvalidPtx => write!(f, "Invalid PTX: must start with .version"),
+            CudaError::NoSlotAvailable => write!(f, "All GPU slots busy"),
+            CudaError::PtxTooLarge => write!(f, "PTX payload exceeds 2MB"),
+            CudaError::IpcError(code) => write!(f, "IPC error: {}", code),
         }
     }
 }
@@ -44,14 +44,14 @@ impl core::fmt::Display for CudaError {
 pub const MAX_PTX_BYTES: usize = 2 * 1024 * 1024;
 
 /// WASM custom section name that carries the PTX payload.
-pub const CUDA_SECTION_NAME: &str = "agentos.cuda";
+pub const CUDA_SECTION_NAME: &str = "fractalos.cuda";
 
 /// IPC op codes for the gpu_scheduler PD.
-pub const OP_GPU_SUBMIT:   u32 = 0x50;
+pub const OP_GPU_SUBMIT: u32 = 0x50;
 pub const OP_GPU_COMPLETE: u32 = 0x51;
-pub const OP_GPU_STATUS:   u32 = 0x52;
+pub const OP_GPU_STATUS: u32 = 0x52;
 
-/// A CUDA compute kernel for submission to an agentOS GPU slot.
+/// A CUDA compute kernel for submission to an FractalOS GPU slot.
 ///
 /// Wraps a PTX source payload and an entry-point function name.
 /// The kernel can be submitted to any free GPU slot via [`CudaKernel::submit`].

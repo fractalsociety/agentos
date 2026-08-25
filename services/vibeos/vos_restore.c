@@ -15,16 +15,16 @@
  *   7. Resume the guest (mark it RUNNING).
  *   8. Return the new guest_handle in the IPC reply.
  *
- * AGENTOS_TEST_HOST:
+ * FRACTALOS_TEST_HOST:
  *   All seL4 primitives are stubbed.  The blob is fetched from the in-memory
  *   store written by vos_snapshot.c via vos_test_snap_store_get().  Instance
  *   allocation uses vos_test_alloc_instance() from the same instance table in
  *   vos_snapshot.c.
  *
  * No microkit.h is included — only sel4_boot.h/sel4_ipc.h types on real
- * hardware and stdlib headers under AGENTOS_TEST_HOST.
+ * hardware and stdlib headers under FRACTALOS_TEST_HOST.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -38,7 +38,7 @@
 /* Pull in the public API contract for opcodes, error codes, and structs */
 #include "contracts/vibeos/interface.h"
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 #include "sel4_boot.h"
 #endif
 
@@ -113,7 +113,7 @@ struct vos_instance {
 
 /* ── seL4 primitive stubs ────────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 static inline void seL4_TCB_Resume(uint32_t tcb_cap) { (void)tcb_cap; }
 
@@ -123,7 +123,7 @@ static inline void seL4_VCPU_WriteRegs(uint32_t vcpu_cap,
     (void)vcpu_cap; (void)regs; (void)pc;
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── AgentFS blob retrieval ───────────────────────────────────────────────── */
 
@@ -141,7 +141,7 @@ static inline void seL4_VCPU_WriteRegs(uint32_t vcpu_cap,
  * agentfs_get_blob — fetch a snapshot blob identified by (snap_lo, snap_hi).
  *
  * On real seL4 hardware this would issue an AGENTFS_OP_GET IPC.
- * Under AGENTOS_TEST_HOST it delegates to vos_test_snap_store_get().
+ * Under FRACTALOS_TEST_HOST it delegates to vos_test_snap_store_get().
  *
  * Returns number of bytes written on success, 0 if not found, negative on
  * unexpected error.
@@ -149,7 +149,7 @@ static inline void seL4_VCPU_WriteRegs(uint32_t vcpu_cap,
 static int agentfs_get_blob(uint32_t snap_lo, uint32_t snap_hi,
                              void *buf, uint32_t buf_size)
 {
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     return vos_test_snap_store_get(snap_lo, snap_hi, buf, buf_size);
 #else
     /*
@@ -227,7 +227,7 @@ uint32_t vos_restore(uint32_t snap_lo, uint32_t snap_hi,
     memcpy(&snap_pc, p, sizeof(uint64_t));
     p += sizeof(uint64_t);
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     /* Store register dump back into the test instance for verification */
     for (uint32_t i = 0; i < 32; i++)
         inst->test_regs[i] = snap_regs[i];
@@ -237,7 +237,7 @@ uint32_t vos_restore(uint32_t snap_lo, uint32_t snap_hi,
 #endif
 
     /* Step 6: Restore guest RAM */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
     /*
      * On host we do not have a real guest RAM mapping.  The test verifies
      * the round-trip by comparing test_regs and test_pc, which are set above.
@@ -254,7 +254,7 @@ uint32_t vos_restore(uint32_t snap_lo, uint32_t snap_hi,
     /* Step 7: Resume the guest */
     inst->state = VOS_STATE_RUNNING;
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     seL4_TCB_Resume(inst->tcb_cap);
 #endif
 

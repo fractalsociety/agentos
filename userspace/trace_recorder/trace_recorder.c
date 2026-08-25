@@ -1,5 +1,5 @@
 /*
- * agentOS trace_recorder — seL4 IPC trace capture for integration testing + QEMU replay
+ * FractalOS trace_recorder — seL4 IPC trace capture for integration testing + QEMU replay
  *
  * Passive PD, priority 90 (lowest of all PDs, observe-only).
  *
@@ -48,12 +48,12 @@
  *   trace_buf (512KB) — packed binary event buffer, this PD rw
  *   trace_out (1MB)   — JSONL output region, written on OP_TRACE_DUMP
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 
 /* ── Opcodes ──────────────────────────────────────────────────────────── */
 #define OP_TRACE_START  0x80u
@@ -163,7 +163,7 @@ static void buf_append(uint8_t src_pd, uint8_t dst_pd, uint16_t label,
 /* ── PD name table ───────────────────────────────────────────────────── */
 /*
  * Numeric PD IDs (packed into src_pd / dst_pd fields).
- * Must stay in sync with TRACE_PD_* constants in agentos.h.
+ * Must stay in sync with TRACE_PD_* constants in fractalos.h.
  */
 #define PDID_CONTROLLER    0
 #define PDID_EVENT_BUS     1
@@ -376,7 +376,7 @@ void init(void) {
     /* Zero output region header */
     TRACE_OUT[0] = 0;
 
-    agentos_log_boot("trace_recorder");
+    fractalos_log_boot("trace_recorder");
     microkit_dbg_puts("[trace_recorder] ALIVE — priority 90, passive, "
                       "512KB buf (26195 events max), 1MB JSONL out\n");
     microkit_dbg_puts("[trace_recorder] Channels: 0=control PPC, 1=event notify\n");

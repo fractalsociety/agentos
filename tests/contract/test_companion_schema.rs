@@ -7,11 +7,12 @@ use std::process::Command;
 
 const WIT: &str = include_str!("../../interfaces/wit/fractal-companion-v1/companion.wit");
 const ABI_SPEC: &str = include_str!("../../tools/abi_spec.toml");
-const SYSTEM: &str = include_str!("../../kernel/agentos-root-task/agentos.system");
-const SYSTEM_AARCH64: &str = include_str!("../../kernel/agentos-root-task/agentos-aarch64.system");
-const AGENTOS_H: &str = include_str!("../../kernel/agentos-root-task/include/agentos.h");
+const SYSTEM: &str = include_str!("../../kernel/fractalos-root-task/fractalos.system");
+const SYSTEM_AARCH64: &str =
+    include_str!("../../kernel/fractalos-root-task/fractalos-aarch64.system");
+const FRACTALOS_H: &str = include_str!("../../kernel/fractalos-root-task/include/fractalos.h");
 const COMPANION_H: &str =
-    include_str!("../../kernel/agentos-root-task/include/contracts/companion_export_contract.h");
+    include_str!("../../kernel/fractalos-root-task/include/contracts/companion_export_contract.h");
 
 fn source_without_comments(source: &str) -> String {
     source
@@ -145,7 +146,7 @@ fn package_has_an_additive_minor_and_retains_v1_0_shapes() {
         .map(str::trim)
         .find(|line| line.starts_with("package "))
         .expect("WIT package declaration");
-    assert_eq!(package, "package agentos:fractal-companion@1.1.0;");
+    assert_eq!(package, "package fractalos:fractal-companion@1.1.0;");
 
     let session = record_fields("session");
     assert!(session.contains(&("min-schema-minor".into(), "u32".into())));
@@ -222,7 +223,10 @@ fn operations_parse_to_typed_bounded_results() {
         ("list-projects", "result<project-page, export-error>"),
         ("list-progress", "result<progress-page, export-error>"),
         ("get-daily-root", "result<daily-root, export-error>"),
-        ("get-health-adapter", "result<health-adapter-summary, export-error>"),
+        (
+            "get-health-adapter",
+            "result<health-adapter-summary, export-error>",
+        ),
         (
             "list-worker-memory",
             "result<worker-memory-page, export-error>",
@@ -297,7 +301,7 @@ fn reserved_channel_is_collision_free_in_both_system_descriptions() {
         );
     }
 
-    let owners = AGENTOS_H
+    let owners = FRACTALOS_H
         .lines()
         .map(str::trim)
         .filter(|line| line.starts_with("#define CH_"))
@@ -378,7 +382,7 @@ int main(void) {{
     let compile = Command::new(compiler)
         .current_dir(&root)
         .args([
-            "-DAGENTOS_TEST_HOST",
+            "-DFRACTALOS_TEST_HOST",
             "-std=c11",
             "-Wall",
             "-Wextra",
@@ -386,7 +390,7 @@ int main(void) {{
         ])
         .arg(format!(
             "-I{}",
-            root.join("kernel/agentos-root-task/include").display()
+            root.join("kernel/fractalos-root-task/include").display()
         ))
         .arg(&probe)
         .arg("-o")

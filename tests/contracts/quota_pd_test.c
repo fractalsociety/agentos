@@ -9,12 +9,12 @@
  *
  * Channel: CH_QUOTA_CTRL (52) from the controller's perspective.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_quota_pd_tests(microkit_channel ch)
 {

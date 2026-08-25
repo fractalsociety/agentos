@@ -1,4 +1,4 @@
-//! Logging via the agentOS `console_log` extern.
+//! Logging via the FractalOS `console_log` extern.
 //!
 //! The kernel-side `console_log(level, color, str)` function writes a
 //! NUL-terminated string to the Microkit debug console (typically routed to a
@@ -17,7 +17,7 @@ pub const MAX_MSG_LEN: usize = 255;
 /// Log a message at `level` with ANSI color index `color`.
 ///
 /// The `level` and `color` values mirror the calling convention used by the
-/// C PDs in `kernel/agentos-root-task/src/`:
+/// C PDs in `kernel/fractalos-root-task/src/`:
 ///
 /// | level | meaning        |
 /// |-------|----------------|

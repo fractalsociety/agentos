@@ -1,5 +1,5 @@
 /*
- * agentOS guest_contract + vmm_contract — Contract Unit Tests
+ * FractalOS guest_contract + vmm_contract — Contract Unit Tests
  *
  * Validates all MSG_GUEST_* and MSG_VMM_* struct layouts, constants, and
  * error codes without seL4 or Microkit.  No implementation is tested here —
@@ -9,8 +9,8 @@
  * Build:  cc -o /tmp/test_guest_contract \
  *             tests/test_guest_contract.c \
  *             -I tests \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_guest_contract
  */
 

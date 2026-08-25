@@ -1,4 +1,4 @@
-# agentOS Service Consolidation Plan
+# FractalOS Service Consolidation Plan
 
 **Date:** 2026-04-15  
 **Based on:** `docs/api-surface-audit.md`  
@@ -8,11 +8,11 @@
 
 ## Architecture Summary
 
-agentOS has three implementation layers for every major service:
+FractalOS has three implementation layers for every major service:
 
 | Layer | Location | Role | Authoritative? |
 |---|---|---|---|
-| Kernel Microkit PDs | `kernel/agentos-root-task/src/*.c` | Real seL4 protection domains; real IPC dispatch | **YES** |
+| Kernel Microkit PDs | `kernel/fractalos-root-task/src/*.c` | Real seL4 protection domains; real IPC dispatch | **YES** |
 | Rust userspace libs | `userspace/servers/<name>/src/lib.rs` | Simulation/test models; no IPC dispatch, no PD | Simulation only |
 | C service prototypes | `services/<name>/*.c` | CAmkES/early prototypes; incomplete IPC; no PD | No (see per-service) |
 
@@ -35,14 +35,14 @@ and does NOT import the `userspace/servers/` crates at all.
 1. JavaScript/Node.js is explicitly forbidden by CLAUDE.md §Non-Negotiable Language Policy.
 2. An HTTP server for a kernel service is a second violation.
 3. Every function it implemented is already correctly present in:
-   - `kernel/agentos-root-task/src/vibe_swap.c` — swap slot machinery (C, Microkit PD)
-   - `kernel/agentos-root-task/src/vibe_engine.c` — propose/validate/execute/rollback PD opcodes
+   - `kernel/fractalos-root-task/src/vibe_swap.c` — swap slot machinery (C, Microkit PD)
+   - `kernel/fractalos-root-task/src/vibe_engine.c` — propose/validate/execute/rollback PD opcodes
    - `userspace/servers/vibe-engine/src/wasm_validator.rs` — WASM magic + export validation
    - `userspace/servers/vibe-engine/src/lib.rs` — full validation pipeline in Rust
 
 **Unique logic check:** The JS `validate()` only checked WASM magic bytes (`0x00 0x61 0x73 0x6D`).
 `wasm_validator.rs` checks magic bytes, version, required exports (`init`, `handle_ppc`,
-`health_check`, `notified`, `memory`), and scans for the `agentos.capabilities` custom section.
+`health_check`, `notified`, `memory`), and scans for the `fractalos.capabilities` custom section.
 The Rust validator is strictly a superset. Nothing unique was lost.
 
 **Files deleted:**
@@ -67,7 +67,7 @@ The Rust validator is strictly a superset. Nothing unique was lost.
 - The CAmkES component definition (`MsgBus.camkes`) with `ChannelIface`/`MessageIface`/`RpcIface`
   typed interfaces documents the intended API surface.
 
-**Kernel counterpart:** `kernel/agentos-root-task/src/event_bus.c` (313 lines) implements a
+**Kernel counterpart:** `kernel/fractalos-root-task/src/event_bus.c` (313 lines) implements a
 ring-buffer pub/sub with up to 64 subscribers. It does NOT implement point-to-point RPC or
 channel-level endpoint pools. The two models are complementary, not duplicates.
 
@@ -76,7 +76,7 @@ channel-level endpoint pools. The two models are complementary, not duplicates.
 is needed (it is — it is how agents call tools), the `msgbus_rpc_seL4` logic should be
 absorbed into the NameServer or a dedicated RPC-broker PD, not discarded.
 
-**CMakeLists.txt change required:** Remove `msgbus` from `agentos-init` link libraries
+**CMakeLists.txt change required:** Remove `msgbus` from `fractalos-init` link libraries
 (see §CMake Cleanup below).
 
 ---
@@ -90,7 +90,7 @@ absorbed into the NameServer or a dedicated RPC-broker PD, not discarded.
 - Explicit `CAP_TYPE_*` enum with 9 semantic types (`TOOL`, `MODEL`, `MEMORY`, `MSG`, `STORE`,
   `SPAWN`, `NET`, `SELF`, `SERVICE`).
 
-**Kernel counterpart:** `kernel/agentos-root-task/src/cap_broker.c` (647 lines) operates on
+**Kernel counterpart:** `kernel/fractalos-root-task/src/cap_broker.c` (647 lines) operates on
 a binary policy blob with per-rule grant/revoke, but does NOT implement a derivation tree or
 cascading revocation. The two models address different capability management concerns.
 
@@ -108,8 +108,8 @@ security-critical invariants that the kernel PD currently lacks.
 - JSON serialization (`logsvc_entry_to_json`) with typed level names array.
 - `LOG_AUDIT` level that bypasses the min-level filter (audit events always recorded).
 
-**Kernel counterpart:** `kernel/agentos-root-task/src/log.c` exists but the audit found
-a buffer-overflow bug in it (per `memory/project_agentos_console.md`). The `logsvc.c`
+**Kernel counterpart:** `kernel/fractalos-root-task/src/log.c` exists but the audit found
+a buffer-overflow bug in it (per `memory/project_fractalos_console.md`). The `logsvc.c`
 ring-buffer design is the better reference implementation.
 
 **Action:** The `logsvc_query()` filter logic, the `LOG_AUDIT` bypass, and the JSON
@@ -129,7 +129,7 @@ Its 64-file / 4KB-per-file limits are intentional (small enough to be trivially 
 
 **Action:** None. Do not delete. This file SHOULD remain as the canonical swap target.
 It should eventually gain a Microkit PD wrapper so it is directly loadable as a swap slot.
-The `services/abi/agentos_service_abi.h` file it aligns with should also be kept.
+The `services/abi/fractalos_service_abi.h` file it aligns with should also be kept.
 
 ---
 
@@ -192,8 +192,8 @@ They are documentation placeholders, not code. Safe to retain as-is.
 
 The `userspace/sim/` crate does **not** import any `userspace/servers/` crate.
 The sim has its own independent implementations:
-- `userspace/sim/src/eventbus.rs` — `SimEventBus` (closure-based, std, independent of `agentos-event-bus`)
-- `userspace/sim/src/caps.rs` — `SimCapStore` (independent of `agentos-capability-broker`)
+- `userspace/sim/src/eventbus.rs` — `SimEventBus` (closure-based, std, independent of `fractalos-event-bus`)
+- `userspace/sim/src/caps.rs` — `SimCapStore` (independent of `fractalos-capability-broker`)
 
 This means the `userspace/servers/` crates are currently **orphaned** — no other crate in
 the workspace depends on them. They compile as workspace members but nothing links against them.
@@ -221,13 +221,13 @@ revoke API with audit log. Currently orphaned (sim has its own `SimCapStore`).
    `Cargo.toml`.
 2. Merge `userspace/sim/src/eventbus.rs` (`SimEventBus`) into this crate under a
    `simulation` feature flag. Currently `SimEventBus` uses `std` (closures, `HashMap`)
-   while `agentos-event-bus` is `no_std`. They model the same system.
+   while `fractalos-event-bus` is `no_std`. They model the same system.
 3. Long-term: publish the `EventEntry` type and topic constants as shared definitions
    usable by both the simulator and the kernel PD integration tests.
 
 ### `userspace/servers/tool-registry/` — LABEL as simulation model; add list_json
 
-**Status:** 17 unit tests. Depends on `agentos-sdk`. Currently orphaned.
+**Status:** 17 unit tests. Depends on `fractalos-sdk`. Currently orphaned.
 
 **Recommended action:**
 1. Add `description = "Simulation model of the ToolSvc — NOT deployed on seL4"` to
@@ -238,7 +238,7 @@ revoke API with audit log. Currently orphaned (sim has its own `SimCapStore`).
 
 ### `userspace/servers/model-proxy/` — LABEL as simulation model; guard HTTP behind feature
 
-**Status:** No tests visible. Depends on `agentos-sdk`. Optional `std` feature enables
+**Status:** No tests visible. Depends on `fractalos-sdk`. Optional `std` feature enables
 reqwest/tokio HTTP backend. `BackendType::CodingCli { cli_path }` is dev-only.
 
 **Recommended action:**
@@ -253,7 +253,7 @@ reqwest/tokio HTTP backend. `BackendType::CodingCli { cli_path }` is dev-only.
 
 ### `userspace/servers/vibe-engine/` — KEEP, already has sim integration
 
-**Status:** Correctly integrated. The crate has an optional `agentos-sim` dependency
+**Status:** Correctly integrated. The crate has an optional `fractalos-sim` dependency
 (behind the `std` feature) and is the most complete of all the server crates. `wasm_validator.rs`
 has tests exercised via the sim. This crate is architecturally correct.
 
@@ -283,21 +283,21 @@ add_library(netstack STATIC services/netstack/netstack.c)  # line 105
 add_library(blobsvc  STATIC services/blobsvc/blobsvc.c)   # line 112
 ```
 
-Both `netstack` and `blobsvc` are linked into `agentos-init` (line 141–143) but their
+Both `netstack` and `blobsvc` are linked into `fractalos-init` (line 141–143) but their
 source directories do not exist. The CMake build is currently broken for these targets.
 
 **Action:** Remove the `netstack` and `blobsvc` library declarations and their corresponding
 `target_link_libraries` entries from `CMakeLists.txt`. The real network functionality is in
 the `net_server.c` Microkit PD; there is no equivalent CAmkES service for block storage.
 
-Also remove `msgbus`, `toolsvc`, `modelsvc`, and `logsvc` from the `agentos-init` link
+Also remove `msgbus`, `toolsvc`, `modelsvc`, and `logsvc` from the `fractalos-init` link
 libraries once those services are confirmed superseded by their kernel PD counterparts.
 `capstore` and `memfs` may be retained temporarily as library dependencies for the old
 CAmkES init task.
 
 ---
 
-## V2 Violation: `kernel/agentos-root-task/src/js_runtime.c` (Deferred)
+## V2 Violation: `kernel/fractalos-root-task/src/js_runtime.c` (Deferred)
 
 The audit identified `js_runtime.c` as a kernel PD that evaluates JavaScript (opcodes
 `OP_JS_EVAL`, `OP_JS_CALL`, `OP_JS_LOAD_MODULE`). This is a constitutional violation even

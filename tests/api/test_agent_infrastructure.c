@@ -10,22 +10,22 @@
  *                    spawn flow end-to-end, unknown opcode rejection
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_agent_infra \
  *      tests/api/test_agent_infrastructure.c && /tmp/test_agent_infra
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
 /*
- * Pull in init_agent.c under AGENTOS_TEST_HOST.  All functions inside it are
+ * Pull in init_agent.c under FRACTALOS_TEST_HOST.  All functions inside it are
  * declared static, so they are visible only within this translation unit.
  * worker.c, spawn_server.c, and app_slot.c define their own static g_srv,
  * g_slot, etc. — including them in the same TU would cause redefinition errors
@@ -38,7 +38,7 @@
  * contract (opcode numbers, data layout, error codes) that the real PD
  * implementations honour.
  */
-#include "../../kernel/agentos-root-task/src/init_agent.c"
+#include "../../kernel/fractalos-root-task/src/init_agent.c"
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Helper: little-endian read/write (defined before use to avoid shadowing   */
@@ -714,6 +714,6 @@ int main(void) {
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_test_agent_infra_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_test_agent_infra_dummy;
+#endif /* FRACTALOS_TEST_HOST */

@@ -1,0 +1,19 @@
+{
+  "schema": "fractalos.wg_native_netmap_feed.v1",
+  "task_id": "fos-gz0.5",
+  "generated_at": "2026-08-25T01:44:13Z",
+  "controlplane_revision": "01dc18ed76ea22c6e29f83281cefb9de0b0c14c8",
+  "proof_class": "host_feed",
+  "claims_live_native_join": false,
+  "tool": "tools/wg-headscale-netmap",
+  "fixture": "tests/fixtures/headscale_nodes_two.json",
+  "packed_bytes": 104,
+  "apply_suite": "test_wg_netmap",
+  "status": "PASSING",
+  "remaining": [
+    "Noise/ts2021 login to Headscale control plane from FractalOS",
+    "Live native join without guest tailscaled",
+    "Interoperate with standard Tailscale clients from wg_net PD"
+  ],
+  "note": "Interim multi-machine (14.19) uses Tailscale clients; this feed is the native netmap bridge once login exists"
+}

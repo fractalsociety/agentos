@@ -3,8 +3,8 @@
  *
  * // STATUS: IMPLEMENTED
  *
- * This is the canonical contract for the net-service device service in agentOS.
- * The concrete implementation lives in kernel/agentos-root-task/src/net_server.c,
+ * This is the canonical contract for the net-service device service in FractalOS.
+ * The concrete implementation lives in kernel/fractalos-root-task/src/net_server.c,
  * with the lwIP shim in lwip_shim.c.
  *
  * The net-service provides virtual NIC (vNIC) creation, ACL-gated packet
@@ -28,7 +28,7 @@
  *   read-write mapping of the relevant packet-shmem slot at guest OS creation
  *   time.  The guest discovers its vNIC id via the NET_SVC_OP_CONNECT reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

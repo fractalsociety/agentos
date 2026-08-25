@@ -21,7 +21,7 @@
  *   Callers must tolerate extra trailing bytes in cap_audit_entry_t;
  *   the _pad field is reserved and must be zero on send.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

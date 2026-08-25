@@ -3,7 +3,7 @@
 ## Overview
 
 ToolSvc is the central registry and dispatcher for all callable tools in
-agentOS.  It provides:
+FractalOS.  It provides:
 
 - Built-in and administrator-configured external tool registration
 - MCP-compatible tool discovery (JSON format matching Model Context Protocol)
@@ -89,6 +89,6 @@ inherited.
 ## Source Files
 
 - `services/toolsvc/tool_svc.c` — target implementation
-- `kernel/agentos-root-task/src/mcp_transport.c` — isolated native transport
+- `kernel/fractalos-root-task/src/mcp_transport.c` — isolated native transport
 - `tools/mcp_transport_proxy.py` — shared MCP stdio adapter
 - `userspace/servers/tool-registry/src/lib.rs` — Rust userspace server

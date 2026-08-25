@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Boot agentOS in QEMU and verify the boot banner appears within 30 seconds.
+# Boot FractalOS in QEMU and verify the boot banner appears within 30 seconds.
 set -euo pipefail
 
-IMAGE="${1:-build/qemu_virt_riscv64/agentos.img}"
-BANNER="${2:-agentOS v0.1.0}"
+IMAGE="${1:-build/qemu_virt_riscv64/fractalos.img}"
+BANNER="${2:-FractalOS v0.1.0}"
 TIMEOUT="${3:-30}"
 
 if [[ ! -f "$IMAGE" ]]; then

@@ -2,7 +2,7 @@
 
 ## Overview
 
-NetServer is the network isolation layer for agentOS.  All TCP/IP traffic
+NetServer is the network isolation layer for FractalOS.  All TCP/IP traffic
 from agent workloads is mediated through this passive PD.  Agents never hold
 raw network capabilities; instead they request vNICs and send/receive packets
 through the server's shared memory ring buffers.
@@ -60,7 +60,7 @@ their slot, then read/write packets at offsets within that slot.
 | `NET_OP_HEALTH`       | 0xB8  | Liveness probe |
 | `NET_OP_CONN_STATE`   | 0xB9  | Query lwIP connection state |
 | `NET_OP_TCP_CLOSE`    | 0xBA  | Close lwIP TCP connection |
-| `NET_OP_HTTP_POST`    | 0x500 | HTTP POST proxy to agentOS bridge |
+| `NET_OP_HTTP_POST`    | 0x500 | HTTP POST proxy to FractalOS bridge |
 
 ## Error Codes
 
@@ -89,6 +89,6 @@ To wire up smoltcp, implement the `EthernetInterface` callbacks at every
 
 ## Source Files
 
-- `kernel/agentos-root-task/include/net_server.h` — canonical opcode and
+- `kernel/fractalos-root-task/include/net_server.h` — canonical opcode and
   struct definitions (the authoritative source for OP_NET_* values)
-- `kernel/agentos-root-task/src/` — net_server.c implementation
+- `kernel/fractalos-root-task/src/` — net_server.c implementation

@@ -40,7 +40,12 @@ pub fn build_image(wasm: &[u8], service_name: &str, service_id: u32) -> Vec<u8> 
     name_field[..copy_len].copy_from_slice(&name_bytes[..copy_len]);
     header.extend_from_slice(&name_field);
 
-    assert_eq!(header.len(), HEADER_SIZE, "header must be exactly {} bytes", HEADER_SIZE);
+    assert_eq!(
+        header.len(),
+        HEADER_SIZE,
+        "header must be exactly {} bytes",
+        HEADER_SIZE
+    );
 
     // Pad to CODE_OFFSET
     let padding = CODE_OFFSET - HEADER_SIZE;
@@ -56,7 +61,10 @@ pub fn build_image(wasm: &[u8], service_name: &str, service_id: u32) -> Vec<u8> 
 // ── CLI ───────────────────────────────────────────────────────────────── //
 
 #[derive(Parser, Debug)]
-#[command(name = "make-swap-image", about = "Build a VIBE swap slot image from a WASM binary")]
+#[command(
+    name = "make-swap-image",
+    about = "Build a VIBE swap slot image from a WASM binary"
+)]
 struct Cli {
     /// Input .wasm file
     input: PathBuf,
@@ -76,8 +84,8 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let wasm = std::fs::read(&cli.input)
-        .with_context(|| format!("reading {}", cli.input.display()))?;
+    let wasm =
+        std::fs::read(&cli.input).with_context(|| format!("reading {}", cli.input.display()))?;
 
     let image = build_image(&wasm, &cli.service_name, cli.service_id);
 
@@ -123,10 +131,7 @@ mod tests {
         let wasm = sample_wasm();
         let img = build_image(&wasm, "test_svc", 1);
         // Bytes at CODE_OFFSET should match the start of the WASM input
-        assert!(
-            img.len() >= CODE_OFFSET + wasm.len(),
-            "image too short"
-        );
+        assert!(img.len() >= CODE_OFFSET + wasm.len(), "image too short");
         assert_eq!(
             &img[CODE_OFFSET..CODE_OFFSET + wasm.len()],
             wasm.as_slice(),

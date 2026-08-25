@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run immutable AgentOS ExecSvc profiles from a dedicated VirtIO console."""
+"""Run immutable FractalOS ExecSvc profiles from a dedicated VirtIO console."""
 
 from __future__ import annotations
 
@@ -21,9 +21,9 @@ from collections.abc import Callable
 MAGIC = 0x45584741
 VERSION = 1
 PROFILE_C11_COMPILE = 1
-PROFILE_AGENTOS_REPO_TEST = 2
-PROFILE_AGENTOS_REPO_SEARCH = 3
-PROFILE_AGENTOS_REPO_READ = 4
+PROFILE_FRACTALOS_REPO_TEST = 2
+PROFILE_FRACTALOS_REPO_SEARCH = 3
+PROFILE_FRACTALOS_REPO_READ = 4
 REQUEST_HEADER = struct.Struct("<IIIIII")
 RESPONSE_HEADER = struct.Struct("<IIiII")
 REPO_BUNDLE_HEADER = struct.Struct("<IIII")
@@ -106,7 +106,7 @@ def run_c11_compile(source: bytes, compiler: str, timeout: float) -> tuple[int, 
         "-x", "c", "-std=c11", "-fsyntax-only", "-nostdinc",
         "-Wall", "-Wextra", "-Werror", "-Wpedantic", "-",
     ]
-    with tempfile.TemporaryDirectory(prefix="agentos-exec-") as work:
+    with tempfile.TemporaryDirectory(prefix="fractalos-exec-") as work:
         env = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"}
         try:
             completed = subprocess.run(
@@ -341,7 +341,7 @@ def _sandboxed_repo_argv(workspace: pathlib.Path,
     ]
 
 
-def run_agentos_repo_test(payload: bytes, repository_root: str | None,
+def run_fractalos_repo_test(payload: bytes, repository_root: str | None,
                           test_runner: str, timeout: float) -> tuple[int, bytes]:
     overlays = parse_repo_overlays(payload)
     if repository_root is None:
@@ -349,7 +349,7 @@ def run_agentos_repo_test(payload: bytes, repository_root: str | None,
     root = pathlib.Path(repository_root).resolve()
     if not root.is_dir() or not (root / ".git").exists():
         raise ValueError("managed repository root is not a Git worktree")
-    with tempfile.TemporaryDirectory(prefix="agentos-repo-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="fractalos-repo-") as temporary:
         workspace = pathlib.Path(temporary).resolve()
         _extract_git_snapshot(root, workspace, min(timeout, 30.0))
         initialized = subprocess.run(
@@ -370,7 +370,7 @@ def run_agentos_repo_test(payload: bytes, repository_root: str | None,
             "PATH": "/usr/bin:/bin",
             "LANG": "C", "LC_ALL": "C", "HOME": str(workspace),
             "TMPDIR": str(sandbox_tmp),
-            "AGENTOS_REPO_AGENT_TASK": "1",
+            "FRACTALOS_REPO_AGENT_TASK": "1",
         }
         try:
             completed = subprocess.run(
@@ -401,20 +401,20 @@ def make_runner(compiler: str, timeout: float,
     def run(profile: int, source: bytes, output_capacity: int) -> tuple[int, int, bytes]:
         if profile == PROFILE_C11_COMPILE:
             exit_code, output = run_c11_compile(source, compiler, timeout)
-        elif profile == PROFILE_AGENTOS_REPO_TEST:
+        elif profile == PROFILE_FRACTALOS_REPO_TEST:
             if test_runner is None:
                 return 3, -1, b""
             try:
-                exit_code, output = run_agentos_repo_test(
+                exit_code, output = run_fractalos_repo_test(
                     source, repository_root, test_runner, repository_timeout)
             except ValueError as exc:
                 exit_code, output = 2, (str(exc) + "\n").encode()
-        elif profile == PROFILE_AGENTOS_REPO_SEARCH:
+        elif profile == PROFILE_FRACTALOS_REPO_SEARCH:
             if repository_index is None:
                 exit_code, output = 2, b"repository index is not configured\n"
             else:
                 exit_code, output = repository_index.search(source, output_capacity)
-        elif profile == PROFILE_AGENTOS_REPO_READ:
+        elif profile == PROFILE_FRACTALOS_REPO_READ:
             if repository_index is None:
                 exit_code, output = 2, b"repository index is not configured\n"
             else:
@@ -435,9 +435,9 @@ def serve(sock: socket.socket, runner: Runner, trace: bool = False) -> None:
         raw = recv_exact(sock, REQUEST_HEADER.size)
         magic, version, profile, source_len, output_cap, request_tag = REQUEST_HEADER.unpack(raw)
         if magic != MAGIC or version != VERSION:
-            raise ValueError("invalid AgentOS exec transport header")
+            raise ValueError("invalid FractalOS exec transport header")
         if not 0 < source_len <= SOURCE_MAX or not 0 < output_cap <= OUTPUT_MAX:
-            raise ValueError("AgentOS exec transport bounds violation")
+            raise ValueError("FractalOS exec transport bounds violation")
         source = recv_exact(sock, source_len)
         if trace:
             print(

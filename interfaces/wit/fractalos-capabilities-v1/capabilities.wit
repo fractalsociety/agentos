@@ -125,6 +125,7 @@ interface task-control-plane {
         verify-required,
         evidence-mismatch,
         promotion-forbidden,
+        evidence-consumed,
     }
 
     record submission {
@@ -188,12 +189,22 @@ interface task-control-plane {
     ) -> result<budget, task-error>;
 
     /// Attaches digest-only commit/test evidence to a terminal task.
+    /// Rejected results carry repair-safe feedback only (no held-out leakage).
     task-verify: func(
         task: task-handle,
         evidence: verify-evidence,
         authority-epoch: u32,
         nonblocking: bool,
     ) -> result<verify-status, task-error>;
+
+    /// Consumes matching successful unconsumed TASK_VERIFY evidence exactly once.
+    commit: func(
+        task: task-handle,
+        candidate-root: digest,
+        evidence-sequence: u32,
+        authority-epoch: u32,
+        nonblocking: bool,
+    ) -> result<u32, task-error>;
 
     get-terminal-result: func(
         task: task-handle,
@@ -250,11 +261,45 @@ interface events {
 }
 
 interface actors {
-    use common-types.{object-id, agent-handle, task-handle, constraints, error-code};
+    use common-types.{object-id, agent-handle, task-handle, constraints, error-code, scope-class};
+
+    record mailbox-message {
+        sequence: u64,
+        causal-parent: u64,
+        scope: scope-class,
+        payload: object-id,
+    }
+
     /// @effect actor-control
+    /// Returns an AgentHandle immediately; completion is mailbox/event driven.
     spawn: func(specification: object-id, limits: constraints) -> result<agent-handle, error-code>;
     /// @effect actor-control
+    /// Returns a TaskHandle immediately; child caps/budgets must be subsets.
     delegate: func(agent: agent-handle, objective: object-id, limits: constraints) -> result<task-handle, error-code>;
+    /// @effect actor-control
+    /// Causal mailbox append; sequence must be head+1 with matching parent.
+    deliver: func(agent: agent-handle, message: mailbox-message, limits: constraints) -> result<u64, error-code>;
+    /// @effect actor-control
+    /// Nonblocking poll of the durable mailbox head.
+    poll-mailbox: func(agent: agent-handle, limits: constraints) -> result<mailbox-message, error-code>;
+
+    record actor-memory-stats {
+        active-count: u32,
+        dormant-count: u32,
+        active-resident-bytes: u64,
+        dormant-metadata-bytes: u64,
+        frontier-bytes: u64,
+    }
+
+    /// @effect actor-control
+    /// Checkpoint idle actor to an immutable root and release resident harness.
+    passivate: func(agent: agent-handle, checkpoint-root: object-id, limits: constraints) -> result<object-id, error-code>;
+    /// @effect actor-control
+    /// Restore a dormant actor after quota/authority validation; lineage preserved.
+    reactivate: func(agent: agent-handle, checkpoint-root: object-id, event-token: u64, quota-units: u64, limits: constraints) -> result<agent-handle, error-code>;
+    /// @effect actor-control
+    /// Active-frontier memory proof: dormant actors cost metadata, not harnesses.
+    memory-stats: func(limits: constraints) -> result<actor-memory-stats, error-code>;
 }
 
 interface budget {

@@ -20,13 +20,13 @@
  *   - C11, no libc except stdint.h / stdbool.h / stddef.h
  *   - No recursion — post-order walk uses an iterative stack (see POST_ORDER_STACK_DEPTH)
  *   - No Microkit references
- *   - AGENTOS_TEST_HOST stubs for all seL4 calls
+ *   - FRACTALOS_TEST_HOST stubs for all seL4 calls
  *
- * Host-test build (-DAGENTOS_TEST_HOST):
+ * Host-test build (-DFRACTALOS_TEST_HOST):
  *   seL4_TCB_Suspend, seL4_CNode_Revoke, seL4_CNode_Delete, and
  *   cap_tree_remove are replaced by stubs defined in the including test file.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -60,7 +60,7 @@
 
 /* ── seL4 / cap_tree stubs (host test build) ─────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /*
  * The test file must provide forward declarations of these stub functions
@@ -90,7 +90,7 @@ extern void       stub_cap_tree_walk_pd_shim(cap_tree_t *tree, uint32_t pd_id,
 #define cap_tree_walk_pd(tree, pd_id, visitor, ctx) \
     stub_cap_tree_walk_pd_shim((tree), (pd_id), (visitor), (ctx))
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Module-level static state ───────────────────────────────────────────── */
 

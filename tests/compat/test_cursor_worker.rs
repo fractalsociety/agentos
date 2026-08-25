@@ -1,12 +1,14 @@
 //! Cursor compatibility contract tests for fractal-worker/v1.
 
 use fractal_worker_compat::{
-    apply_peak_rss, collect_changed_paths, cursor_fixture_dir, cursor_manifest_path,
-    enforce_allowed_files, extract_usage, map_terminal_result, normalize_jsonl_events,
-    parse_version_output, redact_text, scan_manifest_safety, validate_workspace_input,
-    worker_wit_path, CompatError, CursorLauncher, ExitClass, OpenSessionOpts, SecretHandle,
-    SessionEventKind, SessionState, WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
+    apply_peak_rss, assess_provider_readiness, collect_changed_paths, cursor_fixture_dir,
+    cursor_manifest_path, enforce_allowed_files, extract_usage, map_terminal_result,
+    normalize_jsonl_events, parse_version_output, redact_text, scan_manifest_safety,
+    validate_workspace_input, worker_wit_path, CompatError, CursorLauncher, ExitClass,
+    LiveEnvProbe, OpenSessionOpts, ProviderProofClass, SecretHandle, SessionEventKind,
+    SessionState, WorkerManifest, WorkspaceInput, TERMINAL_RESULT_SCHEMA,
 };
+use std::collections::HashMap;
 use std::fs;
 
 fn load_manifest() -> WorkerManifest {
@@ -33,6 +35,10 @@ fn cursor_worker_wit_declares_provider_neutral_session_surface() {
         "cancel: func",
         "enforce-allowed-files: func",
         "redact-text: func",
+        "enum provider-proof-class",
+        "record provider-readiness-report",
+        "record remote-session-handle",
+        "assess-provider-readiness: func",
         "world fractal-worker-v1",
     ] {
         assert!(wit.contains(required), "worker.wit missing `{required}`");
@@ -247,4 +253,127 @@ fn cursor_adapter_is_wired_and_runs_fixture_session() {
     )
     .expect("policy denial returns a terminal envelope");
     assert_eq!(denied.exit, ExitClass::PolicyDenied);
+}
+
+#[test]
+fn cursor_empty_version_and_malformed_jsonl_are_rejected() {
+    assert!(parse_version_output("cursor", "cursor", "cursor", "   ", 1).is_err());
+    assert!(normalize_jsonl_events("{\"no_type\":true}\n").is_err());
+    assert!(normalize_jsonl_events("not-json\n").is_err());
+}
+
+#[test]
+fn cursor_undeclared_effects_rejected_and_adapter_mints_no_capabilities() {
+    let m = load_manifest();
+    assert!(m.grants_no_authority());
+    assert!(!m.policy.grant_shell);
+    assert!(!m.policy.grant_network);
+    assert!(!m.policy.grant_filesystem);
+    assert!(!m.policy.grant_environment);
+    assert!(!m.policy.persist_credentials);
+
+    let mut bad = m.clone();
+    bad.policy.grant_shell = true;
+    assert!(!bad.grants_no_authority());
+    assert!(bad.validate().is_err());
+
+    let mut net = m.clone();
+    net.policy.grant_network = true;
+    assert!(net.validate().is_err());
+}
+
+#[test]
+fn cursor_malformed_terminal_envelope_missing_schema_is_detectable() {
+    let m = load_manifest();
+    let jsonl = fs::read_to_string(cursor_fixture_dir().join("session.jsonl")).unwrap();
+    let events = normalize_jsonl_events(&jsonl).unwrap();
+    let version = parse_version_output("cursor", "cursor", "cursor", "0.46.0", 0).unwrap();
+    let mut result = map_terminal_result(
+        &m,
+        "sess-schema",
+        version,
+        events,
+        vec![],
+        Default::default(),
+        None,
+    );
+    assert_eq!(result.schema, TERMINAL_RESULT_SCHEMA);
+    result.schema = String::new();
+    let encoded = serde_json::to_value(&result).unwrap();
+    assert!(
+        encoded
+            .get("schema")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .is_empty(),
+        "empty schema must be visible to validators"
+    );
+    assert_ne!(
+        encoded.get("schema").and_then(|v| v.as_str()),
+        Some(TERMINAL_RESULT_SCHEMA)
+    );
+}
+
+struct MapEnv {
+    vars: HashMap<&'static str, String>,
+    paths: HashMap<&'static str, bool>,
+}
+
+impl LiveEnvProbe for MapEnv {
+    fn var(&self, key: &str) -> Option<String> {
+        self.vars.get(key).cloned()
+    }
+    fn executable_exists(&self, _name: &str) -> bool {
+        false
+    }
+    fn path_executable(&self, path: &str) -> bool {
+        self.paths.get(path).copied().unwrap_or(false)
+    }
+    fn now_unix_ms(&self) -> u64 {
+        1
+    }
+}
+
+#[test]
+fn cursor_live_without_cli_reports_blocked_external_not_success() {
+    let env = MapEnv {
+        vars: HashMap::from([
+            ("FRACTAL_CURSOR_LIVE", "1".into()),
+            // no executable, no secret → blocked_external
+        ]),
+        paths: HashMap::new(),
+    };
+    let report = assess_provider_readiness(&env);
+    let cursor = report
+        .providers
+        .iter()
+        .find(|p| p.provider == "cursor")
+        .expect("cursor row");
+    assert_eq!(cursor.proof_class, ProviderProofClass::BlockedExternal);
+    assert!(!cursor.claims_live_product);
+    assert!(cursor.live_requested);
+    assert!(!cursor.executable_resolved);
+    assert!(
+        cursor.blocker.as_deref().unwrap_or("").contains("executable")
+            || cursor
+                .blocker
+                .as_deref()
+                .unwrap_or("")
+                .contains("FRACTAL_CURSOR_SECRET_HANDLE"),
+        "blocker must name missing prerequisite: {:?}",
+        cursor.blocker
+    );
+
+    // Without live flag → host fixture, never a fake live success.
+    let fixture_env = MapEnv {
+        vars: HashMap::new(),
+        paths: HashMap::new(),
+    };
+    let fixture = assess_provider_readiness(&fixture_env)
+        .providers
+        .into_iter()
+        .find(|p| p.provider == "cursor")
+        .unwrap();
+    assert_eq!(fixture.proof_class, ProviderProofClass::HostFixture);
+    assert!(!fixture.claims_live_product);
 }

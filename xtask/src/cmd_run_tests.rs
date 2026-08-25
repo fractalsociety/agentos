@@ -237,10 +237,10 @@ pub fn validate_boot_health(output: &str) -> Result<()> {
     let marker = output
         .lines()
         .find_map(|line| {
-            line.find("AGENTOS_BOOT_HEALTH ")
-                .map(|start| &line[start + "AGENTOS_BOOT_HEALTH ".len()..])
+            line.find("FRACTALOS_BOOT_HEALTH ")
+                .map(|start| &line[start + "FRACTALOS_BOOT_HEALTH ".len()..])
         })
-        .context("target emitted no AGENTOS_BOOT_HEALTH record")?;
+        .context("target emitted no FRACTALOS_BOOT_HEALTH record")?;
     let mut registered = None;
     let mut disabled = None;
     let mut failed = None;
@@ -570,15 +570,15 @@ fn spawn_qemu_test_image(
                 .arg("-device")
                 .arg(format!(
                     "loader,file={},addr=0x48000000",
-                    build_dir.join("agentos.img").display()
+                    build_dir.join("fractalos.img").display()
                 ))
                 .arg("-netdev")
                 .arg(format!(
-                    "socket,id=agentos_test_net,udp=127.0.0.1:{injector_port},localaddr=127.0.0.1:{qemu_port}"
+                    "socket,id=fractalos_test_net,udp=127.0.0.1:{injector_port},localaddr=127.0.0.1:{qemu_port}"
                 ))
                 .arg("-device")
-                .arg("virtio-net-device,netdev=agentos_test_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off");
-            if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
+                .arg("virtio-net-device,netdev=fractalos_test_net,bus=virtio-mmio-bus.0,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,guest_announce=off,mq=off,ctrl_mac_addr=off,ctrl_guest_offloads=off");
+            if std::env::var_os("FRACTALOS_LIVE_MODEL_TEST").is_some() {
                 c.arg("-chardev")
                     .arg(format!(
                         "socket,id=model_pd_char,path={},server=on,wait=off",
@@ -698,8 +698,8 @@ fn spawn_qemu_test_image(
             }
         })
     });
-    let model_proxy = if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
-        let bridge_url = std::env::var("AGENTOS_MODEL_BRIDGE_URL")
+    let model_proxy = if std::env::var_os("FRACTALOS_LIVE_MODEL_TEST").is_some() {
+        let bridge_url = std::env::var("FRACTALOS_MODEL_BRIDGE_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:8790/v1/chat/completions".to_string());
         let mut command = std::process::Command::new("python3");
         command
@@ -709,7 +709,7 @@ fn spawn_qemu_test_image(
             .arg("--bridge-url")
             .arg(bridge_url)
             .stdout(Stdio::null());
-        if std::env::var_os("AGENTOS_MODEL_TRANSPORT_TRACE").is_some() {
+        if std::env::var_os("FRACTALOS_MODEL_TRANSPORT_TRACE").is_some() {
             command.arg("--trace");
         }
         let proxy = command
@@ -720,7 +720,7 @@ fn spawn_qemu_test_image(
     } else {
         None
     };
-    let exec_proxy = if std::env::var_os("AGENTOS_LIVE_MODEL_TEST").is_some() {
+    let exec_proxy = if std::env::var_os("FRACTALOS_LIVE_MODEL_TEST").is_some() {
         let mut command = std::process::Command::new("python3");
         command
             .arg(repo_root.join("tools/exec_transport_proxy.py"))
@@ -729,7 +729,7 @@ fn spawn_qemu_test_image(
             .arg("--repository-root")
             .arg(repo_root)
             .stdout(Stdio::null());
-        if std::env::var_os("AGENTOS_EXEC_TRANSPORT_TRACE").is_some() {
+        if std::env::var_os("FRACTALOS_EXEC_TRANSPORT_TRACE").is_some() {
             command.arg("--trace");
         }
         let proxy = command
@@ -750,13 +750,13 @@ fn spawn_qemu_test_image(
             .arg("--socket")
             .arg(&mcp_socket_path)
             .stdout(Stdio::null());
-        if let Ok(server) = std::env::var("AGENTOS_MCP_SERVER_COMMAND_JSON") {
+        if let Ok(server) = std::env::var("FRACTALOS_MCP_SERVER_COMMAND_JSON") {
             command.arg("--server-command-json").arg(server);
         }
-        if let Ok(server_env) = std::env::var("AGENTOS_MCP_SERVER_ENV_JSON") {
+        if let Ok(server_env) = std::env::var("FRACTALOS_MCP_SERVER_ENV_JSON") {
             command.arg("--server-env-json").arg(server_env);
         }
-        if std::env::var_os("AGENTOS_MCP_TRANSPORT_TRACE").is_some() {
+        if std::env::var_os("FRACTALOS_MCP_TRANSPORT_TRACE").is_some() {
             command.arg("--trace");
         }
         let proxy = command
@@ -847,7 +847,7 @@ fn wait_for_tap_done(
                     if let Some(elapsed) = boot_ready_ns {
                         records.push(TargetPerfRecord {
                             schema: 1,
-                            metric: "qemu_spawn_to_agentos_ready".to_string(),
+                            metric: "qemu_spawn_to_fractalos_ready".to_string(),
                             unit: "ns/boot".to_string(),
                             samples: 1,
                             counter_hz: 1_000_000_000,
@@ -929,22 +929,22 @@ mod tests {
     #[test]
     fn boot_health_rejects_root_faults_and_registration_failures() {
         assert!(validate_boot_health(concat!(
-            "AGENTOS_BOOT_HEALTH ns_registered=3 ns_disabled=3 ns_failed=0\n",
-            "agentOS boot complete\n",
+            "FRACTALOS_BOOT_HEALTH ns_registered=3 ns_disabled=3 ns_failed=0\n",
+            "FractalOS boot complete\n",
         ))
         .is_ok());
         assert!(validate_boot_health(concat!(
             "[rt] FAULT label=0x6 badge=0x17 pd=fault_handler\n",
-            "AGENTOS_BOOT_HEALTH ns_registered=3 ns_disabled=3 ns_failed=0\n",
-            "agentOS boot complete\n",
+            "FRACTALOS_BOOT_HEALTH ns_registered=3 ns_disabled=3 ns_failed=0\n",
+            "FractalOS boot complete\n",
         ))
         .is_err());
         assert!(validate_boot_health(concat!(
-            "AGENTOS_BOOT_HEALTH ns_registered=0 ns_disabled=3 ns_failed=3\n",
-            "agentOS boot complete\n",
+            "FRACTALOS_BOOT_HEALTH ns_registered=0 ns_disabled=3 ns_failed=3\n",
+            "FractalOS boot complete\n",
         ))
         .is_err());
-        assert!(validate_boot_health("agentOS boot complete\n").is_err());
+        assert!(validate_boot_health("FractalOS boot complete\n").is_err());
     }
 
     #[test]

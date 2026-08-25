@@ -1,11 +1,11 @@
-// trace-replay — agentOS IPC trace validator and replay tool
+// trace-replay — FractalOS IPC trace validator and replay tool
 //
 // Port of tools/trace_replay.mjs
 //
 // Usage:
 //   trace-replay <trace.jsonl|-> [--validate] [--summary]
 //
-// Copyright (c) 2026 The agentOS Project
+// Copyright (c) 2026 The FractalOS Project
 // SPDX-License-Identifier: BSD-2-Clause
 
 use anyhow::Result;
@@ -19,7 +19,7 @@ use std::io::{BufRead, BufReader};
 #[derive(Parser, Debug)]
 #[command(
     name = "trace-replay",
-    about = "agentOS IPC trace validator and replay tool"
+    about = "FractalOS IPC trace validator and replay tool"
 )]
 struct Cli {
     /// Path to JSONL trace file (use '-' for stdin)
@@ -122,7 +122,7 @@ fn read_events(path: &str) -> Result<Vec<TraceEvent>> {
 
 fn print_summary(events: &[TraceEvent]) {
     println!();
-    println!("── agentOS IPC Trace Summary ──────────────────────────────");
+    println!("── FractalOS IPC Trace Summary ──────────────────────────────");
     println!("  Total events : {}", events.len());
 
     if events.is_empty() {

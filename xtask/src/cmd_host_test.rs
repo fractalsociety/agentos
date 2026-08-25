@@ -1,7 +1,7 @@
-//! `cargo xtask test` — compile and run agentOS host-side test suites.
+//! `cargo xtask test` — compile and run FractalOS host-side test suites.
 //!
 //! Compiles every test suite under `tests/api/` and `tests/integration/`
-//! using the system C compiler with `-DAGENTOS_TEST_HOST`.  Each suite is
+//! using the system C compiler with `-DFRACTALOS_TEST_HOST`.  Each suite is
 //! compiled into a standalone binary, executed, and its TAP output parsed.
 //!
 //! Exit code:
@@ -42,30 +42,30 @@ struct Suite {
 /// stable as new test files are added incrementally.
 const SUITES: &[Suite] = &[
     Suite {
-        // agentos-pkh: RemoteGrant validation and execution-lease fencing.
+        // fos-pkh: RemoteGrant validation and execution-lease fencing.
         name: "test_remote_authority",
         sources: &[
             "tests/security/test_remote_authority.c",
-            "kernel/agentos-root-task/src/auth_server.c",
-            "kernel/agentos-root-task/src/cap_broker.c",
-            "kernel/agentos-root-task/src/mesh_agent.c",
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
+            "kernel/fractalos-root-task/src/auth_server.c",
+            "kernel/fractalos-root-task/src/cap_broker.c",
+            "kernel/fractalos-root-task/src/mesh_agent.c",
+            "kernel/fractalos-root-task/src/agent_task_gateway.c",
         ],
-        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
+        extra_args: &["-DFRACTALOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
-        // agentos-2th: generated mesh frames and RemoteGrant rejection cases.
+        // fos-2th: generated mesh frames and RemoteGrant rejection cases.
         name: "test_remote_grants",
         sources: &[
             "tests/security/test_remote_grants.c",
-            "kernel/agentos-root-task/src/auth_server.c",
-            "kernel/agentos-root-task/src/cap_broker.c",
-            "kernel/agentos-root-task/src/mesh_agent.c",
+            "kernel/fractalos-root-task/src/auth_server.c",
+            "kernel/fractalos-root-task/src/cap_broker.c",
+            "kernel/fractalos-root-task/src/mesh_agent.c",
         ],
-        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
+        extra_args: &["-DFRACTALOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
-        // agentos-d02: companion v1.1 ABI, marshalling, grant, and cursor contract.
+        // fos-d02: companion v1.1 ABI, marshalling, grant, and cursor contract.
         name: "test_companion_export_contract",
         sources: &["tests/contracts/companion_export_test.c"],
         extra_args: &[],
@@ -74,31 +74,182 @@ const SUITES: &[Suite] = &[
         name: "test_agent_task_gateway",
         sources: &[
             "tests/test_agent_task_gateway.c",
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
-            "kernel/agentos-root-task/src/mesh_agent.c",
+            "kernel/fractalos-root-task/src/agent_task_gateway.c",
+            "kernel/fractalos-root-task/src/mesh_agent.c",
         ],
-        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
+        extra_args: &["-DFRACTALOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
-        // agentos-gz0.14.11: FractalOS capabilities v1 contract boundary.
+        // fos-gz0.14.11: FractalOS capabilities v1 contract boundary.
         name: "test_agent_task_contract",
         sources: &["tests/contracts/agent_task_test.c"],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.14.5: canonical append-only Agent event stream.
+        // fos-gz0.14.5: canonical append-only Agent event stream.
         name: "test_agent_event_stream",
         sources: &["tests/test_agent_event_stream.c"],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.7.1: scoped actor handles + causal mailboxes.
+        name: "test_actor_mailbox",
+        sources: &[
+            "tests/test_actor_mailbox.c",
+            "kernel/fractalos-root-task/src/actor_mailbox.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.9: immutable capability service graph + provider swaps.
+        name: "test_service_graph",
+        sources: &[
+            "tests/test_service_graph.c",
+            "kernel/fractalos-root-task/src/service_graph.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.10.3: immutable shared-space replication + verified merge.
+        name: "test_shared_space_replication",
+        sources: &[
+            "tests/test_shared_space_replication.c",
+            "kernel/fractalos-root-task/src/shared_space.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.10.5: external Local Gateway fence (daily + intent + revoke).
+        name: "test_local_gateway",
+        sources: &[
+            "tests/test_local_gateway.c",
+            "kernel/fractalos-root-task/src/local_gateway.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.17: companion gateway projection boundary (no UI/HTTP).
+        name: "test_companion_gateway",
+        sources: &[
+            "tests/test_companion_gateway.c",
+            "kernel/fractalos-root-task/src/companion_gateway.c",
+            "kernel/fractalos-root-task/src/local_gateway.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.8: continual harness E1 snapshot/promote/rollback (no WASM).
+        name: "test_continual_harness",
+        sources: &[
+            "tests/test_continual_harness.c",
+            "kernel/fractalos-root-task/src/continual_harness.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14 / recovered: Agent ISA v0 semantic contract.
+        name: "test_agent_isa_contract",
+        sources: &["tests/contracts/agent_isa_test.c"],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14: futures, execution DAG, rollback, and authority.
+        name: "test_agent_isa_runtime",
+        sources: &[
+            "tests/test_agent_isa_runtime.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14: immutable Agent IR graph nodes lower to Agent ISA.
+        name: "test_agent_ir",
+        sources: &[
+            "tests/test_agent_ir.c",
+            "kernel/fractalos-root-task/src/agent_ir.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.1.1: authenticated asynchronous dispatch contract.
+        name: "test_agent_isa_dispatch_contract",
+        sources: &["tests/contracts/agent_isa_dispatch_test.c"],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.1.1: queue, completion, cancellation, and revocation.
+        name: "test_agent_isa_dispatch",
+        sources: &[
+            "tests/test_agent_isa_dispatch.c",
+            "kernel/fractalos-root-task/src/agent_isa_dispatch.c",
+            "kernel/fractalos-root-task/src/agent_event_emit.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.1.2: capability-selected semantic adapters (no provider names).
+        name: "test_agent_isa_semantic_adapter",
+        sources: &[
+            "tests/test_agent_isa_semantic_adapter.c",
+            "kernel/fractalos-root-task/src/agent_isa_semantic_adapter.c",
+            "kernel/fractalos-root-task/src/agent_event_emit.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.1.3: dispatcher topology + async CHECKPOINT..COMMIT flow.
+        name: "test_agent_isa_topology",
+        sources: &[
+            "tests/test_agent_isa_topology.c",
+            "kernel/fractalos-root-task/src/agent_isa_topology.c",
+            "kernel/fractalos-root-task/src/agent_isa_semantic_adapter.c",
+            "kernel/fractalos-root-task/src/agent_isa_dispatch.c",
+            "kernel/fractalos-root-task/src/agent_event_emit.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.14.5.3: AgentFS descriptors + ISA emit + IPC RECORD/SEAL/REPLAY.
+        name: "test_agent_event_integration",
+        sources: &[
+            "tests/test_agent_event_integration.c",
+            "kernel/fractalos-root-task/src/agent_isa_semantic_adapter.c",
+            "kernel/fractalos-root-task/src/agent_event_emit.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+            "services/agentfs/descriptor_store.c",
+        ],
+        extra_args: &["-DFRACTALOS_TEST_HOST"],
+    },
+    Suite {
+        // fos-gz0.14.6.1: AgentLang parser/type/effect/canonical lowering.
+        name: "test_agent_lang",
+        sources: &[
+            "tests/test_agent_lang.c",
+            "kernel/fractalos-root-task/src/agent_lang.c",
+            "kernel/fractalos-root-task/src/agent_ir.c",
+            "kernel/fractalos-root-task/src/agent_isa.c",
+            "kernel/fractalos-root-task/src/sha256_mini.c",
+        ],
         extra_args: &[],
     },
     Suite {
         name: "test_controller",
         sources: &[
             "tests/api/test_controller.c",
-            "kernel/agentos-root-task/src/agent_task_gateway.c",
-            "kernel/agentos-root-task/src/mesh_agent.c",
+            "kernel/fractalos-root-task/src/agent_task_gateway.c",
+            "kernel/fractalos-root-task/src/mesh_agent.c",
         ],
-        extra_args: &["-DAGENTOS_REMOTE_AUTHORITY_HOST_TEST"],
+        extra_args: &["-DFRACTALOS_REMOTE_AUTHORITY_HOST_TEST"],
     },
     Suite {
         name: "test_cc_contract",
@@ -149,16 +300,16 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.13.1: launcher-validated composable harness graphs.
+        // fos-gz0.13.1: launcher-validated composable harness graphs.
         name: "test_harness_composition_contract",
         sources: &[
             "tests/contracts/harness_composition_test.c",
-            "kernel/agentos-root-task/src/harness_composition.c",
+            "kernel/fractalos-root-task/src/harness_composition.c",
         ],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.13.1: InitAgent owns composition IPC dispatch.
+        // fos-gz0.13.1: InitAgent owns composition IPC dispatch.
         name: "test_init_agent_composition",
         sources: &["tests/test_init_agent_composition.c"],
         extra_args: &[],
@@ -189,71 +340,131 @@ const SUITES: &[Suite] = &[
         extra_args: &[],
     },
     Suite {
-        // agentos-3ev: parameterized-PD startup-record contract.
+        // fos-3ev: parameterized-PD startup-record contract.
         name: "test_pd_startup_record",
         sources: &["tests/test_pd_startup_record.c"],
         extra_args: &[],
     },
     Suite {
-        // agentos-c7i: Ed25519 + fatal cryptographic selftest gate.
+        // fos-c7i: Ed25519 + fatal cryptographic selftest gate.
         name: "test_crypto_selftest",
         sources: &[
             "tests/test_crypto_selftest.c",
-            "kernel/agentos-root-task/src/verify.c",
-            "kernel/agentos-root-task/src/ed25519_verify.c",
-            "kernel/agentos-root-task/src/monocypher.c",
+            "kernel/fractalos-root-task/src/verify.c",
+            "kernel/fractalos-root-task/src/ed25519_verify.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
         ],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.5: WireGuard's RFC 8439 transport AEAD primitive.
+        // fos-gz0.5: WireGuard's RFC 8439 transport AEAD primitive.
         name: "test_wireguard_crypto",
         sources: &[
             "tests/test_wireguard_crypto.c",
-            "kernel/agentos-root-task/src/monocypher.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
         ],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.5: nonce uniqueness and authenticated RX replay window.
+        // fos-gz0.5: nonce uniqueness and authenticated RX replay window.
         name: "test_wireguard_counter",
         sources: &["tests/test_wireguard_counter.c"],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.5: canonical Noise BLAKE2s transcript and KDF vectors.
+        // fos-gz0.5: canonical Noise BLAKE2s transcript and KDF vectors.
         name: "test_wireguard_noise",
         sources: &[
             "tests/test_wireguard_noise.c",
-            "kernel/agentos-root-task/src/wireguard_noise.c",
-            "kernel/agentos-root-task/src/monocypher.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
         ],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.5: wg_net fail-closed handshake/session integration.
+        // fos-gz0.5: wg_net fail-closed handshake/session integration.
         name: "test_wg_net_sessions",
         sources: &[
             "tests/test_wg_net_sessions.c",
-            "kernel/agentos-root-task/src/wireguard_noise.c",
-            "kernel/agentos-root-task/src/monocypher.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/wireguard_derp.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
         ],
         extra_args: &[],
     },
     Suite {
-        // agentos-gz0.5: packet-only mapping and immutable NetServer WG right.
+        // fos-gz0.5: Headscale-style netmap apply + rekey-after-time.
+        name: "test_wg_netmap",
+        sources: &[
+            "tests/test_wg_netmap.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/wireguard_derp.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.5: cookie reply + under-load mac2 gate.
+        name: "test_wg_cookies",
+        sources: &[
+            "tests/test_wg_cookies.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/wireguard_derp.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.5: entropy-backed ephemeral + handshake index.
+        name: "test_wg_entropy",
+        sources: &[
+            "tests/test_wg_entropy.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/wireguard_derp.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.5: DERP Send/Recv framing around opaque WG ciphertext.
+        name: "test_wg_derp",
+        sources: &[
+            "tests/test_wg_derp.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.5: multi-peer UDP/DERP path + roam + timer rekey under traffic.
+        name: "test_wg_dataplane",
+        sources: &[
+            "tests/test_wg_dataplane.c",
+            "kernel/fractalos-root-task/src/wireguard_noise.c",
+            "kernel/fractalos-root-task/src/monocypher.c",
+        ],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-gz0.5: packet-only mapping and immutable NetServer WG right.
         name: "test_net_wg_handoff",
         sources: &["tests/test_net_wg_handoff.c"],
         extra_args: &[],
     },
     Suite {
-        // agentos-681 / agentos-vsi: CC-PD polecat occupancy + log-slot model.
+        // fos-gz0.4: multi-queue ownership rings + TX chain DMA contract.
+        name: "test_net_fastpath",
+        sources: &["tests/test_net_fastpath.c"],
+        extra_args: &[],
+    },
+    Suite {
+        // fos-681 / fos-vsi: CC-PD polecat occupancy + log-slot model.
         // agent_pool.c pulls in the Microkit IPC layer, so force-include the
         // host shim that stubs microkit_mr_get/set.
         name: "test_cc_pd_metrics",
         sources: &[
             "tests/test_cc_pd_metrics.c",
-            "kernel/agentos-root-task/src/agent_pool.c",
+            "kernel/fractalos-root-task/src/agent_pool.c",
         ],
         extra_args: &["-include", "tests/microkit.h"],
     },
@@ -325,7 +536,7 @@ pub fn run(args: &HostTestArgs) -> Result<()> {
     // Include paths always passed to the compiler.
     let include_root = repo_root
         .join("kernel")
-        .join("agentos-root-task")
+        .join("fractalos-root-task")
         .join("include");
     let include_harness = repo_root.join("tests").join("harness");
     let include_api = repo_root.join("tests").join("api");
@@ -352,7 +563,7 @@ pub fn run(args: &HostTestArgs) -> Result<()> {
         // tests/microkit.h`) resolve consistently regardless of invocation cwd.
         cmd.current_dir(&repo_root);
         cmd.args([
-            "-DAGENTOS_TEST_HOST",
+            "-DFRACTALOS_TEST_HOST",
             "-std=c11",
             "-Wall",
             "-Wextra",
@@ -458,7 +669,7 @@ pub fn run(args: &HostTestArgs) -> Result<()> {
     // ── Summary table ─────────────────────────────────────────────────────────
     let total = selected.len();
     println!("┌─────────────────────────────────────────────────────┐");
-    println!("│  agentOS host-side test results                     │");
+    println!("│  FractalOS host-side test results                     │");
     println!("├─────────────────────────────────────────────────────┤");
     println!(
         "│  Total suites:   {:>3}                               │",

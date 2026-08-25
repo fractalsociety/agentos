@@ -1,4 +1,4 @@
-# agentOS — Agent Development Guidelines
+# FractalOS — Agent Development Guidelines
 
 **This file is mandatory reading for any AI agent or developer working on this repository.**
 **Violations of these rules will result in rejected PRs.**
@@ -7,7 +7,7 @@
 
 ## What This Project Is
 
-agentOS is a **seL4 Microkit-based operating system for AI agents**. It runs on bare metal.
+FractalOS is a **seL4 Microkit-based operating system for AI agents**. It runs on bare metal.
 There is no libc. There is no POSIX. There is no userland in the traditional sense.
 The entire OS is a set of cooperating **Protection Domains (PDs)** communicating via
 seL4 IPC. Only seL4 itself runs in Ring 0. Everything else — every OS service, every
@@ -26,8 +26,8 @@ before writing any code.
 There is no HTML. No JavaScript. No CSS. No ncurses. No interactive terminal UI.
 No dashboard. No web interface. No WebSocket bridges. **Nothing that a human looks at.**
 
-agentOS is for agents. Agents use APIs. If someone wants a UI, they build it as an
-**external project** that consumes agentOS IPC contracts. That external project is not
+FractalOS is for agents. Agents use APIs. If someone wants a UI, they build it as an
+**external project** that consumes FractalOS IPC contracts. That external project is not
 this repository.
 
 The **only** exception is `agentctl` — a CLI build/launch/management tool that prints
@@ -42,7 +42,7 @@ structured output (JSON or tab-separated) to stdout and exits. It is a tool, not
 
 ### 2. PURE ASSEMBLY + C + RUST
 
-The core of agentOS is written in:
+The core of FractalOS is written in:
 - **Assembly** (seL4 bootstrap, architecture-specific stubs)
 - **C** (kernel PDs, device drivers, core services) — freestanding, no libc
 - **Rust** (userspace servers, SDK, higher-level services) — `no_std` where applicable
@@ -68,7 +68,7 @@ Redesign as an IPC contract with the appropriate PD.
 Before writing **any** new PD code:
 
 1. Define the IPC contract in a header: `include/contracts/<pd_name>_contract.h`
-2. Add opcodes to `agentos_msg_tag_t` in `agentos.h`
+2. Add opcodes to `fractalos_msg_tag_t` in `fractalos.h`
 3. Define request/reply structs in the contract header
 4. Write a failing test in `tests/contracts/<pd_name>_test.c`
 5. **Then** implement the PD
@@ -81,8 +81,8 @@ Every Protection Domain exposes exactly **one** IPC contract. That contract — 
 in its `_contract.h` header — is the **only** way to interact with the PD.
 
 A contract header defines:
-- Channel IDs (cross-referenced to `agentos.h` constants)
-- Message opcodes (cross-referenced to `agentos_msg_tag_t`)
+- Channel IDs (cross-referenced to `fractalos.h` constants)
+- Message opcodes (cross-referenced to `fractalos_msg_tag_t`)
 - Request structs: `struct <pd>_req_<opcode>`
 - Reply structs: `struct <pd>_reply_<opcode>`
 - Error codes: `enum <pd>_error` (0 is always success)
@@ -90,7 +90,7 @@ A contract header defines:
 
 ### 6. GENERIC BEFORE SPECIFIC
 
-agentOS provides **OS-neutral generic device PDs** for all standard device classes:
+FractalOS provides **OS-neutral generic device PDs** for all standard device classes:
 - `serial_pd` — serial I/O
 - `net_pd` — networking
 - `block_pd` — block storage
@@ -123,10 +123,10 @@ The test suite in `tests/` is the authoritative specification of API behavior.
 ## Repository Structure
 
 ```
-agentOS/
-├── kernel/agentos-root-task/
+FractalOS/
+├── kernel/fractalos-root-task/
 │   ├── include/
-│   │   ├── agentos.h                    # Master header: opcodes, types, constants
+│   │   ├── fractalos.h                    # Master header: opcodes, types, constants
 │   │   └── contracts/                    # Per-PD IPC contract headers
 │   │       ├── eventbus_contract.h
 │   │       ├── serial_contract.h
@@ -202,13 +202,13 @@ agentOS/
 
 1. **Create contract header**: `include/contracts/<name>_contract.h`
    - Define channel IDs, opcodes, request/reply structs, error codes
-   - Add opcodes to `agentos_msg_tag_t` in `agentos.h`
+   - Add opcodes to `fractalos_msg_tag_t` in `fractalos.h`
 
 2. **Write failing test**: `tests/contracts/<name>_test.c`
    - Use `test_framework.h` macros
    - Test every opcode: success path + error paths
 
-3. **Implement PD**: `kernel/agentos-root-task/src/<name>.c`
+3. **Implement PD**: `kernel/fractalos-root-task/src/<name>.c`
    - Include your contract header
    - Handle every opcode in your `notified()` / `protected()` handler
    - Report boot via `MSG_LOG_WRITE` to log drain
@@ -230,7 +230,7 @@ agentOS/
 
 ## How to Add a New Guest OS
 
-1. Create VMM PD: `kernel/agentos-root-task/src/<os>_vmm.c`
+1. Create VMM PD: `kernel/fractalos-root-task/src/<os>_vmm.c`
 2. Include `contracts/guest_contract.h` and `contracts/vmm_contract.h`
 3. Implement the guest binding protocol (§3.1 of PLAN.md):
    - Subscribe to EventBus

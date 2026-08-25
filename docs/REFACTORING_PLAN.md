@@ -1,4 +1,4 @@
-# agentOS Comprehensive Refactoring Plan
+# FractalOS Comprehensive Refactoring Plan
 
 _Generated from full codebase audit + architecture mapping + vibeOS analysis, April 2026_
 
@@ -166,7 +166,7 @@ or (b) generate Rust models from C contract headers to keep them in sync.
 |---|---------|-------|
 | #15 | GPU passthrough (virtio-gpu / VFIO) | Requires IOMMU support in PD |
 | #13 | Tailscale/WireGuard integration | wg_net PD exists, needs Tailscale control plane |
-| #12 | IPC bridge: native agentOS ↔ Linux VM | Requires shared-memory ring between host PD and guest |
+| #12 | IPC bridge: native FractalOS ↔ Linux VM | Requires shared-memory ring between host PD and guest |
 | #11 | Rust runtime for native PDs | `no_std` Rust PDs — needs seL4 Rust bindings |
 | #10 | Node.js runtime (V8/QuickJS) | ⚠️ AGENTS.md says no JS in core — QuickJS as WASM module? |
 | #9 | Linux VM per-agent isolation | Multi-guest VMM with per-agent network namespaces |

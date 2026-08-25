@@ -1,8 +1,8 @@
 /*
- * agentOS libagent — Agent SDK Implementation
+ * FractalOS libagent — Agent SDK Implementation
  *
- * Implements the libagent API declared in agentOS.h.
- * Agents link against this to get the full agentOS SDK.
+ * Implements the libagent API declared in FractalOS.h.
+ * Agents link against this to get the full FractalOS SDK.
  *
  * IPC model: each API call maps to a seL4_Call into the appropriate
  * system service (MsgBus, CapStore, MemFS, ModelSvc, ToolSvc).
@@ -19,7 +19,7 @@
  *   SLOT 7: Reply capability (for synchronous calls)
  *   SLOT 8+: Agent-allocated capabilities
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include "agentOS.h"
+#include "FractalOS.h"
 #include "wg_net.h"
 
 /*
@@ -645,7 +645,7 @@ aos_status_t aos_service_info(const char *service_id,
 /*
  * SLOT_NETSTK: CSpace slot 8 is the NetStack service endpoint.
  * The init task grants this capability at agent spawn time, parallel to the
- * other service endpoints.  NetStack proxies HTTP requests to the agentOS
+ * other service endpoints.  NetStack proxies HTTP requests to the FractalOS
  * bridge running on the host at 10.0.2.2:8790.
  */
 #define SLOT_NETSTK           8    /* NetStack service endpoint */
@@ -825,7 +825,7 @@ static size_t json_unescape_string(const char *src, size_t src_len,
 }
 
 /* -------------------------------------------------------------------------
- * aos_http_post — make an HTTP POST to the agentOS bridge.
+ * aos_http_post — make an HTTP POST to the FractalOS bridge.
  *
  * Uses the vibe staging region (STAGING_HTTP_OFFSET into the shared 4MB
  * region) as a bounce buffer for the request and response bodies, then
@@ -914,7 +914,7 @@ aos_status_t aos_http_post(const char *url, const char *body_json,
 /* -------------------------------------------------------------------------
  * aos_vibe_generate — request code generation from the bridge.
  *
- * Builds a JSON body, POSTs to /api/agentos/vibe/generate, and parses
+ * Builds a JSON body, POSTs to /api/fractalos/vibe/generate, and parses
  * the "code" field from the JSON response.
  * ------------------------------------------------------------------------- */
 aos_status_t aos_vibe_generate(const char *prompt, const char *service_id,
@@ -945,7 +945,7 @@ aos_status_t aos_vibe_generate(const char *prompt, const char *service_id,
     size_t resp_len = 0;
 
     aos_status_t err = aos_http_post(
-        "http://10.0.2.2:8790/api/agentos/vibe/generate",
+        "http://10.0.2.2:8790/api/fractalos/vibe/generate",
         body, resp, sizeof(resp), &resp_len);
     if (err != AOS_OK)
         return err;
@@ -1040,7 +1040,7 @@ aos_status_t aos_vibe_compile(const char *source_c, const char *service_id,
     size_t resp_len = 0;
 
     aos_status_t err = aos_http_post(
-        "http://10.0.2.2:8790/api/agentos/vibe/compile",
+        "http://10.0.2.2:8790/api/fractalos/vibe/compile",
         req_buf, resp, sizeof(resp), &resp_len);
     if (err != AOS_OK)
         return err;
@@ -1073,7 +1073,7 @@ aos_status_t aos_vibe_compile(const char *source_c, const char *service_id,
  * TODO(js_runtime_removal): aos_js_eval and aos_js_call previously sent
  * OP_JS_EVAL (0xC0) and OP_JS_CALL (0xC1) to a js_runtime passive PD that
  * embedded QuickJS inside a seL4 protection domain.  This violates the
- * agentOS project constitution (pure C/Rust/Assembly only; no JavaScript in
+ * FractalOS project constitution (pure C/Rust/Assembly only; no JavaScript in
  * kernel space).  The js_runtime PD, its header, its QuickJS stubs, all
  * .system entries, and the Makefile entries have been deleted.
  *

@@ -1,12 +1,12 @@
-# agentOS Console Dashboard — UI Discoverability Audit
+# FractalOS Console Dashboard — UI Discoverability Audit
 
-**Evaluator persona:** Expert UI designer familiar with virt-manager, VMware Fusion, Proxmox VE, Cockpit. Assessing discoverability for a user who understands virtualisation/OS management but has never used agentOS.
+**Evaluator persona:** Expert UI designer familiar with virt-manager, VMware Fusion, Proxmox VE, Cockpit. Assessing discoverability for a user who understands virtualisation/OS management but has never used FractalOS.
 
 ---
 
 ## Executive Summary
 
-The agentOS console presents a topology-first interface that prioritises Protection Domain (PD) architecture visualisation at the expense of task-oriented workflows. For a user trained on virt-manager or VMware Fusion the interface requires significant cognitive overhead: the fundamental mental model (isolated security domains vs. virtual machines) is presented without bridge labels, terminology is unexplained at point-of-use, and core workflows (spawning agents, understanding node health) lack discoverability cues.
+The FractalOS console presents a topology-first interface that prioritises Protection Domain (PD) architecture visualisation at the expense of task-oriented workflows. For a user trained on virt-manager or VMware Fusion the interface requires significant cognitive overhead: the fundamental mental model (isolated security domains vs. virtual machines) is presented without bridge labels, terminology is unexplained at point-of-use, and core workflows (spawning agents, understanding node health) lack discoverability cues.
 
 ---
 

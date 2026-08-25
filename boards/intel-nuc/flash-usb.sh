@@ -3,17 +3,17 @@
 #
 # Usage:
 #   make BOARD_NAME=intel-nuc build
-#   sudo ./boards/intel-nuc/flash-usb.sh /dev/sdX build/x86_64_generic/agentos.img
+#   sudo ./boards/intel-nuc/flash-usb.sh /dev/sdX build/x86_64_generic/fractalos.img
 #
 # Requirements:
 #   - grub-efi-amd64-bin (apt) or grub (brew)
 #   - mtools (for mformat/mcopy)
 #
 # The resulting USB drive:
-#   - FAT32 ESP partition labelled "AGENTOS_EFI"
+#   - FAT32 ESP partition labelled "FRACTALOS_EFI"
 #   - /EFI/BOOT/BOOTX64.EFI  (GRUB EFI stub)
 #   - /EFI/BOOT/grub.cfg      (chainloads seL4 image)
-#   - /boot/agentos.img       (Microkit seL4 image, ELF multiboot2)
+#   - /boot/fractalos.img       (Microkit seL4 image, ELF multiboot2)
 
 set -euo pipefail
 
@@ -31,7 +31,7 @@ if [[ ! -f "$IMAGE" ]]; then
 fi
 
 echo "==> Preparing UEFI USB boot drive on $DEVICE"
-echo "    agentOS image: $IMAGE"
+echo "    FractalOS image: $IMAGE"
 echo ""
 echo "WARNING: ALL DATA ON $DEVICE WILL BE ERASED."
 read -rp "Type 'yes' to continue: " CONFIRM
@@ -49,7 +49,7 @@ sleep 1   # give kernel time to re-read partition table
 
 # ── Format as FAT32 ──────────────────────────────────────────────────────────
 echo "==> Formatting ${PART} as FAT32 ..."
-mkfs.vfat -F 32 -n "AGENTOS_EFI" "$PART"
+mkfs.vfat -F 32 -n "FRACTALOS_EFI" "$PART"
 
 # ── Mount and install files ──────────────────────────────────────────────────
 MNT=$(mktemp -d)
@@ -75,17 +75,17 @@ cat > "$MNT/EFI/BOOT/grub.cfg" <<'GRUBCFG'
 set timeout=3
 set default=0
 
-menuentry "agentOS (seL4/Microkit)" {
+menuentry "FractalOS (seL4/Microkit)" {
     insmod part_gpt
     insmod fat
     insmod multiboot2
-    multiboot2 /boot/agentos.img
+    multiboot2 /boot/fractalos.img
     boot
 }
 GRUBCFG
 
-# Copy agentOS image
-cp "$IMAGE" "$MNT/boot/agentos.img"
+# Copy FractalOS image
+cp "$IMAGE" "$MNT/boot/fractalos.img"
 
 echo ""
 echo "==> Done! USB drive prepared at $DEVICE"

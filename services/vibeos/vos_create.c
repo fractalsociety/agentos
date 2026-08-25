@@ -19,11 +19,11 @@
  *   allocation log backwards, calling seL4_CNode_Revoke + seL4_CNode_Delete
  *   on each capability before marking the slot unused.
  *
- * Host-test build (-DAGENTOS_TEST_HOST):
+ * Host-test build (-DFRACTALOS_TEST_HOST):
  *   ut_alloc(), seL4_CNode_Revoke(), and seL4_CNode_Delete() are replaced
  *   by stubs defined in the test file that includes this translation unit.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -56,7 +56,7 @@
 #endif
 
 /* ── seL4 CNode invocation stubs (host test build) ─────────────────────── */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /* Forward declarations — defined by the including test file */
 extern seL4_Error stub_cnode_revoke(seL4_CPtr root, seL4_Word index, uint8_t depth);
@@ -81,10 +81,10 @@ extern seL4_CPtr  stub_ut_alloc(seL4_Word obj_type, seL4_Word size_bits,
 /* seL4_CNode_Revoke / seL4_CNode_Delete are inline functions in sel4_boot.h */
 /* ut_alloc is declared in ut_alloc.h */
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── cap_tree stub (host test build) ────────────────────────────────────── */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /*
  * The test file must provide:
@@ -101,7 +101,7 @@ extern uint32_t stub_cap_tree_insert(cap_tree_t *tree, uint32_t parent_idx,
 #define cap_tree_insert(tree, parent, cap, type, owner, name) \
     stub_cap_tree_insert((tree), (parent), (uint64_t)(cap), (type), (owner), (name))
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Module-level static state ──────────────────────────────────────────── */
 

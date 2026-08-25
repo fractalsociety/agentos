@@ -1,6 +1,6 @@
 #pragma once
 /* contracts/sel4-ipc/interface.h
- * seL4 IPC wire format for agentOS — all services use this layout.
+ * seL4 IPC wire format for FractalOS — all services use this layout.
  * Version: 1
  */
 
@@ -22,7 +22,7 @@
 /* ---------------------------------------------------------------------------
  * Badge encoding
  *
- * A seL4 badge is a single seL4_Word (64-bit on 64-bit targets).  agentOS
+ * A seL4 badge is a single seL4_Word (64-bit on 64-bit targets).  FractalOS
  * packs three fields into that word:
  *
  *   [63:48]  service_id  — identifies which PD/service owns this endpoint
@@ -41,7 +41,7 @@ _Static_assert(sizeof(sel4_badge_t) == 8, "sel4_badge_t must be 8 bytes");
  * Standard message layout
  *
  * seL4 provides 120 bytes of MR space (10 x seL4_Word on a 64-bit kernel).
- * agentOS reserves the first two MRs for the header and caps up to 6 MRs
+ * FractalOS reserves the first two MRs for the header and caps up to 6 MRs
  * (48 bytes) for payload, keeping the total at 56 bytes so every message
  * fits inside a single seL4 IPC transfer with room for capability transfer
  * metadata.

@@ -4,23 +4,23 @@
  * Tests capability tree operations, delegation semantics, badged endpoint
  * pool management, and the cap_accounting API contract.
  *
- * All service logic is embedded under AGENTOS_TEST_HOST for a self-contained
+ * All service logic is embedded under FRACTALOS_TEST_HOST for a self-contained
  * build.  The cap_acct_* implementation below mirrors cap_accounting.c exactly
  * (same table size, same field layout, same API) so changes to the production
  * code will break this test when the contracts diverge.
  *
  * Build & run (self-contained — no extra .c files needed):
- *   cc -std=c11 -Wall -Wextra -DAGENTOS_TEST_HOST \
+ *   cc -std=c11 -Wall -Wextra -DFRACTALOS_TEST_HOST \
  *       -I tests/api -o /tmp/cap_tests tests/api/cap_tests.c
  *   /tmp/cap_tests
  *
  * TAP version 14 output; 25 test points.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include <stdint.h>
 #include <stddef.h>
@@ -274,7 +274,7 @@ static void ep_free(seL4_CPtr cap)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Badge helpers (agentOS 64-bit badge layout)
+ * Badge helpers (FractalOS 64-bit badge layout)
  *
  *   bits 63:32  op_token   (32 bits)
  *   bits 31:16  service_id (16 bits)
@@ -658,5 +658,5 @@ int main(void)
 }
 
 #else
-typedef int _agentos_cap_tests_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_cap_tests_dummy;
+#endif /* FRACTALOS_TEST_HOST */

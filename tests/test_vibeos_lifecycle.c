@@ -1,5 +1,5 @@
 /*
- * agentOS VibeOS Lifecycle — Unit Tests
+ * FractalOS VibeOS Lifecycle — Unit Tests
  *
  * Tests the VibeOS lifecycle handlers via host stubs:
  *   MSG_VIBEOS_CREATE               — allocate OS context
@@ -11,8 +11,8 @@
  * Build:  cc -o /tmp/test_vibeos_lifecycle \
  *             tests/test_vibeos_lifecycle.c \
  *             -I tests \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_vibeos_lifecycle
  */
 
@@ -42,7 +42,7 @@ static uint8_t _stub_staging[0x400000];
 static uintptr_t vibe_staging_vaddr;
 
 /* Barrier stubs */
-static inline void agentos_wmb(void) {}
+static inline void fractalos_wmb(void) {}
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
@@ -856,7 +856,7 @@ static void test_migrate_not_impl(void) {
 int main(void)
 {
     printf("╔══════════════════════════════════════════════════════════╗\n");
-    printf("║  agentOS VibeOS Lifecycle — Test Suite                   ║\n");
+    printf("║  FractalOS VibeOS Lifecycle — Test Suite                   ║\n");
     printf("╚══════════════════════════════════════════════════════════╝\n");
 
     test_create_linux();

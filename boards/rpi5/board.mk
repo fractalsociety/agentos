@@ -1,4 +1,4 @@
-# ── agentOS board: Raspberry Pi 5 (AArch64 native hardware) ──────────────────
+# ── FractalOS board: Raspberry Pi 5 (AArch64 native hardware) ──────────────────
 #
 # Target: Raspberry Pi 5 (BCM2712, Cortex-A76, 4/8GB LPDDR5).
 #

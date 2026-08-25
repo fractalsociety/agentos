@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../kernel/agentos-root-task/include/contracts/companion_export_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/companion_export_contract.h"
 
 struct companion_fixture {
     uint32_t grants;
@@ -351,7 +351,7 @@ static marshalled_request_t marshal(struct companion_fixture *fixture,
     return (marshalled_request_t){opcode, request_offset, bytes};
 }
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include <stdio.h>
 static unsigned test_count;
 static unsigned failures;
@@ -571,7 +571,7 @@ static void run_suite(void)
           "generated companion channel is unique in controller scope");
 }
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 int main(void)
 {
     puts("TAP version 14");

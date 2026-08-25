@@ -1,5 +1,5 @@
 /*
- * agentOS MsgBus — seL4 IPC Implementation
+ * FractalOS MsgBus — seL4 IPC Implementation
  *
  * This file fills in the TODO stubs in msgbus.c with real seL4 IPC.
  * It replaces printf placeholders with actual seL4_Send/seL4_Reply calls.
@@ -14,7 +14,7 @@
  *   badge[0..15]  = agent index in registry
  *   badge[16..31] = channel index (for subscribe ops)
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -191,7 +191,7 @@ int msgbus_publish_seL4(const char *channel_name, agent_id_t *sender, aos_msg_t 
 /* =========================================================================
  * msgbus_rpc_seL4 — real synchronous RPC via seL4_Call/seL4_Reply
  *
- * This is the core of agentOS agent-to-agent RPC.
+ * This is the core of FractalOS agent-to-agent RPC.
  * seL4's Call/Reply path is extremely efficient:
  * - On ARM64: ~150 cycles round-trip
  * - On RISC-V: ~200 cycles round-trip

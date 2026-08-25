@@ -1,4 +1,4 @@
-# agentctl-ng — agentOS C&C Reference Consumer
+# agentctl-ng — FractalOS C&C Reference Consumer
 #
 # External consumer of cc_contract.h — zero kernel/ or services/ dependencies.
 # Requires: pkg-config, ncurses (libncurses-dev on Debian/Ubuntu,
@@ -52,7 +52,7 @@ test: $(TARGET)
 	@echo "[test] unknown flag exits non-zero"
 	./$(TARGET) --not-a-flag >/dev/null 2>&1; \
 	  if [ $$? -ne 0 ]; then echo "[PASS] unknown flag"; else echo "[FAIL] unknown flag"; exit 1; fi
-	@echo "[test] --batch requires socket (exits non-zero without agentOS)"
+	@echo "[test] --batch requires socket (exits non-zero without FractalOS)"
 	CC_PD_SOCK=/tmp/agentctl_ng_no_such_socket ./$(TARGET) --batch list-guests >/dev/null 2>&1; \
 	  if [ $$? -ne 0 ]; then echo "[PASS] no-socket exits 1"; else echo "[FAIL] no-socket should exit 1"; exit 1; fi
 	@echo "[test] all passed"

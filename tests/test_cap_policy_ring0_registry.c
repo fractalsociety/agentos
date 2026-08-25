@@ -1,5 +1,5 @@
 /*
- * agentOS Cap-Policy Ring-0 Service Registry — Unit Tests
+ * FractalOS Cap-Policy Ring-0 Service Registry — Unit Tests
  *
  * Tests the non-reinvention enforcement registry:
  *   cap_policy_register_ring0_service()   — register service for a function class
@@ -9,8 +9,8 @@
  * Build:  cc -o /tmp/test_cap_policy_ring0_registry \
  *             tests/test_cap_policy_ring0_registry.c \
  *             -I tests \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_cap_policy_ring0_registry
  */
 
@@ -309,7 +309,7 @@ static void test_all_classes_independent(void)
 int main(void)
 {
     printf("╔════════════════════════════════════════════════════════╗\n");
-    printf("║  agentOS Cap-Policy Ring-0 Registry — Test Suite       ║\n");
+    printf("║  FractalOS Cap-Policy Ring-0 Registry — Test Suite       ║\n");
     printf("╚════════════════════════════════════════════════════════╝\n");
 
     test_register_valid_classes();

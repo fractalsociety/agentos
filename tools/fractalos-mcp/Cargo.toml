@@ -1,0 +1,13 @@
+[package]
+name = "fractalos-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Read-only MCP bridge from Codex to the FractalOS control plane"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+libc.workspace = true

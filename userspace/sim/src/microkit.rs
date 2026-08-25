@@ -12,7 +12,7 @@ pub const MR_COUNT: usize = 8;
 /// seL4 message info: label (opcode) + count of valid MRs.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MsgInfo {
-    pub label:    u64,
+    pub label: u64,
     pub mr_count: u8,
 }
 
@@ -26,8 +26,8 @@ impl MsgInfo {
 #[derive(Debug, Clone)]
 pub struct CapturedCall {
     pub channel: u32,
-    pub info:    MsgInfo,
-    pub regs:    [u64; MR_COUNT],
+    pub info: MsgInfo,
+    pub regs: [u64; MR_COUNT],
 }
 
 /// Pending notification bitmask entry.
@@ -70,23 +70,29 @@ pub struct MicrokitShim {
 impl MicrokitShim {
     pub fn new() -> Self {
         Self {
-            regs:           [0u64; MR_COUNT],
-            call_log:       Vec::new(),
-            notify_log:     Vec::new(),
+            regs: [0u64; MR_COUNT],
+            call_log: Vec::new(),
+            notify_log: Vec::new(),
             pending_notifs: 0,
-            handlers:       HashMap::new(),
-            reply_queues:   HashMap::new(),
+            handlers: HashMap::new(),
+            reply_queues: HashMap::new(),
         }
     }
 
     /// Set a message register.
     pub fn mr_set(&mut self, mr: usize, value: u64) {
-        if mr < MR_COUNT { self.regs[mr] = value; }
+        if mr < MR_COUNT {
+            self.regs[mr] = value;
+        }
     }
 
     /// Get a message register.
     pub fn mr_get(&self, mr: usize) -> u64 {
-        if mr < MR_COUNT { self.regs[mr] } else { 0 }
+        if mr < MR_COUNT {
+            self.regs[mr]
+        } else {
+            0
+        }
     }
 
     /// Simulate `microkit_ppcall(channel, msginfo)`.
@@ -94,7 +100,11 @@ impl MicrokitShim {
     /// Records the call, invokes any registered handler, writes the reply
     /// into the message registers and returns the reply `MsgInfo`.
     pub fn ppcall(&mut self, channel: u32, info: MsgInfo) -> MsgInfo {
-        let call = CapturedCall { channel, info, regs: self.regs };
+        let call = CapturedCall {
+            channel,
+            info,
+            regs: self.regs,
+        };
         self.call_log.push(call.clone());
 
         // Try static handler first, then reply queue, then zero reply.
@@ -124,25 +134,33 @@ impl MicrokitShim {
 
     /// Pop one pending notification, returning its channel if any.
     pub fn pop_notification(&mut self) -> Option<u32> {
-        if self.pending_notifs == 0 { return None; }
-        let ch = self.pending_notifs.trailing_zeros() as u32;
+        if self.pending_notifs == 0 {
+            return None;
+        }
+        let ch = self.pending_notifs.trailing_zeros();
         self.pending_notifs &= !(1u64 << ch);
         Some(ch)
     }
 
     /// Register a handler for a given channel's ppcall.
     pub fn on_ppcall<F>(&mut self, channel: u32, handler: F)
-    where F: Fn(&CapturedCall) -> PpcResult + Send + Sync + 'static,
+    where
+        F: Fn(&CapturedCall) -> PpcResult + Send + Sync + 'static,
     {
         self.handlers.insert(channel, Box::new(handler));
     }
 
     /// Enqueue a canned reply for the next ppcall on `channel`.
     pub fn enqueue_reply(&mut self, channel: u32, result: PpcResult) {
-        self.reply_queues.entry(channel).or_default().push_back(result);
+        self.reply_queues
+            .entry(channel)
+            .or_default()
+            .push_back(result);
     }
 }
 
 impl Default for MicrokitShim {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

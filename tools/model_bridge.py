@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded host bridge from AgentOS ModelSvc to an OpenAI-compatible API."""
+"""Bounded host bridge from FractalOS ModelSvc to an OpenAI-compatible API."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def render_codex_prompt(body: bytes) -> str:
     value = json.loads(body)
     messages = value.get("messages", [])
     rendered = [
-        "Act only as the model behind an AgentOS capability-scoped harness.",
+        "Act only as the model behind an FractalOS capability-scoped harness.",
         "Do not use shell, files, network tools, or ask questions.",
         "Return only the JSON object requested by the system message.",
         "",
@@ -57,7 +57,7 @@ def render_codex_prompt(body: bytes) -> str:
 def codex_cli_completion(body: bytes, executable: str, timeout: float) -> bytes:
     """Run the authenticated official Codex CLI as a shared model backend."""
     prompt = render_codex_prompt(body)
-    with tempfile.TemporaryDirectory(prefix="agentos-model-") as workspace:
+    with tempfile.TemporaryDirectory(prefix="fractalos-model-") as workspace:
         output_path = os.path.join(workspace, "last-message.json")
         command = [
             executable,
@@ -95,7 +95,7 @@ def codex_cli_completion(body: bytes, executable: str, timeout: float) -> bytes:
         if not message:
             raise ValueError("Codex CLI returned an empty response")
         response = {
-            "id": "agentos-codex-cli",
+            "id": "fractalos-codex-cli",
             "object": "chat.completion",
             "choices": [{
                 "index": 0,
@@ -107,7 +107,7 @@ def codex_cli_completion(body: bytes, executable: str, timeout: float) -> bytes:
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
-    server_version = "AgentOSModelBridge/1"
+    server_version = "FractalOSModelBridge/1"
 
     def log_message(self, fmt: str, *args: object) -> None:
         sys.stderr.write("[model-bridge] " + fmt % args + "\n")
@@ -184,8 +184,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8790)
     parser.add_argument("--upstream", default=os.environ.get(
-        "AGENTOS_MODEL_UPSTREAM", "https://api.openai.com/v1/chat/completions"))
-    parser.add_argument("--model", default=os.environ.get("AGENTOS_MODEL_NAME"))
+        "FRACTALOS_MODEL_UPSTREAM", "https://api.openai.com/v1/chat/completions"))
+    parser.add_argument("--model", default=os.environ.get("FRACTALOS_MODEL_NAME"))
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--allow-http-upstream", action="store_true")
     parser.add_argument("--codex-cli", nargs="?", const="codex", default=None,
@@ -205,10 +205,10 @@ def main() -> int:
         print("refusing non-HTTPS upstream; use --allow-http-upstream for a trusted local API",
               file=sys.stderr)
         return 2
-    args.api_key = os.environ.get("AGENTOS_MODEL_API_KEY") or os.environ.get(
+    args.api_key = os.environ.get("FRACTALOS_MODEL_API_KEY") or os.environ.get(
         "OPENAI_API_KEY")
     if not args.codex_cli and not args.api_key and not args.allow_http_upstream:
-        print("set AGENTOS_MODEL_API_KEY or OPENAI_API_KEY", file=sys.stderr)
+        print("set FRACTALOS_MODEL_API_KEY or OPENAI_API_KEY", file=sys.stderr)
         return 2
     server = ThreadingHTTPServer((args.bind, args.port), BridgeHandler)
     args.codex_slots = threading.BoundedSemaphore(args.codex_max_concurrency)

@@ -4,7 +4,7 @@ _Auto-generated from contract + source audit, April 2026_
 
 ## What VibeOS Is
 
-VibeOS is agentOS's top-level OS management API. It composes three subsystems into a
+VibeOS is FractalOS's top-level OS management API. It composes three subsystems into a
 single IPC interface that lets any agent with `SpawnCap` create, manage, and destroy
 **entire OS stacks** using only IPC messages. No human kernel engineer required.
 
@@ -63,8 +63,8 @@ Per vibeos_contract.h, creating an OS instance:
 
 | OS Type | Arch | VMM PD | System File |
 |---------|------|--------|-------------|
-| Linux | aarch64 | linux_vmm | agentos-linux-x86.system (manifest) |
-| FreeBSD | x86_64 | freebsd_vmm | agentos-freebsd.system (manifest) |
+| Linux | aarch64 | linux_vmm | fractalos-linux-x86.system (manifest) |
+| FreeBSD | x86_64 | freebsd_vmm | fractalos-freebsd.system (manifest) |
 
 ## Device PD Abstraction
 

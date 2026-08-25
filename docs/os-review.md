@@ -1,15 +1,15 @@
-# agentOS Operating System Design Review
+# FractalOS Operating System Design Review
 
-**Reviewer:** Expert OS designer with 20+ years microkernel experience  
-**Review Date:** April 2026  
-**Codebase Version:** agentOS v0.1.0-alpha  
+**Reviewer:** Expert OS designer with 20+ years microkernel experience
+**Review Date:** April 2026
+**Codebase Version:** FractalOS v0.1.0-alpha
 **Scope:** Comprehensive architecture review across kernel layer, Rust SDK, and protection domain model
 
 ---
 
 ## Executive Summary
 
-agentOS is a **Microkit-based agent execution platform** that makes deliberate architectural choices to support dynamic WASM workloads in a capability-secure multi-domain environment. The design successfully avoids several HURD pitfalls through **static topology definition** (`.system` files) and **passive-by-default servers**, but introduces new risks around **untyped topic strings in the EventBus**, **scattered channel ID constants**, and **inadequate audit trails for capability delegation**.
+FractalOS is a **Microkit-based agent execution platform** that makes deliberate architectural choices to support dynamic WASM workloads in a capability-secure multi-domain environment. The design successfully avoids several HURD pitfalls through **static topology definition** (`.system` files) and **passive-by-default servers**, but introduces new risks around **untyped topic strings in the EventBus**, **scattered channel ID constants**, and **inadequate audit trails for capability delegation**.
 
 ### Key Strengths
 1. **Static topology prevents bootstrap deadlock** — All channels wired at build time (Microkit constraint, but enforced well).
@@ -20,7 +20,7 @@ agentOS is a **Microkit-based agent execution platform** that makes deliberate a
 
 ### Critical Gaps
 1. **EventBus topic strings allow squatting** — No topic namespace registry; any PD can publish to any topic string (confused deputy risk).
-2. **Channel ID namespace scattered** — Channel constants hardcoded across C headers (`agentos.h`, per-service headers). New service addition requires header edits in multiple places.
+2. **Channel ID namespace scattered** — Channel constants hardcoded across C headers (`fractalos.h`, per-service headers). New service addition requires header edits in multiple places.
 3. **Capability delegation audit gap** — `capability.rs` `grant` and `delegate` operations lack cryptographic attestation; revocation cannot prove which intermediate holder caused a violation.
 4. **Ring buffer overflow silent drop** — EventBus ring buffer (256 KB) has no backpressure; high-volume publisher silently loses events (no flow control signal to caller).
 5. **WASM interpreter (wasm3) vs. AOT tradeoff uninvestigated** — Embedded wasm3 interpreter has no bounds checking for WASM→host memory escape (e.g., via table.set).
@@ -32,8 +32,8 @@ agentOS is a **Microkit-based agent execution platform** that makes deliberate a
 ### CRITICAL
 
 #### 1. EventBus Topic Squatting Vulnerability
-**File:** `/Users/jkh/Src/agentos/userspace/servers/event-bus/src/lib.rs:84–91`  
-**Severity:** CRITICAL  
+**File:** `/Users/jkh/Src/fractalos/userspace/servers/event-bus/src/lib.rs:84–91`
+**Severity:** CRITICAL
 **Risk:** Confused deputy: any PD can publish events on any unregistered topic string, potentially spoofing system events.
 
 In `lib.rs`, the `EventBus::subscribe()` method looks up a topic in the `BTreeMap` and returns `UnknownTopic` if not found:
@@ -67,7 +67,7 @@ pub fn publish(
 
 **The issue:** If no subscribers exist, `publish()` returns `UnknownTopic` — good. But the real vulnerability is in the **C kernel layer** (`monitor.c`), where the EventBus is a **passive PD receiving PPCs**. Any caller who holds an endpoint capability to EventBus can publish on any topic string **that has at least one subscriber**, poisoning that topic's history.
 
-**Compare to Mach:** Mach ports are **unforged opaque objects**. Publish rights are separate capabilities from subscribe rights. agentOS has no per-topic authorization; it's all strings.
+**Compare to Mach:** Mach ports are **unforged opaque objects**. Publish rights are separate capabilities from subscribe rights. FractalOS has no per-topic authorization; it's all strings.
 
 **Recommended Fix:**
 1. Introduce a `TopicRegistry` struct that tracks which **PD** created each topic and forbid publish/subscribe except via that creator (or explicit delegation).
@@ -77,8 +77,8 @@ pub fn publish(
 ---
 
 #### 2. WASM Bounds Violation via Shared Memory in Hot-Swap Slots
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/agentos.system:238–246` (swap slot memory map)  
-**Severity:** CRITICAL  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/fractalos.system:238–246` (swap slot memory map)
+**Severity:** CRITICAL
 **Risk:** wasm3 interpreter does not bounds-check memory accesses. A malicious or buggy WASM module can read/write the controller's view of swap_code regions.
 
 The `.system` file maps swap code regions to controller with `perms="rw"` and to swap slots with `perms="r"`:
@@ -97,7 +97,7 @@ The swap slot PD loads WASM at offset 0x2000000 and interprets it via wasm3. How
 
 In reality, the swap slot's linear memory is isolated, but wasm3 has **no guard pages** between its heap and seL4 structures.
 
-**Compare to Coyotos/EROS:** Capability-based system with **separate kernel space**. All WASM memory is user-level; kernel is inaccessible from WASM. But agentOS uses seL4, which also has this separation. The issue is **wasm3 itself has no inline bounds checking**.
+**Compare to Coyotos/EROS:** Capability-based system with **separate kernel space**. All WASM memory is user-level; kernel is inaccessible from WASM. But FractalOS uses seL4, which also has this separation. The issue is **wasm3 itself has no inline bounds checking**.
 
 **Recommended Fix:**
 1. Use **AOT compilation (e.g., Cranelift, wasmtime)** instead of wasm3 for production agents. AOT generates bounds-checking code at compile time.
@@ -107,8 +107,8 @@ In reality, the swap slot's linear memory is isolated, but wasm3 has **no guard 
 ---
 
 #### 3. Capability Delegation Audit Trail Missing
-**File:** `/Users/jkh/Src/agentos/userspace/sdk/src/capability.rs:189–208`  
-**Severity:** CRITICAL  
+**File:** `/Users/jkh/Src/fractalos/userspace/sdk/src/capability.rs:189–208`
+**Severity:** CRITICAL
 **Risk:** When an agent grants a capability to a child, there is no cryptographic record linking the parent's capability to the child's copy. If the child leaks the capability and causes a security violation, audit logs cannot trace back to the parent.
 
 In `capability.rs`, the `derive_for_child()` method:
@@ -144,14 +144,14 @@ In EROS/Coyotos, capabilities have **designated bits** that encode the delegatio
 **Recommended Fix:**
 1. Add a `CapAuditLog` PD (already present as `cap_audit_log` in comments) that receives every grant/revoke event via PPC.
 2. Include the **parent agent_id**, **child agent_id**, **capability kind**, **rights**, and **timestamp** in the audit log.
-3. On revocation (OP_QUOTA_REVOKE in `agentos.h:126`), cross-reference the audit log to find all downstream holders and revoke recursively.
+3. On revocation (OP_QUOTA_REVOKE in `fractalos.h:126`), cross-reference the audit log to find all downstream holders and revoke recursively.
 4. Use **seL4 capability invocation counts** (if available) to detect use-after-revoke.
 
 ---
 
 #### 4. Priority Inversion via Controller → Passive Server Call Chain
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/agentos.system:6–7` (controller priority 50)  
-**Severity:** CRITICAL  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/fractalos.system:6–7` (controller priority 50)
+**Severity:** CRITICAL
 **Risk:** Controller (priority 50) is the **lowest priority user PD**. It PPCs into EventBus (priority 200). If EventBus is blocked on another PD (e.g., AgentFS priority 150), the controller is blocked **at the EventBus's priority** (200), not its own. This can cause a lower-priority worker to starve the entire system.
 
 Scenario:
@@ -175,13 +175,13 @@ This is **textbook priority inversion**: low-priority controller is blocked by h
 ---
 
 #### 5. Ring Buffer Overflow in EventBus with No Backpressure
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/include/agentos.h:420–423`  
-**Severity:** CRITICAL  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/include/fractalos.h:420–423`
+**Severity:** CRITICAL
 **Risk:** The EventBus ring buffer is 256 KB and allocated statically. When the ring is full, new events are **silently dropped** with no signal to the publisher. A high-frequency publisher is unaware its events are lost.
 
-From `agentos.h`:
+From `fractalos.h`:
 ```c
-#define EVENTBUS_RING_SIZE            0x40000u  /* 256 KB — matches agentos*.system */
+#define EVENTBUS_RING_SIZE            0x40000u  /* 256 KB — matches fractalos*.system */
 #define EVENTBUS_BATCH_STAGING_SIZE   768u      /* bytes reserved at end for batch publish */
 #define EVENTBUS_BATCH_STAGING_OFFSET (EVENTBUS_RING_SIZE - EVENTBUS_BATCH_STAGING_SIZE)
 ```
@@ -195,7 +195,7 @@ typedef struct __attribute__((packed)) {
     uint32_t source_pd;   /* source protection domain */
     uint32_t payload_len; /* payload length in bytes */
     uint8_t  payload[64]; /* inline payload (up to 64 bytes) */
-} agentos_event_t;  // ~144 bytes per entry
+} fractalos_event_t;  // ~144 bytes per entry
 ```
 
 With 256 KB and ~144-byte entries, the ring holds ~1800 events. If a worker publishes 1000 events/second (not unrealistic for high-frequency sampling), the ring fills in ~2 seconds and then **loses all new events silently**.
@@ -215,11 +215,11 @@ No flow control: the publisher's PPC does not return an "overflow" error; it suc
 ### MAJOR
 
 #### 6. Channel ID Namespace Scattered Across Headers
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/include/agentos.h:30–47`  
-**Severity:** MAJOR  
-**Risk:** Channel IDs are defined as C preprocessor constants in `agentos.h`, but new services (SpawnServer, VFS, NetServer, etc.) each have their own header file with duplicate channel definitions. Adding a new service requires edits to multiple header files and risks off-by-one errors.
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/include/fractalos.h:30–47`
+**Severity:** MAJOR
+**Risk:** Channel IDs are defined as C preprocessor constants in `fractalos.h`, but new services (SpawnServer, VFS, NetServer, etc.) each have their own header file with duplicate channel definitions. Adding a new service requires edits to multiple header files and risks off-by-one errors.
 
-From `agentos.h`:
+From `fractalos.h`:
 ```c
 #define MONITOR_CH_EVENTBUS   1
 #define MONITOR_CH_INITAGENT  2
@@ -257,14 +257,14 @@ And in `vfs.h`:
 1. **Generate channel headers from the `.system` file** using a Python script or Rust build.rs macro.
 2. Create a `channels.h` that is auto-generated with:
    ```c
-   // AUTO-GENERATED from agentos.system
+   // AUTO-GENERATED from fractalos.system
    typedef enum {
        CH_CONTROLLER_TO_EVENTBUS = 0,
        CH_CONTROLLER_TO_INITAGENT = 1,
        CH_CONTROLLER_TO_NAMESERVER = 18,
        // ...
    } ControllerChannelId;
-   
+
    typedef enum {
        CH_SPAWN_TO_VFS = 3,
        CH_SPAWN_TO_APP_SLOT_0 = 4,
@@ -276,8 +276,8 @@ And in `vfs.h`:
 ---
 
 #### 7. Capability Kind as Typed Enum Conflates Concerns
-**File:** `/Users/jkh/Src/agentos/userspace/sdk/src/capability.rs:87–112`  
-**Severity:** MAJOR  
+**File:** `/Users/jkh/Src/fractalos/userspace/sdk/src/capability.rs:87–112`
+**Severity:** MAJOR
 **Risk:** `CapabilityKind` is an enum with associated data (e.g., `ObjectStore { namespace: String }`). This is a **halfway point between true ACLs (which would use predicates) and typed seL4 capabilities**. It leads to confused deputy risks when checking capabilities.
 
 From `capability.rs`:
@@ -290,8 +290,8 @@ pub enum CapabilityKind {
     AddressSpace,
     CNode,
     Untyped,
-    
-    // agentOS extension capabilities
+
+    // FractalOS extension capabilities
     ObjectStore { namespace: String },
     VectorStore { partition: String },
     Network { protocol: NetworkProtocol, scope: NetworkScope },
@@ -322,8 +322,8 @@ In seL4, all capabilities are **kernel objects with unforgeable names**. The `cp
 ---
 
 #### 8. NameServer is Passive but Has No Per-Topic Authorization
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/src/nameserver.c:122–169`  
-**Severity:** MAJOR  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/src/nameserver.c:122–169`
+**Severity:** MAJOR
 **Risk:** NameServer stores service metadata (name, channel_id, cap_classes, etc.) and returns it on lookup. But there is no check that the **requester is authorized** to learn about a service.
 
 From `nameserver.c`:
@@ -363,8 +363,8 @@ NameServer is used to **discover services dynamically**. But its lookup is **unc
 ---
 
 #### 9. Spawn Server Shares Memory Directly with untrusted ELF
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/src/spawn_server.c:183–232`  
-**Severity:** MAJOR  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/src/spawn_server.c:183–232`
+**Severity:** MAJOR
 **Risk:** SpawnServer stages ELF images into `spawn_elf_shmem` and writes a `spawn_header_t` that includes the ELF size and other metadata. The app slot then reads this header and loads the ELF. But the slot does not **verify** that the ELF matches the header (e.g., hash or signature).
 
 From `spawn_server.c`:
@@ -401,8 +401,8 @@ There is no **hash or digital signature** on the ELF image.
 ---
 
 #### 10. VFS Lacks Directory Traversal Safeguards
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/src/vfs_server.c:90–125`  
-**Severity:** MAJOR  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/src/vfs_server.c:90–125`
+**Severity:** MAJOR
 **Risk:** The VFS server implements a simple in-memory filesystem with parent inode pointers. The path lookup reconstructs the full path by walking the parent chain. But there is no check that prevents **symlink loops or path traversal via `..` components**.
 
 From `vfs_server.c`:
@@ -442,8 +442,8 @@ static uint32_t mem_find_inode(const char *path) {
 ### MINOR
 
 #### 11. Monitor Policy Embedded in C Code
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/src/monitor.c:1–50` (and throughout)  
-**Severity:** MINOR  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/src/monitor.c:1–50` (and throughout)
+**Severity:** MINOR
 **Risk:** The monitor PD contains hardcoded logic for capability grants, priority assignments, and service startup. Changing policy requires recompiling the kernel.
 
 The monitor should be a **policy evaluator** that reads policy from **AgentFS** at runtime and applies it. Instead, decision logic is in C.
@@ -466,9 +466,9 @@ This is hardcoded demo state, not a general policy.
 
 ---
 
-#### 12. WASM `agentos.capabilities` Manifest Unsigned
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/src/monitor.c` (implicit via monitor responsibilities)  
-**Severity:** MINOR  
+#### 12. WASM `fractalos.capabilities` Manifest Unsigned
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/src/monitor.c` (implicit via monitor responsibilities)
+**Severity:** MINOR
 **Risk:** WASM agents carry a manifest of required capabilities (e.g., "FS", "NET", "GPU"). The manifest is read from the WASM module's data section but is never cryptographically verified. A malicious WASM compiler could emit a fake manifest requesting more permissions than intended.
 
 **Recommended Fix:**
@@ -479,9 +479,9 @@ This is hardcoded demo state, not a general policy.
 ---
 
 #### 13. Fault Handler Restart Policy Not Specified
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/src/monitor.c` (fault handling implies a handler exists)  
-**Severity:** MINOR  
-**Risk:** When an agent faults (e.g., page fault, capability error), the fault handler (referenced via `TRACE_PD_FAULT_HDL` in `agentos.h:214`) must decide: restart the agent, kill it, or escalate to the controller. But the policy is not documented or configurable per agent.
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/src/monitor.c` (fault handling implies a handler exists)
+**Severity:** MINOR
+**Risk:** When an agent faults (e.g., page fault, capability error), the fault handler (referenced via `TRACE_PD_FAULT_HDL` in `fractalos.h:214`) must decide: restart the agent, kill it, or escalate to the controller. But the policy is not documented or configurable per agent.
 
 **Recommended Fix:**
 1. Add a **per-agent restart policy** in the capability manifest:
@@ -496,8 +496,8 @@ This is hardcoded demo state, not a general policy.
 ---
 
 #### 14. Shared Memory Regions Lack Explicit Capability Gating
-**File:** `/Users/jkh/Src/agentos/kernel/agentos-root-task/agentos.system:60–83`  
-**Severity:** MINOR  
+**File:** `/Users/jkh/Src/fractalos/kernel/fractalos-root-task/fractalos.system:60–83`
+**Severity:** MINOR
 **Risk:** Shared memory regions (swap_code_N, vibe_staging, etc.) are mapped to PDs based on the `.system` file, but there is no **runtime check** that a PD has permission to access a shared memory region. All mapping decisions are made at build time.
 
 If a PD is compromised, it can access any shared memory mapped to it. There is no dynamic **capability revocation** if the PD is quarantined.
@@ -508,9 +508,9 @@ If a PD is compromised, it can access any shared memory mapped to it. There is n
 
 ---
 
-## Comparison Table: agentOS vs. HURD vs. Mach vs. seL4
+## Comparison Table: FractalOS vs. HURD vs. Mach vs. seL4
 
-| Aspect | agentOS | HURD | Mach | seL4 |
+| Aspect | FractalOS | HURD | Mach | seL4 |
 |--------|---------|------|------|------|
 | **IPC Model** | Microkit (notifications + PPCs) | RPC-based translators | Typed ports | Capabilities + endpoints |
 | **Service Discovery** | NameServer (passive, string-based) | Filesystem (passive) | Port registry (active) | CAMKES codegen |
@@ -524,10 +524,10 @@ If a PD is compromised, it can access any shared memory mapped to it. There is n
 
 ---
 
-## What HURD Got Right (That agentOS Should Adopt)
+## What HURD Got Right (That FractalOS Should Adopt)
 
 ### 1. **Dynamic Translator Instantiation**
-HURD's translators are **instantiated on demand**, not pre-allocated. This allows the system to **scale with workload**: if no one uses the VFS, the VFS translator is not running. agentOS has fixed PDs (controller, EventBus, workers), which wastes memory for systems that don't need all services.
+HURD's translators are **instantiated on demand**, not pre-allocated. This allows the system to **scale with workload**: if no one uses the VFS, the VFS translator is not running. FractalOS has fixed PDs (controller, EventBus, workers), which wastes memory for systems that don't need all services.
 
 **Adoption:** Add a **lazy PD spawner** in the monitor that creates service PDs only when first accessed (requires seL4 MCS + dynamic PD creation support).
 
@@ -537,66 +537,66 @@ HURD uses the filesystem to **configure policies and translators**. This is eleg
 - Policies can be **edited at runtime** without recompiling.
 - The filesystem is the **audit trail** of all configuration changes.
 
-agentOS hardcodes policy in monitor.c and config in .system files.
+FractalOS hardcodes policy in monitor.c and config in .system files.
 
 **Adoption:** Require all policy (capability grants, priority assignments, translator startup) to be **read from AgentFS at boot time**. Use a standard file format (YAML or Protobuf) for policies.
 
 ### 3. **Translator Filtering and Multiplexing**
 HURD's translators can **wrap other translators** (e.g., a compression translator wrapping a filesystem translator). This provides **zero-copy layering** of services.
 
-agentOS has a flat PD topology; services do not compose.
+FractalOS has a flat PD topology; services do not compose.
 
 **Adoption:** Allow PDs to **delegate to other PDs** transparently. For example, the VFS server can call AgentFS for hot storage and cache results locally without the agent knowing about the intermediary.
 
 ### 4. **Resource Accounting at Translator Granularity**
 HURD tracks **per-translator resource usage** (memory, CPU). If a translator runs out of quota, only that translator is killed, not the entire system.
 
-agentOS has per-agent quotas but not per-service accounting.
+FractalOS has per-agent quotas but not per-service accounting.
 
 **Adoption:** Instrument each service PD's memory and CPU independently. Quota PD should track EventBus ring usage, VFS inode count, etc., not just agent memory.
 
 ### 5. **Passive Translator Model**
 HURD's translators are **passive by default**: they run only when accessed. This avoids **scheduler priority inversions**.
 
-agentOS got this right: EventBus, VibeEngine, NameServer are all passive.
+FractalOS got this right: EventBus, VibeEngine, NameServer are all passive.
 
 **Maintain this.** Do not add active service PDs (e.g., a service PD that polls for work) unless absolutely necessary.
 
 ---
 
-## What HURD Got Wrong (That agentOS Must Avoid)
+## What HURD Got Wrong (That FractalOS Must Avoid)
 
 ### 1. **No Capability Framework**
 HURD's security model is based on **POSIX UID/GID + filesystem permissions**. There are no unforgeable capabilities. Any process that knows a translator's name can contact it (if you can open `/dev/mydevice`, you can talk to the translator, no authentication).
 
 This enabled the **confused deputy problem**: a translator intended to serve one user could be tricked into serving another.
 
-**agentOS avoids this** by using **seL4 capabilities**. Every agent has a specific set of capabilities granted at spawn time.
+**FractalOS avoids this** by using **seL4 capabilities**. Every agent has a specific set of capabilities granted at spawn time.
 
-**Maintain this.** Never allow "publish to any topic because you know its name" (which is what agentOS EventBus currently does).
+**Maintain this.** Never allow "publish to any topic because you know its name" (which is what FractalOS EventBus currently does).
 
 ### 2. **RPC Without Async Notification**
 HURD's RPC is fundamentally **synchronous**. A translator blocks the caller until the RPC completes. This creates **priority inversion cascades**: if translator A calls translator B which calls translator C, and C blocks, the entire chain is blocked at C's priority.
 
 HURD added **asynchronous RPC** (ARpc) late in its history, but it was never widely used.
 
-**agentOS avoids this** by having **passive servers handle PPCs synchronously** but returning results immediately (no deep call chains). Workers use **notifications**, which are asynchronous and don't block the sender.
+**FractalOS avoids this** by having **passive servers handle PPCs synchronously** but returning results immediately (no deep call chains). Workers use **notifications**, which are asynchronous and don't block the sender.
 
 **Maintain this.** The ppcall/notify split is correct.
 
 ### 3. **Unbounded Authority Delegation**
 HURD's capability model (if you know a translator's name, you can use it) means **authority is not bounded**. A translator cannot revoke access selectively; all holders of the translator's name have equal rights.
 
-**agentOS has the opportunity to do better** via explicit capability grants with revocation chains.
+**FractalOS has the opportunity to do better** via explicit capability grants with revocation chains.
 
 **Implement this:** Make revocation work by **tracking delegation chains** (see Finding #3 above).
 
 ### 4. **No Consensus on Policy Enforcement**
 HURD never settled on **where policy is enforced**: in translators, in the microkernel, or in libraries. This led to **inconsistent security** across different translators.
 
-**agentOS should be explicit:** Choose one:
+**FractalOS should be explicit:** Choose one:
 - **Kernel (seL4):** Enforce all security in the kernel; PDs are purely functional. (Hard, requires seL4 patches.)
-- **Monitor:** The monitor PD is the policy enforcer; all other PDs are passive or follow the monitor's decisions. (agentOS is moving toward this.)
+- **Monitor:** The monitor PD is the policy enforcer; all other PDs are passive or follow the monitor's decisions. (FractalOS is moving toward this.)
 - **Libraries:** The Rust SDK provides security libraries that agents use. (Trusts agents not to bypass the SDK.)
 
 **Recommended:** Go with **Monitor-based enforcement**. init_agent registers policies at boot; the monitor enforces them; service PDs (NameServer, VFS, etc.) are purely passive/functional.
@@ -604,7 +604,7 @@ HURD never settled on **where policy is enforced**: in translators, in the micro
 ### 5. **No Audit Trail**
 HURD has no built-in **capability audit log**. If a translator misbehaves, there is no record of which other translators it contacted.
 
-**agentOS has a `cap_audit_log` PD** in the design (see `agentos.h:241–245`), but it is not implemented.
+**FractalOS has a `cap_audit_log` PD** in the design (see `fractalos.h:241–245`), but it is not implemented.
 
 **Implement this immediately:** Every capability grant/revoke/delegation must be logged with agent IDs, timestamps, and rights.
 
@@ -638,7 +638,7 @@ HURD has no built-in **capability audit log**. If a translator misbehaves, there
 
 ## Conclusion
 
-agentOS makes several **strong architectural choices**:
+FractalOS makes several **strong architectural choices**:
 - **Static topology** avoids HURD's bootstrap deadlock problems.
 - **Passive servers** sidesteps most priority inversion issues.
 - **Capability framework** is far more robust than HURD's UID/GID model.
@@ -646,19 +646,19 @@ agentOS makes several **strong architectural choices**:
 
 However, the design has **critical gaps in audit trails, memory safety, and topic authorization** that must be fixed before production use. The EventBus topic squatting vulnerability, WASM bounds escape, and missing capability delegation audit trail are particularly severe.
 
-With the recommended fixes (especially Tier 1), agentOS can achieve **comparable or better security** than HURD while remaining simpler and more predictable. The key is to **trust the seL4 kernel for isolation**, enforce **policy explicitly in the monitor**, and **log all security-relevant operations**.
+With the recommended fixes (especially Tier 1), FractalOS can achieve **comparable or better security** than HURD while remaining simpler and more predictable. The key is to **trust the seL4 kernel for isolation**, enforce **policy explicitly in the monitor**, and **log all security-relevant operations**.
 
 ---
 
 ## Appendix: Files Analyzed
 
-- `kernel/agentos-root-task/include/agentos.h` — 548 lines, defines all channel IDs, message tags, priorities, event structures.
-- `kernel/agentos-root-task/src/monitor.c` — ~1000 lines (partial read), controller/coordinator PD, VibeEngine integration.
-- `kernel/agentos-root-task/src/nameserver.c` — 353 lines, passive service registry (no auth checks).
-- `kernel/agentos-root-task/src/app_manager.c` — 401 lines, orchestrates app deployment and lifecycle.
-- `kernel/agentos-root-task/src/spawn_server.c` — 589 lines, dynamic app slot launching (no image verification).
-- `kernel/agentos-root-task/src/vfs_server.c` — ~300 lines (partial), in-memory filesystem (no path normalization).
-- `kernel/agentos-root-task/agentos.system` — 500+ lines, Microkit system description (static PD topology, channel wiring, priorities).
+- `kernel/fractalos-root-task/include/fractalos.h` — 548 lines, defines all channel IDs, message tags, priorities, event structures.
+- `kernel/fractalos-root-task/src/monitor.c` — ~1000 lines (partial read), controller/coordinator PD, VibeEngine integration.
+- `kernel/fractalos-root-task/src/nameserver.c` — 353 lines, passive service registry (no auth checks).
+- `kernel/fractalos-root-task/src/app_manager.c` — 401 lines, orchestrates app deployment and lifecycle.
+- `kernel/fractalos-root-task/src/spawn_server.c` — 589 lines, dynamic app slot launching (no image verification).
+- `kernel/fractalos-root-task/src/vfs_server.c` — ~300 lines (partial), in-memory filesystem (no path normalization).
+- `kernel/fractalos-root-task/fractalos.system` — 500+ lines, Microkit system description (static PD topology, channel wiring, priorities).
 - `userspace/sdk/src/capability.rs` — 266 lines, typed capability system with rights and delegation (no cryptographic audit).
 - `userspace/sdk/src/context.rs` — 214 lines, agent runtime context and lifecycle (subscribe/publish/spawn).
 - `userspace/sdk/src/event.rs` — 236 lines, event definitions, priorities, EventChannel abstraction.

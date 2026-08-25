@@ -1,5 +1,5 @@
 #!/bin/sh
-# run_api_tests.sh — compile and run all agentOS API tests, emit TAP output
+# run_api_tests.sh — compile and run all FractalOS API tests, emit TAP output
 #
 # Usage:
 #   sh tests/api/run_api_tests.sh        # run all tests
@@ -11,7 +11,7 @@
 # through `prove` or any other TAP harness:
 #   prove -e sh tests/api/run_api_tests.sh
 #
-# Copyright (c) 2026 The agentOS Project
+# Copyright (c) 2026 The FractalOS Project
 # SPDX-License-Identifier: BSD-2-Clause
 
 set -e
@@ -19,10 +19,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TESTS_DIR="${REPO_ROOT}/tests/api"
-BUILD_DIR="${TMPDIR:-/tmp}/agentos-api-tests-$$"
+BUILD_DIR="${TMPDIR:-/tmp}/fractalos-api-tests-$$"
 
 CC="${CC:-cc}"
-CFLAGS="-DAGENTOS_TEST_HOST -I${TESTS_DIR} -I${REPO_ROOT}/kernel/agentos-root-task/include -std=c11 -Wall -Wextra -Wpedantic"
+CFLAGS="-DFRACTALOS_TEST_HOST -I${TESTS_DIR} -I${REPO_ROOT}/kernel/fractalos-root-task/include -std=c11 -Wall -Wextra -Wpedantic"
 
 mkdir -p "${BUILD_DIR}"
 
@@ -85,7 +85,7 @@ done
 rm -rf "${BUILD_DIR}"
 
 echo ""
-echo "# === agentOS API test summary ==="
+echo "# === FractalOS API test summary ==="
 echo "# Suites passed : ${PASSED}"
 echo "# Suites failed : ${FAILED}"
 echo "# Compile errors: ${ERRORS}"

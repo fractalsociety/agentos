@@ -1,4 +1,4 @@
-//! Multi-agent orchestration for agentos-sim.
+//! Multi-agent orchestration for fractalos-sim.
 //!
 //! [`SimOrchestrator`] connects multiple [`AgentRunner`] instances via a
 //! shared channel-route table.  When agent A calls
@@ -45,18 +45,18 @@ pub struct ChannelRoute {
 
 /// Orchestrates multiple simulated agents connected by channel routes.
 pub struct SimOrchestrator {
-    engine:  SimEngine,
+    engine: SimEngine,
     runners: HashMap<String, AgentRunner>,
-    routes:  Vec<ChannelRoute>,
+    routes: Vec<ChannelRoute>,
 }
 
 impl SimOrchestrator {
     /// Create an empty orchestrator with a fresh [`SimEngine`].
     pub fn new() -> Self {
         Self {
-            engine:  SimEngine::new(),
+            engine: SimEngine::new(),
             runners: HashMap::new(),
-            routes:  Vec::new(),
+            routes: Vec::new(),
         }
     }
 
@@ -149,7 +149,9 @@ impl SimOrchestrator {
             regs[2] = mr2 as u64;
             regs[3] = mr3 as u64;
             // Clear higher MRs so there are no stale values.
-            for r in &mut regs[4..] { *r = 0; }
+            for r in &mut regs[4..] {
+                *r = 0;
+            }
         }
 
         // ── Step 2: call target's handle_ppc ─────────────────────────────
@@ -203,5 +205,7 @@ impl SimOrchestrator {
 }
 
 impl Default for SimOrchestrator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

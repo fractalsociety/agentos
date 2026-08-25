@@ -1,4 +1,4 @@
-//! EventBus - the nervous system of agentOS
+//! EventBus - the nervous system of FractalOS
 //!
 //! Agents communicate primarily through typed, schema-validated events.
 //! The EventBus is not just a message queue — it's a capability-gated pub/sub
@@ -18,8 +18,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::identity::AgentId;
 use crate::capability::Capability;
+use crate::identity::AgentId;
 
 /// Priority class for event delivery
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,34 +34,34 @@ pub enum Priority {
     Background = 0,
 }
 
-/// Event kinds - the vocabulary of agentOS inter-agent communication
+/// Event kinds - the vocabulary of FractalOS inter-agent communication
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EventKind {
-    // System events (emitted by agentOS core)
+    // System events (emitted by FractalOS core)
     AgentSpawned,
     AgentExited { exit_code: i32 },
     AgentFaulted { fault: FaultKind },
     CapabilityGranted,
     CapabilityRevoked,
-    MemoryPressure { level: u8 },  // 0-255, 255 = critical
+    MemoryPressure { level: u8 }, // 0-255, 255 = critical
     SchedulerTick,
-    
+
     // Agent-defined events (custom schemas)
     Custom { kind: String },
-    
+
     // AgentFS events
     ObjectCreated,
     ObjectUpdated,
     ObjectDeleted,
-    
+
     // VectorStore events
     EmbeddingAdded,
     EmbeddingDeleted,
-    
+
     // Network events
     ConnectionEstablished,
     ConnectionClosed,
-    
+
     // Inference events
     InferenceStarted,
     InferenceComplete { latency_ms: u64 },
@@ -88,7 +88,7 @@ pub struct Event {
     pub source: AgentId,
     /// What happened
     pub kind: EventKind,
-    /// When this happened (ns since agentOS epoch)
+    /// When this happened (ns since FractalOS epoch)
     pub timestamp_ns: u64,
     /// The event payload (schema defined by EventKind)
     pub payload: EventPayload,
@@ -172,7 +172,12 @@ pub struct EventChannel {
 }
 
 impl EventChannel {
-    pub fn new(cap: Capability, name: impl Into<String>, topic: impl Into<String>, priority: Priority) -> Self {
+    pub fn new(
+        cap: Capability,
+        name: impl Into<String>,
+        topic: impl Into<String>,
+        priority: Priority,
+    ) -> Self {
         Self {
             cap,
             name: name.into(),
@@ -295,7 +300,8 @@ mod tests {
             0,
             EventPayload::Empty,
             Priority::Background,
-        ).durable();
+        )
+        .durable();
         assert!(ev.durable);
     }
 
@@ -308,7 +314,8 @@ mod tests {
             0,
             EventPayload::Empty,
             Priority::BestEffort,
-        ).correlate(corr);
+        )
+        .correlate(corr);
         assert_eq!(ev.correlation_id, Some(EventId(42)));
     }
 
@@ -348,7 +355,10 @@ mod tests {
 
     #[test]
     fn fault_kind_vm_fault_stores_addr_and_write() {
-        let f = FaultKind::VmFault { addr: 0xDEAD, write: true };
+        let f = FaultKind::VmFault {
+            addr: 0xDEAD,
+            write: true,
+        };
         if let FaultKind::VmFault { addr, write } = f {
             assert_eq!(addr, 0xDEAD);
             assert!(write);
@@ -397,7 +407,8 @@ mod tests {
                 ts,
                 EventPayload::Empty,
                 Priority::BestEffort,
-            )).unwrap();
+            ))
+            .unwrap();
         }
 
         assert_eq!(ch.poll().unwrap().timestamp_ns, 10);
@@ -410,7 +421,13 @@ mod tests {
     fn event_channel_publish_returns_event_id() {
         let cap = test_cap();
         let mut ch = EventChannel::new(cap, "ch", "t", Priority::BestEffort);
-        let ev = Event::new(test_agent(), EventKind::AgentSpawned, 999, EventPayload::Empty, Priority::BestEffort);
+        let ev = Event::new(
+            test_agent(),
+            EventKind::AgentSpawned,
+            999,
+            EventPayload::Empty,
+            Priority::BestEffort,
+        );
         let ev_id = ev.id;
         let returned_id = ch.publish(ev).unwrap();
         assert_eq!(returned_id, ev_id);
@@ -421,9 +438,21 @@ mod tests {
     #[test]
     fn event_error_display() {
         assert_eq!(EventError::ChannelFull.to_string(), "event channel is full");
-        assert_eq!(EventError::NotSubscribed.to_string(), "not subscribed to this channel");
-        assert_eq!(EventError::InvalidPayload.to_string(), "invalid event payload");
-        assert_eq!(EventError::CapabilityDenied.to_string(), "capability denied for channel");
-        assert_eq!(EventError::ChannelClosed.to_string(), "event channel is closed");
+        assert_eq!(
+            EventError::NotSubscribed.to_string(),
+            "not subscribed to this channel"
+        );
+        assert_eq!(
+            EventError::InvalidPayload.to_string(),
+            "invalid event payload"
+        );
+        assert_eq!(
+            EventError::CapabilityDenied.to_string(),
+            "capability denied for channel"
+        );
+        assert_eq!(
+            EventError::ChannelClosed.to_string(),
+            "event channel is closed"
+        );
     }
 }

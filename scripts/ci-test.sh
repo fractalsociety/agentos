@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# ci-test.sh — agentOS CI test harness
+# ci-test.sh — FractalOS CI test harness
 #
-# Boots agentOS in QEMU, captures serial output, checks for expected
+# Boots FractalOS in QEMU, captures serial output, checks for expected
 # test markers, exits 0 on PASS or 1 on FAIL.
 #
 # Usage:
 #   ./scripts/ci-test.sh [IMAGE] [BIOS]
 #
 # Env overrides:
-#   AGENTOS_IMAGE   path to agentos.img (default: auto-detected)
-#   AGENTOS_BIOS    path to opensbi firmware (default: auto-detected)
-#   AGENTOS_TIMEOUT boot timeout in seconds (default: 30)
-#   AGENTOS_LOG     path to save serial output (default: /tmp/agentos-ci.log)
+#   FRACTALOS_IMAGE   path to fractalos.img (default: auto-detected)
+#   FRACTALOS_BIOS    path to opensbi firmware (default: auto-detected)
+#   FRACTALOS_TIMEOUT boot timeout in seconds (default: 30)
+#   FRACTALOS_LOG     path to save serial output (default: /tmp/fractalos-ci.log)
 
 set -euo pipefail
 
@@ -20,20 +20,20 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Architecture: riscv64 (default) or aarch64 (set AGENTOS_ARCH=aarch64)
-ARCH="${AGENTOS_ARCH:-riscv64}"
+# Architecture: riscv64 (default) or aarch64 (set FRACTALOS_ARCH=aarch64)
+ARCH="${FRACTALOS_ARCH:-riscv64}"
 
 if [[ "${ARCH}" == "aarch64" ]]; then
-    IMAGE="${AGENTOS_IMAGE:-${ROOT_DIR}/kernel/agentos-root-task/build-aarch64/agentos.img}"
+    IMAGE="${FRACTALOS_IMAGE:-${ROOT_DIR}/kernel/fractalos-root-task/build-aarch64/fractalos.img}"
     QEMU_BIN="qemu-system-aarch64"
     # virtualization=on → EL2 (required by seL4 hypervisor config in qemu_virt_aarch64 SDK)
     QEMU_ARGS="-machine virt,virtualization=on -cpu cortex-a57 -m 2G -nographic"
     BIOS=""  # AArch64 virt machine has built-in firmware
 else
-    IMAGE="${AGENTOS_IMAGE:-${ROOT_DIR}/kernel/agentos-root-task/build-riscv/agentos.img}"
+    IMAGE="${FRACTALOS_IMAGE:-${ROOT_DIR}/kernel/fractalos-root-task/build-riscv/fractalos.img}"
     QEMU_BIN="qemu-system-riscv64"
     # BIOS auto-detection for RISC-V
-    if [[ -z "${AGENTOS_BIOS:-}" ]]; then
+    if [[ -z "${FRACTALOS_BIOS:-}" ]]; then
         for candidate in \
             /usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin \
             /usr/local/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin \
@@ -44,12 +44,12 @@ else
             fi
         done
     fi
-    BIOS="${AGENTOS_BIOS:-${BIOS:-/usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin}}"
+    BIOS="${FRACTALOS_BIOS:-${BIOS:-/usr/share/qemu/opensbi-riscv64-generic-fw_dynamic.bin}}"
     QEMU_ARGS="-machine virt -cpu rv64 -m 2G -nographic -bios ${BIOS}"
 fi
 
-TIMEOUT="${AGENTOS_TIMEOUT:-30}"
-LOG="${AGENTOS_LOG:-/tmp/agentos-ci-${ARCH}.log}"
+TIMEOUT="${FRACTALOS_TIMEOUT:-30}"
+LOG="${FRACTALOS_LOG:-/tmp/fractalos-ci-${ARCH}.log}"
 
 # ---------------------------------------------------------------------------
 # Preflight
@@ -63,7 +63,7 @@ info() { echo "    $*"; }
 
 echo ""
 echo "╔══════════════════════════════════════════════════╗"
-echo "║      agentOS CI Test Harness                     ║"
+echo "║      FractalOS CI Test Harness                     ║"
 echo "╚══════════════════════════════════════════════════╝"
 echo ""
 echo "  Arch   : ${ARCH}"
@@ -95,7 +95,7 @@ fi
 # ---------------------------------------------------------------------------
 # Boot QEMU, capture serial output with timeout
 # ---------------------------------------------------------------------------
-echo "── Booting agentOS in QEMU ────────────────────────"
+echo "── Booting FractalOS in QEMU ────────────────────────"
 echo ""
 
 # Run QEMU in background, capturing all serial output.
@@ -130,7 +130,7 @@ check() {
 if [[ "${ARCH}" != "aarch64" ]]; then
 check "OpenSBI firmware loaded"                  "OpenSBI"
 fi
-check "agentOS banner printed"                   "agentOS v0.1.0-alpha"
+check "FractalOS banner printed"                   "FractalOS v0.1.0-alpha"
 check "Protection domains listed"                "controller"
 
 # EventBus lifecycle
@@ -146,11 +146,11 @@ check "InitAgent subscribing to EventBus"        "[init_agent] Subscribing to Ev
 check "EventBus subscription OK"                 "[init_agent] EventBus subscription: OK"
 
 # Controller boot complete
-check "Controller boot complete"                 "[controller] *** agentOS controller boot complete ***"
+check "Controller boot complete"                 "[controller] *** FractalOS controller boot complete ***"
 check "Controller ready for agents"              "[controller] Ready for agents."
 
 # InitAgent alive
-check "InitAgent event loop running (ALIVE)"     "[init_agent] Entering event loop. agentOS is ALIVE."
+check "InitAgent event loop running (ALIVE)"     "[init_agent] Entering event loop. FractalOS is ALIVE."
 
 # ---------------------------------------------------------------------------
 # Results

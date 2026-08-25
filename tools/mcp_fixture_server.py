@@ -36,13 +36,13 @@ def main() -> int:
                     "resultType": "complete",
                     "supportedVersions": [PROTOCOL],
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "agentos-fixture", "version": "1"},
+                    "serverInfo": {"name": "fractalos-fixture", "version": "1"},
                 }
             elif method == "initialize" and legacy:
                 result = {
                     "protocolVersion": LEGACY_PROTOCOL,
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "agentos-legacy-fixture", "version": "1"},
+                    "serverInfo": {"name": "fractalos-legacy-fixture", "version": "1"},
                 }
             elif method == "tools/list":
                 result = {

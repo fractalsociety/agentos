@@ -2,7 +2,7 @@
 
 ## Overview
 
-ModelSvc is the capability-gated inference proxy for agentOS.  All LLM
+ModelSvc is the capability-gated inference proxy for FractalOS.  All LLM
 inference requests from agents flow through this service, which:
 
 - Maintains a registry of up to 32 named model endpoints
@@ -18,7 +18,7 @@ Default models registered at boot:
 - `default` — NVIDIA inference API (`NVIDIA_API_KEY`)
 - `code-gen` — NVIDIA inference API, higher token limit
 - `fast` — OpenAI API (`OPENAI_API_KEY`), smaller context window
-- `agentos-echo` — dependency-free native diagnostic backend
+- `fractalos-echo` — dependency-free native diagnostic backend
 
 The implementation is intentionally vibe-swappable: an agent can register
 a replacement that performs local inference, quantization, model routing,
@@ -89,4 +89,4 @@ without overflow before dereference.
 
 - `services/modelsvc/model_svc.c` — native C protection-domain implementation
 - `userspace/servers/model-proxy/src/lib.rs` — Rust userspace proxy
-- `kernel/agentos-root-task/include/net_server.h` — OP_NET_HTTP_POST
+- `kernel/fractalos-root-task/include/net_server.h` — OP_NET_HTTP_POST

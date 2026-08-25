@@ -3,9 +3,9 @@
  *
  * Tests the seL4 IPC message layer in synchronous simulation.  No real seL4
  * kernel or Microkit runtime is required.  The production structs and dispatch
- * logic are embedded inline under AGENTOS_TEST_HOST so the file compiles with:
+ * logic are embedded inline under FRACTALOS_TEST_HOST so the file compiles with:
  *
- *   cc -std=c11 -Wall -Wextra -DAGENTOS_TEST_HOST \
+ *   cc -std=c11 -Wall -Wextra -DFRACTALOS_TEST_HOST \
  *       -I tests/api -o /tmp/ipc_tests tests/api/ipc_tests.c
  *
  * sel4_server_dispatch() is invoked directly (no threads) to give a
@@ -14,11 +14,11 @@
  *
  * TAP version 14 output; 25 test points.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include <stdint.h>
 #include <stddef.h>
@@ -28,7 +28,7 @@
 /* ══════════════════════════════════════════════════════════════════════════
  * Embedded production types (from sel4_ipc.h / sel4_server.h)
  * Duplicated here so the test is self-contained; values must match the
- * authoritative headers in kernel/agentos-root-task/include/.
+ * authoritative headers in kernel/fractalos-root-task/include/.
  * ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Error codes ────────────────────────────────────────────────────────── */
@@ -124,7 +124,7 @@ static inline uint32_t sel4_server_dispatch(sel4_server_t *srv,
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Badge encoding (agentOS 64-bit badge layout)
+ * Badge encoding (FractalOS 64-bit badge layout)
  *
  *   bits 63:32  op_token   (32 bits)
  *   bits 31:16  service_id (16 bits)
@@ -563,5 +563,5 @@ int main(void)
 }
 
 #else
-typedef int _agentos_ipc_tests_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_ipc_tests_dummy;
+#endif /* FRACTALOS_TEST_HOST */

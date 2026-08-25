@@ -1,11 +1,11 @@
 /*
- * agentOS Quota PD — Unit Test
+ * FractalOS Quota PD — Unit Test
  *
  * Tests the quota enforcement logic by simulating register, tick, and
  * revocation scenarios. This is a host-side test that exercises the
  * quota table logic directly.
  *
- * Build:  cc -o test_quota tests/test_quota.c -I kernel/agentos-root-task/include
+ * Build:  cc -o test_quota tests/test_quota.c -I kernel/fractalos-root-task/include
  * Run:    ./test_quota
  *
  * For the seL4 Microkit build (integration test), the quota_pd is wired
@@ -318,7 +318,7 @@ static void test_multiple_agents(void) {
 
 int main(void) {
     printf("╔══════════════════════════════════════════════╗\n");
-    printf("║       agentOS Quota PD — Test Suite          ║\n");
+    printf("║       FractalOS Quota PD — Test Suite          ║\n");
     printf("╚══════════════════════════════════════════════╝\n");
 
     test_register_basic();

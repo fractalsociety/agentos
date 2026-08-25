@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run-fault-inject-tests.sh — Fault injection CI test runner
 #
-# Boots agentOS in QEMU with the fault_inject PD, runs a scripted sequence
+# Boots FractalOS in QEMU with the fault_inject PD, runs a scripted sequence
 # of OP_FAULT_INJECT commands via the monitor's debug serial interface, and
 # verifies that each fault triggers the expected watchdog recovery path.
 #
@@ -20,7 +20,7 @@ set -euo pipefail
 BOARD="${BOARD:-qemu_virt_riscv64}"
 MAX_RECOVERY_TICKS="${MAX_RECOVERY_TICKS:-100}"
 QEMU_TIMEOUT="${QEMU_TIMEOUT:-120}"
-IMG="build/${BOARD}/agentos.img"
+IMG="build/${BOARD}/fractalos.img"
 
 if [ ! -f "$IMG" ]; then
     echo "ERROR: image not found: $IMG" >&2
@@ -42,7 +42,7 @@ TESTS=(
 )
 
 # ── QEMU launch ──────────────────────────────────────────────────────────────
-QEMU_LOG=$(mktemp /tmp/agentos_qemu_XXXXXX.log)
+QEMU_LOG=$(mktemp /tmp/fractalos_qemu_XXXXXX.log)
 trap "rm -f $QEMU_LOG" EXIT
 
 echo "[fi] Starting QEMU (board=$BOARD, timeout=${QEMU_TIMEOUT}s)..."
@@ -70,10 +70,10 @@ esac
 $QEMU_CMD > "$QEMU_LOG" 2>&1 &
 QEMU_PID=$!
 
-# Wait for agentOS boot marker
+# Wait for FractalOS boot marker
 BOOT_TIMEOUT=30
 BOOT_WAITED=0
-until grep -q "\[monitor\] agentOS online" "$QEMU_LOG" 2>/dev/null; do
+until grep -q "\[monitor\] FractalOS online" "$QEMU_LOG" 2>/dev/null; do
     sleep 1
     BOOT_WAITED=$((BOOT_WAITED + 1))
     if [ "$BOOT_WAITED" -ge "$BOOT_TIMEOUT" ]; then
@@ -83,7 +83,7 @@ until grep -q "\[monitor\] agentOS online" "$QEMU_LOG" 2>/dev/null; do
         exit 2
     fi
 done
-echo "[fi] agentOS booted (${BOOT_WAITED}s)"
+echo "[fi] FractalOS booted (${BOOT_WAITED}s)"
 
 # ── Run test cases ───────────────────────────────────────────────────────────
 for test in "${TESTS[@]}"; do

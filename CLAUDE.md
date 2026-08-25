@@ -1,20 +1,20 @@
-# agentOS — Project Constitution for AI Agents
+# FractalOS — Project Constitution for AI Agents
 
 This document is **binding**. Every agent working in this repository must read and follow these rules before writing, deleting, or proposing any code. These rules exist because the humans running this project have learned what belongs here and what does not. Do not make exceptions. Do not ask whether a rule applies — if it plausibly applies, it does.
 
 ---
 
-## What agentOS Is
+## What FractalOS Is
 
-agentOS is a bootable, capability-secured operating system built on the seL4 formally-verified microkernel. It hosts entire operating system stacks (Linux, FreeBSD, and future guests) as a cooperating set of isolated protection domains. Its primary interface is an API — not a UI. Its primary value is OS lifecycle management (create, configure, destroy, migrate, snapshot operating systems on demand), strict capability-based isolation, and the vibeOS interface for on-demand OS instantiation.
+FractalOS is a bootable, capability-secured operating system built on the seL4 formally-verified microkernel. It hosts entire operating system stacks (Linux, FreeBSD, and future guests) as a cooperating set of isolated protection domains. Its primary interface is an API — not a UI. Its primary value is OS lifecycle management (create, configure, destroy, migrate, snapshot operating systems on demand), strict capability-based isolation, and the vibeOS interface for on-demand OS instantiation.
 
-**agentOS is not a framework. It is not a web app. It is not a dashboard. It boots on bare metal.**
+**FractalOS is not a framework. It is not a web app. It is not a dashboard. It boots on bare metal.**
 
 ---
 
 ## Non-Negotiable Language Policy
 
-agentOS is a **pure C + Rust + Assembly** project. Period.
+FractalOS is a **pure C + Rust + Assembly** project. Period.
 
 ### Allowed
 - **C** — kernel root task, CAmkES components, seL4 services, device drivers, low-level runtime
@@ -37,14 +37,14 @@ If you find an existing file in a forbidden language, **do not use it or extend 
 
 ## UI Policy — No User Interface Code
 
-agentOS has **no user interface** and must never have one.
+FractalOS has **no user interface** and must never have one.
 
 - No web dashboards, admin panels, or browser frontends
 - No HTML, CSS, or JavaScript served by any process in this repo
 - No WebSocket servers that serve terminal emulators to browsers
 - No React, xterm.js, WASM frontends, or similar
 
-**Rationale:** If a human or system wants to observe or control agentOS, they use the API. They write their own UI on top of the API contracts exposed by agentOS services. agentOS has no responsibility for how that UI looks or works. Mixing UI concerns into an OS kernel project pollutes scope, introduces forbidden languages, and creates maintenance debt with no upside.
+**Rationale:** If a human or system wants to observe or control FractalOS, they use the API. They write their own UI on top of the API contracts exposed by FractalOS services. FractalOS has no responsibility for how that UI looks or works. Mixing UI concerns into an OS kernel project pollutes scope, introduces forbidden languages, and creates maintenance debt with no upside.
 
 **If you find console/ or similar UI directories:** delete them and remove their Cargo workspace entries.
 
@@ -58,7 +58,7 @@ The seL4 microkernel is the **only** component that runs in kernel mode (Ring 0 
 
 ```
 Ring 0:  seL4 microkernel (formally verified, never modified)
-Ring 1:  agentOS root task / init (resource distributor, no policy)
+Ring 1:  FractalOS root task / init (resource distributor, no policy)
 Ring 2:  System services (net, disk, serial, memory, capability broker)
 Ring 3:  Guest OS VMMs (linux_vmm, freebsd_vmm, future guest VMMs)
 Ring 4:  Guest OS userspace (runs inside the VMM's address space)
@@ -129,7 +129,7 @@ Any custom device implementation without a corresponding approved defect task is
 
 ## vibeOS Interface — The Primary External API
 
-The `vibeOS` interface is the **primary way any external consumer interacts with agentOS**. It provides OS lifecycle management via seL4 IPC, callable from any language via a C FFI.
+The `vibeOS` interface is the **primary way any external consumer interacts with FractalOS**. It provides OS lifecycle management via seL4 IPC, callable from any language via a C FFI.
 
 ### Required Operations
 
@@ -152,7 +152,7 @@ The API is pure C structs over seL4 IPC. No HTTP. No JSON. No YAML. A `vos_spec_
 
 ### vibeOS and the Vibe-Engine
 
-The vibe-engine (`userspace/servers/vibe-engine/` and `kernel/agentos-root-task/src/vibe_engine.c`) handles **service-level hot-swap** — an agent proposes a WASM component, the engine validates and installs it. This is distinct from vibeOS (OS lifecycle). Both must coexist. The vibe-engine's hot-swap protocol must itself expose a contract in `contracts/vibe-engine/`.
+The vibe-engine (`userspace/servers/vibe-engine/` and `kernel/fractalos-root-task/src/vibe_engine.c`) handles **service-level hot-swap** — an agent proposes a WASM component, the engine validates and installs it. This is distinct from vibeOS (OS lifecycle). Both must coexist. The vibe-engine's hot-swap protocol must itself expose a contract in `contracts/vibe-engine/`.
 
 ---
 
@@ -181,14 +181,14 @@ The vibe-engine (`userspace/servers/vibe-engine/` and `kernel/agentos-root-task/
 
 This repository is exclusively for:
 
-1. **seL4 root task** — `kernel/agentos-root-task/`
+1. **seL4 root task** — `kernel/fractalos-root-task/`
 2. **CAmkES system services** — `services/` — each a seL4 PD implementing a specific system function
 3. **Interface contracts** — `contracts/` — C headers + README per service
 4. **Generic device services** — `services/serial-mux/`, `services/net-service/`, `services/block-service/`, etc.
-5. **Guest OS VMMs** — `kernel/agentos-root-task/src/linux_vmm.c`, `freebsd-vmm/`, future VMMs
+5. **Guest OS VMMs** — `kernel/fractalos-root-task/src/linux_vmm.c`, `freebsd-vmm/`, future VMMs
 6. **vibeOS lifecycle API and implementation** — wherever it lives, it must have a contract
 7. **Vibe-engine (WASM hot-swap)** — `userspace/servers/vibe-engine/`
-8. **agentOS SDK** — `userspace/sdk/`, `libs/` — the C and Rust libraries agents use
+8. **FractalOS SDK** — `userspace/sdk/`, `libs/` — the C and Rust libraries agents use
 9. **Build and code-generation tools** — `tools/` — written in Rust or C
 10. **Simulator** — `userspace/sim/` — in-memory seL4 simulation for testing
 11. **Test suite** — `tests/` — all tests, written in C or Rust
@@ -201,10 +201,10 @@ This repository is exclusively for:
 - **Any Python** — see Language Policy above
 - **Any Node.js project** — this includes `package.json`, `node_modules/`, `.nvmrc`
 - **Any cloud provider SDK** — no AWS SDK, no GCP SDK, no Azure SDK
-- **Any LLM provider SDK used directly** — if agentOS needs model inference, it goes through `ModelSvc` (a CAmkES PD), not a Rust crate that calls the OpenAI API
+- **Any LLM provider SDK used directly** — if FractalOS needs model inference, it goes through `ModelSvc` (a CAmkES PD), not a Rust crate that calls the OpenAI API
 - **Any web framework** — no axum serving HTML, no actix-web, no warp serving browser content
-- **Any mobile code** — agentOS runs on servers and embedded hardware, not phones
-- **Monitoring agents or observability SaaS integrations** — agentOS has its own audit log (`LogSvc`)
+- **Any mobile code** — FractalOS runs on servers and embedded hardware, not phones
+- **Monitoring agents or observability SaaS integrations** — FractalOS has its own audit log (`LogSvc`)
 - **Any mocking of seL4 IPC for tests** — use the simulator (`userspace/sim/`) instead
 
 ---

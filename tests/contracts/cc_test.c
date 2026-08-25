@@ -28,14 +28,14 @@
  *   MSG_CC_TRACE_QUERY             — query CC trace bridge
  *   MSG_CC_TRACE_DUMP              — dump CC trace bridge
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/cc_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/guest_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/cc_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/guest_contract.h"
 
 void run_cc_tests(microkit_channel ch)
 {

@@ -3,7 +3,7 @@
 #
 # Usage:
 #   make BOARD_NAME=rpi5 build
-#   sudo ./boards/rpi5/flash-sd.sh /dev/sdX build/rpi4b_4gb/agentos.img
+#   sudo ./boards/rpi5/flash-sd.sh /dev/sdX build/rpi4b_4gb/fractalos.img
 #
 # NOTE: Until the Microkit SDK adds native RPi5 support, this image uses
 # the rpi4b_4gb board definition and will not boot correctly on RPi5 hardware.
@@ -33,7 +33,7 @@ if [[ ! -f "$IMAGE" ]]; then
 fi
 
 echo "==> Preparing RPi5 SD card on $DEVICE"
-echo "    agentOS image:  $IMAGE"
+echo "    FractalOS image:  $IMAGE"
 echo "    RPi firmware:   $FIRMWARE_DIR"
 echo ""
 echo "WARNING: ALL DATA ON $DEVICE WILL BE ERASED."
@@ -49,7 +49,7 @@ sleep 1
 
 # ── Format ───────────────────────────────────────────────────────────────────
 echo "==> Formatting ${PART} as FAT32 ..."
-mkfs.vfat -F 32 -n "AGENTOS_BOOT" "$PART"
+mkfs.vfat -F 32 -n "FRACTALOS_BOOT" "$PART"
 
 # ── Mount and install ─────────────────────────────────────────────────────────
 MNT=$(mktemp -d)
@@ -67,11 +67,11 @@ done
 
 # config.txt: tell the RPi bootloader to load our ELF as the kernel
 cat > "$MNT/config.txt" <<'CONFIG'
-# agentOS seL4/Microkit config for Raspberry Pi 4/5
+# FractalOS seL4/Microkit config for Raspberry Pi 4/5
 arm_64bit=1
-kernel=agentos.img
+kernel=fractalos.img
 enable_uart=1
-# Disable Bluetooth to free the primary PL011 UART for agentOS console
+# Disable Bluetooth to free the primary PL011 UART for FractalOS console
 dtoverlay=disable-bt
 # CPU governor (optional — seL4 manages this)
 arm_freq=1500
@@ -79,7 +79,7 @@ over_voltage=2
 CONFIG
 
 # Copy seL4 image
-cp "$IMAGE" "$MNT/agentos.img"
+cp "$IMAGE" "$MNT/fractalos.img"
 
 echo ""
 echo "==> Done! SD card prepared at $DEVICE"

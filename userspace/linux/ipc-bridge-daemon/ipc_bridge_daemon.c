@@ -1,6 +1,6 @@
-/* ipc_bridge_daemon — Linux side of the agentOS IPC bridge.
+/* ipc_bridge_daemon — Linux side of the FractalOS IPC bridge.
  *
- * Maps the agentOS shared memory ring via /dev/mem and polls for
+ * Maps the FractalOS shared memory ring via /dev/mem and polls for
  * commands from native seL4 PDs.  Executes them and writes responses.
  *
  * Usage: ipc_bridge_daemon [--shmem-phys ADDR] [--shmem-size SIZE]
@@ -12,7 +12,7 @@
  *   [IPC_CMD_RING_OFFSET  .. +sizeof(ipc_cmd_ring_t)]   seL4→Linux cmds
  *   [IPC_RESP_RING_OFFSET .. +sizeof(ipc_resp_ring_t)]  Linux→seL4 resps
  *
- * Copyright 2026 agentOS Project (BSD-2-Clause)
+ * Copyright 2026 FractalOS Project (BSD-2-Clause)
  */
 
 /* _GNU_SOURCE is set via -D in the Makefile; guard against double-definition
@@ -39,7 +39,7 @@
  *
  * Kept inline so this file compiles standalone inside the Linux guest without
  * access to the seL4 kernel tree.  Must stay in sync with
- * kernel/agentos-root-task/include/ipc_bridge.h.
+ * kernel/fractalos-root-task/include/ipc_bridge.h.
  */
 
 #define IPC_SHMEM_BASE          0x4000000UL

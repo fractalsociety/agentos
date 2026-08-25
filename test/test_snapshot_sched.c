@@ -1,5 +1,5 @@
 /*
- * test_snapshot_sched.c — unit tests for agentOS snapshot_sched PD logic
+ * test_snapshot_sched.c — unit tests for FractalOS snapshot_sched PD logic
  *
  * Standalone host test that mirrors the scheduling, delta-compression, and
  * history-ring logic from snapshot_sched.c without any seL4 / Microkit deps.

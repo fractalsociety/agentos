@@ -116,33 +116,37 @@ cargo run -p wg-headscale-netmap -- fetch \
   --output /tmp/netmap.bin
 ```
 
-**Still open for full AC close:** A live Headscale with a valid TLS trust
-anchor (or installed CA) plus `FRACTALOS_MESH_CONTROL_LIVE=1` must run
-`fractalos-mesh-control join` successfully. Until that live gate passes,
-enroll standard Tailscale clients against the FreeBSD Headscale role for
-device-to-device demos; native `wg_net` consumes netmaps from the join tool.
+**Native join status:** Proven on host against pinned Headscale via
+`tests/e2e/test_mesh_control_live_join.sh` (ts2021 Noise register, packed
+netmap, TLS DERP). Evidence:
+`build/evidence/gz0.5-native-headscale-join.json`.
 
-Native control client (no guest `tailscaled`):
+**Two-node native mesh:** Proven on host (`fos-gz0.15`) — two processes each
+running `wg_net` (`tests/host/wg_fractalos_node.c`) join Headscale via
+`fractalos-mesh-control`, apply peer netmaps, and exchange authenticated
+WireGuard transport over a localhost UDP underlay. Evidence:
+`build/evidence/two-fractalos-native-mesh.json`.
 
 ```bash
 # Offline packed-netmap encode + unit tests
 ./tests/e2e/test_mesh_control_join.sh
 
-# Live ts2021 Noise register + netmap (+ optional DERP):
-FRACTALOS_MESH_CONTROL_LIVE=1 \
-FRACTALOS_HEADSCALE_URL=https://mesh.fractalos.internal:8080 \
-FRACTALOS_HEADSCALE_AUTH_KEY='hskey-auth-…' \
-  ./tests/e2e/test_mesh_control_join.sh
+# Full live close gate (downloads pinned Headscale, self-signed CA, join):
+./tests/e2e/test_mesh_control_live_join.sh
 
-cargo run -p fractalos-mesh-control -- join \
-  --control-url "$FRACTALOS_HEADSCALE_URL" \
-  --auth-key "$FRACTALOS_HEADSCALE_AUTH_KEY" \
-  --netmap-out build/mesh-control/netmap.bin \
-  --derp-ping
+# Two FractalOS-native nodes + Headscale data-plane mesh:
+./tests/e2e/test_two_fractalos_native_mesh.sh
+
+# Against an existing controller:
+FRACTALOS_MESH_CONTROL_LIVE=1 \
+FRACTALOS_HEADSCALE_URL=https://mesh.example:8080 \
+FRACTALOS_HEADSCALE_AUTH_KEY='hskey-auth-…' \
+FRACTALOS_HEADSCALE_CA_FILE=/path/to/tls.crt \
+  ./tests/e2e/test_mesh_control_join.sh
 ```
 
-Install the Headscale TLS CA on the host before live join (self-signed
-first-boot certs are not in the public trust store).
+Pass `--ca-file` (or `FRACTALOS_HEADSCALE_CA_FILE`) when the controller uses a
+private CA. Public WebPKI roots are always included.
 
 Tailnet identity remains connectivity metadata. Neither a successful Noise
 session nor a Headscale tag creates ModelCap, ToolCap, MemoryCap, ExecCap, or a

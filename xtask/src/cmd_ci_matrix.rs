@@ -22,7 +22,7 @@ pub const TEST_MATRIX: &[TestCase] = &[
         board: "qemu_virt_aarch64",
         guest_os: "linux",
         extra_make_args: &[],
-        success_marker: "agentOS boot complete",
+        success_marker: "FractalOS boot complete",
     },
 ];
 
@@ -165,10 +165,10 @@ fn spawn_qemu_for_board(
     let log_file = std::fs::File::create(log_path)
         .map_err(|e| anyhow::anyhow!("failed to create QEMU log file: {}", e))?;
 
-    let build_image = repo_root.join("build").join(board).join("agentos.img");
+    let build_image = repo_root.join("build").join(board).join("fractalos.img");
     let image_str = build_image
         .to_str()
-        .unwrap_or("build/qemu_virt_aarch64/agentos.img")
+        .unwrap_or("build/qemu_virt_aarch64/fractalos.img")
         .to_string();
 
     let mut cmd = match board {

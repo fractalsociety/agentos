@@ -1,5 +1,5 @@
 /*
- * test_msgbus.c — API tests for the agentOS EventBus (message-bus) service
+ * test_msgbus.c — API tests for the FractalOS EventBus (message-bus) service
  *
  * Covered opcodes:
  *   OP_MSGBUS_CREATE_TOPIC   (0x10) — create a new pub/sub topic
@@ -19,14 +19,14 @@
  *       once the contracts directory carries the canonical header.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST -I tests/api -o /tmp/t_msgbus \
+ *   cc -DFRACTALOS_TEST_HOST -I tests/api -o /tmp/t_msgbus \
  *       tests/api/test_msgbus.c && /tmp/t_msgbus
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 
 /* ── Opcode definitions ───────────────────────────────────────────────────── */
@@ -42,7 +42,7 @@
 
 /* ── Mock EventBus implementation ────────────────────────────────────────── */
 /*
- * A minimal in-process event bus that honours the agentOS IPC ABI.
+ * A minimal in-process event bus that honours the FractalOS IPC ABI.
  * Registers use _mrs[] via the framework's microkit_mr_set / microkit_mr_get.
  *
  * MR layout (caller sets before dispatch, service reads):
@@ -672,7 +672,7 @@ int main(void) {
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
 /* Suppress "empty translation unit" warning in production builds */
-typedef int _agentos_api_test_msgbus_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_msgbus_dummy;
+#endif /* FRACTALOS_TEST_HOST */

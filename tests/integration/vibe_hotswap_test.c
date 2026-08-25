@@ -14,12 +14,12 @@
  * of which are hardware-dependent.  The test instead exercises the read-only
  * and probe paths that must work on any system where vibe_engine.c is running.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_vibe_hotswap_tests(void)
 {

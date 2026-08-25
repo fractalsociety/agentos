@@ -1,10 +1,10 @@
 {
-  "schema": "agentos.external_handoff.v1",
+  "schema": "fractalos.external_handoff.v1",
   "task_id": "unify_fractal_graph_ui",
   "generated_at": "2026-08-24T21:40:41Z",
   "controlplane_revision": "078983010a95567d5102754f53f9ec2811f99b66",
   "linked_issue": {
-    "id": "agentos-gz0.14.18.1",
+    "id": "fos-gz0.14.18.1",
     "title": "Unify Fractal graph UI on the canonical ExecutionGraphPreview renderer (external repos)",
     "status": "open"
   },
@@ -122,10 +122,10 @@
   "next_action": {
     "owner": "external (each sibling repository needs its own authorized plan rooted in that repository)",
     "critical_path": "commit packages/fractal-graph-ui in fractalsociety/website and correct GRAPH_LENSES ids to 'resource_economic' and 'memory_knowledge', then build the parity/e2e gates before any retirement",
-    "controlplane_completion": "handoff record complete; issue agentos-gz0.14.18.1 stays OPEN for the blocked external proof"
+    "controlplane_completion": "handoff record complete; issue fos-gz0.14.18.1 stays OPEN for the blocked external proof"
   },
   "verification": {
-    "jq_validate": "jq -e '.schema==\"agentos.external_handoff.v1\" and (.repositories|length)==4 and all(.repositories[]; (.revision|test(\"^[0-9a-f]{40}$\")) and (.external_commit_for_this_work==null) and (.blocker|length>0)) and (.required_checks|length)==9 and (.contract_lenses|length)==7 and (.retirement_order|length)==4' build/evidence/external-fractal-graph-ui.json",
+    "jq_validate": "jq -e '.schema==\"fractalos.external_handoff.v1\" and (.repositories|length)==4 and all(.repositories[]; (.revision|test(\"^[0-9a-f]{40}$\")) and (.external_commit_for_this_work==null) and (.blocker|length>0)) and (.required_checks|length)==9 and (.contract_lenses|length)==7 and (.retirement_order|length)==4' build/evidence/external-fractal-graph-ui.json",
     "diff_clean_check": "git status --porcelain and git diff --name-only contain no UI extension (html, css, js, mjs, jsx, tsx, vue, svelte, package.json, node_modules, yarn.lock, bun.lockb) and no parent-relative or sibling-repository path"
   }
 }

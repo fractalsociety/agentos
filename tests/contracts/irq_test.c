@@ -9,13 +9,13 @@
  *   IRQ_OP_UNMASK                  — unmask an IRQ
  *   IRQ_OP_STATUS                  — query IRQ status
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/irq_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/irq_contract.h"
 
 void run_irq_tests(microkit_channel ch)
 {

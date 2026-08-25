@@ -1,5 +1,5 @@
 /*
- * agentOS LogSvc — Audit and Logging Service
+ * FractalOS LogSvc — Audit and Logging Service
  *
  * Centralized, capability-audited logging for the entire system.
  * Every capability operation, IPC message, and agent event flows through here.
@@ -8,7 +8,7 @@
  * Agents can QUERY the log — they can read their own history.
  * The log is the system's memory.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -64,7 +64,7 @@ int logsvc_init(void) {
     
     /* Write the first log entry */
     logsvc_write(NULL, LOG_INFO, "logsvc", 
-                  "agentOS LogSvc initialized. Structured audit logging active.");
+                  "FractalOS LogSvc initialized. Structured audit logging active.");
     return 0;
 }
 

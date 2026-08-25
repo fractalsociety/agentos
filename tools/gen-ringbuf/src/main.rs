@@ -75,9 +75,7 @@ fn validate(schema: &Schema) -> Vec<String> {
         ));
     }
     if schema.fields.is_empty() {
-        errors.push(
-            "Missing required field: fields (must be non-empty list)".to_string(),
-        );
+        errors.push("Missing required field: fields (must be non-empty list)".to_string());
     } else {
         for (i, f) in schema.fields.iter().enumerate() {
             if f.name.is_empty() {
@@ -124,11 +122,7 @@ fn generate(schema: &Schema, source_name: &str) -> String {
 
     // Entry struct
     let hint = struct_size_hint(fields);
-    lines.push(format!(
-        "/* Ring entry: {} {} */",
-        entry_type,
-        hint.trim()
-    ));
+    lines.push(format!("/* Ring entry: {} {} */", entry_type, hint.trim()));
     lines.push("typedef struct {".to_string());
     for f in fields {
         lines.push(c_field_line(f));
@@ -167,40 +161,28 @@ fn generate(schema: &Schema, source_name: &str) -> String {
             "static inline void {}_init_producer(void) {{",
             lower
         ));
-        lines.push(format!(
-            "    RINGBUF_INIT_PRODUCER({}_get());",
-            lower
-        ));
+        lines.push(format!("    RINGBUF_INIT_PRODUCER({}_get());", lower));
         lines.push("}".to_string());
         lines.push(String::new());
         lines.push(format!(
             "static inline void {}_init_consumer(void) {{",
             lower
         ));
-        lines.push(format!(
-            "    RINGBUF_INIT_CONSUMER({}_get());",
-            lower
-        ));
+        lines.push(format!("    RINGBUF_INIT_CONSUMER({}_get());", lower));
         lines.push("}".to_string());
         lines.push(String::new());
         lines.push(format!(
             "static inline bool {}_enqueue(const {} *e) {{",
             lower, entry_type
         ));
-        lines.push(format!(
-            "    return RINGBUF_ENQUEUE({}_get(), *e);",
-            lower
-        ));
+        lines.push(format!("    return RINGBUF_ENQUEUE({}_get(), *e);", lower));
         lines.push("}".to_string());
         lines.push(String::new());
         lines.push(format!(
             "static inline bool {}_dequeue({} *e) {{",
             lower, entry_type
         ));
-        lines.push(format!(
-            "    return RINGBUF_DEQUEUE({}_get(), e);",
-            lower
-        ));
+        lines.push(format!("    return RINGBUF_DEQUEUE({}_get(), e);", lower));
         lines.push("}".to_string());
         lines.push(String::new());
     }
@@ -247,9 +229,7 @@ fn generate_test(schema: &Schema) -> String {
     lines.push("    /* Drain ring */".to_string());
     lines.push("    int dequeued = 0;".to_string());
     lines.push(format!("    {} out;", entry_type));
-    lines.push(
-        "    while (RINGBUF_DEQUEUE(&g_ring, &out)) dequeued++;".to_string(),
-    );
+    lines.push("    while (RINGBUF_DEQUEUE(&g_ring, &out)) dequeued++;".to_string());
     lines.push(format!("    assert(dequeued == {});", capacity));
     lines.push("    assert(RINGBUF_EMPTY(&g_ring));".to_string());
     lines.push(String::new());
@@ -265,7 +245,7 @@ fn generate_test(schema: &Schema) -> String {
 // ── CLI ───────────────────────────────────────────────────────────────── //
 
 #[derive(Parser)]
-#[command(name = "gen-ringbuf", about = "agentOS ring buffer code generator")]
+#[command(name = "gen-ringbuf", about = "FractalOS ring buffer code generator")]
 struct Cli {
     /// YAML schema file
     schema: PathBuf,
@@ -289,8 +269,7 @@ fn main() -> Result<()> {
     let content = std::fs::read_to_string(&cli.schema)
         .with_context(|| format!("failed to read {}", cli.schema.display()))?;
 
-    let schema: Schema = serde_yaml::from_str(&content)
-        .with_context(|| "YAML parse error")?;
+    let schema: Schema = serde_yaml::from_str(&content).with_context(|| "YAML parse error")?;
 
     let errors = validate(&schema);
     if !errors.is_empty() {
@@ -335,14 +314,13 @@ fn main() -> Result<()> {
         let test_path = std::path::Path::new(&test_path).to_path_buf();
         // If out_path was .h, replace extension
         let test_path = if out_path.extension().and_then(|e| e.to_str()) == Some("h") {
-            out_path
-                .with_file_name(format!(
-                    "{}_test.c",
-                    out_path
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("ring")
-                ))
+            out_path.with_file_name(format!(
+                "{}_test.c",
+                out_path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("ring")
+            ))
         } else {
             test_path
         };

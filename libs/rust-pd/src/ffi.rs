@@ -38,7 +38,7 @@ extern "C" {
 
     /// Log a NUL-terminated string via the Microkit debug console.
     ///
-    /// The `level` and `color` parameters correspond to the agentOS
+    /// The `level` and `color` parameters correspond to the FractalOS
     /// `console_log(level, color, str)` calling convention used throughout
     /// the kernel PDs.  Pass 0 for both to get plain output.
     pub fn console_log(level: u32, color: u32, s: *const u8);

@@ -10,20 +10,20 @@
  * so that post-order traversal ordering can be verified structurally.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -std=c11 -Wall -Wextra \
  *      -o /tmp/t_vos_destroy \
  *      tests/api/test_vos_destroy.c && /tmp/t_vos_destroy
  *
  * TAP output: 31 test points.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 #include "sel4_boot.h"
 #include "cap_tree.h"
@@ -357,8 +357,8 @@ void stub_cap_tree_remove(cap_tree_t *tree, uint32_t node_idx)
  * Include the implementations under test
  * ══════════════════════════════════════════════════════════════════════════ */
 
-#include "../../kernel/agentos-root-task/src/vos_create.c"
-#include "../../kernel/agentos-root-task/src/vos_destroy.c"
+#include "../../kernel/fractalos-root-task/src/vos_create.c"
+#include "../../kernel/fractalos-root-task/src/vos_destroy.c"
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Test helpers
@@ -981,5 +981,5 @@ int main(void)
 }
 
 #else
-typedef int _agentos_api_test_vos_destroy_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_vos_destroy_dummy;
+#endif /* FRACTALOS_TEST_HOST */

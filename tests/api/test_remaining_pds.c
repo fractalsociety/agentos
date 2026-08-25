@@ -15,19 +15,19 @@
  *
  * All tests run on the host using inline mock implementations.
  * Build & run (from repo root):
- *   cc -DAGENTOS_TEST_HOST -std=c11 -I tests/api \
+ *   cc -DFRACTALOS_TEST_HOST -std=c11 -I tests/api \
  *      -o /tmp/test_remaining_pds tests/api/test_remaining_pds.c \
  *      && /tmp/test_remaining_pds
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
-/* ── shared IPC ABI stubs (mirror agentos.h for test builds) ─────────────── */
+/* ── shared IPC ABI stubs (mirror fractalos.h for test builds) ─────────────── */
 
 #define SEL4_ERR_OK          0u
 #define SEL4_ERR_INVALID_OP  0xFFu
@@ -891,9 +891,9 @@ int main(void) {
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
 
 /* Kernel build: no main() here */
 void _test_remaining_pds_placeholder(void) {}
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

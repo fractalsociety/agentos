@@ -16,7 +16,7 @@ start_cmd="headscale_start"
 headscale_precmd()
 {
     install -d -o headscale -g headscale -m 0750 /var/run/headscale /var/db/headscale
-    install -d -o headscale -g headscale -m 0700 /var/db/agentos-secrets/headscale
+    install -d -o headscale -g headscale -m 0700 /var/db/fractalos-secrets/headscale
 }
 
 headscale_start()

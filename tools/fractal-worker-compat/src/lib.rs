@@ -1,12 +1,22 @@
 //! Fractal worker compatibility helpers for `fractal-worker/v1`.
 
 mod claude;
+mod codex;
 mod cursor;
 mod hermes;
+pub mod remote_session;
 
 pub use claude::ClaudeLauncher;
+pub use codex::CodexLauncher;
 pub use cursor::{CursorLauncher, OpenSessionOpts};
 pub use hermes::HermesLauncher;
+pub use remote_session::{
+    assess_provider_readiness, assess_provider_readiness_from_process, sample_envelope, valid_grant,
+    valid_lease, FixtureAdapter, GrantAuthority, HostExecutionLease, HostRemoteGrant, LiveEnvProbe,
+    ProcessLiveEnv, ProviderAdapter, ProviderProofClass, ProviderReadiness, ProviderReadinessReport,
+    RemoteDispatchOutcome, RemoteSessionEnvelope, RemoteSessionError, RemoteSessionHandle,
+    RemoteWorkerSessionHost, PROVIDER_READINESS_SCHEMA, WORKER_INTERFACE_LABEL,
+};
 
 use std::path::{Path, PathBuf};
 
@@ -37,7 +47,7 @@ fn err(msg: impl Into<String>) -> CompatError {
     CompatError::Message(msg.into())
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     Codex,
@@ -319,12 +329,20 @@ pub fn hermes_manifest_path() -> PathBuf {
     repo_root().join("manifests/workers/hermes.toml")
 }
 
+pub fn codex_manifest_path() -> PathBuf {
+    repo_root().join("manifests/workers/codex.toml")
+}
+
 pub fn worker_wit_path() -> PathBuf {
     repo_root().join("interfaces/wit/fractal-worker-v1/worker.wit")
 }
 
 pub fn cursor_fixture_dir() -> PathBuf {
     repo_root().join("tests/fixtures/cursor-worker")
+}
+
+pub fn codex_fixture_dir() -> PathBuf {
+    repo_root().join("tests/fixtures/codex-worker")
 }
 
 pub fn scan_manifest_safety(text: &str) -> Result<()> {

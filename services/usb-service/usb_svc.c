@@ -4,7 +4,7 @@
  * Stub implementation. Returns SEL4_ERR_NOT_SUPPORTED to all callers.
  * Full implementation: contracts/usb-service/interface.h
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

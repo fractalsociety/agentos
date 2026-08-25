@@ -1,5 +1,5 @@
 /*
- * agentOS AgentFS IPC Contract — interface.h
+ * FractalOS AgentFS IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the AgentFS protection domain.
  * AgentFS is the agent-native persistent object store.  It is NOT POSIX.
@@ -21,7 +21,7 @@
  * MR0 carries the opcode on request; MR0 carries the status on reply.
  * Object data passes through the agentfs_store shared MR.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -37,7 +37,7 @@
 /* ── Limits ──────────────────────────────────────────────────────────────── */
 
 #define AGENTFS_OBJECT_ID_BYTES     32     /* BLAKE3/UUID identifier */
-#define AGENTFS_SCHEMA_MAX          32     /* e.g. "agentOS::InferenceResult" */
+#define AGENTFS_SCHEMA_MAX          32     /* e.g. "FractalOS::InferenceResult" */
 #define AGENTFS_MAX_HOT_OBJECTS     256
 #define AGENTFS_HOT_STORE_SIZE      (256 * 1024)  /* 256KB hot tier */
 #define AGENTFS_MAX_VECTOR_DIM      512

@@ -1,13 +1,13 @@
 /*
  * test_cc_pd_metrics.c — host tests for the two CC-PD relay metric fixes.
  *
- *   agentos-681  agent_pool_occupancy() reports live busy/idle/faulted so
+ *   fos-681  agent_pool_occupancy() reports live busy/idle/faulted so
  *                MSG_CC_LIST_POLECATS is non-zero under agent load.
- *   agentos-vsi  cc_pd log-stream slot allocation: the boot guest owns slot 0
+ *   fos-vsi  cc_pd log-stream slot allocation: the boot guest owns slot 0
  *                and each vibe guest gets its own addressable slot.
  *
- * The agent_pool half links the REAL kernel/agentos-root-task/src/agent_pool.c
- * (host-compiled under AGENTOS_TEST_HOST) and drives it through its public
+ * The agent_pool half links the REAL kernel/fractalos-root-task/src/agent_pool.c
+ * (host-compiled under FRACTALOS_TEST_HOST) and drives it through its public
  * spawn/done API, asserting the occupancy snapshot tracks state transitions.
  *
  * The log-slot half exercises a faithful copy of cc_pd's slot-allocation logic
@@ -16,9 +16,9 @@
  *
  * Build:  cc -o /tmp/test_cc_pd_metrics \
  *             tests/test_cc_pd_metrics.c \
- *             kernel/agentos-root-task/src/agent_pool.c \
- *             -DAGENTOS_TEST_HOST -include tests/microkit.h \
- *             -I tests -I kernel/agentos-root-task/include
+ *             kernel/fractalos-root-task/src/agent_pool.c \
+ *             -DFRACTALOS_TEST_HOST -include tests/microkit.h \
+ *             -I tests -I kernel/fractalos-root-task/include
  * Run:    /tmp/test_cc_pd_metrics
  */
 
@@ -48,7 +48,7 @@ void agent_pool_worker_done(int slot, int status);
 /* agent_pool_occupancy() is declared in agent_pool_contract.h */
 
 /* ══════════════════════════════════════════════════════════════════════════
- * agentos-681: live polecat (agent worker) occupancy
+ * fos-681: live polecat (agent worker) occupancy
  * ══════════════════════════════════════════════════════════════════════════ */
 
 static int test_pool_starts_idle(void)
@@ -69,7 +69,7 @@ static int test_pool_busy_under_load(void)
 {
     agent_pool_init();
 
-    /* Spawn three agents — busy must become non-zero (the agentos-681 bug). */
+    /* Spawn three agents — busy must become non-zero (the fos-681 bug). */
     int s0 = agent_pool_spawn("alpha", 0, NULL, 0u, 0u);
     int s1 = agent_pool_spawn("beta",  0, NULL, 0u, 0u);
     int s2 = agent_pool_spawn("gamma", 0, NULL, 0u, 0u);
@@ -104,7 +104,7 @@ static int test_pool_occupancy_null_safe(void)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * agentos-vsi: log-stream slot allocation
+ * fos-vsi: log-stream slot allocation
  *
  * Mirror of cc_pd.c's g_log_slots[] / cc_log_slot_for_handle().  Kept in sync
  * with the implementation; this test exists to lock the slot semantics.
@@ -206,7 +206,7 @@ static const test_fn tests[] = {
 
 int main(void)
 {
-    printf("# cc_pd metrics tests (agentos-681 / agentos-vsi)\n");
+    printf("# cc_pd metrics tests (fos-681 / fos-vsi)\n");
     int failed = 0;
     size_t n = sizeof(tests) / sizeof(tests[0]);
     printf("1..%zu\n", n);

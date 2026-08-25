@@ -13,8 +13,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use agentos_pd::pd::{ProtectionDomain, export_pd};
-//! use agentos_pd::ipc::MsgInfo;
+//! use fractalos_pd::pd::{ProtectionDomain, export_pd};
+//! use fractalos_pd::ipc::MsgInfo;
 //!
 //! struct MyPd;
 //!

@@ -1,5 +1,5 @@
 /*
- * agentOS — net PD contract test
+ * FractalOS — net PD contract test
  * Covered opcodes: MSG_NET_OPEN, MSG_NET_CLOSE, MSG_NET_SEND, MSG_NET_RECV,
  *   MSG_NET_DEV_STATUS, MSG_NET_CONFIGURE, MSG_NET_FILTER_ADD, MSG_NET_FILTER_REMOVE,
  *   MSG_NET_SOCKET_OPEN, MSG_NET_SOCKET_CLOSE, MSG_NET_SOCKET_CONNECT,
@@ -7,8 +7,8 @@
  *   MSG_NET_SOCKET_SET_OPT
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/net_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/net_contract.h"
 
 void run_net_tests(microkit_channel ch) {
     TEST_SECTION("net");

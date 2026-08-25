@@ -5,11 +5,11 @@
 #include <stdint.h>
 
 #include "../../contracts/execsvc/interface.h"
-#include "../../kernel/agentos-root-task/include/system_desc.h"
-#ifndef AGENTOS_TEST_HOST
-#include "../../kernel/agentos-root-task/include/sel4_server.h"
-#include "../../kernel/agentos-root-task/include/sel4_client.h"
-#include "../../kernel/agentos-root-task/include/exec_transport.h"
+#include "../../kernel/fractalos-root-task/include/system_desc.h"
+#ifndef FRACTALOS_TEST_HOST
+#include "../../kernel/fractalos-root-task/include/sel4_server.h"
+#include "../../kernel/fractalos-root-task/include/sel4_client.h"
+#include "../../kernel/fractalos-root-task/include/exec_transport.h"
 #endif
 
 static uint8_t *exec_arena;
@@ -20,7 +20,7 @@ typedef uint32_t (*execsvc_transport_fn)(
     int32_t *exit_code, uint32_t *output_len, void *ctx);
 static execsvc_transport_fn exec_transport;
 static void *exec_transport_ctx;
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 static sel4_server_t exec_server;
 #endif
 
@@ -174,7 +174,7 @@ uint32_t execsvc_run_profile_dispatch(
     return reply->status;
 }
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 static uint32_t target_transport(
     uint32_t profile_id, const uint8_t *source, uint32_t source_len,
     uint8_t *output, uint32_t output_capacity, uint32_t request_tag,

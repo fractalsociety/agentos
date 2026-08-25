@@ -1,17 +1,17 @@
-# agentOS Agent Manifest — vibe-agent
+# FractalOS Agent Manifest — vibe-agent
 #
 # This is the showcase agent: it uses ModelSvc to reason about its own
 # environment, generates new CAmkES components (vibe-codes them), and
 # proposes them as service replacements.
 #
-# This is the agent that proves agentOS is the first OS where agents
+# This is the agent that proves FractalOS is the first OS where agents
 # design their own infrastructure.
 
 [agent]
 name = "vibe-agent"
 version = "0.1.0"
 description = "An agent that vibe-codes its own system services"
-binary = "agentos-vibe"
+binary = "fractalos-vibe"
 trust_level = 3  # Elevated trust — can propose service swaps
 
 [agent.identity]

@@ -1,6 +1,6 @@
 # vibeOS — Guest OS Lifecycle API
 
-vibeOS is the primary external interface to agentOS for on-demand management of
+vibeOS is the primary external interface to FractalOS for on-demand management of
 guest operating system instances. It lets any agent or system service create,
 destroy, configure, snapshot, and inspect Linux or FreeBSD guest VMs through a
 pure seL4 IPC protocol, without any kernel modifications or privileged access
@@ -8,7 +8,7 @@ beyond a capability badge.
 
 ## Concept
 
-agentOS separates *capability isolation* (seL4) from *OS-level services*
+FractalOS separates *capability isolation* (seL4) from *OS-level services*
 (guest VMs). Most agent workloads live natively in seL4 protection domains,
 but some tasks require a full Linux or FreeBSD userland — package managers,
 POSIX-only libraries, legacy agents. vibeOS provides these on demand.
@@ -54,7 +54,7 @@ that adds:
 
 ## Endpoint Discovery
 
-The vibeOS server registers its endpoint with the agentOS nameserver under the
+The vibeOS server registers its endpoint with the FractalOS nameserver under the
 well-known path `vibeos.v1`. Callers obtain an endpoint capability from the
 capability broker by invoking:
 
@@ -69,7 +69,7 @@ checked by the vibeOS server on every call.
 
 Callers must also negotiate a shared-memory region with the vibeOS server for
 passing large inputs (vos_spec_t, config blobs) and receiving large outputs
-(vos_status_t, list arrays). This is done via a standard agentOS shmem
+(vos_status_t, list arrays). This is done via a standard FractalOS shmem
 negotiation call before the first `VOS_OP_CREATE`.
 
 ## Creating a Guest OS — Step by Step
@@ -167,7 +167,7 @@ frame), then resumes the guest. It returns a 64-bit snapshot ID (content hash).
 
 `VOS_OP_MIGRATE` transfers a live guest to a different vibeOS endpoint. This
 may be a different protection domain on the same physical host (tested and
-supported), or a remote host reached through the agentOS mesh layer (planned).
+supported), or a remote host reached through the FractalOS mesh layer (planned).
 The source handle is invalidated on success; the caller receives a new handle
 valid in the destination domain.
 
@@ -176,7 +176,7 @@ valid in the destination domain.
 All operations return `VOS_ERR_OK` (0) in reply MR0 on success. On failure the
 MR0 contains a `VOS_ERR_*` code and other reply registers are undefined.
 
-Callers should treat `VOS_ERR_INTERNAL` as an agentOS bug and report it. All
+Callers should treat `VOS_ERR_INTERNAL` as an FractalOS bug and report it. All
 other errors are expected and recoverable: retry after `VOS_ERR_OUT_OF_MEMORY`
 when a slot frees up, or fix the spec before retrying `VOS_ERR_INVALID_SPEC`.
 

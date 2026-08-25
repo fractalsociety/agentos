@@ -1,5 +1,5 @@
 /*
- * serial_pd.c — agentOS Serial I/O Protection Domain  [E5-S7: raw seL4 IPC]
+ * serial_pd.c — FractalOS Serial I/O Protection Domain  [E5-S7: raw seL4 IPC]
  *
  * Owns the UART hardware exclusively.  No other PD may map the UART
  * device frame.  Guest VMMs and all other PDs reach serial I/O via IPC.
@@ -33,13 +33,13 @@
  *   - microkit_dbg_puts replaced with seL4_DebugPutChar loop.
  *   - Channel-based dispatch removed; nameserver registration added.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 /* ── Conditional compilation ─────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * Host-side test build: provide minimal type stubs so this file compiles
  * without seL4 or Microkit headers.  The test file provides framework.h
@@ -123,7 +123,7 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 }
 static inline void seL4_DebugPutChar(char c) { (void)c; }
 
-#else /* !AGENTOS_TEST_HOST — production build */
+#else /* !FRACTALOS_TEST_HOST — production build */
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -132,7 +132,7 @@ static inline void seL4_DebugPutChar(char c) { (void)c; }
 #include "sel4_ipc.h"       /* sel4_msg_t, sel4_badge_t, SEL4_ERR_* */
 #include <sel4/sel4.h>      /* seL4_DebugPutChar */
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Contract opcodes ────────────────────────────────────────────────────── */
 
@@ -684,7 +684,7 @@ static void register_with_nameserver(seL4_CPtr ns_ep)
 
 /* ── Test-host entry points ──────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /*
  * serial_pd_test_init — reset all state and register handlers.
@@ -727,7 +727,7 @@ uint32_t serial_pd_dispatch_one(sel4_badge_t badge,
     return sel4_server_dispatch(&g_srv, badge, req, rep);
 }
 
-#else /* !AGENTOS_TEST_HOST — production build */
+#else /* !FRACTALOS_TEST_HOST — production build */
 
 /*
  * serial_pd_main — production entry point called by the root task boot
@@ -740,7 +740,7 @@ uint32_t serial_pd_dispatch_one(sel4_badge_t badge,
  */
 void serial_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
-    dbg_puts("[serial_pd] starting — agentOS serial I/O service\n");
+    dbg_puts("[serial_pd] starting — FractalOS serial I/O service\n");
 
     /* Zero client table */
     for (uint32_t i = 0; i < SERIAL_MAX_CLIENTS; i++) {
@@ -784,4 +784,4 @@ void serial_pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { serial_pd_main(my_ep, ns_ep); }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

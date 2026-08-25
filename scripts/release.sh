@@ -1,5 +1,5 @@
 #!/bin/bash
-# Automated release script for agentOS
+# Automated release script for FractalOS
 # Usage: ./scripts/release.sh [major|minor|patch]
 
 set -euo pipefail
@@ -150,7 +150,7 @@ create_release() {
     [[ -n "${REPO_URL:-}" ]] && compare_url="${REPO_URL}/compare/v${prev_version}...v${version}"
 
     cat > /tmp/release_notes.md << EOF
-## agentOS v$version
+## FractalOS v$version
 
 ### Statistics
 - **Commits since v$prev_version**: $commit_count
@@ -192,7 +192,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
     # GitHub release
     info "Creating GitHub release..."
     gh release create "v$version" \
-        --title "agentOS v$version" \
+        --title "FractalOS v$version" \
         --notes-file /tmp/release_notes.md
 
     rm /tmp/release_notes.md
@@ -206,7 +206,7 @@ main() {
 
     echo ""
     echo "╔══════════════════════════════════════════╗"
-    echo "║    agentOS Automated Release Script      ║"
+    echo "║    FractalOS Automated Release Script      ║"
     echo "╚══════════════════════════════════════════╝"
     echo ""
 
@@ -245,7 +245,7 @@ main() {
 
     update_changelog "$CHANGELOG_ENTRY"
 
-    # Run the MANDATORY dual-arch OS-claim gate (agentos-46q).
+    # Run the MANDATORY dual-arch OS-claim gate (fos-46q).
     # A release is an OS-level completion claim, so it must pass the
     # target/QEMU-backed boot tests on BOTH supported architectures
     # (aarch64 + x86_64, GUEST_OS=none).  The host-only suite is run first as a

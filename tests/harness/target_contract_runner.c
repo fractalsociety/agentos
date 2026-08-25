@@ -1,10 +1,10 @@
 /*
- * target_contract_runner.c — on-target seL4 contract TAP runner (agentos-0h4)
+ * target_contract_runner.c — on-target seL4 contract TAP runner (fos-0h4)
  *
- * This is the Microkit protection domain that proves the *core* agentOS IPC
+ * This is the Microkit protection domain that proves the *core* FractalOS IPC
  * contracts against REAL seL4 IPC, on real (or QEMU-emulated) seL4 hardware.
  * It is the target-proof counterpart to the host-only mock suite that runs
- * under -DAGENTOS_TEST_HOST with the tests/microkit.h stub: where the host
+ * under -DFRACTALOS_TEST_HOST with the tests/microkit.h stub: where the host
  * suite issues PPCs into a stub that merely echoes MR0 back, this PD issues
  * genuine microkit_ppcall()s across real channels into the live PDs and
  * observes their real replies.
@@ -12,7 +12,7 @@
  *   HOST  (mock):   make test-integration            (tests/microkit.h stub)
  *   TARGET (proof): make sel4-test-image + run-tests  (this PD, real IPC)
  *
- * Scope (the core IPC contracts named in agentos-0h4):
+ * Scope (the core IPC contracts named in fos-0h4):
  *   - EventBus        (MONITOR_CH_EVENTBUS)
  *   - CC-PD           (CH_CC_PD)
  *   - serial_pd       (CH_SERIAL_PD)
@@ -31,28 +31,28 @@
  * Wiring (owned by the root-task build, see tests/TARGET_TESTS.md):
  *   Build this file plus the listed tests/contracts/_test.c suites into the
  *   root task when SEL4_TEST_IMAGE=1, and call target_contract_runner_main()
- *   from main.c under #ifdef AGENTOS_SEL4_TEST_IMAGE in place of the current
+ *   from main.c under #ifdef FRACTALOS_SEL4_TEST_IMAGE in place of the current
  *   one-line stub TAP.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/sel4_ipc.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/sel4_ipc.h"
 #include "../../contracts/modelsvc/interface.h"
 #include "../../contracts/execsvc/interface.h"
 #include "../../contracts/toolsvc/interface.h"
-#include "../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/init_agent_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
-#include "../../kernel/agentos-root-task/include/cap_authority.h"
-#include "../../kernel/agentos-root-task/include/wg_net.h"
-#include "../../kernel/agentos-root-task/include/net_server.h"
-#include "../../kernel/agentos-root-task/include/contracts/net_device_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/init_agent_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agent_task_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agentfs_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/cap_broker_contract.h"
+#include "../../kernel/fractalos-root-task/include/cap_authority.h"
+#include "../../kernel/fractalos-root-task/include/wg_net.h"
+#include "../../kernel/fractalos-root-task/include/net_server.h"
+#include "../../kernel/fractalos-root-task/include/contracts/net_device_contract.h"
 
 /* ── Contract suites under test ──────────────────────────────────────────────
  *
@@ -61,13 +61,13 @@
  * TAP plan/summary to aggregate.  We therefore #include the suite .c bodies
  * directly (a unity build) rather than link them as separate objects.  Each
  * suite's "" includes resolve relative to its own directory (tests/contracts),
- * and test_framework.h / agentos.h are #pragma once / guarded.
+ * and test_framework.h / fractalos.h are #pragma once / guarded.
  *
  * Scope: only PDs that actually speak seL4 IPC on their listen endpoint and
  * are present in a GUEST_OS=none test image — EventBus, serial_pd, log_drain.
  * The Fractal task suite is also included as a target-compiled ABI contract
  * check; its runtime endpoint is intentionally deferred to the implementation.
- * Excluded for now (tracked in agentos-8f5 / agentos-0h4):
+ * Excluded for now (tracked in fos-8f5 / fos-0h4):
  *   - cc_pd: its protocol runs over virtio-serial, not a seL4 endpoint, so a
  *     microkit_ppcall() to it would block; needs a virtio-serial test driver.
  *   - guest lifecycle: no guest VMM PD exists under GUEST_OS=none; needs a
@@ -79,11 +79,11 @@
 #include "../contracts/agent_task_test.c"
 #include "../contracts/companion_export_test.c"
 
-/* ── Target performance probe (agentos-gz0.1) ──────────────────────────────
+/* ── Target performance probe (fos-gz0.1) ──────────────────────────────
  *
  * Keep the benchmark in the same PD as the real-IPC contract suite.  This
  * guarantees the sample measures a genuine seL4 call into the live EventBus,
- * not the AGENTOS_TEST_HOST transport shim.  The serial record is deliberately
+ * not the FRACTALOS_TEST_HOST transport shim.  The serial record is deliberately
  * machine-readable so xtask can apply regression thresholds and archive it.
  */
 #define TARGET_PERF_BATCHES      12u
@@ -149,7 +149,7 @@ static void target_benchmark_eventbus_ipc(void)
     }
 }
 
-/* ── ModelSvc real-IPC + shared-arena proof (agentos-gz0.2) ──────── */
+/* ── ModelSvc real-IPC + shared-arena proof (fos-gz0.2) ──────── */
 #define TARGET_MODELSVC_CAP 130u
 #define TARGET_AGENT_HARNESS_CAP 131u
 #define TARGET_TOOLSVC_CAP 132u
@@ -607,9 +607,9 @@ static bool tr_contains(const char *haystack, uint32_t haystack_len,
 static void target_modelsvc_contract(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)MODELSVC_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] = "hello";
-    static const char expected[] = "agentos:hello";
+    static const char expected[] = "fractalos:hello";
     const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(
         TARGET_TEST_RUNNER_CLIENT_ID);
     const uint32_t model_off = client_base + 0x100u;
@@ -694,7 +694,7 @@ static void target_modelsvc_contract(void)
 static void target_agent_harness_contract(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] =
         "{\"action\":\"final\",\"summary\":\"native-smoke\"}";
     static const char expected[] = "native-smoke";
@@ -959,7 +959,7 @@ static void target_toolsvc_contract(void)
 static void target_agent_harness_tool_loop(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] =
         "{\"action\":\"tool\",\"tool\":\"agent.echo\","
         "\"input\":\"{\\\"action\\\":\\\"final\\\","
@@ -1058,7 +1058,7 @@ static void target_cap_broker_revoke_and_regrant_tool(void)
         && tr_rd32(rep.data, 12u) == 1u;
 
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] = "{\"action\":\"final\",\"summary\":\"must-deny\"}";
     const uint32_t prompt_off = 0x1000u, model_off = 0x2000u;
     const uint32_t result_off = 0x4000u;
@@ -1112,7 +1112,7 @@ static void target_cap_broker_revoke_and_regrant_tool(void)
 static void target_agent_harness_external_mcp_loop(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-mcp-coder";
+    static const char model[] = "fractalos-mcp-coder";
     static const char prompt[] = "external-mcp-smoke";
     static const char expected[] = "external-mcp-verified";
     const uint32_t prompt_off = 0x1000u;
@@ -1176,7 +1176,7 @@ static bool target_harness_missing_cap_denied(uint32_t cap_class,
                                               uint32_t task_id)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] = "{\"action\":\"final\",\"summary\":\"must-deny\"}";
     const uint32_t prompt_off = 0x1000u;
     const uint32_t model_off = 0x2000u;
@@ -1287,7 +1287,7 @@ static void target_cap_broker_remaining_denials(void)
 static void target_agent_harness_memory_loop(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-smoke-coder";
+    static const char model[] = "fractalos-smoke-coder";
     static const char prompt[] = "edit-and-readback-smoke";
     static const char expected[] = "edit-readback-verified";
     const uint32_t prompt_off = 0x1000u;
@@ -1345,13 +1345,13 @@ static void target_agent_harness_memory_loop(void)
                        "verified edit-loop metrics were incomplete");
 }
 
-#ifdef AGENTOS_LIVE_MODEL_TEST
+#ifdef FRACTALOS_LIVE_MODEL_TEST
 static void target_agent_harness_live_model(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
     static const char model[] = "fast";
     static const char prompt[] =
-        "Create src/live.c containing one valid C11 function named agentos_answer "
+        "Create src/live.c containing one valid C11 function named fractalos_answer "
         "that takes no arguments and returns 42. Use memory_write, then test that "
         "path with the c11_compile profile, then return final only after the real "
         "compiler reports success.";
@@ -1407,10 +1407,10 @@ static void target_agent_harness_live_repository(void)
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
     static const char model[] = "fast";
     static const char prompt[] =
-        "Find the tracked file defining agentos_repo_answer with repo.search, "
+        "Find the tracked file defining fractalos_repo_answer with repo.search, "
         "then inspect it with repo.read. Repair that discovered file so the "
         "function takes no arguments and returns 42. Use memory_write, then test "
-        "that path with the agentos_repo_tests profile, then return final only "
+        "that path with the fractalos_repo_tests profile, then return final only "
         "after the managed repository test suite reports success.";
     const uint32_t prompt_off = 0x1000u;
     const uint32_t model_off = 0x2000u;
@@ -1613,7 +1613,7 @@ static void target_execsvc_profile_contract(void)
         _tf_fail_point("ExecSvc denies cross-worker profile output offsets on target",
                        "profile output escaped the caller partition");
 
-    wire.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+    wire.profile_id = EXECSVC_PROFILE_FRACTALOS_REPO_TEST;
     wire.output_offset = output_off;
     tr_copy(req.data, &wire, sizeof(wire));
     sel4_call((seL4_CPtr)TARGET_COMPILE_ONLY_EXECSVC_CAP, &req, &rep);
@@ -1627,7 +1627,7 @@ static void target_execsvc_profile_contract(void)
 static void target_benchmark_agent_harness(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)HARNESS_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] =
         "{\"action\":\"final\",\"summary\":\"native-warm\"}";
     const uint32_t prompt_off = 0x1000u;
@@ -1680,7 +1680,7 @@ static void target_benchmark_agent_harness(void)
 static void target_benchmark_modelsvc_cache(void)
 {
     volatile uint8_t *arena = (volatile uint8_t *)(uintptr_t)MODELSVC_SHMEM_VADDR;
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     static const char prompt[] = "benchmark-cache";
     const uint32_t client_base = MODELSVC_CLIENT_ARENA_OFFSET(
         TARGET_TEST_RUNNER_CLIENT_ID);
@@ -1728,9 +1728,9 @@ static void target_benchmark_modelsvc_cache(void)
                        "one or more cached queries failed");
 }
 
-/* ── libmicrokit symbol shim (agentos-8f5) ───────────────────────────────────
+/* ── libmicrokit symbol shim (fos-8f5) ───────────────────────────────────
  *
- * agentOS PDs do not link libmicrokit, and the release kernel disables
+ * FractalOS PDs do not link libmicrokit, and the release kernel disables
  * CONFIG_PRINTING (seL4_DebugPutChar is a no-op).  Two consequences:
  *  1. microkit.h's inline helpers reference a handful of libmicrokit externs
  *     (microkit_dbg_puts/_put32, microkit_name, microkit_pps) — we define them.
@@ -1778,12 +1778,12 @@ static inline void target_tap_done(void)
 /* ── Entry point ──────────────────────────────────────────────────────────── */
 /*
  * Run the core contract suites against real channels, then emit the summary
- * and the sentinel.  Channels come from agentos.h and match the controller's
+ * and the sentinel.  Channels come from fractalos.h and match the controller's
  * view of each PD endpoint.
  */
 void target_contract_runner_main(void)
 {
-    tf_tap_init("agentOS-target-contracts");
+    tf_tap_init("FractalOS-target-contracts");
 
     /* Prove the native agent path first.  A failure in an unrelated legacy
      * contract must not hide whether the booted image can run an agent turn. */
@@ -1801,7 +1801,7 @@ void target_contract_runner_main(void)
     target_cap_broker_revoke_and_regrant_tool();
     target_agent_harness_external_mcp_loop();
     target_agent_harness_memory_loop();
-#ifdef AGENTOS_LIVE_MODEL_TEST
+#ifdef FRACTALOS_LIVE_MODEL_TEST
     target_agent_harness_live_model();
     target_agent_harness_live_repository();
 #endif

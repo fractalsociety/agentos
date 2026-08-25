@@ -1,4 +1,4 @@
-# agentOS — Work Status and Architecture Plan
+# FractalOS — Work Status and Architecture Plan
 
 **Author**: Jordan Hubbard  
 **Status**: Active  
@@ -8,7 +8,7 @@
 
 ## Current Work — Priority Architecture Hardening
 
-**Tracking issue:** `agentos-5rj`
+**Tracking issue:** `fos-5rj`
 
 **Objective:** close the highest-risk gaps surfaced by the design review before adding
 new feature surface. The immediate goal is not to finish every large subsystem; it is
@@ -36,17 +36,17 @@ to make failures explicit, bounded, and test-visible.
 
 | Priority | Work |
 |----------|------|
-| P0 | `agentos-46q` (DONE): The dual-arch target/QEMU gate is now mandatory before any OS-level claim. See "Release / OS-Claim Gate" below. |
-| P0 | `agentos-685`: Convert `agentos.h` from a mixed opcode/channel registry into generated per-PD ABI tables with collision checks. |
-| P0 | `agentos-0h4`: Replace host-only mock contract proof with seL4-target TAP coverage for EventBus, CC-PD, serial, log_drain, and guest lifecycle. |
-| P1 | `agentos-72f`: Update README/DESIGN to label each subsystem as boot-proven, host-tested, stubbed, or planned. |
-| P1 | `agentos-3ev`: Add startup records for parameterized PD entrypoints instead of hard-coded slot defaults. |
-| P1 | `agentos-45b`: Prove CC-PD VirtIO timeout behavior under QEMU or target execution. |
-| P1 | `agentos-c7i`: Audit cryptographic selftests and make Ed25519 failure a hard boot/test failure once the current implementation is corrected. |
+| P0 | `fos-46q` (DONE): The dual-arch target/QEMU gate is now mandatory before any OS-level claim. See "Release / OS-Claim Gate" below. |
+| P0 | `fos-685`: Convert `fractalos.h` from a mixed opcode/channel registry into generated per-PD ABI tables with collision checks. |
+| P0 | `fos-0h4`: Replace host-only mock contract proof with seL4-target TAP coverage for EventBus, CC-PD, serial, log_drain, and guest lifecycle. |
+| P1 | `fos-72f`: Update README/DESIGN to label each subsystem as boot-proven, host-tested, stubbed, or planned. |
+| P1 | `fos-3ev`: Add startup records for parameterized PD entrypoints instead of hard-coded slot defaults. |
+| P1 | `fos-45b`: Prove CC-PD VirtIO timeout behavior under QEMU or target execution. |
+| P1 | `fos-c7i`: Audit cryptographic selftests and make Ed25519 failure a hard boot/test failure once the current implementation is corrected. |
 
 ---
 
-## Release / OS-Claim Gate (agentos-46q)
+## Release / OS-Claim Gate (fos-46q)
 
 **Binding rule:** No subsystem may be described as "complete", "boot-proven", or
 production-ready — in README, DESIGN, PLAN, a release, or a Beads closure — unless
@@ -56,7 +56,7 @@ the **dual-arch target/QEMU gate** below has passed for the relevant commit.
 
 | Tier | Command | What it proves | Counts as OS-level proof? |
 |------|---------|----------------|---------------------------|
-| **Host-only** | `make test-host` (alias of `make test-integration`) | C logic compiled with `-DAGENTOS_TEST_HOST`; seL4 IPC is **stubbed**. Fast pre-filter. | **No.** Per priority rule 5, host-only mocks are never proof of production IPC/OS behavior. |
+| **Host-only** | `make test-host` (alias of `make test-integration`) | C logic compiled with `-DFRACTALOS_TEST_HOST`; seL4 IPC is **stubbed**. Fast pre-filter. | **No.** Per priority rule 5, host-only mocks are never proof of production IPC/OS behavior. |
 | **Target / QEMU** | `make test TARGET_ARCH=aarch64 GUEST_OS=none` and `make test TARGET_ARCH=x86_64 GUEST_OS=none` | Real seL4 image built for the board and booted under QEMU. | **Yes** — and only this tier. |
 
 ### The gate
@@ -86,7 +86,7 @@ make gate           # runs: host pre-filter, then BOTH target arches:
 
 ## Motivation
 
-agentOS was designed from day one as an OS for agents, not humans. The console/ directory
+FractalOS was designed from day one as an OS for agents, not humans. The console/ directory
 (a WebSocket bridge and HTML dashboard) is a contradiction of that principle. It treats the OS
 as a thing humans watch, rather than a thing agents drive. It must be deleted.
 
@@ -95,7 +95,7 @@ human-facing semantics into kernel-layer protection domains. This is architectur
 kernel layer must expose pure, machine-readable IPC contracts. If someone wants a UI, they build
 one on top of those contracts as an external project.
 
-This plan transforms agentOS into a properly API-first system: every capability exercisable
+This plan transforms FractalOS into a properly API-first system: every capability exercisable
 via a documented IPC contract, every contract tested, and no UI anywhere in the repository.
 
 ---
@@ -108,7 +108,7 @@ via a documented IPC contract, every contract tested, and no UI anywhere in the 
 2. **Every PD is an API endpoint.** Every Protection Domain exposes exactly one IPC contract.
    That contract is the only way to interact with the PD.
 
-3. **API contracts precede implementation.** New message opcodes are defined in `agentos.h`
+3. **API contracts precede implementation.** New message opcodes are defined in `fractalos.h`
    before any implementation is written.
 
 4. **seL4 is the only Ring 0 code.** All OS services run as Microkit Protection Domains.
@@ -133,7 +133,7 @@ via a documented IPC contract, every contract tested, and no UI anywhere in the 
 | Path | Reason |
 |------|--------|
 | `console/dashboard.html` | HTML UI — violates API-first mandate |
-| `console/agentos_console.mjs` | Node.js WebSocket bridge — interpreted language in core |
+| `console/fractalos_console.mjs` | Node.js WebSocket bridge — interpreted language in core |
 | `console/package.json` | npm package metadata — no npm in this repo |
 | `services/vibe-swap/src/wasm-validator.mjs` | Node.js WASM validator — replace with C/Rust |
 | `services/vibe-swap/package.json` | npm package metadata |
@@ -143,8 +143,8 @@ via a documented IPC contract, every contract tested, and no UI anywhere in the 
 
 | Path | Current Role | Target Role |
 |------|-------------|-------------|
-| `kernel/agentos-root-task/src/console_mux.c` | "tmux for agentOS" with UI semantics | Pure log drain PD: structured ring buffer drain, no attach/detach/scroll/mode semantics |
-| `kernel/agentos-root-task/src/dev_shell.c` | Interactive REPL | IPC test harness: exercises PD APIs programmatically, no interactive input |
+| `kernel/fractalos-root-task/src/console_mux.c` | "tmux for FractalOS" with UI semantics | Pure log drain PD: structured ring buffer drain, no attach/detach/scroll/mode semantics |
+| `kernel/fractalos-root-task/src/dev_shell.c` | Interactive REPL | IPC test harness: exercises PD APIs programmatically, no interactive input |
 
 ### Makefile targets to remove (Phase 0)
 
@@ -152,9 +152,9 @@ via a documented IPC contract, every contract tested, and no UI anywhere in the 
 - Console-related QEMU setup in main `make` target
 - `CONSOLE_DIR` variable and all references to it
 
-### IPC message opcodes to remove from agentos.h (Phase 0)
+### IPC message opcodes to remove from fractalos.h (Phase 0)
 
-The following `agentos_msg_tag_t` values encode UI semantics and must be removed or replaced
+The following `fractalos_msg_tag_t` values encode UI semantics and must be removed or replaced
 with log-drain-appropriate equivalents:
 
 ```c
@@ -190,7 +190,7 @@ startup sequence in the default `make` target.
 
 **Acceptance criteria**:
 - `console/` does not exist in the repository.
-- `make` builds and runs agentOS without attempting to start any Node.js process.
+- `make` builds and runs FractalOS without attempting to start any Node.js process.
 - `make dashboard` target is gone (running it must produce a "no such target" error).
 
 ### 0.2 — Delete services/vibe-swap JavaScript
@@ -243,18 +243,18 @@ The log drain PD:
 - Exposes `MSG_LOG_STATUS` for buffer introspection.
 - Does NOT model sessions, modes, or terminals.
 
-**Rename**: `console_mux.c` → `log_drain.c`. Update `agentos.h` channel ID constants
+**Rename**: `console_mux.c` → `log_drain.c`. Update `fractalos.h` channel ID constants
 from `CONSOLE_MUX_CH_*` to `LOG_DRAIN_CH_*`. Update all `MSG_CONSOLE_*` opcodes to
 `MSG_LOG_*` (only WRITE and STATUS survive; all others are deleted).
 
-The `console_rings_vaddr` extern in `agentos.h` is renamed to `log_drain_rings_vaddr`.
+The `console_rings_vaddr` extern in `fractalos.h` is renamed to `log_drain_rings_vaddr`.
 The ring header magic `0xC0DE4D55` remains valid (binary compatibility preserved for
 any existing binary that logs; only the C symbol name changes).
 
 **Acceptance criteria**:
 - `console_mux.c` does not exist; `log_drain.c` exists in its place.
-- `agentos.h` contains no `MSG_CONSOLE_ATTACH/DETACH/LIST/MODE/INJECT/SCROLL` opcodes.
-- `agentos.h` contains `MSG_LOG_WRITE` and `MSG_LOG_STATUS`.
+- `fractalos.h` contains no `MSG_CONSOLE_ATTACH/DETACH/LIST/MODE/INJECT/SCROLL` opcodes.
+- `fractalos.h` contains `MSG_LOG_WRITE` and `MSG_LOG_STATUS`.
 - Every PD that previously called `console_log()` still compiles with the renamed symbol.
 - The log_drain PD boots and accepts MSG_LOG_WRITE messages.
 
@@ -284,8 +284,8 @@ excluded from production images.
 
 ## Phase 1: API Contract Definition
 
-**Goal**: Every PD in `kernel/agentos-root-task/src/` and `userspace/servers/` has a
-documented, machine-verifiable IPC contract. All contracts are defined in `agentos.h`
+**Goal**: Every PD in `kernel/fractalos-root-task/src/` and `userspace/servers/` has a
+documented, machine-verifiable IPC contract. All contracts are defined in `fractalos.h`
 (opcode layer) and in per-PD contract headers.
 
 ### 1.1 — Contract header layout
@@ -293,12 +293,12 @@ documented, machine-verifiable IPC contract. All contracts are defined in `agent
 Each PD gains a contract header at:
 
 ```
-kernel/agentos-root-task/include/contracts/<pd_name>_contract.h
+kernel/fractalos-root-task/include/contracts/<pd_name>_contract.h
 ```
 
 Each contract header defines exactly:
-1. Channel IDs used by this PD (cross-referenced to `agentos.h` constants).
-2. Message opcodes (cross-referenced to `agentos_msg_tag_t`).
+1. Channel IDs used by this PD (cross-referenced to `fractalos.h` constants).
+2. Message opcodes (cross-referenced to `fractalos_msg_tag_t`).
 3. Request layout: `struct <pd>_req_<opcode>` for each opcode.
 4. Reply layout: `struct <pd>_reply_<opcode>` for each opcode.
 5. Error codes: `enum <pd>_error` (PD-local error codes; `0` is always success).
@@ -310,20 +310,20 @@ exactly. The test in `tests/<pd>_test.c` must exercise every opcode.
 ### 1.2 — PD contract inventory
 
 The following table lists every PD that requires a contract header. "Existing opcodes"
-refers to message tags already in `agentos.h`. PDs marked "needs new opcodes" require
-additions to `agentos_msg_tag_t`.
+refers to message tags already in `fractalos.h`. PDs marked "needs new opcodes" require
+additions to `fractalos_msg_tag_t`.
 
 | PD | Source File | Existing Opcodes | Needs New Opcodes |
 |----|------------|-----------------|-------------------|
 | EventBus | event_bus.c | INIT, SUBSCRIBE, UNSUBSCRIBE, PUBLISH_BATCH, STATUS | QUERY_SUBSCRIBERS |
 | InitAgent | init_agent.c | START, SHUTDOWN, READY, STATUS | AGENT_LIST |
 | VibeEngine | vibe_engine.c | REPLAY, HOTRELOAD, REGISTRY_STATUS, REGISTRY_QUERY | VALIDATE, PROPOSE, COMMIT, ROLLBACK |
-| AgentFS | agentfs.c | (none in agentos.h) | READ, WRITE, STAT, LIST, DELETE, SEARCH |
+| AgentFS | agentfs.c | (none in fractalos.h) | READ, WRITE, STAT, LIST, DELETE, SEARCH |
 | AgentPool | agent_pool.c | (none) | ALLOC_WORKER, FREE_WORKER, STATUS |
 | Worker | worker.c | RETRIEVE, RETRIEVE_REPLY | ASSIGN, REVOKE, STATUS |
 | GPUSched | gpu_sched.c | GPU_SUBMIT, GPU_STATUS, GPU_CANCEL, GPU_COMPLETE, GPU_FAILED | (complete) |
 | GPUShmem | gpu_shmem.c | (none) | MAP, UNMAP, FENCE, STATUS |
-| LinuxVMM | linux_vmm.c | (none in agentos.h) | VM_CREATE, VM_DESTROY, VM_SWITCH, VM_STATUS, VM_LIST |
+| LinuxVMM | linux_vmm.c | (none in fractalos.h) | VM_CREATE, VM_DESTROY, VM_SWITCH, VM_STATUS, VM_LIST |
 | FreeBSDVMM | (implicit) | VM_CREATE, VM_DESTROY, VM_SWITCH, VM_STATUS, VM_LIST | (complete) |
 | LogDrain | log_drain.c | MSG_LOG_WRITE, MSG_LOG_STATUS | (Phase 0 result) |
 | VibeSwap | vibe_swap.c | SWAP_BEGIN, SWAP_ACTIVATE, SWAP_ROLLBACK, SWAP_HEALTH, SWAP_STATUS | (complete) |
@@ -348,14 +348,14 @@ additions to `agentos_msg_tag_t`.
 
 **Acceptance criteria for Phase 1**:
 - Every PD in the table above has a `_contract.h` file in `include/contracts/`.
-- Every new opcode is added to `agentos_msg_tag_t` in `agentos.h`.
+- Every new opcode is added to `fractalos_msg_tag_t` in `fractalos.h`.
 - Every request/reply struct is defined in the contract header, not in the PD source.
 - `grep -r 'microkit_msginfo_new\|microkit_call\|microkit_reply' kernel/` finds no opcode
-  literal integers — all opcodes are referenced by their named constants from `agentos.h`.
+  literal integers — all opcodes are referenced by their named constants from `fractalos.h`.
 
 ### 1.3 — Remove the console contract
 
-The following opcodes are removed from `agentos_msg_tag_t` as part of this phase
+The following opcodes are removed from `fractalos_msg_tag_t` as part of this phase
 (continuation from Phase 0.4):
 
 ```c
@@ -477,7 +477,7 @@ be rejected.
 
 **Acceptance criteria for Phase 2**:
 - All four device PD source files exist with their contract headers.
-- All device opcodes are in `agentos_msg_tag_t`.
+- All device opcodes are in `fractalos_msg_tag_t`.
 - The FreeBSD VMM and Linux VMM bind to these device PDs (not direct hardware).
 - `grep -r 'dbg_puts' kernel/` finds only pre-serial_pd boot code in `monitor.c` and
   `init_agent.c` (boot banner only).
@@ -486,7 +486,7 @@ be rejected.
 
 ## Phase 3: Guest OS Interface Contract
 
-**Goal**: Define the formal contract between agentOS and any guest OS running as a VMM PD.
+**Goal**: Define the formal contract between FractalOS and any guest OS running as a VMM PD.
 This contract governs how guest OSes discover, bind to, and use generic device PDs.
 
 ### 3.1 — Guest OS binding protocol
@@ -506,7 +506,7 @@ A guest OS PD must perform the following sequence at boot:
 ### 3.2 — Guest OS contract header
 
 ```
-kernel/agentos-root-task/include/contracts/guest_contract.h
+kernel/fractalos-root-task/include/contracts/guest_contract.h
 ```
 
 Defines:
@@ -520,7 +520,7 @@ Defines:
 
 All VMM PDs (`linux_vmm.c`, `freebsd_vmm.c`, future VMMs) must:
 - Include `contracts/guest_contract.h`.
-- Call `agentos_log_boot("vmm_<os_name>")` on init.
+- Call `fractalos_log_boot("vmm_<os_name>")` on init.
 - Complete the binding protocol in §3.1 before running any guest code.
 - Expose a VirtIO transport layer *backed by* the generic device PDs.
 - Not implement any device class for which a generic device PD exists (see Phase 2 mandate).
@@ -537,7 +537,7 @@ MSG_VM_STATUS   // query guest state (CREATING, RUNNING, PAUSED, DEAD)
 MSG_VM_LIST     // enumerate all guest slots
 ```
 
-These opcodes already exist in `agentos.h` for the FreeBSD VMM. They must be made generic
+These opcodes already exist in `fractalos.h` for the FreeBSD VMM. They must be made generic
 and moved to a shared `contracts/vmm_contract.h` that all VMM PDs include.
 
 **Acceptance criteria for Phase 3**:
@@ -560,7 +560,7 @@ OS with devices, network, and storage using only IPC messages.
 The VibeOS API is the top-level OS management API. It composes Phase 2 (device PDs),
 Phase 3 (guest binding), and the existing VibeEngine hot-swap mechanism.
 
-New opcodes to add to `agentos_msg_tag_t`:
+New opcodes to add to `fractalos_msg_tag_t`:
 
 ```c
 // VibeOS lifecycle (top-level OS management)
@@ -575,7 +575,7 @@ MSG_VIBEOS_RESTORE        // restore from checkpoint
 MSG_VIBEOS_MIGRATE        // live-migrate OS stack to another node (mesh)
 ```
 
-A `vibeos_handle` is a 32-bit opaque identifier scoped to the current agentOS instance.
+A `vibeos_handle` is a 32-bit opaque identifier scoped to the current FractalOS instance.
 
 ### 4.2 — VibeOS creation flow
 
@@ -605,7 +605,7 @@ The VibeEngine PD executes this sequence:
 ### 4.3 — VibeOS contract header
 
 ```
-kernel/agentos-root-task/include/contracts/vibeos_contract.h
+kernel/fractalos-root-task/include/contracts/vibeos_contract.h
 ```
 
 Defines:
@@ -636,7 +636,7 @@ and exit. No curses, no interactive menus for VibeOS management.
 
 **Acceptance criteria for Phase 4**:
 - `contracts/vibeos_contract.h` exists with all types defined.
-- `MSG_VIBEOS_*` opcodes are in `agentos_msg_tag_t`.
+- `MSG_VIBEOS_*` opcodes are in `fractalos_msg_tag_t`.
 - `vibe_engine.c` implements `MSG_VIBEOS_CREATE` end-to-end.
 - A FreeBSD guest OS can be created, run, and destroyed using only API calls.
 - `agentctl vibeos create` successfully creates a guest OS (verified in CI).
@@ -709,7 +709,7 @@ All test output goes through MSG_LOG_WRITE to the log drain. The test runner
 ### 5.3 — CI integration
 
 `make test` must:
-1. Build agentOS with `CONFIG_IPC_HARNESS=1`.
+1. Build FractalOS with `CONFIG_IPC_HARNESS=1`.
 2. Boot in QEMU.
 3. Wait for `EVENT_SYSTEM_READY` on the log drain (timeout: 30 seconds).
 4. Run all contract tests via the ipc_harness PD.
@@ -734,7 +734,7 @@ A pull request may not be merged if it:
 - `make test TARGET_ARCH=aarch64 GUEST_OS=none` exits 0 with all tests passing (target/QEMU).
 - `make test TARGET_ARCH=x86_64 GUEST_OS=none` exits 0 with all tests passing (target/QEMU).
 - `make gate` exits 0 (host pre-filter + both target arches above).
-- Every opcode in `agentos_msg_tag_t` is exercised by at least one test.
+- Every opcode in `fractalos_msg_tag_t` is exercised by at least one test.
 - A PR that adds an untested opcode fails CI.
 - Host-only suites passing while either target arch fails does **not** satisfy this phase.
 
@@ -761,27 +761,27 @@ going forward.
 
 ### Deleted
 - `console/dashboard.html`
-- `console/agentos_console.mjs`
+- `console/fractalos_console.mjs`
 - `console/package.json`
 - `services/vibe-swap/src/wasm-validator.mjs`
 - `services/vibe-swap/package.json`
 - `tools/trace_replay.mjs`
 
 ### Renamed
-- `kernel/agentos-root-task/src/console_mux.c` → `log_drain.c`
-- `kernel/agentos-root-task/src/dev_shell.c` → `ipc_harness.c`
+- `kernel/fractalos-root-task/src/console_mux.c` → `log_drain.c`
+- `kernel/fractalos-root-task/src/dev_shell.c` → `ipc_harness.c`
 
 ### Modified
-- `kernel/agentos-root-task/include/agentos.h` — opcode additions/removals (see §1.2, §0.4)
+- `kernel/fractalos-root-task/include/fractalos.h` — opcode additions/removals (see §1.2, §0.4)
 - `Makefile` — remove dashboard target and CONSOLE_DIR
 - `CMakeLists.txt` — add new PD source files, remove console_mux/dev_shell references
 
 ### Created
-- `kernel/agentos-root-task/include/contracts/<pd>_contract.h` (one per PD, ~30 files)
-- `kernel/agentos-root-task/src/serial_pd.c`
-- `kernel/agentos-root-task/src/net_pd.c`
-- `kernel/agentos-root-task/src/block_pd.c`
-- `kernel/agentos-root-task/src/usb_pd.c`
+- `kernel/fractalos-root-task/include/contracts/<pd>_contract.h` (one per PD, ~30 files)
+- `kernel/fractalos-root-task/src/serial_pd.c`
+- `kernel/fractalos-root-task/src/net_pd.c`
+- `kernel/fractalos-root-task/src/block_pd.c`
+- `kernel/fractalos-root-task/src/usb_pd.c`
 - `tests/contracts/<pd>_test.c` (one per PD)
 - `tests/integration/guest_binding_test.c`
 - `tests/integration/vibeos_lifecycle_test.c`

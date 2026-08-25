@@ -71,9 +71,9 @@ pub struct Grant {
 /// A capability grant stored by the grant/check/revoke API
 #[derive(Debug, Clone)]
 pub struct CapGrant {
-    pub agent_id:   String,
-    pub cap_kind:   CapKind,
-    pub rights:     Rights,
+    pub agent_id: String,
+    pub cap_kind: CapKind,
+    pub rights: Rights,
     /// Expiry as a monotonic millisecond timestamp; `u64::MAX` = never expires
     pub expires_at: u64,
 }
@@ -101,10 +101,10 @@ pub enum AuditResult {
 pub struct AuditEntry {
     /// Monotonic timestamp in milliseconds (caller-supplied; use 0 if unavailable)
     pub timestamp_ms: u64,
-    pub op:           AuditOp,
-    pub agent_id:     String,
-    pub cap_kind:     CapKind,
-    pub result:       AuditResult,
+    pub op: AuditOp,
+    pub agent_id: String,
+    pub cap_kind: CapKind,
+    pub result: AuditResult,
 }
 
 /// Errors from the CapabilityBroker
@@ -125,11 +125,11 @@ pub enum BrokerError {
 impl core::fmt::Display for BrokerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            BrokerError::UnknownToken       => write!(f, "unknown capability token"),
+            BrokerError::UnknownToken => write!(f, "unknown capability token"),
             BrokerError::InsufficientRights => write!(f, "insufficient rights"),
-            BrokerError::PolicyDenied       => write!(f, "policy denied"),
-            BrokerError::NotDelegatable     => write!(f, "capability is not delegatable"),
-            BrokerError::TableFull          => write!(f, "grant table full"),
+            BrokerError::PolicyDenied => write!(f, "policy denied"),
+            BrokerError::NotDelegatable => write!(f, "capability is not delegatable"),
+            BrokerError::TableFull => write!(f, "grant table full"),
         }
     }
 }
@@ -139,16 +139,16 @@ impl core::fmt::Display for BrokerError {
 #[derive(Debug)]
 struct AuditRing {
     entries: Vec<AuditEntry>,
-    head:    usize,
-    full:    bool,
+    head: usize,
+    full: bool,
 }
 
 impl AuditRing {
     fn new() -> Self {
         Self {
             entries: Vec::new(),
-            head:    0,
-            full:    false,
+            head: 0,
+            full: false,
         }
     }
 
@@ -180,28 +180,28 @@ impl AuditRing {
 #[derive(Debug, Default)]
 pub struct CapabilityBroker {
     // ── Token-based API (original) ─────────────────────────────────────────
-    grants:     BTreeMap<GrantToken, Grant>,
+    grants: BTreeMap<GrantToken, Grant>,
     next_token: u64,
     /// ACL: (grantor, CapKind) → allowed
-    policy:     Vec<(String, CapKind)>,
+    policy: Vec<(String, CapKind)>,
 
     // ── agent_id + cap_kind API (new) ──────────────────────────────────────
     cap_grants: Vec<CapGrant>,
 
     // ── Audit log ──────────────────────────────────────────────────────────
     #[allow(dead_code)]
-    audit:      AuditRing,
+    audit: AuditRing,
 }
 
 // We need a manual Default impl because AuditRing doesn't derive Default.
 impl CapabilityBroker {
     pub fn new() -> Self {
         Self {
-            grants:     BTreeMap::new(),
+            grants: BTreeMap::new(),
             next_token: 0,
-            policy:     Vec::new(),
+            policy: Vec::new(),
             cap_grants: Vec::new(),
-            audit:      AuditRing::new(),
+            audit: AuditRing::new(),
         }
     }
 
@@ -217,34 +217,41 @@ impl CapabilityBroker {
     /// Issue a new capability grant from `grantor` to `grantee`
     pub fn issue(
         &mut self,
-        grantor:     impl Into<String>,
-        grantee:     impl Into<String>,
-        kind:        CapKind,
-        rights:      Rights,
+        grantor: impl Into<String>,
+        grantee: impl Into<String>,
+        kind: CapKind,
+        rights: Rights,
         delegatable: bool,
     ) -> Result<GrantToken, BrokerError> {
         let grantor = grantor.into();
-        if !self.policy.iter().any(|(id, k)| id == &grantor && k == &kind) {
+        if !self
+            .policy
+            .iter()
+            .any(|(id, k)| id == &grantor && k == &kind)
+        {
             return Err(BrokerError::PolicyDenied);
         }
         let token = GrantToken(self.next_token);
         self.next_token += 1;
-        self.grants.insert(token.clone(), Grant {
-            token: token.clone(),
-            kind,
-            rights,
-            grantor,
-            grantee: grantee.into(),
-            delegatable,
-        });
+        self.grants.insert(
+            token.clone(),
+            Grant {
+                token: token.clone(),
+                kind,
+                rights,
+                grantor,
+                grantee: grantee.into(),
+                delegatable,
+            },
+        );
         Ok(token)
     }
 
     /// Validate that `holder` holds `token` with at least `required` rights
     pub fn validate(
         &self,
-        token:    &GrantToken,
-        holder:   &str,
+        token: &GrantToken,
+        holder: &str,
         required: Rights,
     ) -> Result<&Grant, BrokerError> {
         let grant = self.grants.get(token).ok_or(BrokerError::UnknownToken)?;
@@ -260,10 +267,10 @@ impl CapabilityBroker {
     /// Delegate an existing grant to a third party (requires delegatable flag)
     pub fn delegate(
         &mut self,
-        token:          &GrantToken,
+        token: &GrantToken,
         current_holder: &str,
-        new_grantee:    impl Into<String>,
-        rights:         Rights,
+        new_grantee: impl Into<String>,
+        rights: Rights,
     ) -> Result<GrantToken, BrokerError> {
         let parent = self.grants.get(token).ok_or(BrokerError::UnknownToken)?;
         if parent.grantee != current_holder {
@@ -273,18 +280,21 @@ impl CapabilityBroker {
             return Err(BrokerError::NotDelegatable);
         }
         let derived = Rights(parent.rights.0 & rights.0);
-        let kind    = parent.kind.clone();
+        let kind = parent.kind.clone();
         let grantor = alloc::string::String::from(current_holder);
         let new_token = GrantToken(self.next_token);
         self.next_token += 1;
-        self.grants.insert(new_token.clone(), Grant {
-            token: new_token.clone(),
-            kind,
-            rights: derived,
-            grantor,
-            grantee: new_grantee.into(),
-            delegatable: false,
-        });
+        self.grants.insert(
+            new_token.clone(),
+            Grant {
+                token: new_token.clone(),
+                kind,
+                rights: derived,
+                grantor,
+                grantee: new_grantee.into(),
+                delegatable: false,
+            },
+        );
         Ok(new_token)
     }
 
@@ -309,40 +319,46 @@ impl CapabilityBroker {
     /// pass `u64::MAX` for a non-expiring grant.
     pub fn grant(
         &mut self,
-        agent_id:   impl Into<String>,
-        cap_kind:   CapKind,
-        rights:     Rights,
+        agent_id: impl Into<String>,
+        cap_kind: CapKind,
+        rights: Rights,
         expires_at: u64,
-        now_ms:     u64,
+        now_ms: u64,
     ) -> Result<(), BrokerError> {
         let agent_id = agent_id.into();
         // Prune expired entries first to reclaim space.
         self.cap_grants.retain(|g| g.expires_at > now_ms);
 
         if self.cap_grants.len() >= MAX_CAP_GRANTS {
-            self.audit_push(now_ms, AuditOp::Grant, &agent_id, &cap_kind, AuditResult::Denied);
+            self.audit_push(
+                now_ms,
+                AuditOp::Grant,
+                &agent_id,
+                &cap_kind,
+                AuditResult::Denied,
+            );
             return Err(BrokerError::TableFull);
         }
 
         self.cap_grants.push(CapGrant {
-            agent_id:   agent_id.clone(),
-            cap_kind:   cap_kind.clone(),
+            agent_id: agent_id.clone(),
+            cap_kind: cap_kind.clone(),
             rights,
             expires_at,
         });
-        self.audit_push(now_ms, AuditOp::Grant, &agent_id, &cap_kind, AuditResult::Allowed);
+        self.audit_push(
+            now_ms,
+            AuditOp::Grant,
+            &agent_id,
+            &cap_kind,
+            AuditResult::Allowed,
+        );
         Ok(())
     }
 
     /// Check whether `agent_id` holds `cap_kind` with at least `required` rights
     /// and the grant has not expired (using `now_ms` as the current time).
-    pub fn check(
-        &self,
-        agent_id:  &str,
-        cap_kind:  &CapKind,
-        required:  Rights,
-        now_ms:    u64,
-    ) -> bool {
+    pub fn check(&self, agent_id: &str, cap_kind: &CapKind, required: Rights, now_ms: u64) -> bool {
         let found = self.cap_grants.iter().any(|g| {
             g.agent_id == agent_id
                 && g.cap_kind == *cap_kind
@@ -360,25 +376,29 @@ impl CapabilityBroker {
         agent_id: &str,
         cap_kind: &CapKind,
         required: Rights,
-        now_ms:   u64,
+        now_ms: u64,
     ) -> bool {
         let result = self.check(agent_id, cap_kind, required, now_ms);
-        let audit_result = if result { AuditResult::Allowed } else { AuditResult::Denied };
+        let audit_result = if result {
+            AuditResult::Allowed
+        } else {
+            AuditResult::Denied
+        };
         self.audit_push(now_ms, AuditOp::Check, agent_id, cap_kind, audit_result);
         result
     }
 
     /// Remove all grants for `agent_id + cap_kind`.
-    pub fn revoke_by_agent_cap(
-        &mut self,
-        agent_id: &str,
-        cap_kind: &CapKind,
-        now_ms:   u64,
-    ) {
+    pub fn revoke_by_agent_cap(&mut self, agent_id: &str, cap_kind: &CapKind, now_ms: u64) {
         let before = self.cap_grants.len();
-        self.cap_grants.retain(|g| !(g.agent_id == agent_id && g.cap_kind == *cap_kind));
+        self.cap_grants
+            .retain(|g| !(g.agent_id == agent_id && g.cap_kind == *cap_kind));
         let removed = before - self.cap_grants.len();
-        let audit_result = if removed > 0 { AuditResult::Allowed } else { AuditResult::NotFound };
+        let audit_result = if removed > 0 {
+            AuditResult::Allowed
+        } else {
+            AuditResult::NotFound
+        };
         self.audit_push(now_ms, AuditOp::Revoke, agent_id, cap_kind, audit_result);
     }
 
@@ -387,10 +407,10 @@ impl CapabilityBroker {
     fn audit_push(
         &mut self,
         timestamp_ms: u64,
-        op:           AuditOp,
-        agent_id:     &str,
-        cap_kind:     &CapKind,
-        result:       AuditResult,
+        op: AuditOp,
+        agent_id: &str,
+        cap_kind: &CapKind,
+        result: AuditResult,
     ) {
         self.audit.push(AuditEntry {
             timestamp_ms,
@@ -438,7 +458,9 @@ mod tests {
     #[test]
     fn test_issue_and_validate() {
         let mut b = broker_with_policy();
-        let tok = b.issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false).unwrap();
+        let tok = b
+            .issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false)
+            .unwrap();
         let grant = b.validate(&tok, "agent-a", Rights::READ).unwrap();
         assert_eq!(grant.grantee, "agent-a");
     }
@@ -446,14 +468,18 @@ mod tests {
     #[test]
     fn test_policy_denied() {
         let mut b = broker_with_policy();
-        let err = b.issue("agent-a", "agent-b", CapKind::Memory, Rights::READ, false).unwrap_err();
+        let err = b
+            .issue("agent-a", "agent-b", CapKind::Memory, Rights::READ, false)
+            .unwrap_err();
         assert_eq!(err, BrokerError::PolicyDenied);
     }
 
     #[test]
     fn test_revoke() {
         let mut b = broker_with_policy();
-        let tok = b.issue("monitor", "agent-a", CapKind::Memory, Rights::ALL, true).unwrap();
+        let tok = b
+            .issue("monitor", "agent-a", CapKind::Memory, Rights::ALL, true)
+            .unwrap();
         b.revoke(&tok).unwrap();
         let err = b.validate(&tok, "agent-a", Rights::READ).unwrap_err();
         assert_eq!(err, BrokerError::UnknownToken);
@@ -462,9 +488,13 @@ mod tests {
     #[test]
     fn test_delegate() {
         let mut b = broker_with_policy();
-        let parent = b.issue("monitor", "agent-a", CapKind::Endpoint, Rights::ALL, true).unwrap();
-        let child  = b.delegate(&parent, "agent-a", "agent-b", Rights::READ).unwrap();
-        let grant  = b.validate(&child, "agent-b", Rights::READ).unwrap();
+        let parent = b
+            .issue("monitor", "agent-a", CapKind::Endpoint, Rights::ALL, true)
+            .unwrap();
+        let child = b
+            .delegate(&parent, "agent-a", "agent-b", Rights::READ)
+            .unwrap();
+        let grant = b.validate(&child, "agent-b", Rights::READ).unwrap();
         assert!(grant.rights.contains(Rights::READ));
         assert!(!grant.rights.contains(Rights::GRANT));
     }
@@ -472,15 +502,21 @@ mod tests {
     #[test]
     fn test_not_delegatable() {
         let mut b = broker_with_policy();
-        let tok = b.issue("monitor", "agent-a", CapKind::Memory, Rights::ALL, false).unwrap();
-        let err = b.delegate(&tok, "agent-a", "agent-b", Rights::READ).unwrap_err();
+        let tok = b
+            .issue("monitor", "agent-a", CapKind::Memory, Rights::ALL, false)
+            .unwrap();
+        let err = b
+            .delegate(&tok, "agent-a", "agent-b", Rights::READ)
+            .unwrap_err();
         assert_eq!(err, BrokerError::NotDelegatable);
     }
 
     #[test]
     fn test_wrong_holder_validate_fails() {
         let mut b = broker_with_policy();
-        let tok = b.issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false).unwrap();
+        let tok = b
+            .issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false)
+            .unwrap();
         let err = b.validate(&tok, "agent-b", Rights::READ).unwrap_err();
         assert_eq!(err, BrokerError::InsufficientRights);
     }
@@ -490,7 +526,8 @@ mod tests {
     #[test]
     fn test_grant_and_check() {
         let mut b = CapabilityBroker::new();
-        b.grant("agent-x", CapKind::Memory, Rights::READ, u64::MAX, 0).unwrap();
+        b.grant("agent-x", CapKind::Memory, Rights::READ, u64::MAX, 0)
+            .unwrap();
         assert!(b.check("agent-x", &CapKind::Memory, Rights::READ, 1));
         // Wrong rights — WRITE not granted
         assert!(!b.check("agent-x", &CapKind::Memory, Rights::WRITE, 1));
@@ -504,7 +541,8 @@ mod tests {
     fn test_grant_expiry() {
         let mut b = CapabilityBroker::new();
         // Grant expires at t=100
-        b.grant("agent-x", CapKind::Frame, Rights::ALL, 100, 0).unwrap();
+        b.grant("agent-x", CapKind::Frame, Rights::ALL, 100, 0)
+            .unwrap();
         // Valid at t=50
         assert!(b.check("agent-x", &CapKind::Frame, Rights::READ, 50));
         // Expired at t=100 (expires_at is exclusive upper bound: > now_ms)
@@ -516,12 +554,14 @@ mod tests {
     #[test]
     fn test_revoke_by_agent_cap() {
         let mut b = CapabilityBroker::new();
-        b.grant("agent-x", CapKind::Memory,   Rights::ALL, u64::MAX, 0).unwrap();
-        b.grant("agent-x", CapKind::Endpoint, Rights::ALL, u64::MAX, 0).unwrap();
+        b.grant("agent-x", CapKind::Memory, Rights::ALL, u64::MAX, 0)
+            .unwrap();
+        b.grant("agent-x", CapKind::Endpoint, Rights::ALL, u64::MAX, 0)
+            .unwrap();
         // Revoke only Memory
         b.revoke_by_agent_cap("agent-x", &CapKind::Memory, 0);
-        assert!(!b.check("agent-x", &CapKind::Memory,   Rights::READ, 1));
-        assert!( b.check("agent-x", &CapKind::Endpoint, Rights::READ, 1));
+        assert!(!b.check("agent-x", &CapKind::Memory, Rights::READ, 1));
+        assert!(b.check("agent-x", &CapKind::Endpoint, Rights::READ, 1));
     }
 
     #[test]
@@ -534,16 +574,20 @@ mod tests {
                 Rights::READ,
                 u64::MAX,
                 0,
-            ).unwrap();
+            )
+            .unwrap();
         }
-        let err = b.grant("overflow", CapKind::Memory, Rights::READ, u64::MAX, 0).unwrap_err();
+        let err = b
+            .grant("overflow", CapKind::Memory, Rights::READ, u64::MAX, 0)
+            .unwrap_err();
         assert_eq!(err, BrokerError::TableFull);
     }
 
     #[test]
     fn test_audit_log_records_operations() {
         let mut b = CapabilityBroker::new();
-        b.grant("agent-a", CapKind::Memory, Rights::READ, u64::MAX, 0).unwrap();
+        b.grant("agent-a", CapKind::Memory, Rights::READ, u64::MAX, 0)
+            .unwrap();
         b.check_audited("agent-a", &CapKind::Memory, Rights::READ, 1);
         b.check_audited("agent-a", &CapKind::Memory, Rights::WRITE, 1); // should fail
         b.revoke_by_agent_cap("agent-a", &CapKind::Memory, 2);
@@ -564,7 +608,14 @@ mod tests {
     fn test_audit_recent_limited() {
         let mut b = CapabilityBroker::new();
         for i in 0..10u64 {
-            b.grant(alloc::format!("a-{}", i), CapKind::Memory, Rights::READ, u64::MAX, i).unwrap();
+            b.grant(
+                alloc::format!("a-{}", i),
+                CapKind::Memory,
+                Rights::READ,
+                u64::MAX,
+                i,
+            )
+            .unwrap();
         }
         // audit_recent(3) should return only the last 3
         let recent = b.audit_recent(3);
@@ -582,8 +633,9 @@ mod tests {
                 Rights::READ,
                 u64::MAX,
                 i,
-            ).unwrap_or(());  // ignore TableFull — we only care about audit wrapping
-            // Use check_audited to produce extra audit entries without touching the grant table
+            )
+            .unwrap_or(()); // ignore TableFull — we only care about audit wrapping
+                            // Use check_audited to produce extra audit entries without touching the grant table
             let _ = b.check_audited(
                 &alloc::format!("a-{}", i),
                 &CapKind::Memory,
@@ -603,9 +655,24 @@ mod tests {
         // Derived rights should be READ only (intersection)
         let mut b = broker_with_policy();
         b.allow("monitor", CapKind::Notification);
-        let parent = b.issue("monitor", "agent-a", CapKind::Notification, Rights::ALL, true).unwrap();
+        let parent = b
+            .issue(
+                "monitor",
+                "agent-a",
+                CapKind::Notification,
+                Rights::ALL,
+                true,
+            )
+            .unwrap();
         // Requesting READ | GRANT (0x05)
-        let child = b.delegate(&parent, "agent-a", "agent-b", Rights(Rights::READ.0 | Rights::GRANT.0)).unwrap();
+        let child = b
+            .delegate(
+                &parent,
+                "agent-a",
+                "agent-b",
+                Rights(Rights::READ.0 | Rights::GRANT.0),
+            )
+            .unwrap();
         let grant = b.validate(&child, "agent-b", Rights::READ).unwrap();
         // Derived rights should include READ
         assert!(grant.rights.contains(Rights::READ));
@@ -617,11 +684,13 @@ mod tests {
     fn test_expired_grants_not_visible_after_next_grant() {
         let mut b = CapabilityBroker::new();
         // Grant expiring at t=50
-        b.grant("agent-x", CapKind::Memory, Rights::READ, 50, 0).unwrap();
+        b.grant("agent-x", CapKind::Memory, Rights::READ, 50, 0)
+            .unwrap();
         // Valid at t=30
         assert!(b.check("agent-x", &CapKind::Memory, Rights::READ, 30));
         // Expired at t=100; trigger pruning via a new grant at now_ms=100
-        b.grant("agent-y", CapKind::Endpoint, Rights::READ, u64::MAX, 100).unwrap();
+        b.grant("agent-y", CapKind::Endpoint, Rights::READ, u64::MAX, 100)
+            .unwrap();
         // The expired grant should no longer match (it was pruned)
         assert!(!b.check("agent-x", &CapKind::Memory, Rights::READ, 100));
     }
@@ -641,7 +710,8 @@ mod tests {
     fn test_custom_cap_kind_grant_and_check() {
         let mut b = CapabilityBroker::new();
         let custom = CapKind::Custom("my.resource".into());
-        b.grant("agent-x", custom.clone(), Rights::ALL, u64::MAX, 0).unwrap();
+        b.grant("agent-x", custom.clone(), Rights::ALL, u64::MAX, 0)
+            .unwrap();
         assert!(b.check("agent-x", &custom, Rights::ALL, 1));
         assert!(!b.check("agent-x", &CapKind::Memory, Rights::ALL, 1));
     }
@@ -661,8 +731,12 @@ mod tests {
     fn test_grant_count_increases_and_revoke_decreases() {
         let mut b = broker_with_policy();
         assert_eq!(b.grant_count(), 0);
-        let t1 = b.issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false).unwrap();
-        let t2 = b.issue("monitor", "agent-a", CapKind::Endpoint, Rights::READ, false).unwrap();
+        let t1 = b
+            .issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false)
+            .unwrap();
+        let t2 = b
+            .issue("monitor", "agent-a", CapKind::Endpoint, Rights::READ, false)
+            .unwrap();
         assert_eq!(b.grant_count(), 2);
         b.revoke(&t1).unwrap();
         assert_eq!(b.grant_count(), 1);
@@ -674,7 +748,9 @@ mod tests {
     fn test_validate_insufficient_rights_fails() {
         let mut b = broker_with_policy();
         // Issue with READ only
-        let tok = b.issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false).unwrap();
+        let tok = b
+            .issue("monitor", "agent-a", CapKind::Memory, Rights::READ, false)
+            .unwrap();
         // Validate requiring WRITE — should fail
         let err = b.validate(&tok, "agent-a", Rights::WRITE).unwrap_err();
         assert_eq!(err, BrokerError::InsufficientRights);
@@ -684,9 +760,13 @@ mod tests {
     fn test_broker_error_display() {
         use alloc::string::ToString;
         assert!(BrokerError::UnknownToken.to_string().contains("unknown"));
-        assert!(BrokerError::InsufficientRights.to_string().contains("insufficient"));
+        assert!(BrokerError::InsufficientRights
+            .to_string()
+            .contains("insufficient"));
         assert!(BrokerError::PolicyDenied.to_string().contains("policy"));
-        assert!(BrokerError::NotDelegatable.to_string().contains("delegatable"));
+        assert!(BrokerError::NotDelegatable
+            .to_string()
+            .contains("delegatable"));
         assert!(BrokerError::TableFull.to_string().contains("full"));
     }
 }

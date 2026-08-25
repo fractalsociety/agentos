@@ -1,5 +1,5 @@
 /*
- * agentOS AgentFS Protection Domain
+ * FractalOS AgentFS Protection Domain
  *
  * AgentFS is the agent-native object store. It is NOT POSIX.
  * Every stored item is an Object: content-addressed, versioned,
@@ -35,15 +35,16 @@
  *
  * E5-S8: migrated from Microkit to raw seL4 IPC.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 #include "sel4_server.h"
 #include "contracts/agentfs_contract.h"
 #include "contracts/eventbus_contract.h"
+#include "descriptor_store.h"
 #include "workspace_overlay.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -55,19 +56,19 @@ uintptr_t agentfs_store_vaddr;
 static seL4_CPtr g_eventbus_ep = 0;
 
 #if defined(__GNUC__)
-__attribute__((weak)) uint32_t agentos_eventbus_record(
+__attribute__((weak)) uint32_t fractalos_eventbus_record(
     struct eventbus_agent_event *event)
 {
     (void)event;
     return EVENTBUS_AGENT_EVENT_OK;
 }
-__attribute__((weak)) uint32_t agentos_eventbus_canonical_epoch(void)
+__attribute__((weak)) uint32_t fractalos_eventbus_canonical_epoch(void)
 {
     return 0u;
 }
 #else
-extern uint32_t agentos_eventbus_record(struct eventbus_agent_event *event);
-extern uint32_t agentos_eventbus_canonical_epoch(void);
+extern uint32_t fractalos_eventbus_record(struct eventbus_agent_event *event);
+extern uint32_t fractalos_eventbus_canonical_epoch(void);
 #endif
 
 /* ── Op codes ───────────────────────────────────────────────────────────── */
@@ -107,7 +108,7 @@ typedef enum {
 
 typedef struct {
     object_id_t  id;
-    char         schema[MAX_SCHEMA_LEN];   /* e.g. "agentOS::InferenceResult" */
+    char         schema[MAX_SCHEMA_LEN];   /* e.g. "FractalOS::InferenceResult" */
     uint32_t     version;
     uint32_t     size;
     uint32_t     cap_tag;    /* badge of the cap required to read this object */
@@ -193,8 +194,8 @@ static float cosine_sim(const float *a, const float *b, uint16_t dim) {
 }
 
 /* ── msg helpers ────────────────────────────────────────────────────────── */
-#ifndef AGENTOS_IPC_HELPERS_DEFINED
-#define AGENTOS_IPC_HELPERS_DEFINED
+#ifndef FRACTALOS_IPC_HELPERS_DEFINED
+#define FRACTALOS_IPC_HELPERS_DEFINED
 static inline uint32_t msg_u32(const sel4_msg_t *m, uint32_t off) {
     uint32_t v = 0;
     if (off + 4u <= SEL4_MSG_DATA_BYTES) {
@@ -209,7 +210,7 @@ static inline void rep_u32(sel4_msg_t *m, uint32_t off, uint32_t v) {
         m->data[off+2]=(uint8_t)(v>>16); m->data[off+3]=(uint8_t)(v>>24);
     }
 }
-#endif /* AGENTOS_IPC_HELPERS_DEFINED */
+#endif /* FRACTALOS_IPC_HELPERS_DEFINED */
 
 /* ── Emit event to EventBus (fire-and-forget seL4_Call, guarded) ────────── */
 static eventbus_event_hash_t agentfs_hash_bytes(const uint8_t *bytes,
@@ -251,18 +252,18 @@ static uint32_t emit_canonical_reference(uint32_t event_type,
     payload_root = agentfs_hash_bytes(payload, 5u + reference_len);
 
     event.event_type = EVENTBUS_EVENT_OBJECT_TRANSITION;
-    event.authority_epoch = agentos_eventbus_canonical_epoch != (void *)0
-        ? agentos_eventbus_canonical_epoch() : 0u;
+    event.authority_epoch = fractalos_eventbus_canonical_epoch != (void *)0
+        ? fractalos_eventbus_canonical_epoch() : 0u;
     event.flags = EVENTBUS_EVENT_FLAG_CANDIDATE_VISIBLE;
     event.scope_id = scope;
     event.payload_root = payload_root;
-    return agentos_eventbus_record(&event);
+    return fractalos_eventbus_record(&event);
 }
 
 static uint32_t emit_event(uint32_t event_type, sel4_badge_t badge,
                            const object_id_t *id) {
     uint32_t canonical_status = EVENTBUS_AGENT_EVENT_OK;
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     if (g_eventbus_ep) {
         sel4_msg_t emsg = {0};
         emsg.opcode = MSG_EVENT_PUBLISH;
@@ -288,7 +289,7 @@ static uint32_t emit_event(uint32_t event_type, sel4_badge_t badge,
     (void)event_type; (void)id;
 #endif
 
-    if (agentos_eventbus_record != (void *)0) {
+    if (fractalos_eventbus_record != (void *)0) {
         const uint8_t *reference = id != (const object_id_t *)0
             ? id->bytes : (const uint8_t *)0;
         uint32_t reference_len = id != (const object_id_t *)0
@@ -562,6 +563,12 @@ static uint32_t h_workspace(sel4_badge_t badge, const sel4_msg_t *req,
                                  EVENTBUS_AGENT_EVENT_HASH_BYTES)
             != EVENTBUS_AGENT_EVENT_OK)
         return SEL4_ERR_INVALID_OP;
+    /* Persist the exact IPC descriptor so replay can resolve model-visible
+     * bytes from the stream payload_root. */
+    if (agentfs_desc_persist(&request_root, descriptor,
+                             4u + request_len + reply_len)
+            != 0u)
+        return SEL4_ERR_INVALID_OP;
     return status;
 }
 
@@ -581,6 +588,7 @@ void agentfs_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     total_vectors  = 0;
     agentfs_workspace_init((void *)(uintptr_t)AGENTFS_SHMEM_VADDR,
                            AGENTFS_SHMEM_SIZE);
+    agentfs_desc_store_init();
     log_drain_write(3, 3, "[agentfs] Capacity: 256 objects, 256KB blob store.\n");
     log_drain_write(3, 3, "[agentfs] Vector index: linear scan (HNSW in Phase 2).\n");
     log_drain_write(3, 3, "[agentfs] AgentFS ALIVE.\n");

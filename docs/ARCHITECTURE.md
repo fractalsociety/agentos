@@ -1,16 +1,16 @@
-# agentOS Architecture Map
+# FractalOS Architecture Map
 
 _Auto-generated from codebase audit, April 2026_
 
 ## Overview
 
-agentOS is a seL4 Microkit-based OS for AI agents. ~48K LOC total (32K C kernel, 16K Rust userspace).
+FractalOS is a seL4 Microkit-based OS for AI agents. ~48K LOC total (32K C kernel, 16K Rust userspace).
 48 PDs in the system file, 70 C source files, 55 contracts, 6 Rust simulation servers, 7 tools.
 
 The Rust userspace servers are **NOT deployed on seL4** — they are simulation models
 (`capability-broker`, `event-bus`) or host-side services (`http-gateway`, `model-proxy`,
 `tool-registry`, `vibe-engine`). The real PD implementations are all in C under
-`kernel/agentos-root-task/src/`.
+`kernel/fractalos-root-task/src/`.
 
 ## PD Architecture by Layer
 
@@ -147,14 +147,14 @@ These are interface definitions awaiting implementation, or use generic names:
 |-------|-----|---------|
 | capability-broker | 692 | Simulation model of CapBroker PD |
 | event-bus | 417 | Simulation model of EventBus PD |
-| http-gateway | 392 | Host-side HTTP server → agentOS apps |
+| http-gateway | 392 | Host-side HTTP server → FractalOS apps |
 | model-proxy | 1807 | LLM inference proxy with capability gating |
 | tool-registry | 815 | Tool registration and dispatch |
 | vibe-engine | 1903 | Vibe coding hot-swap + WASM validator |
 | sim | 1065 | Host-side simulation runner |
 | sdk | ~800 | Rust SDK (agent_context, capability, event, etc.) |
 
-## IPC Message Space (from agentos.h)
+## IPC Message Space (from fractalos.h)
 
 | Range | Domain |
 |-------|--------|
@@ -186,7 +186,7 @@ Important top-level targets:
 | Target | Purpose |
 |--------|---------|
 | `make install` | Install host build dependencies; `make deps` is an alias |
-| `make build` | Stage the selected guest image and build `build/<board>/agentos.img` |
+| `make build` | Stage the selected guest image and build `build/<board>/fractalos.img` |
 | `make run` | Boot native QEMU, foreground serial on stdio, CC-PD at `build/cc_pd.sock` |
 | `make test` | QEMU boot/API smoke test for the selected board and guest |
 | `make test-guest-login` | Boot Ubuntu and FreeBSD and verify serial login/input via CC-PD |

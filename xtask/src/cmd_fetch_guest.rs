@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::UNIX_EPOCH;
 
-const ISO_DIR_ENV: &str = "AGENTOS_ISO_DIR";
-const COPY_ISOS_ENV: &str = "AGENTOS_COPY_ISOS";
-const FREEBSD_IMAGE_ENV: &str = "AGENTOS_FREEBSD_IMAGE";
+const ISO_DIR_ENV: &str = "FRACTALOS_ISO_DIR";
+const COPY_ISOS_ENV: &str = "FRACTALOS_COPY_ISOS";
+const FREEBSD_IMAGE_ENV: &str = "FRACTALOS_FREEBSD_IMAGE";
 const FREEBSD_IMAGE_COMPAT_ENV: &str = "FREEBSD_IMAGE";
 
 const UBUNTU_VERSION: &str = "26.04";
@@ -51,18 +51,18 @@ fn build_tmp_dir() -> anyhow::Result<PathBuf> {
 }
 
 fn iso_dir_from_env(
-    agentos_iso_dir: Option<OsString>,
+    fractalos_iso_dir: Option<OsString>,
     xdg_cache_home: Option<OsString>,
     home: Option<OsString>,
 ) -> PathBuf {
-    if let Some(d) = agentos_iso_dir {
+    if let Some(d) = fractalos_iso_dir {
         return PathBuf::from(d);
     }
     let cache_root = xdg_cache_home
         .map(PathBuf::from)
         .or_else(|| home.map(|h| PathBuf::from(h).join(".cache")))
         .unwrap_or_else(|| PathBuf::from("/tmp"));
-    cache_root.join("agentos").join("isos")
+    cache_root.join("fractalos").join("isos")
 }
 
 fn iso_dir() -> PathBuf {
@@ -149,7 +149,7 @@ fn extract_ubuntu_initrd(_iso: &Path, initrd_dest: &Path) -> anyhow::Result<()> 
 
     let tmp_root = build_tmp_dir()?;
     let tmp_dir = tempfile::Builder::new()
-        .prefix("agentos-ubuntu-initrd-")
+        .prefix("fractalos-ubuntu-initrd-")
         .tempdir_in(&tmp_root)
         .context("failed to create Ubuntu initrd tempdir under build/tmp")?;
     let init = build_linux_e2e_init(tmp_dir.path())?;
@@ -173,11 +173,11 @@ fn ubuntu_e2e_initrd_ready(initrd: &Path) -> anyhow::Result<bool> {
         .any(|entry| entry == "init" || entry == "./init")
         && entries
             .iter()
-            .any(|entry| entry == "agentos-init-v2" || entry == "./agentos-init-v2"))
+            .any(|entry| entry == "fractalos-init-v2" || entry == "./fractalos-init-v2"))
 }
 
 fn build_linux_e2e_init(work_dir: &Path) -> anyhow::Result<Vec<u8>> {
-    let init_s = work_dir.join("agentos-linux-e2e-init.S");
+    let init_s = work_dir.join("fractalos-linux-e2e-init.S");
     let init_elf = work_dir.join("init");
     fs::write(&init_s, LINUX_E2E_INIT_ASM)
         .with_context(|| format!("failed to write {}", init_s.display()))?;
@@ -232,7 +232,7 @@ fn create_ubuntu_e2e_initramfs(init_elf: &[u8]) -> anyhow::Result<Vec<u8>> {
     ino += 1;
     append_newc_file(&mut out, "init", ino, 0o755, init_elf)?;
     ino += 1;
-    append_newc_file(&mut out, "agentos-init-v2", ino, 0o444, b"console-open\n")?;
+    append_newc_file(&mut out, "fractalos-init-v2", ino, 0o444, b"console-open\n")?;
     ino += 1;
     append_newc_trailer(&mut out, ino)?;
     Ok(out)
@@ -267,6 +267,7 @@ fn append_newc_trailer(out: &mut Vec<u8>, ino: u32) -> anyhow::Result<()> {
     append_newc_entry(out, "TRAILER!!!", ino, 0, 1, 0, 0, 0, 0, &[])
 }
 
+#[allow(clippy::too_many_arguments)]
 fn append_newc_entry(
     out: &mut Vec<u8>,
     name: &str,
@@ -299,7 +300,7 @@ fn append_newc_entry(
 }
 
 fn pad_newc(out: &mut Vec<u8>) {
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
 }
@@ -364,11 +365,11 @@ _start:
 
 .section .rodata
 banner:
-    .ascii "agentOS Linux E2E init\nagentos-linux login: "
+    .ascii "FractalOS Linux E2E init\nfractalos-linux login: "
 banner_end:
 .equ banner_len, banner_end - banner
 prompt:
-    .ascii "agentos-linux login: "
+    .ascii "fractalos-linux login: "
 prompt_end:
 .equ prompt_len, prompt_end - prompt
 dev_console:
@@ -430,7 +431,7 @@ fn extract_freebsd_kernel(iso: &Path, kernel_dest: &Path) -> anyhow::Result<()> 
 
     let tmp_root = build_tmp_dir()?;
     let tmp_dir = tempfile::Builder::new()
-        .prefix("agentos-freebsd-kernel-")
+        .prefix("fractalos-freebsd-kernel-")
         .tempdir_in(&tmp_root)
         .context("failed to create FreeBSD kernel tempdir under build/tmp")?;
     let elf = tmp_dir.path().join("kernel.elf");
@@ -668,13 +669,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn iso_dir_prefers_explicit_agentos_iso_dir() {
+    fn iso_dir_prefers_explicit_fractalos_iso_dir() {
         let dir = iso_dir_from_env(
-            Some(OsString::from("/tmp/agentos-isos")),
+            Some(OsString::from("/tmp/fractalos-isos")),
             Some(OsString::from("/tmp/xdg-cache")),
             Some(OsString::from("/tmp/home")),
         );
-        assert_eq!(dir, PathBuf::from("/tmp/agentos-isos"));
+        assert_eq!(dir, PathBuf::from("/tmp/fractalos-isos"));
     }
 
     #[test]
@@ -684,13 +685,13 @@ mod tests {
             Some(OsString::from("/tmp/xdg-cache")),
             Some(OsString::from("/tmp/home")),
         );
-        assert_eq!(dir, PathBuf::from("/tmp/xdg-cache/agentos/isos"));
+        assert_eq!(dir, PathBuf::from("/tmp/xdg-cache/fractalos/isos"));
     }
 
     #[test]
     fn iso_dir_defaults_to_home_cache_without_xdg() {
         let dir = iso_dir_from_env(None, None, Some(OsString::from("/tmp/home")));
-        assert_eq!(dir, PathBuf::from("/tmp/home/.cache/agentos/isos"));
+        assert_eq!(dir, PathBuf::from("/tmp/home/.cache/fractalos/isos"));
     }
 }
 
@@ -742,7 +743,7 @@ fn extract_ubuntu_kernel(iso: &Path, kernel_dest: &Path) -> anyhow::Result<()> {
 
     let tmp_root = build_tmp_dir()?;
     let tmp_dir = tempfile::Builder::new()
-        .prefix("agentos-ubuntu-kernel-")
+        .prefix("fractalos-ubuntu-kernel-")
         .tempdir_in(&tmp_root)
         .context("failed to create Ubuntu kernel tempdir under build/tmp")?;
     let vmlinuz = tmp_dir.path().join("vmlinuz");

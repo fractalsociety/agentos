@@ -1,8 +1,8 @@
 /*
- * agentOS MsgBus IPC Contract — interface.h
+ * FractalOS MsgBus IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the MsgBus protection domain.
- * MsgBus is the message routing backbone of agentOS.  All inter-agent
+ * MsgBus is the message routing backbone of FractalOS.  All inter-agent
  * communication flows through this passive server (see topology.yaml
  * for the PD definition; this service is embedded in the event_bus PD
  * for system-channel traffic and exposed to agents via the controller).
@@ -11,7 +11,7 @@
  * Label field (seL4_MessageInfo label) carries the opcode.
  * MR0 is always the opcode on request; MR0 is always the status on reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

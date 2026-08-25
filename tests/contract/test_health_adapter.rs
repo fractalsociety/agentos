@@ -21,7 +21,7 @@ const WIT: &str = include_str!("../../interfaces/wit/fractal-companion-v1/compan
 
 /// The C mirror named as normative by the WIT preamble.
 const ABI: &str =
-    include_str!("../../kernel/agentos-root-task/include/contracts/companion_export_contract.h");
+    include_str!("../../kernel/fractalos-root-task/include/contracts/companion_export_contract.h");
 
 /// Body of the first brace-balanced block introduced by `header`.
 fn body_after(header: &str) -> &str {
@@ -171,9 +171,7 @@ fn wire_struct_fields(typedef_name: &str) -> Vec<String> {
     let end = ABI
         .find(&end_marker)
         .unwrap_or_else(|| panic!("missing C typedef {typedef_name}"));
-    let start = ABI[..end]
-        .rfind("typedef struct")
-        .expect("typedef start");
+    let start = ABI[..end].rfind("typedef struct").expect("typedef start");
     let open = start + ABI[start..end].find('{').expect("typedef brace");
     ABI[open + 1..end]
         .lines()
@@ -247,8 +245,7 @@ fn health_records_are_consent_scoped_fresh_coarse_and_provenance_bound() {
     assert_wit_states("`source-class.personal-record`");
     let personal_record = body_after("enum source-class");
     assert!(
-        personal_record.contains("personal-record")
-            && personal_record.contains("Never exported"),
+        personal_record.contains("personal-record") && personal_record.contains("Never exported"),
         "personal-record must remain a never-exported source class"
     );
 
@@ -266,7 +263,10 @@ fn health_operation_has_one_typed_projection_result() {
         operation,
         "get-health-adapter: func(epoch: u64) -> result<health-adapter-summary, export-error>;"
     );
-    assert_record_has_fields("limits", &["max-health-signals: u32", "max-consent-scopes: u32"]);
+    assert_record_has_fields(
+        "limits",
+        &["max-health-signals: u32", "max-consent-scopes: u32"],
+    );
 }
 
 // ── 1. Explicit authorization ────────────────────────────────────────────
@@ -307,7 +307,9 @@ fn authorization_is_explicit_grant_plus_per_family_consent() {
 fn aggregation_is_minimum_necessary_and_coarse_only() {
     assert_wit_states("The only values that cross are");
     assert_wit_states("the coarse enums `health-source` and `health-status`");
-    assert_wit_states("No\n    //       measurement, value, unit, series, trend, record identifier,");
+    assert_wit_states(
+        "No\n    //       measurement, value, unit, series, trend, record identifier,",
+    );
     assert_wit_states("provider name, or timestamp series appears in any field at any");
     assert_wit_states("redaction class");
     assert_wit_states("`provenance` is a hash over exactly the");
@@ -333,10 +335,7 @@ fn aggregation_is_minimum_necessary_and_coarse_only() {
 
 #[test]
 fn consent_window_expiry_is_typed_and_freshness_is_per_signal() {
-    assert_record_has_fields(
-        "health-adapter-summary",
-        &["consent-expires-unix: u64"],
-    );
+    assert_record_has_fields("health-adapter-summary", &["consent-expires-unix: u64"]);
     assert_wit_states("Consent is a window, not a standing state");
     assert_wit_states("reads fail `export-error.expired`");
     assert_wit_states("rather than serving on stale consent");
@@ -360,10 +359,7 @@ fn consent_window_expiry_is_typed_and_freshness_is_per_signal() {
     );
     assert_record_has_fields(
         "health-adapter-summary",
-        &[
-            "freshness-seconds: u32",
-            "status: health-status",
-        ],
+        &["freshness-seconds: u32", "status: health-status"],
     );
     assert_wit_states("Each signal states its own");
     assert_wit_states("one stale family cannot hide behind a fresh");
@@ -418,7 +414,9 @@ fn canary_records_are_never_disclosed() {
     assert_wit_states("Canary or sentinel records planted in a");
     assert_wit_states("health source are never disclosed");
     // Not the values, not the existence, not the count, not the absence.
-    assert_wit_states("their\n    //       existence, their count, and their absence are not exported");
+    assert_wit_states(
+        "their\n    //       existence, their count, and their absence are not exported",
+    );
     assert_wit_states("no field distinguishes them");
     // Canaries must not leak through the output shape either.
     assert_wit_states("contribute nothing to any signal, status, or provenance hash");
@@ -460,9 +458,9 @@ fn credentials_are_opaque_and_outside_canonical_state() {
     assert_record_has_fields("health-adapter-summary", &["source: source-handle"]);
     let summary = record_fields("health-adapter-summary");
     assert!(
-        !summary.iter().any(|(name, _)| name == "source-id"
-            || name == "account"
-            || name == "provider-id"),
+        !summary
+            .iter()
+            .any(|(name, _)| name == "source-id" || name == "account" || name == "provider-id"),
         "the summary must not identify the source beyond the opaque handle"
     );
 

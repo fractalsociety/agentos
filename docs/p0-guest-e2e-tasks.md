@@ -60,7 +60,7 @@ Execution notes:
   (`vm_init`, `vm_run`, `vm_suspend`, `vm_resume`, `vm_handle_fault`) and uses
   an incompatible `vcpu_regs_t` layout.
 - There is still a competing FreeBSD implementation in
-  `kernel/agentos-root-task/src/freebsd_vmm.c`; the active top-level build path
+  `kernel/fractalos-root-task/src/freebsd_vmm.c`; the active top-level build path
   delegates to `kernel/freebsd-vmm`, so this remains blocked until the project
   picks one implementation and retires or ports the other.
 - The alternate `vmm.mk` path now clean-builds `freebsd_vmm.elf` directly:
@@ -92,14 +92,14 @@ Execution notes:
 - Child module failures now increment the parent failure count.
 - Validated with:
   `E2E_TIMEOUT=20 E2E_SKIP_BRIDGE=1 E2E_GUEST_OS=ubuntu-arm64 E2E_CC_PORT=18789 E2E_SSH_PORT=12222 bash tests/e2e/run_e2e.sh`.
-  Result: agentOS booted, Ubuntu did not reach `login:`, and the suite exited
+  Result: FractalOS booted, Ubuntu did not reach `login:`, and the suite exited
   non-zero with two failures.
 
 ## P0-GUEST-004: Align CC consumer tests with the implemented CC transport
 
 Status: `todo`
 
-Gap: the E2E shell tests expect HTTP endpoints at `/api/agentos/cc/*`, while
+Gap: the E2E shell tests expect HTTP endpoints at `/api/fractalos/cc/*`, while
 the implemented host consumer uses a Unix socket binary frame via `agentctl`.
 
 Acceptance:
@@ -162,7 +162,7 @@ Acceptance:
 
 - One command runs the matrix for at least FreeBSD and Linux/Ubuntu on
   `qemu_virt_aarch64`.
-- Each matrix entry requires: agentOS boot marker, guest login or multi-user
+- Each matrix entry requires: FractalOS boot marker, guest login or multi-user
   marker, successful SSH command, network sanity, block write/read sanity.
 - The matrix fails if any OS is skipped unless the skip is explicitly requested
   by an environment variable documented in the test output.
@@ -182,7 +182,7 @@ Acceptance:
 - `tests/e2e/run_e2e.sh` reaches the guest SSH check and completes a command
   through the forwarded SSH port.
 - The serial log identifies the guest VMM startup path and device bindings
-  clearly enough to distinguish a guest boot failure from an agentOS boot
+  clearly enough to distinguish a guest boot failure from an FractalOS boot
   failure.
 
 Execution notes:
@@ -218,7 +218,7 @@ Current blocker:
 Status: `done`
 
 Gap: Direct QEMU proves the clean Ubuntu image plus NoCloud-Net seed accepts
-an incoming SSH command, but the same clean image and seed under AgentOS
+an incoming SSH command, but the same clean image and seed under FractalOS
 `linux_vmm` does not complete SSH within 1200 seconds.
 
 Acceptance:
@@ -256,7 +256,7 @@ Execution notes:
     guest SSH probes so optional USB enumeration cannot hang the full suite.
 - Focused proof:
   `cargo xtask qemu-test --no-build --guest-os ubuntu --timeout-secs 1200`
-  passed. `/tmp/agentos-ubuntu-qemu-test.log` shows NoCloud GETs for
+  passed. `/tmp/fractalos-ubuntu-qemu-test.log` shows NoCloud GETs for
   `/meta-data`, `/user-data`, and `/vendor-data`, root mounted on `253:1`, and:
 
 ```text
@@ -266,7 +266,7 @@ PASS [board=qemu_virt_aarch64]: found marker "ssh root@127.0.0.1:12222 systemctl
 - Broad Ubuntu E2E proof:
   `E2E_TIMEOUT=480 E2E_SKIP_BRIDGE=1 E2E_GUEST_OS=ubuntu-arm64
   E2E_CC_PORT=18789 E2E_SSH_PORT=12222 bash tests/e2e/run_e2e.sh` passed.
-  `/tmp/agentos-e2e-ubuntu.log` shows:
+  `/tmp/fractalos-e2e-ubuntu.log` shows:
 
 ```text
 [PASS] ubuntu-arm64 VM (slot 0) booted to SSH-ready multi-user

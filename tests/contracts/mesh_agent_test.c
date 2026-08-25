@@ -9,15 +9,15 @@
  * lengths, replay cursors, grant audience/epoch fencing, remote badge
  * rejection, one-shot completion, and bounded flow control.
  *
- * Channel: 0 (placeholder — update when ch is assigned in agentos.system).
+ * Channel: 0 (placeholder — update when ch is assigned in fractalos.system).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/mesh_agent_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/mesh_agent_contract.h"
 
 static void mesh_check(bool condition, const char *name)
 {

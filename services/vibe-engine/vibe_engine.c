@@ -1,5 +1,5 @@
 /*
- * agentOS VibeEngine Protection Domain — E5-S6: raw seL4 IPC
+ * FractalOS VibeEngine Protection Domain — E5-S6: raw seL4 IPC
  *
  * The VibeEngine is the userspace service that manages the hot-swap
  * lifecycle: agents submit WASM proposals, VibeEngine validates them,
@@ -19,27 +19,27 @@
  *
  * Entry point: void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 /* ── Conditional compilation ───────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * Host-side test build: provide minimal type stubs so this file compiles
  * without seL4 or Microkit headers.  The test file provides framework.h
  * (which defines microkit_mr_set/get) before including this unit.
  *
- * The guard AGENTOS_SEL4_STUBS_DEFINED prevents duplicate definitions when
+ * The guard FRACTALOS_SEL4_STUBS_DEFINED prevents duplicate definitions when
  * multiple source files are included into a single test translation unit.
  */
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 
-#ifndef AGENTOS_SEL4_STUBS_DEFINED
-#define AGENTOS_SEL4_STUBS_DEFINED
+#ifndef FRACTALOS_SEL4_STUBS_DEFINED
+#define FRACTALOS_SEL4_STUBS_DEFINED
 
 typedef unsigned long      seL4_CPtr;
 typedef unsigned long long sel4_badge_t;
@@ -121,22 +121,22 @@ static inline void sel4_call(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *re
 static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 static inline void seL4_DebugPutChar(char c)  { (void)c; }
 
-/* microkit stubs used by ns_pack_name / agentos_wmb */
+/* microkit stubs used by ns_pack_name / fractalos_wmb */
 static inline void microkit_mr_set(uint32_t i, uint64_t v) { (void)i; (void)v; }
 static inline uint64_t microkit_mr_get(uint32_t i) { (void)i; return 0; }
 
-#endif /* AGENTOS_SEL4_STUBS_DEFINED */
+#endif /* FRACTALOS_SEL4_STUBS_DEFINED */
 
-#else  /* !AGENTOS_TEST_HOST */
+#else  /* !FRACTALOS_TEST_HOST */
 
 #include <stdbool.h>
 #include "sel4_ipc.h"
 #include "sel4_server.h"
 #include "sel4_client.h"
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
-/* ── Opcode definitions (guard against double-include from agentos.h) ──────── */
+/* ── Opcode definitions (guard against double-include from fractalos.h) ──────── */
 
 #ifndef OP_VIBE_PROPOSE
 #define OP_VIBE_PROPOSE           0x40u
@@ -292,17 +292,17 @@ static void dbg_puts(const char *s) {
 }
 
 /* ── Memory barrier ─────────────────────────────────────────────────────── */
-#ifndef agentos_wmb
-#ifdef AGENTOS_TEST_HOST
-#define agentos_wmb() ((void)0)
+#ifndef fractalos_wmb
+#ifdef FRACTALOS_TEST_HOST
+#define fractalos_wmb() ((void)0)
 #elif defined(__aarch64__)
-#define agentos_wmb() __asm__ volatile("dmb st" ::: "memory")
+#define fractalos_wmb() __asm__ volatile("dmb st" ::: "memory")
 #elif defined(__riscv)
-#define agentos_wmb() __asm__ volatile("fence rw,w" ::: "memory")
+#define fractalos_wmb() __asm__ volatile("fence rw,w" ::: "memory")
 #elif defined(__x86_64__)
-#define agentos_wmb() __asm__ volatile("sfence" ::: "memory")
+#define fractalos_wmb() __asm__ volatile("sfence" ::: "memory")
 #else
-#define agentos_wmb() __asm__ volatile("" ::: "memory")
+#define fractalos_wmb() __asm__ volatile("" ::: "memory")
 #endif
 #endif
 
@@ -659,7 +659,7 @@ static uint32_t handle_execute(sel4_badge_t badge, const sel4_msg_t *req,
     meta[12] = pid & 0xff; meta[13] = (pid >> 8) & 0xff;
     meta[14] = (pid >> 16) & 0xff; meta[15] = (pid >> 24) & 0xff;
 
-    agentos_wmb();
+    fractalos_wmb();
 
     dbg_puts("[vibe_engine] *** SWAP APPROVED — signalling controller ***\n");
 
@@ -727,7 +727,7 @@ static uint32_t handle_rollback(sel4_badge_t badge, const sel4_msg_t *req,
     meta[4]  = 0; meta[5] = 0; meta[6] = 0; meta[7] = 0;
     meta[8]  = 0xFF; meta[9] = 0xFF; meta[10] = 0xFF; meta[11] = 0xFF;
 
-    agentos_wmb();
+    fractalos_wmb();
     if (g_ctrl_ep) seL4_Signal(g_ctrl_ep);
 
     for (int i = 0; i < MAX_PROPOSALS; i++) {
@@ -849,7 +849,7 @@ static uint32_t handle_list_services(sel4_badge_t badge, const sel4_msg_t *req,
         if (pos + j < out_max) out[pos + j] = 0;
         pos += j + 1;
     }
-    agentos_wmb();
+    fractalos_wmb();
 
     data_wr32(rep->data, 0, service_count);
     data_wr32(rep->data, 4, 0u);
@@ -1473,7 +1473,7 @@ static uint32_t handle_vos_console_drain(sel4_badge_t badge,
  * delegate to vm_manager's OP_VM_PAUSE / OP_VM_RESUME and update slot
  * state on success.  In phantom-guest mode (g_vmm_ep == 0) just update
  * the local state so the multi-OS UX still cycles through pause/resume
- * end-to-end while the libvmm work (agentos-9wb) lands. */
+ * end-to-end while the libvmm work (fos-9wb) lands. */
 static uint32_t handle_vos_pause_resume(sel4_badge_t badge,
                                          const sel4_msg_t *req,
                                          sel4_msg_t *rep, void *ctx)
@@ -1579,7 +1579,7 @@ static uint32_t handle_vibeos_load_module(sel4_badge_t badge, const sel4_msg_t *
     meta[12] = pid & 0xff; meta[13] = (pid >> 8) & 0xff;
     meta[14] = (pid >> 16) & 0xff; meta[15] = (pid >> 24) & 0xff;
 
-    agentos_wmb();
+    fractalos_wmb();
     if (g_ctrl_ep) seL4_Signal(g_ctrl_ep);
 
     data_wr32(rep->data, 0, VIBEOS_OK);
@@ -1607,7 +1607,7 @@ static uint32_t handle_vibeos_check_service_exists(sel4_badge_t badge,
 }
 
 /* ── Test-only dispatch shim ────────────────────────────────────────────── */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * vibe_engine_test_init() — reset all state for a clean test run.
  */
@@ -1688,10 +1688,10 @@ static uint32_t vibe_engine_dispatch_one(sel4_badge_t badge,
         return SEL4_ERR_INVALID_OP;
     }
 }
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Entry point ────────────────────────────────────────────────────────── */
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 /*
  * vibe_engine_main — called by root-task boot dispatcher.
  *
@@ -1722,7 +1722,7 @@ void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr ctrl_ep)
     g_block_ep  = lookup_service(ns_ep, "block_pd");
     g_net_ep    = lookup_service(ns_ep, "net_pd");
     g_vmm_ep    = lookup_service(ns_ep, "vm_manager");
-#if defined(__aarch64__) && !defined(AGENTOS_TEST_HOST)
+#if defined(__aarch64__) && !defined(FRACTALOS_TEST_HOST)
     if (!g_vmm_ep)
         g_vmm_ep = (seL4_CPtr)PD_CNODE_SLOT_VM_MANAGER_EP;
 #endif
@@ -1787,4 +1787,4 @@ void vibe_engine_main(seL4_CPtr my_ep, seL4_CPtr ns_ep, seL4_CPtr ctrl_ep)
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { vibe_engine_main(my_ep, ns_ep, 0u); }
 
-#endif /* !AGENTOS_TEST_HOST */
+#endif /* !FRACTALOS_TEST_HOST */

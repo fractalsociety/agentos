@@ -6,7 +6,7 @@ AgentFS is the agent-native persistent object store.  It is not POSIX.
 Every stored item is an Object with rich structure:
 
 - 32-byte content-addressed ID (BLAKE3 for blobs, UUID for mutable)
-- Schema type tag (e.g. `agentOS::InferenceResult`, `agentOS::AgentState`)
+- Schema type tag (e.g. `FractalOS::InferenceResult`, `FractalOS::AgentState`)
 - Version counter (mutable objects append new versions)
 - Capability tag: only callers holding a matching seL4 badge can read
 - Optional float32 vector embedding for semantic similarity search
@@ -74,6 +74,6 @@ AgentFS emits events to the `event_bus` PD on every mutation:
 
 ## Source Files
 
-- `kernel/agentos-root-task/src/agentfs.c` — seL4 PD implementation
-- `kernel/agentos-root-task/include/agentos.h` — EVT_OBJECT_* constants
+- `kernel/fractalos-root-task/src/agentfs.c` — seL4 PD implementation
+- `kernel/fractalos-root-task/include/fractalos.h` — EVT_OBJECT_* constants
 - `tools/topology.yaml` — agentfs PD and channel definitions

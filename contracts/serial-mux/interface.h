@@ -3,9 +3,9 @@
  *
  * // STATUS: LEGACY
  *
- * This is the canonical contract for the serial-mux device service in agentOS.
+ * This is the canonical contract for the serial-mux device service in FractalOS.
  * This legacy interface is superseded by
- * kernel/agentos-root-task/include/contracts/serial_contract.h.
+ * kernel/fractalos-root-task/include/contracts/serial_contract.h.
  *
  * The serial-mux service multiplexes per-PD output streams onto the debug UART
  * (and optionally onto guest UART devices) with open/close/read/write semantics.
@@ -30,7 +30,7 @@
  *   guest OS creation time.  The guest discovers its session slot id via
  *   the SERIAL_MUX_OP_OPEN reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

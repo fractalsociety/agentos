@@ -4,8 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
-#include "../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
+#include "../kernel/fractalos-root-task/include/contracts/agent_task_contract.h"
+#include "../kernel/fractalos-root-task/include/contracts/eventbus_contract.h"
 
 static unsigned tests;
 static unsigned failures;

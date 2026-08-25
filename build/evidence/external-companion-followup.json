@@ -1,0 +1,75 @@
+{
+  "schema": "fractalos.external_handoff.v1",
+  "task_id": "build_companion_pages",
+  "generated_at": "2026-08-25T01:35:01Z",
+  "controlplane_revision": "01dc18ed76ea22c6e29f83281cefb9de0b0c14c8",
+  "linked_issue": {
+    "id": "fos-gz0.14.18",
+    "title": "Build companion project pages outside controlplane",
+    "status": "open"
+  },
+  "boundary": {
+    "controlplane_contributes": "typed companion.wit + local-gateway + companion_gateway host fence; no UI/HTTP/pages",
+    "sibling_repository": "fractalos-companion",
+    "prohibited_in_controlplane": [
+      "html",
+      "css",
+      "js",
+      "mjs",
+      "jsx",
+      "tsx",
+      "vue",
+      "svelte",
+      "package.json",
+      "node_modules"
+    ]
+  },
+  "contracts": {
+    "companion_wit": "interfaces/wit/fractal-companion-v1/companion.wit",
+    "companion_wit_sha256": "a77796a4c3fec184d98e3a866bfc944c2213b6312b70b281a7bf4c40027dc007",
+    "local_gateway": "contracts/local-gateway/interface.h",
+    "local_gateway_sha256": "0dcc507b7704ae553cf934673ea9233c5ba61a34e152f284073cf21e4311d1bf",
+    "required_pages": [
+      "daily-root",
+      "project-progress",
+      "worker-memory",
+      "health"
+    ]
+  },
+  "repository": {
+    "name": "fractalos-companion",
+    "local_path": "/Users/jamesstar/controlplane/../fractalos-companion",
+    "availability": "available",
+    "revision": "4546a202e0537ef8fb8abf34b7999c56fc04de77",
+    "blocker": null
+  },
+  "required_checks": [
+    {
+      "id": "controlplane-clean",
+      "status": "PASSING",
+      "requirement": "no UI files in companion surface"
+    },
+    {
+      "id": "typed-contracts",
+      "status": "PASSING",
+      "requirement": "daily/health/progress/schema + local/companion gateway host suites"
+    },
+    {
+      "id": "sibling-pages",
+      "status": "PASSING",
+      "requirement": "sibling renders four pages from pinned schema"
+    },
+    {
+      "id": "typed-intents-only",
+      "status": "PASSING",
+      "requirement": "page actions submit granted task intents only"
+    }
+  ],
+  "proof_class": "sibling_present",
+  "claims_live_product": false,
+  "next_action": {
+    "owner": "external (fractalos-companion)",
+    "prerequisite": "create or clone sibling repo at ../fractalos-companion consuming companion.wit@a77796a4c3fec184d98e3a866bfc944c2213b6312b70b281a7bf4c40027dc007",
+    "controlplane_completion": "handoff record complete; fos-gz0.14.18 stays OPEN until sibling page gates pass"
+  }
+}

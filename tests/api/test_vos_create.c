@@ -12,18 +12,18 @@
  * layout and control flow as the production build.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -std=c11 -Wall -Wextra \
  *      -o /tmp/t_vos_create \
  *      tests/api/test_vos_create.c && /tmp/t_vos_create
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 #include "sel4_boot.h"
 #include "cap_tree.h"
@@ -136,11 +136,11 @@ static cap_tree_t g_cap_tree;
 /* ── Include the implementation under test ──────────────────────────────── */
 /*
  * vos_create.c pulls in vos_create.h → sel4_boot.h, cap_tree.h,
- * contracts/vibeos/interface.h, and ut_alloc.h.  The #ifdef AGENTOS_TEST_HOST
+ * contracts/vibeos/interface.h, and ut_alloc.h.  The #ifdef FRACTALOS_TEST_HOST
  * blocks inside vos_create.c redirect ut_alloc, seL4_CNode_Revoke/Delete, and
  * cap_tree_insert to our stubs above.
  */
-#include "../../kernel/agentos-root-task/src/vos_create.c"
+#include "../../kernel/fractalos-root-task/src/vos_create.c"
 
 /* ── Test helpers ────────────────────────────────────────────────────────── */
 
@@ -644,5 +644,5 @@ int main(void)
 }
 
 #else
-typedef int _agentos_api_test_vos_create_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_vos_create_dummy;
+#endif /* FRACTALOS_TEST_HOST */

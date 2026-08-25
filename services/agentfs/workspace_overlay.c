@@ -5,8 +5,8 @@
 #include <stdint.h>
 
 #include "workspace_overlay.h"
-#include "../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
-#include "../../kernel/agentos-root-task/include/system_desc.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agentfs_contract.h"
+#include "../../kernel/fractalos-root-task/include/system_desc.h"
 
 typedef struct workspace_file {
     bool active;

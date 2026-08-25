@@ -1,0 +1,8 @@
+let w = checkpoint(workspace)?
+let worker = spawn(role, workspace)?
+parallel {
+    let a = delegate(worker, objective)?
+    let b = delegate(coder, objective)?
+}
+let best = task_verify([a, b])?
+commit(best)?

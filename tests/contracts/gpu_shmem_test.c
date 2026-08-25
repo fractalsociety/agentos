@@ -7,12 +7,12 @@
  *   MSG_GPUSHMEM_FENCE             — fence DMA completion
  *   MSG_GPUSHMEM_STATUS            — query shmem status
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_gpu_shmem_tests(microkit_channel ch)
 {

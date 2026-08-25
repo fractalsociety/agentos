@@ -4,7 +4,7 @@
  * Defines the global VCPU capability table and the PD name symbol
  * that VMM PDs must define themselves.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

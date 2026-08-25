@@ -1,18 +1,18 @@
 /*
- * agentOS Hello Agent
+ * FractalOS Hello Agent
  *
  * The simplest possible agent — boots, introduces itself via MsgBus,
  * registers a tool, responds to queries, and heartbeats.
  *
  * This serves as both a test and a template for new agents.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdio.h>
 #include <string.h>
-#include <agentOS.h>
+#include <FractalOS.h>
 
 /* Our agent's name and config */
 static const char *AGENT_NAME = "hello-agent";
@@ -28,7 +28,7 @@ static aos_status_t tool_greet(const uint8_t *input, size_t input_len,
     char buf[256];
     
     int len = snprintf(buf, sizeof(buf),
-        "Hello from agentOS! I'm %s, running on seL4. "
+        "Hello from FractalOS! I'm %s, running on seL4. "
         "Nice to meet you, %s! Nothing up my sleeve... PRESTO! 🫎",
         AGENT_NAME, name);
     
@@ -55,7 +55,7 @@ static aos_status_t tool_status(const uint8_t *input, size_t input_len,
         "\"status\":\"alive\","
         "\"uptime_us\":%llu,"
         "\"capabilities\":\"basic\","
-        "\"message\":\"The first agent on agentOS. Antlers up.\""
+        "\"message\":\"The first agent on FractalOS. Antlers up.\""
         "}", AGENT_NAME, (unsigned long long)uptime);
     
     *output = (uint8_t *)malloc(len + 1);
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
     /* Register our tools */
     aos_tool_def_t greet_tool = {
         .name = "greet",
-        .description = "Greet someone from agentOS",
+        .description = "Greet someone from FractalOS",
         .input_schema = "{\"type\":\"string\",\"description\":\"Name to greet\"}",
         .output_schema = "{\"type\":\"string\",\"description\":\"Greeting message\"}",
         .handler = tool_greet,
@@ -165,7 +165,7 @@ int main(int argc, char *argv[]) {
     aos_msg_t *hello = aos_msg_alloc(AOS_MSG_TEXT, 64);
     if (hello) {
         snprintf((char *)hello->payload, 64,
-                 "hello-agent is alive on agentOS! 🫎");
+                 "hello-agent is alive on FractalOS! 🫎");
         hello->payload_len = strlen((char *)hello->payload);
         
         if (sys_ch != AOS_CAP_NULL) {

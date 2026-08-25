@@ -1,4 +1,4 @@
-# agentctl — agentOS C&C Reference Consumer
+# agentctl — FractalOS C&C Reference Consumer
 #
 # External consumer of cc_contract.h — zero kernel/ or services/ dependencies.
 #
@@ -11,9 +11,9 @@
 PREFIX ?= /usr/local
 
 CC      ?= cc
-CFLAGS  := -O2 -Wall -Wextra -std=c11 -DAGENTOS_TEST_HOST \
+CFLAGS  := -O2 -Wall -Wextra -std=c11 -DFRACTALOS_TEST_HOST \
            -DAGENTCTL_MESH_HELPER_PATH='"$(PREFIX)/libexec/agentctl-mesh"' \
-           -I../../kernel/agentos-root-task/include
+           -I../../kernel/fractalos-root-task/include
 LDFLAGS :=
 
 TARGET  := agentctl
@@ -35,7 +35,7 @@ test: $(TARGET)
 	@echo "[test] unknown flag exits non-zero"
 	./$(TARGET) --not-a-flag >/dev/null 2>&1; \
 	  if [ $$? -ne 0 ]; then echo "[PASS] unknown flag"; else echo "[FAIL] unknown flag"; exit 1; fi
-	@echo "[test] --batch requires socket (exits non-zero without agentOS)"
+	@echo "[test] --batch requires socket (exits non-zero without FractalOS)"
 	CC_PD_SOCK=/tmp/agentctl_no_such_socket ./$(TARGET) --batch list-guests >/dev/null 2>&1; \
 	  if [ $$? -ne 0 ]; then echo "[PASS] no-socket exits 1"; else echo "[FAIL] no-socket should exit 1"; exit 1; fi
 	@echo "[test] mesh dispatch reaches structured helper"

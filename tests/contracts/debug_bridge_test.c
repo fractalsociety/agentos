@@ -7,17 +7,17 @@
  *   0xD2 — DBG_PEEK    : read word from target address space
  *   0xD3 — DBG_STATUS  : query bridge state
  *
- * Channel: 0 (placeholder — update when ch is assigned in agentos.system).
+ * Channel: 0 (placeholder — update when ch is assigned in fractalos.system).
  *
  * TODO: replace opcode literals with
  *       #include "../../contracts/debug-bridge/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define DBG_OP_ATTACH  0xD0u
 #define DBG_OP_DETACH  0xD1u

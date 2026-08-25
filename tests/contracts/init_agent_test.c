@@ -10,14 +10,14 @@
  *
  * Note: MSG_INITAGENT_STATUS uses the reply tag (0x0302) in the request
  * direction as the STATUS query opcode; this matches the convention used
- * throughout the agentOS IPC layer.
+ * throughout the FractalOS IPC layer.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_init_agent_tests(microkit_channel ch)
 {

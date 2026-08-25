@@ -2,7 +2,7 @@
 
 **Issue:** E7-S1  
 **Scope:** Audit of all Microkit API call sites in the VMM protection domains and libvmm, preparatory to replacing Microkit with direct seL4 syscalls.  
-**Files audited:** `kernel/agentos-root-task/src/linux_vmm.c`, `kernel/freebsd-vmm/vmm.c`, `kernel/freebsd-vmm/vmm_mux.c`, `kernel/agentos-root-task/src/vmm_mux_stub.c`, `libvmm/src/guest.c`, `libvmm/src/arch/aarch64/vcpu.c`, `libvmm/src/arch/aarch64/virq.c`, `libvmm/src/arch/aarch64/fault.c`, `libvmm/src/arch/aarch64/psci.c`, `libvmm/src/arch/aarch64/smc.c`, `libvmm/src/arch/aarch64/tcb.c`, `libvmm/src/virtio/{block,net,console,sound}.c`, `libvmm/src/util/util.c`, `libvmm/include/libvmm/arch/aarch64/vgic/virq.h`, `kernel/agentos-root-task/agentos-aarch64.system`.
+**Files audited:** `kernel/fractalos-root-task/src/linux_vmm.c`, `kernel/freebsd-vmm/vmm.c`, `kernel/freebsd-vmm/vmm_mux.c`, `kernel/fractalos-root-task/src/vmm_mux_stub.c`, `libvmm/src/guest.c`, `libvmm/src/arch/aarch64/vcpu.c`, `libvmm/src/arch/aarch64/virq.c`, `libvmm/src/arch/aarch64/fault.c`, `libvmm/src/arch/aarch64/psci.c`, `libvmm/src/arch/aarch64/smc.c`, `libvmm/src/arch/aarch64/tcb.c`, `libvmm/src/virtio/{block,net,console,sound}.c`, `libvmm/src/util/util.c`, `libvmm/include/libvmm/arch/aarch64/vgic/virq.h`, `kernel/fractalos-root-task/fractalos-aarch64.system`.
 
 ---
 
@@ -115,8 +115,8 @@
 | `freebsd_vmm/vmm_mux.c:41–52` | `guest_ram_vaddr_0..3`, `guest_flash_vaddr` — Microkit linker-set | Root-task handoff via init IPC | M | |
 | `libvmm/src/guest.h:10` | `GUEST_BOOT_VCPU_ID 0` — assumes vCPU 0 is always the boot vCPU | Explicit cap passed at VMM init | S | Low risk; constant holds as long as single-vCPU assumption holds |
 | `libvmm/src/arch/aarch64/vcpu.c:29` | `BASE_VM_TCB_CAP` (used but defined by Microkit's SDK) — offset into static CSpace for TCB caps | seL4 root-task distributes individual TCB caps; VMM receives them at init | L | Hardest single dependency to break; entire libvmm VCPU/fault/SMC/TCB path depends on this arithmetic |
-| `agentos-aarch64.system:353–367` | `<virtual_machine name="linux"><vcpu id="0" />` — VCPU wired by Microkit system description | `seL4_ARM_VCPUControl_new` + `seL4_ARM_VCPU_SetTCB` + `seL4_TCBPool` allocation by root-task | L | Entire `<virtual_machine>` element is Microkit-specific topology |
-| `agentos-aarch64.system:175` | `priority="175"` for linux_vmm — chosen to satisfy Microkit PPC ordering | seL4 MCS: priority must still be set explicitly on `seL4_SchedContext`; no change in value but mechanism changes | S | PPC ordering constraints become endpoint badge ordering in native seL4 |
+| `fractalos-aarch64.system:353–367` | `<virtual_machine name="linux"><vcpu id="0" />` — VCPU wired by Microkit system description | `seL4_ARM_VCPUControl_new` + `seL4_ARM_VCPU_SetTCB` + `seL4_TCBPool` allocation by root-task | L | Entire `<virtual_machine>` element is Microkit-specific topology |
+| `fractalos-aarch64.system:175` | `priority="175"` for linux_vmm — chosen to satisfy Microkit PPC ordering | seL4 MCS: priority must still be set explicitly on `seL4_SchedContext`; no change in value but mechanism changes | S | PPC ordering constraints become endpoint badge ordering in native seL4 |
 
 ---
 

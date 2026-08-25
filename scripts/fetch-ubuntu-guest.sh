@@ -1,10 +1,10 @@
 #!/bin/bash
 # fetch-ubuntu-guest.sh
-# Downloads Ubuntu Server LTS AArch64 cloud image for use as an agentOS VM guest.
+# Downloads Ubuntu Server LTS AArch64 cloud image for use as an FractalOS VM guest.
 #
 # Usage: ./scripts/fetch-ubuntu-guest.sh [OUTPUT_DIR]
 #
-# Produces in ~/.local/agentos-images/ (or OUTPUT_DIR if specified):
+# Produces in ~/.local/fractalos-images/ (or OUTPUT_DIR if specified):
 #   ubuntu-<version>-aarch64.img  — raw disk image, bootable under libvmm
 #
 # Idempotent: exits 0 immediately if the image is already present.
@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-OUTPUT_DIR="${1:-${HOME}/.local/agentos-images}"
+OUTPUT_DIR="${1:-${HOME}/.local/fractalos-images}"
 
 # Ubuntu 24.04 LTS (Noble Numbat) — current LTS as of 2026
 UBUNTU_VERSION="24.04"
@@ -63,4 +63,4 @@ info ""
 info "Now build the VMM:"
 info "  make GUEST_OS=ubuntu"
 info ""
-info "The Ubuntu console will appear as the linux_vm slot in the agentOS console."
+info "The Ubuntu console will appear as the linux_vm slot in the FractalOS console."

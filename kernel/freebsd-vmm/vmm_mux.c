@@ -1,6 +1,6 @@
 /*
- * agentOS VM Multiplexer
- * Copyright 2026, agentOS Project
+ * FractalOS VM Multiplexer
+ * Copyright 2026, FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * Manages a pool of VM slots: create, destroy, switch active console.

@@ -1,4 +1,4 @@
-//! `cargo xtask audit-caps` — query capability audit data from agentOS.
+//! `cargo xtask audit-caps` — query capability audit data from FractalOS.
 //!
 //! Sends OP_CAP_AUDIT (or OP_CAP_AUDIT_GUEST) via the cc_pd IPC bridge and
 //! formats the result as a human-readable table.
@@ -141,8 +141,8 @@ pub fn run(args: &AuditCapsArgs) -> Result<()> {
     // Determine mode.
     let use_test_mode = args.test || {
         // Auto-detect: if cc_pd socket path doesn't exist, fall back to test mode.
-        // The socket path is conventionally /tmp/agentos-cc.sock; absent = test mode.
-        let sock = std::path::Path::new("/tmp/agentos-cc.sock");
+        // The socket path is conventionally /tmp/fractalos-cc.sock; absent = test mode.
+        let sock = std::path::Path::new("/tmp/fractalos-cc.sock");
         !sock.exists()
     };
 

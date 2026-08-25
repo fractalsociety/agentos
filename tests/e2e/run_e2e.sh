@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# agentOS End-to-End Full Integration Test Suite
+# FractalOS End-to-End Full Integration Test Suite
 #
-# Brings up agentOS + guest VMs in QEMU, SSHes into guests, exercises every
+# Brings up FractalOS + guest VMs in QEMU, SSHes into guests, exercises every
 # IPC contract defined in contracts/, and verifies the cap_policy ring-1
 # enforcement rejects ring-0 escalation attempts.
 #
@@ -12,12 +12,12 @@
 #
 # Environment variables (all optional):
 #   E2E_TIMEOUT         seconds to wait for guest SSH (default: 120)
-#   E2E_CC_PORT         agentOS CC bridge port forwarded by QEMU (default: 8789)
+#   E2E_CC_PORT         FractalOS CC bridge port forwarded by QEMU (default: 8789)
 #   E2E_SSH_PORT        host port forwarded to guest SSH (default: 2222)
 #   E2E_SEED_PORT       host port for Ubuntu NoCloud-Net seed (default: 18790)
 #   E2E_BOARD           override board selection (default: auto-detect)
 #   E2E_QEMU            override QEMU binary (default: auto-detect)
-#   E2E_IMAGE           override agentos image (default: build/<board>/agentos.img)
+#   E2E_IMAGE           override fractalos image (default: build/<board>/fractalos.img)
 #   E2E_GUEST_OS        guest OS to test: freebsd|ubuntu-amd64|ubuntu-arm64|nixos
 #                       (default: freebsd; set to "all" to loop all available images)
 #   E2E_FREEBSD_IMG     FreeBSD disk/ISO for slot 0 (default: build/guest-images/freebsd-15.0-aarch64.iso)
@@ -85,7 +85,7 @@ else
 fi
 
 # Images
-E2E_IMAGE="${E2E_IMAGE:-${REPO_ROOT}/build/${BOARD}/agentos.img}"
+E2E_IMAGE="${E2E_IMAGE:-${REPO_ROOT}/build/${BOARD}/fractalos.img}"
 E2E_LOADER_ELF="${E2E_LOADER_ELF:-${REPO_ROOT}/build/${BOARD}/loader.elf}"
 E2E_FREEBSD_IMG="${E2E_FREEBSD_IMG:-${GUEST_IMG_DIR}/freebsd-15.0-aarch64.iso}"
 E2E_SSH_KEY="${E2E_SSH_KEY:-${SCRIPT_DIR}/id_ed25519}"
@@ -138,8 +138,8 @@ resolve_guest_os() {
 resolve_guest_os "${E2E_GUEST_OS}"
 
 # Temporary files
-SERIAL_SOCK="${BUILD_TMP_DIR}/agentos-e2e-$$.sock"
-SERIAL_LOG="${BUILD_TMP_DIR}/agentos-e2e-serial-$$.log"
+SERIAL_SOCK="${BUILD_TMP_DIR}/fractalos-e2e-$$.sock"
+SERIAL_LOG="${BUILD_TMP_DIR}/fractalos-e2e-serial-$$.log"
 
 # Counters
 TESTS_PASSED=0
@@ -198,13 +198,13 @@ wait_for_guest_ssh() {
 
 CC_BASE="http://localhost:${E2E_CC_PORT}"
 
-# Send a request to the agentOS CC bridge.
+# Send a request to the FractalOS CC bridge.
 # Usage: cc_call <endpoint> [json-body]
 cc_call() {
     local endpoint="$1"
     local data="${2:-{}}"
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/${endpoint}" \
+        -X POST "${CC_BASE}/api/fractalos/cc/${endpoint}" \
         -H "Content-Type: application/json" \
         -d "${data}" 2>/dev/null
 }
@@ -213,12 +213,12 @@ cc_call() {
 cc_get() {
     local endpoint="$1"
     curl -sf --max-time 5 \
-        "${CC_BASE}/api/agentos/cc/${endpoint}" 2>/dev/null
+        "${CC_BASE}/api/fractalos/cc/${endpoint}" 2>/dev/null
 }
 
 # Check if the CC bridge is responding.
 cc_available() {
-    curl -sf --max-time 3 "${CC_BASE}/api/agentos/cc/status" >/dev/null 2>&1
+    curl -sf --max-time 3 "${CC_BASE}/api/fractalos/cc/status" >/dev/null 2>&1
 }
 
 # ── Cleanup ────────────────────────────────────────────────────────────────────
@@ -269,7 +269,7 @@ wait_for_marker() {
 ensure_ssh_key() {
     if [ ! -f "${E2E_SSH_KEY}" ]; then
         info "Generating test SSH key: ${E2E_SSH_KEY}"
-        ssh-keygen -t ed25519 -N "" -f "${E2E_SSH_KEY}" -C "agentos-e2e-test" >/dev/null 2>&1
+        ssh-keygen -t ed25519 -N "" -f "${E2E_SSH_KEY}" -C "fractalos-e2e-test" >/dev/null 2>&1
         if [ $? -ne 0 ]; then
             warn "ssh-keygen failed — SSH tests will be skipped"
             return 1
@@ -294,11 +294,11 @@ start_ubuntu_seed_server() {
         return 1
     fi
 
-    SEED_DIR="$(mktemp -d "${BUILD_TMP_DIR}/agentos-nocloud-${E2E_GUEST_OS}.XXXXXX")"
+    SEED_DIR="$(mktemp -d "${BUILD_TMP_DIR}/fractalos-nocloud-${E2E_GUEST_OS}.XXXXXX")"
     pubkey="$(cat "${E2E_SSH_KEY}.pub")"
     {
-        printf "instance-id: agentos-%s-%s-%s\n" "${E2E_GUEST_OS}" "$$" "$(date +%s)"
-        printf "local-hostname: agentos-linux\n"
+        printf "instance-id: fractalos-%s-%s-%s\n" "${E2E_GUEST_OS}" "$$" "$(date +%s)"
+        printf "local-hostname: fractalos-linux\n"
     } > "${SEED_DIR}/meta-data"
     : > "${SEED_DIR}/vendor-data"
     {
@@ -323,7 +323,7 @@ start_ubuntu_seed_server() {
         printf "%s\n" "  expire: false"
         printf "%s\n" "  users:"
         printf "%s\n" "    - name: root"
-        printf "%s\n" "      password: agentos"
+        printf "%s\n" "      password: fractalos"
         printf "%s\n" "      type: text"
         printf "%s\n" "write_files:"
         printf "%s\n" "  - path: /root/.ssh/authorized_keys"
@@ -334,7 +334,7 @@ start_ubuntu_seed_server() {
     } > "${SEED_DIR}/user-data"
 
     python3 -m http.server "${E2E_SEED_PORT}" --bind 127.0.0.1 \
-        --directory "${SEED_DIR}" >"${BUILD_TMP_DIR}/agentos-e2e-seed-${E2E_SEED_PORT}.log" 2>&1 &
+        --directory "${SEED_DIR}" >"${BUILD_TMP_DIR}/fractalos-e2e-seed-${E2E_SEED_PORT}.log" 2>&1 &
     SEED_HTTP_PID=$!
     sleep 1
     if ! kill -0 "${SEED_HTTP_PID}" 2>/dev/null; then
@@ -356,7 +356,7 @@ if [ -z "${E2E_SSH_USER:-}" ]; then
 fi
 
 printf "\n${BOLD}══════════════════════════════════════════${RESET}\n"
-printf "${BOLD}  agentOS End-to-End Integration Test Suite${RESET}\n"
+printf "${BOLD}  FractalOS End-to-End Integration Test Suite${RESET}\n"
 printf "${BOLD}══════════════════════════════════════════${RESET}\n\n"
 
 info "Repo root  : ${REPO_ROOT}"
@@ -385,7 +385,7 @@ if ! command -v "${QEMU_BIN}" >/dev/null 2>&1; then
 fi
 
 if [ ! -f "${E2E_IMAGE}" ]; then
-    skip "agentOS image not found: ${E2E_IMAGE} (run 'make build BOARD=${BOARD}')"
+    skip "FractalOS image not found: ${E2E_IMAGE} (run 'make build BOARD=${BOARD}')"
     HAVE_IMAGE=0
 fi
 
@@ -563,36 +563,36 @@ else
     exit 2
 fi
 
-# ── Wait for agentOS boot ──────────────────────────────────────────────────────
+# ── Wait for FractalOS boot ──────────────────────────────────────────────────────
 
-section "Phase 2: Waiting for agentOS boot"
+section "Phase 2: Waiting for FractalOS boot"
 
-AGENTOS_BOOT_MARKERS=(
+FRACTALOS_BOOT_MARKERS=(
     "[controller] EventBus: READY"
-    "agentOS boot complete"
+    "FractalOS boot complete"
 )
 
 BOOT_TIMEOUT=60
-info "Waiting up to ${BOOT_TIMEOUT}s for agentOS boot markers..."
+info "Waiting up to ${BOOT_TIMEOUT}s for FractalOS boot markers..."
 
-AGENTOS_BOOTED=1
-for marker in "${AGENTOS_BOOT_MARKERS[@]}"; do
+FRACTALOS_BOOTED=1
+for marker in "${FRACTALOS_BOOT_MARKERS[@]}"; do
     if wait_for_marker "${marker}" "${BOOT_TIMEOUT}"; then
         info "  ✓ ${marker}"
     else
         fail "  ✗ ${marker} not seen within ${BOOT_TIMEOUT}s"
-        AGENTOS_BOOTED=0
+        FRACTALOS_BOOTED=0
     fi
 done
 
-if [ "${AGENTOS_BOOTED}" -eq 0 ]; then
-    fail "agentOS did not boot — cannot run guest tests"
+if [ "${FRACTALOS_BOOTED}" -eq 0 ]; then
+    fail "FractalOS did not boot — cannot run guest tests"
     printf "\nLast 40 lines of serial output:\n"
     tail -40 "${SERIAL_LOG}" 2>/dev/null || true
     exit 1
 fi
 
-pass "agentOS boot complete"
+pass "FractalOS boot complete"
 
 # ── Wait for guest VM (slot 0) ────────────────────────────────────────────────
 

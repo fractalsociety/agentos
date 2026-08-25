@@ -4,7 +4,7 @@
  * QEMU loads loader.elf as a proper ELF (via the loader device) and sets PC
  * to _start.  We are executing at EL2 with the MMU off.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

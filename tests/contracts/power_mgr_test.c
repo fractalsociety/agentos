@@ -1,10 +1,10 @@
 /*
- * agentOS — power_mgr PD contract test
+ * FractalOS — power_mgr PD contract test
  * Covered opcodes: MSG_PWR_STATUS, MSG_PWR_DVFS_SET, MSG_PWR_SLEEP
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/power_mgr_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/power_mgr_contract.h"
 
 void run_power_mgr_tests(microkit_channel ch) {
     TEST_SECTION("power_mgr");

@@ -1,6 +1,6 @@
-# agentOS API Test Suite
+# FractalOS API Test Suite
 
-Host-side unit tests for every agentOS service API.  Tests run entirely on
+Host-side unit tests for every FractalOS service API.  Tests run entirely on
 the host without real seL4 hardware by using the same MR-register mock that
 the existing `tests/test_proc_server.c` test suite uses.
 
@@ -38,7 +38,7 @@ ok 6 - publish oversized payload returns ERR_TOO_LARGE
 cargo xtask test-api
 
 # A single file directly:
-cc -DAGENTOS_TEST_HOST -I tests/api -o /tmp/t tests/api/test_msgbus.c && /tmp/t
+cc -DFRACTALOS_TEST_HOST -I tests/api -o /tmp/t tests/api/test_msgbus.c && /tmp/t
 
 # Verbose TAP with a third-party harness (e.g. prove):
 prove -e 'sh -c' tests/api/run_api_tests.sh

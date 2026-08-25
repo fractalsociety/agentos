@@ -1,7 +1,7 @@
-# ── agentOS board: QEMU x86_64 ────────────────────────────────────────────────
+# ── FractalOS board: QEMU x86_64 ────────────────────────────────────────────────
 # x86_64 development / CI target.  Uses the QEMU q35 machine model.
 # QEMU boots the seL4 kernel directly and passes root_task.elf as the initial
-# module; build/x86_64_generic/agentos.img remains the agentOS flat container.
+# module; build/x86_64_generic/fractalos.img remains the FractalOS flat container.
 BOARD_NAME     := qemu-x86_64
 MICROKIT_BOARD := x86_64_generic
 BOARD_ARCH     := x86_64

@@ -1,6 +1,6 @@
-//! VectorStore - native embedding store for agentOS
+//! VectorStore - native embedding store for FractalOS
 //!
-//! Semantic memory is a first-class primitive in agentOS.
+//! Semantic memory is a first-class primitive in FractalOS.
 //! Agents store, query, and share vector embeddings through capability-gated partitions.
 //!
 //! This is not "add a vector DB" — it's designed into the OS from day one.
@@ -25,20 +25,23 @@ impl Embedding {
         let dims = values.len();
         Self { values, dims }
     }
-    
+
     /// Cosine similarity with another embedding
     pub fn cosine_similarity(&self, other: &Embedding) -> f32 {
         if self.dims != other.dims {
             return 0.0;
         }
-        
-        let dot: f32 = self.values.iter().zip(other.values.iter())
+
+        let dot: f32 = self
+            .values
+            .iter()
+            .zip(other.values.iter())
             .map(|(a, b)| a * b)
             .sum();
-        
+
         let norm_a: f32 = f32_sqrt(self.values.iter().map(|x| x * x).sum::<f32>());
         let norm_b: f32 = f32_sqrt(other.values.iter().map(|x| x * x).sum::<f32>());
-        
+
         if norm_a == 0.0 || norm_b == 0.0 {
             0.0
         } else {
@@ -50,14 +53,20 @@ impl Embedding {
 /// Newton-Raphson sqrt for no_std f32 (used by cosine_similarity).
 #[cfg(not(feature = "std"))]
 fn f32_sqrt(x: f32) -> f32 {
-    if x <= 0.0 { return 0.0; }
+    if x <= 0.0 {
+        return 0.0;
+    }
     let mut r = x;
-    for _ in 0..24 { r = 0.5 * (r + x / r); }
+    for _ in 0..24 {
+        r = 0.5 * (r + x / r);
+    }
     r
 }
 
 #[cfg(feature = "std")]
-fn f32_sqrt(x: f32) -> f32 { x.sqrt() }
+fn f32_sqrt(x: f32) -> f32 {
+    x.sqrt()
+}
 
 /// A stored vector record
 #[derive(Debug, Clone)]
@@ -76,7 +85,9 @@ pub struct VectorRecord {
 pub struct VectorId(pub u64);
 
 impl VectorId {
-    pub fn new(id: u64) -> Self { Self(id) }
+    pub fn new(id: u64) -> Self {
+        Self(id)
+    }
 }
 
 impl core::fmt::Display for VectorId {
@@ -119,12 +130,12 @@ impl SearchQuery {
             filter: None,
         }
     }
-    
+
     pub fn with_min_score(mut self, min_score: f32) -> Self {
         self.min_score = min_score;
         self
     }
-    
+
     pub fn with_filter(mut self, filter: VectorFilter) -> Self {
         self.filter = Some(filter);
         self
@@ -160,31 +171,34 @@ impl VectorPartition {
             next_id: 0,
         }
     }
-    
+
     /// Add a vector to this partition
-    pub fn insert(&mut self, embedding: Embedding, payload: VectorPayload, now_ns: u64)
-        -> Result<VectorId, VectorError>
-    {
+    pub fn insert(
+        &mut self,
+        embedding: Embedding,
+        payload: VectorPayload,
+        now_ns: u64,
+    ) -> Result<VectorId, VectorError> {
         if embedding.dims != self.dims {
-            return Err(VectorError::DimensionMismatch { 
-                expected: self.dims, 
-                got: embedding.dims 
+            return Err(VectorError::DimensionMismatch {
+                expected: self.dims,
+                got: embedding.dims,
             });
         }
-        
+
         let id = VectorId::new(self.next_id);
         self.next_id += 1;
-        
+
         self.records.push(VectorRecord {
             id: id.clone(),
             embedding,
             payload,
             created_at_ns: now_ns,
         });
-        
+
         Ok(id)
     }
-    
+
     /// Search for similar vectors (brute-force cosine similarity for now)
     /// Production backend will use HNSW or IVF indexing
     pub fn search(&self, query: &SearchQuery) -> Result<Vec<SearchResult>, VectorError> {
@@ -194,27 +208,32 @@ impl VectorPartition {
                 got: query.query.dims,
             });
         }
-        
-        let mut scored: Vec<(f32, &VectorRecord)> = self.records.iter()
+
+        let mut scored: Vec<(f32, &VectorRecord)> = self
+            .records
+            .iter()
             .map(|r| (r.embedding.cosine_similarity(&query.query), r))
             .filter(|(score, _)| *score >= query.min_score)
             .collect();
-        
+
         // Sort by score descending
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(core::cmp::Ordering::Equal));
         scored.truncate(query.top_k);
-        
-        Ok(scored.into_iter().map(|(score, record)| SearchResult {
-            record: record.clone(),
-            score,
-            distance: 1.0 - score,
-        }).collect())
+
+        Ok(scored
+            .into_iter()
+            .map(|(score, record)| SearchResult {
+                record: record.clone(),
+                score,
+                distance: 1.0 - score,
+            })
+            .collect())
     }
-    
+
     pub fn len(&self) -> usize {
         self.records.len()
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.records.is_empty()
     }
@@ -244,8 +263,9 @@ pub enum VectorError {
 impl core::fmt::Display for VectorError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            VectorError::DimensionMismatch { expected, got } =>
-                write!(f, "dimension mismatch: expected {expected}, got {got}"),
+            VectorError::DimensionMismatch { expected, got } => {
+                write!(f, "dimension mismatch: expected {expected}, got {got}")
+            }
             VectorError::NotFound => write!(f, "vector not found"),
             VectorError::PartitionFull => write!(f, "vector partition is full"),
             VectorError::CapabilityDenied => write!(f, "capability denied for vector partition"),
@@ -337,8 +357,20 @@ mod tests {
     #[test]
     fn partition_insert_returns_sequential_ids() {
         let mut p = VectorPartition::new("test", 2, IndexKind::Flat);
-        let id0 = p.insert(Embedding::new(alloc::vec![1.0, 0.0]), VectorPayload::Empty, 0).unwrap();
-        let id1 = p.insert(Embedding::new(alloc::vec![0.0, 1.0]), VectorPayload::Empty, 1).unwrap();
+        let id0 = p
+            .insert(
+                Embedding::new(alloc::vec![1.0, 0.0]),
+                VectorPayload::Empty,
+                0,
+            )
+            .unwrap();
+        let id1 = p
+            .insert(
+                Embedding::new(alloc::vec![0.0, 1.0]),
+                VectorPayload::Empty,
+                1,
+            )
+            .unwrap();
         assert_eq!(id0, VectorId::new(0));
         assert_eq!(id1, VectorId::new(1));
         assert_eq!(p.len(), 2);
@@ -349,15 +381,36 @@ mod tests {
         let mut p = VectorPartition::new("test", 3, IndexKind::Flat);
         let e = Embedding::new(alloc::vec![1.0, 2.0]); // 2D into 3D partition
         let err = p.insert(e, VectorPayload::Empty, 0).unwrap_err();
-        assert!(matches!(err, VectorError::DimensionMismatch { expected: 3, got: 2 }));
+        assert!(matches!(
+            err,
+            VectorError::DimensionMismatch {
+                expected: 3,
+                got: 2
+            }
+        ));
     }
 
     #[test]
     fn partition_search_returns_correct_top_k() {
         let mut p = VectorPartition::new("test", 2, IndexKind::Flat);
-        p.insert(Embedding::new(alloc::vec![1.0, 0.0]), VectorPayload::Text("a".into()), 0).unwrap();
-        p.insert(Embedding::new(alloc::vec![0.0, 1.0]), VectorPayload::Text("b".into()), 1).unwrap();
-        p.insert(Embedding::new(alloc::vec![-1.0, 0.0]), VectorPayload::Text("c".into()), 2).unwrap();
+        p.insert(
+            Embedding::new(alloc::vec![1.0, 0.0]),
+            VectorPayload::Text("a".into()),
+            0,
+        )
+        .unwrap();
+        p.insert(
+            Embedding::new(alloc::vec![0.0, 1.0]),
+            VectorPayload::Text("b".into()),
+            1,
+        )
+        .unwrap();
+        p.insert(
+            Embedding::new(alloc::vec![-1.0, 0.0]),
+            VectorPayload::Text("c".into()),
+            2,
+        )
+        .unwrap();
 
         let query = SearchQuery::new(Embedding::new(alloc::vec![1.0, 0.0]), 2);
         let results = p.search(&query).unwrap();
@@ -369,11 +422,20 @@ mod tests {
     #[test]
     fn partition_search_min_score_filters_results() {
         let mut p = VectorPartition::new("test", 2, IndexKind::Flat);
-        p.insert(Embedding::new(alloc::vec![1.0, 0.0]), VectorPayload::Empty, 0).unwrap();
-        p.insert(Embedding::new(alloc::vec![-1.0, 0.0]), VectorPayload::Empty, 1).unwrap(); // sim = -1.0
+        p.insert(
+            Embedding::new(alloc::vec![1.0, 0.0]),
+            VectorPayload::Empty,
+            0,
+        )
+        .unwrap();
+        p.insert(
+            Embedding::new(alloc::vec![-1.0, 0.0]),
+            VectorPayload::Empty,
+            1,
+        )
+        .unwrap(); // sim = -1.0
 
-        let query = SearchQuery::new(Embedding::new(alloc::vec![1.0, 0.0]), 10)
-            .with_min_score(0.5);
+        let query = SearchQuery::new(Embedding::new(alloc::vec![1.0, 0.0]), 10).with_min_score(0.5);
         let results = p.search(&query).unwrap();
         assert_eq!(results.len(), 1);
         assert!((results[0].score - 1.0).abs() < 1e-5);
@@ -384,15 +446,36 @@ mod tests {
         let p = VectorPartition::new("test", 3, IndexKind::Flat);
         let query = SearchQuery::new(Embedding::new(alloc::vec![1.0, 0.0]), 5);
         let err = p.search(&query).unwrap_err();
-        assert!(matches!(err, VectorError::DimensionMismatch { expected: 3, got: 2 }));
+        assert!(matches!(
+            err,
+            VectorError::DimensionMismatch {
+                expected: 3,
+                got: 2
+            }
+        ));
     }
 
     #[test]
     fn partition_search_results_sorted_by_score_descending() {
         let mut p = VectorPartition::new("test", 2, IndexKind::Flat);
-        p.insert(Embedding::new(alloc::vec![0.0, 1.0]), VectorPayload::Empty, 0).unwrap();  // sim ~0
-        p.insert(Embedding::new(alloc::vec![1.0, 0.0]), VectorPayload::Empty, 1).unwrap();  // sim  1
-        p.insert(Embedding::new(alloc::vec![-1.0, 0.0]), VectorPayload::Empty, 2).unwrap(); // sim -1
+        p.insert(
+            Embedding::new(alloc::vec![0.0, 1.0]),
+            VectorPayload::Empty,
+            0,
+        )
+        .unwrap(); // sim ~0
+        p.insert(
+            Embedding::new(alloc::vec![1.0, 0.0]),
+            VectorPayload::Empty,
+            1,
+        )
+        .unwrap(); // sim  1
+        p.insert(
+            Embedding::new(alloc::vec![-1.0, 0.0]),
+            VectorPayload::Empty,
+            2,
+        )
+        .unwrap(); // sim -1
 
         let query = SearchQuery::new(Embedding::new(alloc::vec![1.0, 0.0]), 3);
         let results = p.search(&query).unwrap();
@@ -405,7 +488,12 @@ mod tests {
     #[test]
     fn search_result_distance_is_one_minus_score() {
         let mut p = VectorPartition::new("test", 2, IndexKind::Flat);
-        p.insert(Embedding::new(alloc::vec![1.0, 0.0]), VectorPayload::Empty, 0).unwrap();
+        p.insert(
+            Embedding::new(alloc::vec![1.0, 0.0]),
+            VectorPayload::Empty,
+            0,
+        )
+        .unwrap();
 
         let query = SearchQuery::new(Embedding::new(alloc::vec![1.0, 0.0]), 1);
         let results = p.search(&query).unwrap();
@@ -417,11 +505,17 @@ mod tests {
 
     #[test]
     fn vector_error_display() {
-        assert!(VectorError::DimensionMismatch { expected: 3, got: 2 }
-            .to_string().contains("3"));
+        assert!(VectorError::DimensionMismatch {
+            expected: 3,
+            got: 2
+        }
+        .to_string()
+        .contains("3"));
         assert!(VectorError::NotFound.to_string().contains("not found"));
         assert!(VectorError::PartitionFull.to_string().contains("full"));
         assert!(VectorError::CapabilityDenied.to_string().contains("denied"));
-        assert!(VectorError::IndexError("oops".into()).to_string().contains("oops"));
+        assert!(VectorError::IndexError("oops".into())
+            .to_string()
+            .contains("oops"));
     }
 }

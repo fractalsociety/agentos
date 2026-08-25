@@ -25,26 +25,26 @@
  *   20. cap_tree_verify_all_pds completes without crash
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -I . \
  *      -std=c11 -Wall -Wextra -Wpedantic \
  *      -o /tmp/test_cap_audit \
  *      tests/api/test_cap_audit.c && /tmp/test_cap_audit
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
 /*
  * ── Stub types and implementations ───────────────────────────────────────────
  *
- * cap_audit.c under AGENTOS_TEST_HOST expects the caller to provide:
+ * cap_audit.c under FRACTALOS_TEST_HOST expects the caller to provide:
  *   - cap_acct_entry_t type and cap_acct_count() / cap_acct_get()
  *   - vos_handle_t type, VOS_HANDLE_INVALID constant
  *   - vos_instance_t type and vos_instance_get()
@@ -133,7 +133,7 @@ vos_instance_t *vos_instance_get(vos_handle_t h)
 
 /* ── Pull in the unit under test ─────────────────────────────────────────── */
 
-#include "../../kernel/agentos-root-task/src/cap_audit.c"
+#include "../../kernel/fractalos-root-task/src/cap_audit.c"
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -441,6 +441,6 @@ int main(void)
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_cap_audit_test_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_cap_audit_test_dummy;
+#endif /* FRACTALOS_TEST_HOST */

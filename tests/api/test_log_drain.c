@@ -1,5 +1,5 @@
 /*
- * test_log_drain.c — API tests for the agentOS log_drain PD
+ * test_log_drain.c — API tests for the FractalOS log_drain PD
  *
  * Covered opcodes and scenarios:
  *   OP_LOG_WRITE  (0x87) — register ring + drain
@@ -7,27 +7,27 @@
  *   unknown opcode       — must return SEL4_ERR_INVALID_OP
  *
  * Tests pull in the log_drain implementation directly under
- * -DAGENTOS_TEST_HOST so no seL4 is required.  All ring I/O uses a
+ * -DFRACTALOS_TEST_HOST so no seL4 is required.  All ring I/O uses a
  * statically allocated buffer in BSS; serial output stubs are no-ops.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_log_drain \
  *      tests/api/test_log_drain.c && /tmp/test_log_drain
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
-/* Pull in the PD implementation.  The AGENTOS_TEST_HOST guard inside
+/* Pull in the PD implementation.  The FRACTALOS_TEST_HOST guard inside
  * log_drain.c replaces all seL4/Microkit references with stubs. */
-#include "../../kernel/agentos-root-task/src/log_drain.c"
+#include "../../kernel/fractalos-root-task/src/log_drain.c"
 
 /* ── Ring buffer backing store ──────────────────────────────────────────────── */
 
@@ -435,6 +435,6 @@ int main(void) {
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_api_test_log_drain_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_api_test_log_drain_dummy;
+#endif /* FRACTALOS_TEST_HOST */

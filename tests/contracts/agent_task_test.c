@@ -11,8 +11,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agent_task_contract.h"
 
 _Static_assert(MSG_FRACTAL_PROGRAM_OPEN == 0x2E01,
                "program open opcode is versioned");
@@ -30,8 +30,17 @@ _Static_assert(MSG_FRACTAL_TASK_VERIFY == 0x2E07,
                "TASK_VERIFY opcode is versioned");
 _Static_assert(MSG_FRACTAL_TASK_RESULT == 0x2E08,
                "terminal result opcode is versioned");
+_Static_assert(MSG_FRACTAL_TASK_COMMIT == 0x2E09,
+               "TASK_COMMIT opcode is versioned");
 _Static_assert(sizeof(struct agent_task_req_verify) == 128u,
                "TASK_VERIFY request remains bounded");
+_Static_assert(sizeof(struct agent_task_reply_verify) == 36u,
+               "TASK_VERIFY reply carries repair-safe feedback");
+_Static_assert(sizeof(struct agent_task_req_commit) == 56u,
+               "TASK_COMMIT request remains bounded");
+_Static_assert(AGENT_TASK_VERIFY_V1_DECODE_ONLY == 1u
+                   && AGENT_TASK_VERIFY_V2_CANONICAL == 1u,
+               "v1 VERIFY is decode-only; v2 is canonical TASK_VERIFY");
 _Static_assert(offsetof(struct agent_task_req_poll, nonblocking) == 12u,
                "poll carries the nonblocking marker");
 _Static_assert(offsetof(struct agent_task_req_cancel, authority_epoch) == 8u,
@@ -46,6 +55,7 @@ static const uint32_t agent_task_opcodes[] = {
     MSG_FRACTAL_TASK_BUDGET,
     MSG_FRACTAL_TASK_VERIFY,
     MSG_FRACTAL_TASK_RESULT,
+    MSG_FRACTAL_TASK_COMMIT,
 };
 
 static const uint32_t agent_task_errors[] = {
@@ -68,6 +78,7 @@ static const uint32_t agent_task_errors[] = {
     AGENT_TASK_ERR_VERIFY_REQUIRED,
     AGENT_TASK_ERR_EVIDENCE_MISMATCH,
     AGENT_TASK_ERR_PROMOTION_FORBIDDEN,
+    AGENT_TASK_ERR_EVIDENCE_CONSUMED,
 };
 
 static bool agent_task_unique(const uint32_t *values, size_t count)
@@ -78,7 +89,7 @@ static bool agent_task_unique(const uint32_t *values, size_t count)
     return true;
 }
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include <stdio.h>
 
@@ -113,7 +124,8 @@ int main(void)
                          && MSG_AGENT_TASK_CANCEL == MSG_FRACTAL_TASK_CANCEL
                          && MSG_AGENT_TASK_BUDGET == MSG_FRACTAL_TASK_BUDGET
                          && MSG_AGENT_TASK_VERIFY == MSG_FRACTAL_TASK_VERIFY
-                         && MSG_AGENT_TASK_TERMINAL_RESULT == MSG_FRACTAL_TASK_RESULT,
+                         && MSG_AGENT_TASK_TERMINAL_RESULT == MSG_FRACTAL_TASK_RESULT
+                         && MSG_AGENT_TASK_COMMIT == MSG_FRACTAL_TASK_COMMIT,
                      "all public task opcode aliases bind to v1 opcodes");
     agent_task_check(agent_task_unique(agent_task_errors,
                                        sizeof(agent_task_errors)

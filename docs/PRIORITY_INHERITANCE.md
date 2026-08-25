@@ -1,4 +1,4 @@
-# agentOS Priority Inheritance for Passive PD PPCs
+# FractalOS Priority Inheritance for Passive PD PPCs
 
 **Status:** Implemented (v0.1.0)  
 **Author:** Peabody (horde-dgxc)  
@@ -13,7 +13,7 @@ In seL4 Microkit, passive PDs run on the **caller's** scheduling context.
 A caller's scheduling context carries the caller's *priority*.  A passive server
 PD therefore executes at the caller's priority for the duration of the PPC.
 
-This creates **priority inversion** in the agentOS PD graph:
+This creates **priority inversion** in the FractalOS PD graph:
 
 | Caller | Caller prio | Passive server | Server prio | Inversion window |
 |--------|-------------|----------------|-------------|------------------|
@@ -83,7 +83,7 @@ PPCALL_DONATE(CH_EVENTBUS, msg, PRIO_CONTROLLER, PRIO_EVENTBUS);
 
 ---
 
-## Priority Table (agentos.system)
+## Priority Table (fractalos.system)
 
 | PD | Priority | Type |
 |----|----------|------|

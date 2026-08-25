@@ -1,0 +1,20 @@
+{
+  "schema": "fractalos.two_fractalos_native_mesh.v1",
+  "task_id": "fos-gz0.15",
+  "generated_at": "2026-08-25T02:08:13Z",
+  "proof_class": "live_host",
+  "claims_live_product": true,
+  "headscale_version": "0.29.3",
+  "control_url": "https://127.0.0.1:57931",
+  "nodes_listed": 2,
+  "underlay": "udp_loopback",
+  "ports": {
+    "a": 57934,
+    "b": 57935
+  },
+  "data_plane": "wg_net OP_WG_* (Noise_IKpsk2 + transport)",
+  "control_plane": "fractalos-mesh-control ts2021",
+  "payload": "two-fractalos-native-mesh",
+  "status": "PASSING",
+  "note": "Two native FractalOS wg_net processes joined Headscale and exchanged authenticated WG transport over localhost UDP underlay"
+}

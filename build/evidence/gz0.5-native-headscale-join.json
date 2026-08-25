@@ -1,0 +1,16 @@
+{
+  "schema": "fractalos.gz0.5.native_headscale_join.v1",
+  "task_id": "fos-gz0.5",
+  "child_task_id": "fos-gz0.5.1",
+  "generated_at": "2026-08-25T01:59:45Z",
+  "proof_class": "live_host",
+  "claims_live_product": true,
+  "headscale_version": "0.29.3",
+  "control_url": "https://127.0.0.1:57408",
+  "netmap_bytes": 56,
+  "nodes_listed": 1,
+  "client": "fractalos-mesh-control",
+  "protocol": "ts2021",
+  "status": "PASSING",
+  "notes": "Native Noise join without guest tailscaled; packed OP_WG_APPLY_NETMAP emitted"
+}

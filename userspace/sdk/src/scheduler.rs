@@ -1,16 +1,16 @@
 //! Scheduling contracts for agents
 //!
 //! Agents declare their scheduling requirements at spawn time.
-//! agentOS allocates CPU budgets accordingly.
+//! FractalOS allocates CPU budgets accordingly.
 
 /// A scheduling contract
 #[derive(Debug, Clone)]
 pub struct SchedulingContract {
     pub class: SchedulingClass,
     pub priority: u8,
-    pub cpu_budget_us: Option<u64>,   // microseconds per period
-    pub period_us: Option<u64>,       // period length  
-    pub deadline_ns: Option<u64>,     // absolute deadline (for EDF)
+    pub cpu_budget_us: Option<u64>, // microseconds per period
+    pub period_us: Option<u64>,     // period length
+    pub deadline_ns: Option<u64>,   // absolute deadline (for EDF)
 }
 
 impl SchedulingContract {
@@ -23,7 +23,7 @@ impl SchedulingContract {
             deadline_ns: None,
         }
     }
-    
+
     pub fn compute(priority: u8) -> Self {
         Self {
             class: SchedulingClass::Compute,
@@ -33,7 +33,7 @@ impl SchedulingContract {
             deadline_ns: None,
         }
     }
-    
+
     pub fn realtime(budget_us: u64, period_us: u64) -> Self {
         Self {
             class: SchedulingClass::RealTime,
@@ -43,7 +43,7 @@ impl SchedulingContract {
             deadline_ns: None,
         }
     }
-    
+
     pub fn background() -> Self {
         Self {
             class: SchedulingClass::Background,
@@ -107,7 +107,10 @@ mod tests {
         let sc = SchedulingContract::realtime(200, 1000);
         let budget = sc.cpu_budget_us.unwrap();
         let period = sc.period_us.unwrap();
-        assert!(budget <= period, "budget {budget} must not exceed period {period}");
+        assert!(
+            budget <= period,
+            "budget {budget} must not exceed period {period}"
+        );
     }
 
     #[test]

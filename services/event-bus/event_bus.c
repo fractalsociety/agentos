@@ -1,13 +1,13 @@
 /*
- * agentOS EventBus Protection Domain — E5-S1: raw seL4 IPC
+ * FractalOS EventBus Protection Domain — E5-S1: raw seL4 IPC
  *
  * Fractal capabilities-v1 uses this existing transport through the
- * kernel-owned adapter in kernel/agentos-root-task/src/event_bus.c.  Keep
+ * kernel-owned adapter in kernel/fractalos-root-task/src/event_bus.c.  Keep
  * this file limited to the legacy ring/IPC compatibility layer: canonical
  * event hashing, authority checks, and Fractal completion callbacks belong to
  * that adapter and are deliberately not reimplemented here.
  *
- * The EventBus is the publish-subscribe backbone of agentOS.
+ * The EventBus is the publish-subscribe backbone of FractalOS.
  * It runs as a passive server (only executes when called via seL4 IPC).
  *
  * Implementation:
@@ -36,13 +36,13 @@
  * Priority: 200 (high — event delivery is latency-sensitive)
  * Mode: passive (only runs when called via seL4 IPC)
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 /* ── Conditional compilation ───────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * Host-side test build: provide minimal type stubs so this file compiles
  * without seL4 or Microkit headers.  The test file provides framework.h
@@ -125,7 +125,7 @@ static inline void seL4_Signal(seL4_CPtr cap) { (void)cap; }
 /* seL4_DebugPutChar stub */
 static inline void seL4_DebugPutChar(char c) { (void)c; }
 
-#else /* !AGENTOS_TEST_HOST — production build */
+#else /* !FRACTALOS_TEST_HOST — production build */
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -134,7 +134,7 @@ static inline void seL4_DebugPutChar(char c) { (void)c; }
 #include "sel4_ipc.h"      /* sel4_msg_t, sel4_badge_t, SEL4_ERR_* */
 #include <sel4/sel4.h>     /* seL4_Signal, seL4_DebugPutChar */
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Contract opcodes ──────────────────────────────────────────────────────── */
 
@@ -176,11 +176,11 @@ static inline void seL4_DebugPutChar(char c) { (void)c; }
 
 /* ── Ring buffer layout constants ──────────────────────────────────────────── */
 
-#define AGENTOS_RING_MAGIC          0xA6E70B05u
+#define FRACTALOS_RING_MAGIC          0xA6E70B05u
 #define EVENTBUS_RING_SIZE          0x40000u    /* 256 KB */
-/* agentos-gom: VA at which the root task maps this PD's ring RAM region (a 2 MB
+/* fos-gom: VA at which the root task maps this PD's ring RAM region (a 2 MB
  * page; the ring uses the first 256 KB).  MUST match the mapping in
- * kernel/agentos-root-task/src/main.c. */
+ * kernel/fractalos-root-task/src/main.c. */
 #define EVENTBUS_RING_VA            0x30000000UL
 #define EVENTBUS_BATCH_STAGING_SIZE 768u
 #define EVENTBUS_BATCH_STAGING_OFFSET (EVENTBUS_RING_SIZE - EVENTBUS_BATCH_STAGING_SIZE)
@@ -292,7 +292,7 @@ static void dbg_puts(const char *s)
 static void eventbus_init_ring(void)
 {
     volatile eb_ring_header_t *ring = EVENTBUS_RING;
-    ring->magic          = AGENTOS_RING_MAGIC;
+    ring->magic          = FRACTALOS_RING_MAGIC;
     ring->version        = 1;
     ring->capacity       = (EVENTBUS_BATCH_STAGING_OFFSET - sizeof(eb_ring_header_t))
                            / sizeof(eb_event_t);
@@ -606,7 +606,7 @@ static uint32_t handle_publish(sel4_badge_t badge,
 
 static void sel4_call_stub(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *rep);
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 static void sel4_call_stub(seL4_CPtr ep, const sel4_msg_t *req, sel4_msg_t *rep)
 {
     (void)ep; (void)req;
@@ -640,14 +640,14 @@ static void register_with_nameserver(seL4_CPtr ns_ep)
     sel4_call(ns_ep, &req, &rep);
 }
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /* Un-define the macro alias so the production sel4_call isn't confused */
 #undef sel4_call
 #endif
 
 /* ── Test-host entry points ─────────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 /*
  * event_bus_test_init — reset all state and register handlers.
@@ -700,7 +700,7 @@ uint32_t event_bus_get_sub_count(void) { return sub_count; }
  */
 uint64_t event_bus_get_event_seq(void) { return event_seq; }
 
-#else /* !AGENTOS_TEST_HOST — production build */
+#else /* !FRACTALOS_TEST_HOST — production build */
 
 /*
  * event_bus_main — production entry point called by the root task boot
@@ -724,7 +724,7 @@ void event_bus_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 
     dbg_puts("[event_bus] starting\n");
 
-    /* agentos-gom: point the ring at the RAM region the root task mapped into
+    /* fos-gom: point the ring at the RAM region the root task mapped into
      * this PD's vspace at EVENTBUS_RING_VA.  Previously eventbus_ring_vaddr was
      * only set by the host unit test, so on target the ring was never mapped and
      * STATUS/INIT returned BAD_ARG.  Setting it here makes the bus functional. */
@@ -754,4 +754,4 @@ void event_bus_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { event_bus_main(my_ep, ns_ep); }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

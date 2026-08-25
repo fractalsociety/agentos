@@ -1,13 +1,13 @@
 /*
- * agentOS Snapshot Scheduler — Unit Test
+ * FractalOS Snapshot Scheduler — Unit Test
  *
  * Tests the slot tracking table, delta-compression logic, history ring, and
  * policy configuration from snapshot_sched.c.  Runs on the host without seL4.
  *
  * Build:  cc -o /tmp/test_snapshot_sched \
  *             tests/test_snapshot_sched.c \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST -DAGENTOS_SNAPSHOT_SCHED
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST -DFRACTALOS_SNAPSHOT_SCHED
  * Run:    /tmp/test_snapshot_sched
  */
 
@@ -20,7 +20,7 @@
 /* ══════════════════════════════════════════════════════════════════════════
  * Host-side stubs
  * ══════════════════════════════════════════════════════════════════════════ */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 static uint64_t _mrs[64];
 static inline void     microkit_mr_set(uint32_t i, uint64_t v) { _mrs[i] = v; }
@@ -56,7 +56,7 @@ static inline void microkit_dbg_puts(const char *s) { printf("%s", s); }
 
 #define LOG(fmt, ...) printf("[test] " fmt "\n", ##__VA_ARGS__)
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Inline snapshot_sched logic (mirrored from snapshot_sched.c)
@@ -357,7 +357,7 @@ static void test_slot_table_full(void) {
 
 int main(void) {
     printf("╔══════════════════════════════════════════════════╗\n");
-    printf("║  agentOS Snapshot Scheduler — Test Suite         ║\n");
+    printf("║  FractalOS Snapshot Scheduler — Test Suite         ║\n");
     printf("╚══════════════════════════════════════════════════╝\n");
 
     test_initial_state();

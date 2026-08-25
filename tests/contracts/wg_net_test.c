@@ -1,11 +1,11 @@
 /*
- * agentOS — wg_net PD contract test
+ * FractalOS — wg_net PD contract test
  * Covered opcodes: OP_WG_SET_PRIVKEY, OP_WG_ADD_PEER, OP_WG_REMOVE_PEER,
  *   OP_WG_SEND, OP_WG_RECV, OP_WG_STATUS, OP_WG_HEALTH
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/wg_net_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/wg_net_contract.h"
 
 void run_wg_net_tests(microkit_channel ch) {
     TEST_SECTION("wg_net");

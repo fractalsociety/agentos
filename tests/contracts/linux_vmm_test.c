@@ -7,12 +7,12 @@
  *   MSG_VM_STATUS                  — query VM status
  *   MSG_VM_LIST                    — list VMs
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_linux_vmm_tests(microkit_channel ch)
 {

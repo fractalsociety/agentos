@@ -1,5 +1,5 @@
 # =============================================================================
-# mk/target-tests.mk — target/QEMU-backed test gates (agentos-0h4, agentos-45b)
+# mk/target-tests.mk — target/QEMU-backed test gates (fos-0h4, fos-45b)
 #
 # These targets run REAL seL4 IPC under QEMU, as opposed to the host-only mock
 # suite (`make test-integration`, which uses the tests/microkit.h stub).
@@ -18,7 +18,7 @@
 #   test-target-all          — both arches.
 #   perf-gate                — real target performance gates on both arches.
 #   test-cc-virtio-timeout   — QEMU proof of the CC-PD VirtIO bounded-wait
-#                              timeout error path (agentos-45b).
+#                              timeout error path (fos-45b).
 #
 # All of these reuse the existing infrastructure already in the root Makefile
 # (`sel4-test-image`) and xtask (`run-tests`, cmd_run_tests.rs); they do not
@@ -29,13 +29,13 @@
         test-cc-virtio-timeout perf-gate perf-gate-aarch64 perf-gate-x86_64
 
 # Run the on-target contract TAP suite for the current BOARD.
-# `run-tests` builds build/$(BOARD)-test/agentos.img via `sel4-test-image`,
+# `run-tests` builds build/$(BOARD)-test/fractalos.img via `sel4-test-image`,
 # boots it in QEMU, and waits for the TAP_DONE sentinel emitted by the
 # target_contract_runner PD (tests/harness/target_contract_runner.c).
 test-target:
 	@echo ""
 	@echo "╔══════════════════════════════════════════════╗"
-	@echo "║  agentOS — target contract TAP (real seL4)    ║"
+	@echo "║  FractalOS — target contract TAP (real seL4)    ║"
 	@echo "╚══════════════════════════════════════════════╝"
 	@echo ""
 	@echo "[target-tests] BOARD=$(BOARD) — building image + running real-IPC TAP"
@@ -72,14 +72,14 @@ perf-gate-x86_64:
 perf-gate: perf-gate-aarch64 perf-gate-x86_64
 	@echo "[target-perf] configured target performance gates passed"
 
-# agentos-45b: QEMU proof of the CC-PD VirtIO used-ring bounded-wait timeout.
+# fos-45b: QEMU proof of the CC-PD VirtIO used-ring bounded-wait timeout.
 # Builds the seL4 test image for BOARD (idempotent), then drives the wedge
 # script which stalls the CC-PD virtconsole ring and verifies the timeout
 # error path is observable and non-fatal.
 test-cc-virtio-timeout:
 	@echo ""
 	@echo "╔══════════════════════════════════════════════╗"
-	@echo "║  agentOS — CC-PD VirtIO timeout proof (QEMU)  ║"
+	@echo "║  FractalOS — CC-PD VirtIO timeout proof (QEMU)  ║"
 	@echo "╚══════════════════════════════════════════════╝"
 	@echo ""
 	@$(MAKE) sel4-test-image BOARD=$(BOARD)

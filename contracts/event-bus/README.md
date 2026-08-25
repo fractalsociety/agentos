@@ -2,7 +2,7 @@
 
 ## Overview
 
-EventBus is the pub/sub event routing layer for agentOS.  Agents publish typed
+EventBus is the pub/sub event routing layer for FractalOS.  Agents publish typed
 events to named topics; the bus delivers them to all subscribers.  Key
 properties:
 
@@ -14,7 +14,7 @@ properties:
   caps to all subscribers
 
 EventBus also serves as the transport layer for MsgBus system channels and
-for all `MSG_EVENT_*` kernel lifecycle events (see `agentos.h`).
+for all `MSG_EVENT_*` kernel lifecycle events (see `fractalos.h`).
 
 ## Protection Domain
 
@@ -47,7 +47,7 @@ it via a dedicated channel:
 | `EVENTBUS_OP_STATUS`       | 0x605 | Topic statistics |
 | `EVENTBUS_OP_HEALTH`       | 0x606 | Liveness probe |
 
-### Legacy seL4 Label Opcodes (from agentos.h)
+### Legacy seL4 Label Opcodes (from fractalos.h)
 
 These opcodes appear as the seL4_MessageInfo label field in the lower-level
 kernel IPC path:
@@ -90,6 +90,6 @@ kernel IPC path:
 ## Source Files
 
 - `userspace/servers/event-bus/src/lib.rs` — Rust server implementation
-- `kernel/agentos-root-task/src/monitor.c` — seL4 dispatch layer
-- `kernel/agentos-root-task/include/agentos.h` — MSG_EVENTBUS_* constants
+- `kernel/fractalos-root-task/src/monitor.c` — seL4 dispatch layer
+- `kernel/fractalos-root-task/include/fractalos.h` — MSG_EVENTBUS_* constants
 - `tools/topology.yaml` — event_bus PD and channel definitions

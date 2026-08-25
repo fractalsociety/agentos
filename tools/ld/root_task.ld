@@ -1,4 +1,4 @@
-/* tools/ld/root_task.ld — agentOS root task linker script (AArch64)
+/* tools/ld/root_task.ld — FractalOS root task linker script (AArch64)
  *
  * The root task is the first user-mode process started by the seL4 kernel.
  * On AArch64 QEMU virt, it must be placed in DRAM, not flash.  The loader
@@ -14,7 +14,7 @@
  * root_task reads PD ELFs from this embedded bundle instead of extra BootInfo.
  *
  * NOTE: This script is only used for the AArch64 target.  RISC-V and x86_64
- * builds continue to use tools/ld/agentos.ld (load address 0x400000).
+ * builds continue to use tools/ld/fractalos.ld (load address 0x400000).
  */
 
 ENTRY(_start)
@@ -73,7 +73,7 @@ SECTIONS {
     /* PD bundle: embedded PD ELF data.
      *
      * The bundle is produced by `xtask gen-pd-bundle` and converted to a
-     * linkable AArch64 ELF object by objcopy (see kernel/agentos-root-task/Makefile).
+     * linkable AArch64 ELF object by objcopy (see kernel/fractalos-root-task/Makefile).
      * The objcopy object contributes .pd_bundle and defines:
      *   __pd_bundle_start  — start of bundle data
      *   __pd_bundle_end    — one past end of bundle data

@@ -4,9 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../kernel/agentos-root-task/include/agent_task_gateway.h"
-#include "../../kernel/agentos-root-task/include/contracts/auth_server_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
+#include "../../kernel/fractalos-root-task/include/agent_task_gateway.h"
+#include "../../kernel/fractalos-root-task/include/contracts/auth_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/cap_broker_contract.h"
 
 #define OP_READ  (UINT64_C(1) << 0)
 #define OP_WRITE (UINT64_C(1) << 1)

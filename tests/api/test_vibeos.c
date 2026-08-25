@@ -1,5 +1,5 @@
 /*
- * test_vibeos.c — API tests for the agentOS VibeOS VM lifecycle service
+ * test_vibeos.c — API tests for the FractalOS VibeOS VM lifecycle service
  *
  * Covered opcodes:
  *   OP_VOS_CREATE   (0x50) — create and configure a new OS instance
@@ -14,14 +14,14 @@
  *       #include "../../contracts/vibeos/interface.h"
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST -I tests/api -o /tmp/t_vibeos \
+ *   cc -DFRACTALOS_TEST_HOST -I tests/api -o /tmp/t_vibeos \
  *       tests/api/test_vibeos.c && /tmp/t_vibeos
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 
 /* ── Opcodes ─────────────────────────────────────────────────────────────── */
@@ -689,5 +689,5 @@ int main(void) {
 }
 
 #else
-typedef int _agentos_api_test_vibeos_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_vibeos_dummy;
+#endif /* FRACTALOS_TEST_HOST */

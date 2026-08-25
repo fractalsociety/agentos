@@ -1,5 +1,5 @@
 /*
- * test_event_bus.c — API tests for the agentOS event_bus PD
+ * test_event_bus.c — API tests for the FractalOS event_bus PD
  *
  * Covered opcodes and scenarios:
  *   MSG_EVENTBUS_INIT        (0x0001) — initialise ring buffer
@@ -11,26 +11,26 @@
  *   unknown opcode                    — must return SEL4_ERR_INVALID_OP
  *
  * Tests pull in the event_bus implementation directly under
- * -DAGENTOS_TEST_HOST so no seL4 is required.
+ * -DFRACTALOS_TEST_HOST so no seL4 is required.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_event_bus \
  *      tests/api/test_event_bus.c && /tmp/test_event_bus
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
-/* Pull in the PD implementation.  The AGENTOS_TEST_HOST guard inside
+/* Pull in the PD implementation.  The FRACTALOS_TEST_HOST guard inside
  * event_bus.c replaces all seL4/Microkit references with stubs. */
-#include "../../kernel/agentos-root-task/src/event_bus.c"
+#include "../../kernel/fractalos-root-task/src/event_bus.c"
 
 /* ── Ring buffer backing store ──────────────────────────────────────────────── */
 
@@ -365,6 +365,6 @@ int main(void) {
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_api_test_event_bus_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_api_test_event_bus_dummy;
+#endif /* FRACTALOS_TEST_HOST */

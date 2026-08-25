@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — VOS_MIGRATE tests
+# FractalOS E2E — VOS_MIGRATE tests
 #
 # Exercises live migration of a running VibeOS guest between capability domains:
 #
@@ -43,13 +43,13 @@ HAVE_SSH="${HAVE_SSH_TOOLS:-0}"
 
 cc_post() {
     curl -sf --max-time 10 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
 
 cc_get() {
-    curl -sf --max-time 10 "${CC_BASE}/api/agentos/cc/$1" 2>/dev/null
+    curl -sf --max-time 10 "${CC_BASE}/api/fractalos/cc/$1" 2>/dev/null
 }
 
 ok_field() { printf '%s' "$1" | grep -q '"ok":true'; }
@@ -122,7 +122,7 @@ else
 fi
 
 # Write a migration marker in the guest so we can verify it on the destination
-MIGRATION_MARKER="agentos-migrate-$(date +%s)"
+MIGRATION_MARKER="fractalos-migrate-$(date +%s)"
 if [ "${HAVE_SSH}" = "1" ] && guest_ssh true 2>/dev/null; then
     guest_ssh "echo '${MIGRATION_MARKER}' > /tmp/migration_marker" 2>/dev/null && \
         pass "SSH: migration marker written (${MIGRATION_MARKER})" || \

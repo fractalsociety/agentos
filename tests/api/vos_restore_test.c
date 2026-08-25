@@ -29,22 +29,22 @@
  *   25. Freshly restored instance has correct os_type
  *
  * Build:
- *   cc -DAGENTOS_TEST_HOST \
- *      -I kernel/agentos-root-task/include \
+ *   cc -DFRACTALOS_TEST_HOST \
+ *      -I kernel/fractalos-root-task/include \
  *      -I tests/api \
  *      tests/api/vos_restore_test.c \
- *      kernel/agentos-root-task/src/vos_restore.c \
- *      kernel/agentos-root-task/src/vos_snapshot.c \
+ *      kernel/fractalos-root-task/src/vos_restore.c \
+ *      kernel/fractalos-root-task/src/vos_snapshot.c \
  *      -o /tmp/test_restore
  *
  * Run:
  *   /tmp/test_restore
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -611,4 +611,4 @@ int main(void)
 #else
 /* Non-test build: provide a dummy translation unit */
 typedef int _vos_restore_test_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */

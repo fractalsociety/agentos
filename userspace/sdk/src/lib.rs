@@ -1,11 +1,11 @@
-//! # agentOS SDK
+//! # FractalOS SDK
 //!
 //! Core abstractions for the world's first operating system designed for AI agents.
 //!
 //! ## Design Philosophy
 //!
 //! Traditional OS primitives were designed for human-driven processes.
-//! agentOS inverts this: every primitive is designed around what agents actually need.
+//! FractalOS inverts this: every primitive is designed around what agents actually need.
 //!
 //! ### Core Abstractions
 //!
@@ -43,22 +43,22 @@ pub mod wit_generated {
     });
 }
 pub mod identity;
-pub mod message;
 pub mod memory;
+pub mod message;
 pub mod net;
 pub mod scheduler;
 pub mod vector;
 
 // Re-export the most common types
-pub use capability::{Capability, CapabilitySet, CapabilityKind};
+pub use capability::{Capability, CapabilityKind, CapabilitySet};
 pub use context::AgentContext;
-pub use event::{EventChannel, Event, EventKind, Priority};
+pub use cuda::{CudaError, CudaKernel, CUDA_SECTION_NAME};
+pub use event::{Event, EventChannel, EventKind, Priority};
 pub use identity::{AgentId, AgentIdentity};
 pub use message::{Message, MessageKind};
-pub use cuda::{CudaKernel, CudaError, CUDA_SECTION_NAME};
 
-/// agentOS SDK version
+/// FractalOS SDK version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// agentOS kernel interface version this SDK targets
+/// FractalOS kernel interface version this SDK targets
 pub const KERNEL_ABI_VERSION: u32 = 1;

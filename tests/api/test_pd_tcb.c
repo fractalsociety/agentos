@@ -14,18 +14,18 @@
  * exercises exactly the same struct layout as the target build.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -std=c11 -Wall -Wextra \
  *      -o /tmp/t_pd_tcb \
  *      tests/api/test_pd_tcb.c && /tmp/t_pd_tcb
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 
 /*
@@ -193,7 +193,7 @@ seL4_Error seL4_TCB_Suspend(seL4_CPtr service) {
  * are guarded by #pragma once so the re-include is a no-op.  The seL4_*
  * and ut_alloc function bodies above satisfy the linker.
  */
-#include "../../kernel/agentos-root-task/src/pd_tcb.c"
+#include "../../kernel/fractalos-root-task/src/pd_tcb.c"
 
 /* ── Test helpers ─────────────────────────────────────────────────────────── */
 
@@ -595,5 +595,5 @@ int main(void) {
 }
 
 #else
-typedef int _agentos_api_test_pd_tcb_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_pd_tcb_dummy;
+#endif /* FRACTALOS_TEST_HOST */

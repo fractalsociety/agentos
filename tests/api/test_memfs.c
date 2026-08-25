@@ -1,5 +1,5 @@
 /*
- * test_memfs.c — API tests for the agentOS MemFS (object-store) service
+ * test_memfs.c — API tests for the FractalOS MemFS (object-store) service
  *
  * Covered opcodes:
  *   OP_MEMFS_OPEN    (0x30) — open or create a file, return a file descriptor
@@ -19,14 +19,14 @@
  *       #include "../../contracts/memfs/interface.h"
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST -I tests/api -o /tmp/t_memfs \
+ *   cc -DFRACTALOS_TEST_HOST -I tests/api -o /tmp/t_memfs \
  *       tests/api/test_memfs.c && /tmp/t_memfs
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 
 /* ── Opcodes ─────────────────────────────────────────────────────────────── */
@@ -711,5 +711,5 @@ int main(void) {
 }
 
 #else
-typedef int _agentos_api_test_memfs_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_memfs_dummy;
+#endif /* FRACTALOS_TEST_HOST */

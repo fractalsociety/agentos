@@ -9,7 +9,7 @@ deps/
 *.elf
 *.img
 .libvmm_cflags.*
-kernel/agentos-root-task/report.txt
+kernel/fractalos-root-task/report.txt
 
 # Python
 __pycache__/
@@ -53,7 +53,7 @@ node_modules/
 console/
 .claude/
 
-# Guest OS images — downloaded on demand to ~/.local/agentos-images, not stored in the repo
+# Guest OS images — downloaded on demand to ~/.local/fractalos-images, not stored in the repo
 guest-images/
 tests/e2e/id_ed25519
 

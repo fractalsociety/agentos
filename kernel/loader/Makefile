@@ -1,20 +1,20 @@
 # kernel/loader/Makefile — AArch64 pre-seL4 ELF loader
 #
 # Builds loader.elf: a standalone AArch64 bare-metal binary that QEMU loads
-# as a proper ELF.  It reads agentos.img (loaded by QEMU at 0x48000000),
+# as a proper ELF.  It reads fractalos.img (loaded by QEMU at 0x48000000),
 # copies the seL4 kernel and root_task ELFs to their physical addresses,
 # sets up EL2 page tables, enables the MMU, and jumps to the seL4 kernel.
 #
-# Usage (called from kernel/agentos-root-task/Makefile):
-#   $(MAKE) -C kernel/loader BUILD_DIR=<path> AGENTOS_ARCH=aarch64
+# Usage (called from kernel/fractalos-root-task/Makefile):
+#   $(MAKE) -C kernel/loader BUILD_DIR=<path> FRACTALOS_ARCH=aarch64
 
-BUILD_DIR     ?= /tmp/agentos-loader-build
-AGENTOS_ARCH  ?= aarch64
+BUILD_DIR     ?= /tmp/fractalos-loader-build
+FRACTALOS_ARCH  ?= aarch64
 
 # This loader is AArch64-only; skip silently on other architectures.
-ifneq ($(AGENTOS_ARCH),aarch64)
+ifneq ($(FRACTALOS_ARCH),aarch64)
 all:
-	@echo "[loader] skipping (arch=$(AGENTOS_ARCH))"
+	@echo "[loader] skipping (arch=$(FRACTALOS_ARCH))"
 clean:
 	@true
 .PHONY: all clean

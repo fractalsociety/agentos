@@ -5,8 +5,8 @@
  * SEL4_ASSERT_OK(), and SEL4_ASSERT_TRUE() macros that produce TAP output
  * via stdio.
  *
- * Designed for use under AGENTOS_TEST_HOST: no seL4 / Microkit dependencies.
- * Compile with -DAGENTOS_TEST_HOST and link against libc.
+ * Designed for use under FRACTALOS_TEST_HOST: no seL4 / Microkit dependencies.
+ * Compile with -DFRACTALOS_TEST_HOST and link against libc.
  *
  * Usage:
  *   static void test_foo(void) {
@@ -26,7 +26,7 @@
  *   # failed: F
  *   TAP_DONE:<exit_code>
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

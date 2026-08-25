@@ -1,4 +1,4 @@
-//! init-agent — the first protection domain started by agentOS
+//! init-agent — the first protection domain started by FractalOS
 //!
 //! Responsibilities:
 //! 1. Register core topics with the event-bus

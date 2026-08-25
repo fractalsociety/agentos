@@ -1,5 +1,5 @@
 /*
- * agentOS ToolSvc IPC Contract — interface.h
+ * FractalOS ToolSvc IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the ToolSvc tool registry and dispatch
  * service.  ToolSvc manages all callable tools across the agent mesh.
@@ -14,7 +14,7 @@
  * MR0 carries the opcode on request; MR0 carries the status on reply.
  * Large fields (schemas, arguments) pass through a shared memory region.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -112,7 +112,7 @@
 #define TOOLSVC_ERR_INTERNAL        99u
 
 /* Bounded on-wire records. Text and JSON remain in the capability-mapped
- * arena; these structs fit one agentOS seL4 message payload. Offsets are in
+ * arena; these structs fit one FractalOS seL4 message payload. Offsets are in
  * the global ToolSvc arena and must fall in the caller badge's partition. */
 typedef struct toolsvc_invoke_wire {
     uint32_t timeout_ms;

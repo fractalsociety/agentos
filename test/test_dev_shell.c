@@ -1,5 +1,5 @@
 /*
- * test_dev_shell.c — unit tests for agentOS dev_shell ring buffer protocol
+ * test_dev_shell.c — unit tests for FractalOS dev_shell ring buffer protocol
  *
  * Standalone host test that validates the shared-memory contract used by
  * the dev_shell PD.  Mirrors the circular ring buffer layout and dispatch
@@ -65,7 +65,7 @@ static void dispatch(const char *line) {
     while (*line == ' ') line++;
 
     if (strcmp(line, "help") == 0) {
-        out_write("agentOS dev_shell commands:\r\n"
+        out_write("FractalOS dev_shell commands:\r\n"
                   "  help\r\n  version\r\n  echo <text>\r\n"
                   "  pd list\r\n  pd stat <id>\r\n"
                   "  mem dump <mr_name> <offset_hex> <len_dec>\r\n"
@@ -73,7 +73,7 @@ static void dispatch(const char *line) {
                   "  trace dump\r\n  fault inject <slot_id> <kind:vm|cap|null>\r\n"
                   "  perf show\r\n  mr list\r\n  quit\r\n");
     } else if (strcmp(line, "version") == 0) {
-        out_write("agentOS dev_shell v0.1 (agentOS v0.1.0-alpha)\r\n");
+        out_write("FractalOS dev_shell v0.1 (FractalOS v0.1.0-alpha)\r\n");
     } else if (strncmp(line, "echo ", 5) == 0) {
         out_write(line + 5); out_write("\r\n");
     } else if (strcmp(line, "pd list") == 0) {
@@ -196,7 +196,7 @@ static void assert_contains(const char *output, const char *substr) {
 /* ── Tests ────────────────────────────────────────────────────────────────── */
 
 int main(void) {
-    printf("=== agentOS dev_shell unit tests ===\n\n");
+    printf("=== FractalOS dev_shell unit tests ===\n\n");
 
     /* ── Test 1: ring buffer initialization ──────────────────────────────── */
     printf("[test 1] ring buffer initialization\n");
@@ -240,8 +240,8 @@ int main(void) {
 
     /* ── Test 5: 'echo' command ───────────────────────────────────────────── */
     printf("[test 5] 'echo' command\n");
-    out = send_cmd("echo hello agentOS");
-    assert_contains(out, "hello agentOS");
+    out = send_cmd("echo hello FractalOS");
+    assert_contains(out, "hello FractalOS");
     printf("\n");
 
     /* ── Test 6: 'trace dump' ─────────────────────────────────────────────── */

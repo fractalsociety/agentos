@@ -12,7 +12,7 @@
  *     Linux agent polls until magic appears (simulated with memcpy).
  *
  *   Stage 2 — SPAWN command flow
- *     seL4 enqueues IPC_OP_SPAWN("agentos-agent") in the command ring.
+ *     seL4 enqueues IPC_OP_SPAWN("fractalos-agent") in the command ring.
  *     Linux daemon dispatches to the agent.
  *
  *   Stage 3 — Agent writes WASM to staging region
@@ -36,7 +36,7 @@
  * Run:
  *   /tmp/test_e13
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -364,7 +364,7 @@ static uint32_t wasm_validate_flags(const uint8_t *wasm, uint32_t len,
     if (wasm_check_exports(wasm, len))                     flags |= VSWAP_VAL_EXPORTS;
     if (wasm_has_memory(wasm, len))                        flags |= VSWAP_VAL_MEMORY;
     if (wasm_has_custom_section(wasm, len,
-                                "agentos.capabilities"))   flags |= VSWAP_VAL_CAPS_SECT;
+                                "fractalos.capabilities"))   flags |= VSWAP_VAL_CAPS_SECT;
 
     (void)service_id;
     return flags;
@@ -571,8 +571,8 @@ static void test_wasm_fixture_capabilities_section(void)
 {
     TEST("wasm_fixture_capabilities_section");
     ASSERT_TRUE(wasm_has_custom_section(g_minimal_wasm, g_minimal_wasm_len,
-                                        "agentos.capabilities"),
-                "agentos.capabilities custom section present");
+                                        "fractalos.capabilities"),
+                "fractalos.capabilities custom section present");
 }
 
 static void test_wasm_validation_flags(void)
@@ -620,9 +620,9 @@ static void test_ipc_spawn_command(void)
     TEST("ipc_spawn_command");
     bridge_init();
 
-    /* seL4 side sends SPAWN("agentos-agent") */
+    /* seL4 side sends SPAWN("fractalos-agent") */
     uint32_t seq = 0;
-    const char *agent_name = "agentos-agent";
+    const char *agent_name = "fractalos-agent";
     int rc = bridge_send_cmd(IPC_OP_SPAWN, 0,
                               agent_name, (uint32_t)strlen(agent_name) + 1, &seq);
     ASSERT_EQ(rc, 0, "send SPAWN command succeeds");
@@ -634,9 +634,9 @@ static void test_ipc_spawn_command(void)
     int got = bridge_recv_cmd(&cmd);
     ASSERT_EQ(got, 1, "daemon receives one command");
     ASSERT_EQ(cmd.op, IPC_OP_SPAWN, "op = IPC_OP_SPAWN");
-    ASSERT_TRUE(strncmp((char *)cmd.payload, "agentos-agent",
+    ASSERT_TRUE(strncmp((char *)cmd.payload, "fractalos-agent",
                         cmd.payload_len) == 0,
-                "payload = \"agentos-agent\"");
+                "payload = \"fractalos-agent\"");
     ASSERT_EQ(cmd_ring()->tail, 1u, "cmd ring tail advanced after consume");
 }
 
@@ -790,7 +790,7 @@ static void test_full_pipeline(void)
 
     /* 1. seL4 initialises bridge and sends SPAWN */
     uint32_t seq = 0;
-    ASSERT_EQ(bridge_send_cmd(IPC_OP_SPAWN, 0, "agentos-agent", 14, &seq),
+    ASSERT_EQ(bridge_send_cmd(IPC_OP_SPAWN, 0, "fractalos-agent", 14, &seq),
               0, "seL4 enqueues SPAWN command");
 
     /* 2. Linux daemon receives the command (simulated) */
@@ -848,7 +848,7 @@ static void test_full_pipeline(void)
 int main(void)
 {
     printf("╔══════════════════════════════════════════════════════════╗\n");
-    printf("║  agentOS E13 — End-to-End Agent Boot Test Suite          ║\n");
+    printf("║  FractalOS E13 — End-to-End Agent Boot Test Suite          ║\n");
     printf("║  seL4 → IPC bridge → Linux → agent → vibe-engine → WASM ║\n");
     printf("╚══════════════════════════════════════════════════════════╝\n");
 

@@ -2,7 +2,7 @@
 
 **Status:** APPROVED EXCEPTION
 **Date filed:** 2026-04-15
-**Affected VMM:** Linux VMM (`kernel/agentos-root-task/src/linux_vmm.c`)
+**Affected VMM:** Linux VMM (`kernel/fractalos-root-task/src/linux_vmm.c`)
 **Generic service rule:** Before any guest OS VMM implements its own device, it must
 use the generic device service. A custom implementation requires an approved defect task.
 
@@ -11,7 +11,7 @@ use the generic device service. A custom implementation requires an approved def
 ## Description
 
 The Linux VMM implements a custom inter-PD communication channel called `gpu_shmem`
-(`kernel/agentos-root-task/src/gpu_shmem.c`, `kernel/agentos-root-task/include/gpu_shmem.h`).
+(`kernel/fractalos-root-task/src/gpu_shmem.c`, `kernel/fractalos-root-task/include/gpu_shmem.h`).
 This channel carries GPU tensor descriptors from seL4 native PDs (controller, worker,
 swap_slot) into the Linux guest for dispatch to CUDA/PyTorch workloads running on the
 NVIDIA GB10 SoC's 128GB unified VRAM.
@@ -90,10 +90,10 @@ The `gpu_shmem` design is purpose-built for its task:
 
 This exception applies **only** to the `gpu_shmem` channel as implemented in:
 
-- `kernel/agentos-root-task/src/gpu_shmem.c`
-- `kernel/agentos-root-task/include/gpu_shmem.h`
+- `kernel/fractalos-root-task/src/gpu_shmem.c`
+- `kernel/fractalos-root-task/include/gpu_shmem.h`
 - The `GPU_SHMEM_NOTIFY_IN_CH` and `GPU_SHMEM_NOTIFY_OUT_CH` notification handlers
-  in `kernel/agentos-root-task/src/linux_vmm.c` (lines 386–438)
+  in `kernel/fractalos-root-task/src/linux_vmm.c` (lines 386–438)
 
 The exception does **not** cover:
 

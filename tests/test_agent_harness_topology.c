@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../kernel/agentos-root-task/src/system_desc_aarch64.c"
+#include "../kernel/fractalos-root-task/src/system_desc_aarch64.c"
 
 static const pd_desc_t *find_pd(const char *name)
 {
@@ -119,7 +119,7 @@ int main(void)
     assert(has_service(tools, SVC_ID_MCP_TRANSPORT));
     assert(has_service(tools, SVC_ID_EXEC_SERVER));
     assert(service_badge_data(tools, SVC_ID_EXEC_SERVER)
-           == EXECSVC_RIGHT_AGENTOS_REPOSITORY);
+           == EXECSVC_RIGHT_FRACTALOS_REPOSITORY);
     assert(memory->self_svc_id == SVC_ID_AGENTFS);
     assert(exec->self_svc_id == SVC_ID_EXEC_SERVER);
     assert(!has_service(exec, SVC_ID_MODELSVC));

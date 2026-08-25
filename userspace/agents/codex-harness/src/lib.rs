@@ -19,7 +19,7 @@ pub const CAP_EXEC: u32 = 1 << 3;
 pub const CAP_NETWORK: u32 = 1 << 4;
 pub const CAP_KNOWN_MASK: u32 = CAP_MODEL | CAP_TOOL | CAP_MEMORY | CAP_EXEC | CAP_NETWORK;
 
-const SYSTEM_PROMPT: &str = r#"You are an AgentOS coding harness planner. Return exactly one JSON object per turn.
+const SYSTEM_PROMPT: &str = r#"You are an FractalOS coding harness planner. Return exactly one JSON object per turn.
 Allowed actions:
 {"action":"tool","name":"<granted tool>","arguments":<json>}
 {"action":"memory_read","object":"<capability-scoped object>"}

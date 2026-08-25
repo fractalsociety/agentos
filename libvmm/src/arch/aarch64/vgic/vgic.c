@@ -24,7 +24,7 @@
 /* The driver expects the VGIC state to be initialised before calling any of the driver functionality. */
 extern vgic_t vgic;
 
-__attribute__((weak)) bool agentos_vgic_maintenance_reinject(size_t vcpu_id, int irq)
+__attribute__((weak)) bool fractalos_vgic_maintenance_reinject(size_t vcpu_id, int irq)
 {
     (void)vcpu_id;
     (void)irq;
@@ -87,7 +87,7 @@ bool vgic_handle_fault_maintenance(size_t vcpu_id)
     /* Clear pending */
     LOG_IRQ("Maintenance IRQ %d\n", lr_virq.virq);
     set_pending(&vgic, lr_virq.virq, false, vcpu_id);
-    bool reinject = agentos_vgic_maintenance_reinject(vcpu_id, lr_virq.virq);
+    bool reinject = fractalos_vgic_maintenance_reinject(vcpu_id, lr_virq.virq);
 #if defined(GIC_V2)
     int group = 0;
 #elif defined(GIC_V3)

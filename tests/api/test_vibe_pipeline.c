@@ -24,16 +24,16 @@
  * the style of test_vibeos.c and test_event_bus.c.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *   cc -DFRACTALOS_TEST_HOST -I tests/api \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_vibe_pipeline tests/api/test_vibe_pipeline.c \
  *   && /tmp/test_vibe_pipeline
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
@@ -763,5 +763,5 @@ int main(void)
 }
 
 #else
-typedef int _agentos_test_vibe_pipeline_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_test_vibe_pipeline_dummy;
+#endif /* FRACTALOS_TEST_HOST */

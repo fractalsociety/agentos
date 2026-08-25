@@ -1,6 +1,6 @@
-//! Model Proxy — capability-gated LLM inference service for agentOS
+//! Model Proxy — capability-gated LLM inference service for FractalOS
 //!
-//! The thinking engine of agentOS. Every agent that needs to reason,
+//! The thinking engine of FractalOS. Every agent that needs to reason,
 //! generate, or understand does so through ModelProxy.
 //!
 //! ## Why OS-level inference?
@@ -9,7 +9,7 @@
 //! configure an API key, and make HTTP requests. Every application manages
 //! its own inference stack.
 //!
-//! In agentOS, inference is a system service:
+//! In FractalOS, inference is a system service:
 //!
 //! - **Capability-gated**: An agent needs a `ModelCap` to query any model.
 //!   The cap specifies which models, token budgets, rate limits.
@@ -35,7 +35,7 @@
 //! Backends (pluggable):
 //! - HTTP API (OpenAI-compatible, NVIDIA NIM, Anthropic, etc.)
 //! - Local inference (via GPU PD — Natasha/Boris-class hardware)
-//! - Peer agent (another agentOS node with model capacity)
+//! - Peer agent (another FractalOS node with model capacity)
 //! - Cache (exact prompt match from AgentFS)
 
 #![cfg_attr(not(feature = "std"), no_std)]
@@ -45,7 +45,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 // ============================================================================
 // Types
@@ -96,7 +96,7 @@ pub enum BackendType {
         gpu_pd_channel: u32,
         quantization: Option<String>,
     },
-    /// Peer agentOS node
+    /// Peer FractalOS node
     PeerNode {
         node_id: [u8; 32],
         endpoint_url: String,
@@ -104,9 +104,7 @@ pub enum BackendType {
     /// Cache-only (serves from AgentFS cache, no actual inference)
     CacheOnly,
     /// CLI-based coding assistant (claude, codex, cursor, etc.)
-    CodingCli {
-        cli_path: String,
-    },
+    CodingCli { cli_path: String },
 }
 
 /// Model statistics
@@ -290,30 +288,29 @@ impl TokenBudget {
     pub fn check(&self, estimated_tokens: TokenCount, model_id: Option<&str>) -> bool {
         // Check model access
         if let Some(model) = model_id {
-            if !self.allowed_models.is_empty() 
-               && !self.allowed_models.iter().any(|m| m == model) {
+            if !self.allowed_models.is_empty() && !self.allowed_models.iter().any(|m| m == model) {
                 return false;
             }
         }
-        
+
         // Check per-request limit
         if estimated_tokens > self.max_per_request {
             return false;
         }
-        
+
         // Check period budget
         if self.tokens_used + estimated_tokens > self.tokens_per_period {
             return false;
         }
-        
+
         true
     }
-    
+
     /// Consume tokens from the budget
     pub fn consume(&mut self, tokens: TokenCount) {
         self.tokens_used += tokens;
     }
-    
+
     /// Reset the budget for a new period
     pub fn reset_period(&mut self, now: u64) {
         self.tokens_used = 0;
@@ -349,25 +346,43 @@ impl ModelRouter {
     /// | fast      | <https://api.openai.com/v1/chat/completions>             | OPENAI_API_KEY  | 16000      | 4096       |
     pub fn register_defaults(&mut self) {
         for (id, url, key_env, ctx, max_tok) in &[
-            ("default",  "https://inference-api.nvidia.com/v1/chat/completions", "NVIDIA_API_KEY", 128_000u64, 4_096u64),
-            ("code-gen", "https://inference-api.nvidia.com/v1/chat/completions", "NVIDIA_API_KEY", 128_000,   32_768),
-            ("fast",     "https://api.openai.com/v1/chat/completions",           "OPENAI_API_KEY",  16_000,    4_096),
+            (
+                "default",
+                "https://inference-api.nvidia.com/v1/chat/completions",
+                "NVIDIA_API_KEY",
+                128_000u64,
+                4_096u64,
+            ),
+            (
+                "code-gen",
+                "https://inference-api.nvidia.com/v1/chat/completions",
+                "NVIDIA_API_KEY",
+                128_000,
+                32_768,
+            ),
+            (
+                "fast",
+                "https://api.openai.com/v1/chat/completions",
+                "OPENAI_API_KEY",
+                16_000,
+                4_096,
+            ),
         ] {
             self.register_endpoint(ModelEndpoint {
-                model_id:          ModelId::from(*id),
-                backend:           BackendType::HttpApi {
+                model_id: ModelId::from(*id),
+                backend: BackendType::HttpApi {
                     endpoint_url: alloc::format!("{}", url),
-                    api_key_env:  alloc::format!("{}", key_env),
-                    model_name:   alloc::format!("{}", id),
+                    api_key_env: alloc::format!("{}", key_env),
+                    model_name: alloc::format!("{}", id),
                 },
-                context_window:    *ctx,
+                context_window: *ctx,
                 max_output_tokens: *max_tok,
                 structured_output: false,
-                tool_use:          false,
-                vision:            false,
-                cost_tier:         1,
-                available:         true,
-                stats:             ModelStats::default(),
+                tool_use: false,
+                vision: false,
+                cost_tier: 1,
+                available: true,
+                stats: ModelStats::default(),
             });
         }
     }
@@ -376,7 +391,7 @@ impl ModelRouter {
     pub fn register_endpoint(&mut self, endpoint: ModelEndpoint) {
         self.endpoints.insert(endpoint.model_id.clone(), endpoint);
     }
-    
+
     /// Select the best model for a request
     pub fn route(&self, request: &InferenceRequest, budget: &TokenBudget) -> Option<ModelId> {
         // If agent specified a preference, try it first
@@ -387,20 +402,22 @@ impl ModelRouter {
                 }
             }
         }
-        
+
         // Otherwise, find the best available model
-        let mut candidates: Vec<&ModelEndpoint> = self.endpoints.values()
+        let mut candidates: Vec<&ModelEndpoint> = self
+            .endpoints
+            .values()
             .filter(|ep| {
-                ep.available && 
-                budget.check(request.params.max_tokens, Some(&ep.model_id)) &&
-                ep.max_output_tokens >= request.params.max_tokens
+                ep.available
+                    && budget.check(request.params.max_tokens, Some(&ep.model_id))
+                    && ep.max_output_tokens >= request.params.max_tokens
             })
             .collect();
-        
+
         if candidates.is_empty() {
             return None;
         }
-        
+
         // Sort by suitability:
         // 1. Task-type match (if configured)
         // 2. Tool use capability (if request needs it)
@@ -410,44 +427,47 @@ impl ModelRouter {
             // Prefer models that support needed capabilities
             let a_score = self.score_model(a, request);
             let b_score = self.score_model(b, request);
-            b_score.partial_cmp(&a_score).unwrap_or(core::cmp::Ordering::Equal)
+            b_score
+                .partial_cmp(&a_score)
+                .unwrap_or(core::cmp::Ordering::Equal)
         });
-        
+
         candidates.first().map(|ep| ep.model_id.clone())
     }
-    
+
     /// Score a model for a request (higher = better fit)
     fn score_model(&self, model: &ModelEndpoint, request: &InferenceRequest) -> f32 {
         let mut score: f32 = 10.0;
-        
+
         // Prefer lower cost tier
         score -= model.cost_tier as f32 * 2.0;
-        
+
         // Bonus for tool use capability when needed
         if request.metadata.task_type == TaskType::ToolUse && model.tool_use {
             score += 5.0;
         }
-        
+
         // Bonus for code models when doing code tasks
         if request.metadata.task_type == TaskType::Code {
             if model.model_id.contains("code") || model.model_id.contains("codex") {
                 score += 3.0;
             }
         }
-        
+
         // Prefer models with lower average latency
         if model.stats.total_requests > 0 {
             let avg_latency = model.stats.total_latency_us / model.stats.total_requests;
-            if avg_latency < 1_000_000 { // < 1 second
+            if avg_latency < 1_000_000 {
+                // < 1 second
                 score += 2.0;
             }
         }
-        
+
         // High priority requests get routed to premium models
         if request.metadata.priority >= 2 {
             score += model.cost_tier as f32; // Flip: premium models score higher
         }
-        
+
         score
     }
 }
@@ -483,14 +503,14 @@ impl PromptCache {
             max_entries,
         }
     }
-    
+
     /// Look up a cached response
     pub fn get(&mut self, request: &InferenceRequest) -> Option<&CachedResponse> {
         if !request.metadata.allow_cache {
             self.misses += 1;
             return None;
         }
-        
+
         let key = self.cache_key(request);
         if let Some(resp) = self.cache.get(&key) {
             self.hits += 1;
@@ -500,7 +520,7 @@ impl PromptCache {
             None
         }
     }
-    
+
     /// Store a response in cache
     pub fn put(&mut self, request: &InferenceRequest, response: &InferenceResponse) {
         if self.cache.len() >= self.max_entries {
@@ -509,15 +529,18 @@ impl PromptCache {
                 self.cache.remove(&first_key);
             }
         }
-        
+
         let key = self.cache_key(request);
-        self.cache.insert(key, CachedResponse {
-            content: response.content.clone(),
-            model_used: response.model_used.clone(),
-            tokens_out: response.tokens_out,
-        });
+        self.cache.insert(
+            key,
+            CachedResponse {
+                content: response.content.clone(),
+                model_used: response.model_used.clone(),
+                tokens_out: response.tokens_out,
+            },
+        );
     }
-    
+
     /// Generate a SHA-256 cache key from the request parameters
     fn cache_key(&self, request: &InferenceRequest) -> [u8; 32] {
         let mut hasher = Sha256::new();
@@ -571,36 +594,38 @@ impl ModelProxy {
                 .expect("valid ModelProxy HTTP client configuration"),
         }
     }
-    
+
     /// Register a model endpoint
     pub fn register_model(&mut self, endpoint: ModelEndpoint) {
         self.router.register_endpoint(endpoint);
     }
-    
+
     /// Set a token budget for an agent
     pub fn set_budget(&mut self, budget: TokenBudget) {
         self.budgets.insert(budget.cap_badge, budget);
     }
-    
+
     /// Process an inference request
     pub fn infer(&mut self, request: &InferenceRequest) -> InferenceResponse {
         self.total_requests += 1;
-        
+
         // 1. Check budget
         let budget = match self.budgets.get(&request.cap_badge) {
             Some(b) => b,
-            None => return InferenceResponse {
-                status: InferenceStatus::AccessDenied,
-                content: String::new(),
-                model_used: String::new(),
-                from_cache: false,
-                tokens_in: 0,
-                tokens_out: 0,
-                latency_us: 0,
-                request_id: request.metadata.request_id,
-            },
+            None => {
+                return InferenceResponse {
+                    status: InferenceStatus::AccessDenied,
+                    content: String::new(),
+                    model_used: String::new(),
+                    from_cache: false,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    latency_us: 0,
+                    request_id: request.metadata.request_id,
+                }
+            }
         };
-        
+
         // 2. Check cache
         if let Some(cached) = self.cache.get(request) {
             return InferenceResponse {
@@ -614,22 +639,24 @@ impl ModelProxy {
                 request_id: request.metadata.request_id,
             };
         }
-        
+
         // 3. Route to best model
         let model_id = match self.router.route(request, budget) {
             Some(id) => id,
-            None => return InferenceResponse {
-                status: InferenceStatus::BudgetExhausted,
-                content: String::new(),
-                model_used: String::new(),
-                from_cache: false,
-                tokens_in: 0,
-                tokens_out: 0,
-                latency_us: 0,
-                request_id: request.metadata.request_id,
-            },
+            None => {
+                return InferenceResponse {
+                    status: InferenceStatus::BudgetExhausted,
+                    content: String::new(),
+                    model_used: String::new(),
+                    from_cache: false,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    latency_us: 0,
+                    request_id: request.metadata.request_id,
+                }
+            }
         };
-        
+
         // 4. Execute inference (backend-specific)
         // - HttpApi: Make HTTP request via NetStack PD
         // - LocalGpu: PPC to GPU PD with model weights reference
@@ -646,16 +673,16 @@ impl ModelProxy {
             latency_us: 0,
             request_id: request.metadata.request_id,
         };
-        
+
         // 5. Update budget
         if let Some(budget) = self.budgets.get_mut(&request.cap_badge) {
             budget.consume(response.tokens_in + response.tokens_out);
         }
         self.total_tokens += response.tokens_in + response.tokens_out;
-        
+
         // 6. Cache the response
         self.cache.put(request, &response);
-        
+
         response
     }
 }
@@ -684,16 +711,18 @@ impl ModelProxy {
         // 1. Check budget
         let budget = match self.budgets.get(&request.cap_badge) {
             Some(b) => b,
-            None => return InferenceResponse {
-                status: InferenceStatus::AccessDenied,
-                content: String::new(),
-                model_used: String::new(),
-                from_cache: false,
-                tokens_in: 0,
-                tokens_out: 0,
-                latency_us: 0,
-                request_id: request.metadata.request_id,
-            },
+            None => {
+                return InferenceResponse {
+                    status: InferenceStatus::AccessDenied,
+                    content: String::new(),
+                    model_used: String::new(),
+                    from_cache: false,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    latency_us: 0,
+                    request_id: request.metadata.request_id,
+                }
+            }
         };
 
         // 2. Check cache
@@ -713,23 +742,29 @@ impl ModelProxy {
         // 3. Route to best model
         let model_id = match self.router.route(request, budget) {
             Some(id) => id,
-            None => return InferenceResponse {
-                status: InferenceStatus::BudgetExhausted,
-                content: String::new(),
-                model_used: String::new(),
-                from_cache: false,
-                tokens_in: 0,
-                tokens_out: 0,
-                latency_us: 0,
-                request_id: request.metadata.request_id,
-            },
+            None => {
+                return InferenceResponse {
+                    status: InferenceStatus::BudgetExhausted,
+                    content: String::new(),
+                    model_used: String::new(),
+                    from_cache: false,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    latency_us: 0,
+                    request_id: request.metadata.request_id,
+                }
+            }
         };
 
         // 4. Dispatch to backend
         let endpoint_info = self.router.endpoints.get(&model_id).cloned();
         let response = match endpoint_info {
             Some(ref ep) => match &ep.backend {
-                BackendType::HttpApi { endpoint_url, api_key_env, model_name } => {
+                BackendType::HttpApi {
+                    endpoint_url,
+                    api_key_env,
+                    model_name,
+                } => {
                     // Resolve the API key from the environment variable named by
                     // `api_key_env`; fall back to empty string (works for local
                     // Ollama which ignores the Authorization header).
@@ -743,10 +778,10 @@ impl ModelProxy {
                     }
                     for msg in &request.messages {
                         let role = match msg.role {
-                            MessageRole::System    => "system",
-                            MessageRole::User      => "user",
+                            MessageRole::System => "system",
+                            MessageRole::User => "user",
                             MessageRole::Assistant => "assistant",
-                            MessageRole::Tool      => "tool",
+                            MessageRole::Tool => "tool",
                         };
                         messages.push(serde_json::json!({"role": role, "content": msg.content}));
                     }
@@ -759,7 +794,9 @@ impl ModelProxy {
                         &messages,
                         model_name,
                         request.params.max_tokens as u32,
-                    ).await {
+                    )
+                    .await
+                    {
                         Ok((content, tokens_in, tokens_out)) => InferenceResponse {
                             status: InferenceStatus::Ok,
                             content,
@@ -830,8 +867,7 @@ impl ModelProxy {
     ) -> Vec<InferenceResponse> {
         use alloc::format;
 
-        let mut responses: Vec<Option<InferenceResponse>> =
-            alloc::vec![None; requests.len()];
+        let mut responses: Vec<Option<InferenceResponse>> = alloc::vec![None; requests.len()];
         let mut reservations: BTreeMap<u64, TokenCount> = BTreeMap::new();
         let mut jobs = Vec::new();
 
@@ -842,9 +878,13 @@ impl ModelProxy {
                 None => {
                     responses[index] = Some(InferenceResponse {
                         status: InferenceStatus::AccessDenied,
-                        content: String::new(), model_used: String::new(),
-                        from_cache: false, tokens_in: 0, tokens_out: 0,
-                        latency_us: 0, request_id: request.metadata.request_id,
+                        content: String::new(),
+                        model_used: String::new(),
+                        from_cache: false,
+                        tokens_in: 0,
+                        tokens_out: 0,
+                        latency_us: 0,
+                        request_id: request.metadata.request_id,
                     });
                     continue;
                 }
@@ -853,8 +893,11 @@ impl ModelProxy {
                 responses[index] = Some(InferenceResponse {
                     status: InferenceStatus::Ok,
                     content: cached.content.clone(),
-                    model_used: cached.model_used.clone(), from_cache: true,
-                    tokens_in: 0, tokens_out: cached.tokens_out, latency_us: 0,
+                    model_used: cached.model_used.clone(),
+                    from_cache: true,
+                    tokens_in: 0,
+                    tokens_out: cached.tokens_out,
+                    latency_us: 0,
                     request_id: request.metadata.request_id,
                 });
                 continue;
@@ -864,9 +907,13 @@ impl ModelProxy {
                 None => {
                     responses[index] = Some(InferenceResponse {
                         status: InferenceStatus::BudgetExhausted,
-                        content: String::new(), model_used: String::new(),
-                        from_cache: false, tokens_in: 0, tokens_out: 0,
-                        latency_us: 0, request_id: request.metadata.request_id,
+                        content: String::new(),
+                        model_used: String::new(),
+                        from_cache: false,
+                        tokens_in: 0,
+                        tokens_out: 0,
+                        latency_us: 0,
+                        request_id: request.metadata.request_id,
                     });
                     continue;
                 }
@@ -879,9 +926,13 @@ impl ModelProxy {
             if budget.tokens_used + already + reserve > budget.tokens_per_period {
                 responses[index] = Some(InferenceResponse {
                     status: InferenceStatus::BudgetExhausted,
-                    content: String::new(), model_used: model_id,
-                    from_cache: false, tokens_in: 0, tokens_out: 0,
-                    latency_us: 0, request_id: request.metadata.request_id,
+                    content: String::new(),
+                    model_used: model_id,
+                    from_cache: false,
+                    tokens_in: 0,
+                    tokens_out: 0,
+                    latency_us: 0,
+                    request_id: request.metadata.request_id,
                 });
                 continue;
             }
@@ -893,9 +944,16 @@ impl ModelProxy {
             let model_for_task = model_id.clone();
             let handle = tokio::spawn(async move {
                 match endpoint {
-                    Some(ModelEndpoint { backend: BackendType::HttpApi {
-                        endpoint_url, api_key_env, model_name, ..
-                    }, .. }) => {
+                    Some(ModelEndpoint {
+                        backend:
+                            BackendType::HttpApi {
+                                endpoint_url,
+                                api_key_env,
+                                model_name,
+                                ..
+                            },
+                        ..
+                    }) => {
                         let api_key = std::env::var(&api_key_env).unwrap_or_default();
                         let mut messages = alloc::vec::Vec::new();
                         if let Some(ref system) = request_owned.system {
@@ -908,39 +966,66 @@ impl ModelProxy {
                                 MessageRole::Assistant => "assistant",
                                 MessageRole::Tool => "tool",
                             };
-                            messages.push(serde_json::json!({"role":role,"content":message.content}));
+                            messages
+                                .push(serde_json::json!({"role":role,"content":message.content}));
                         }
-                        messages.push(serde_json::json!({"role":"user","content":request_owned.prompt}));
+                        messages.push(
+                            serde_json::json!({"role":"user","content":request_owned.prompt}),
+                        );
                         match http_backend::call_model_api_with_client(
-                            &client, &endpoint_url, &api_key, &messages,
-                            &model_name, request_owned.params.max_tokens as u32,
-                        ).await {
+                            &client,
+                            &endpoint_url,
+                            &api_key,
+                            &messages,
+                            &model_name,
+                            request_owned.params.max_tokens as u32,
+                        )
+                        .await
+                        {
                             Ok((content, tokens_in, tokens_out)) => InferenceResponse {
-                                status: InferenceStatus::Ok, content,
-                                model_used: model_for_task, from_cache: false,
-                                tokens_in, tokens_out, latency_us: 0,
+                                status: InferenceStatus::Ok,
+                                content,
+                                model_used: model_for_task,
+                                from_cache: false,
+                                tokens_in,
+                                tokens_out,
+                                latency_us: 0,
                                 request_id: request_owned.metadata.request_id,
                             },
                             Err(error) => InferenceResponse {
-                                status: InferenceStatus::Error(format!("HTTP backend error: {}", error)),
-                                content: String::new(), model_used: model_for_task,
-                                from_cache: false, tokens_in: 0, tokens_out: 0,
-                                latency_us: 0, request_id: request_owned.metadata.request_id,
+                                status: InferenceStatus::Error(format!(
+                                    "HTTP backend error: {}",
+                                    error
+                                )),
+                                content: String::new(),
+                                model_used: model_for_task,
+                                from_cache: false,
+                                tokens_in: 0,
+                                tokens_out: 0,
+                                latency_us: 0,
+                                request_id: request_owned.metadata.request_id,
                             },
                         }
                     }
                     Some(_) => InferenceResponse {
                         status: InferenceStatus::Ok,
                         content: String::from("[ModelProxy: non-HTTP backend dispatch pending]"),
-                        model_used: model_for_task, from_cache: false,
-                        tokens_in: estimate_tokens(&request_owned.prompt), tokens_out: 20,
-                        latency_us: 0, request_id: request_owned.metadata.request_id,
+                        model_used: model_for_task,
+                        from_cache: false,
+                        tokens_in: estimate_tokens(&request_owned.prompt),
+                        tokens_out: 20,
+                        latency_us: 0,
+                        request_id: request_owned.metadata.request_id,
                     },
                     None => InferenceResponse {
                         status: InferenceStatus::AllBackendsFailed,
-                        content: String::new(), model_used: model_for_task,
-                        from_cache: false, tokens_in: 0, tokens_out: 0,
-                        latency_us: 0, request_id: request_owned.metadata.request_id,
+                        content: String::new(),
+                        model_used: model_for_task,
+                        from_cache: false,
+                        tokens_in: 0,
+                        tokens_out: 0,
+                        latency_us: 0,
+                        request_id: request_owned.metadata.request_id,
                     },
                 }
             });
@@ -952,9 +1037,13 @@ impl ModelProxy {
         for (index, request, handle) in jobs {
             let response = handle.await.unwrap_or_else(|error| InferenceResponse {
                 status: InferenceStatus::Error(format!("batch worker failed: {}", error)),
-                content: String::new(), model_used: String::new(),
-                from_cache: false, tokens_in: 0, tokens_out: 0,
-                latency_us: 0, request_id: request.metadata.request_id,
+                content: String::new(),
+                model_used: String::new(),
+                from_cache: false,
+                tokens_in: 0,
+                tokens_out: 0,
+                latency_us: 0,
+                request_id: request.metadata.request_id,
             });
             if let Some(budget) = self.budgets.get_mut(&request.cap_badge) {
                 budget.consume(response.tokens_in + response.tokens_out);
@@ -966,7 +1055,10 @@ impl ModelProxy {
             responses[index] = Some(response);
         }
 
-        responses.into_iter().map(|response| response.expect("batch slot filled")).collect()
+        responses
+            .into_iter()
+            .map(|response| response.expect("batch slot filled"))
+            .collect()
     }
 }
 
@@ -992,28 +1084,36 @@ pub struct BudgetLedger {
 
 impl BudgetLedger {
     pub fn new() -> Self {
-        Self { budgets: BTreeMap::new() }
+        Self {
+            budgets: BTreeMap::new(),
+        }
     }
 
     /// Set (or overwrite) the budget for an agent.  Tokens remaining start at
     /// `tokens_per_period`.
     pub fn set_budget(&mut self, agent_id: &str, tokens_per_period: u64) {
-        self.budgets.insert(agent_id.to_string(), NamedTokenBudget {
-            agent_id: agent_id.to_string(),
-            tokens_remaining: tokens_per_period,
-            tokens_per_period,
-            period_reset_at: 0,
-        });
+        self.budgets.insert(
+            agent_id.to_string(),
+            NamedTokenBudget {
+                agent_id: agent_id.to_string(),
+                tokens_remaining: tokens_per_period,
+                tokens_per_period,
+                period_reset_at: 0,
+            },
+        );
     }
 
     /// Check that `tokens_needed` are available and, if so, deduct them.
     /// Returns `Err` if the agent has no budget entry or has insufficient tokens.
     pub fn check_and_deduct(&mut self, agent_id: &str, tokens_needed: u64) -> Result<(), String> {
-        let budget = self.budgets.get_mut(agent_id)
+        let budget = self
+            .budgets
+            .get_mut(agent_id)
             .ok_or_else(|| alloc::format!("no budget for agent {}", agent_id))?;
         if budget.tokens_remaining < tokens_needed {
             return Err(alloc::format!(
-                "token budget exhausted: {} remaining", budget.tokens_remaining
+                "token budget exhausted: {} remaining",
+                budget.tokens_remaining
             ));
         }
         budget.tokens_remaining -= tokens_needed;
@@ -1135,12 +1235,14 @@ pub fn route_request<'a>(
 ) -> Option<&'a ModelEntry> {
     let is_code = task_hint.eq_ignore_ascii_case("code");
 
-    models.iter()
+    models
+        .iter()
         .filter(|m| m.context_window >= required_context && m.available)
         .min_by_key(|m| {
             // Lower sort key = preferred.
             // Code-specialized models get a large bonus for code tasks.
-            let code_penalty: u64 = if is_code && (m.id.contains("code") || m.id.contains("codex")) {
+            let code_penalty: u64 = if is_code && (m.id.contains("code") || m.id.contains("codex"))
+            {
                 0
             } else if is_code {
                 u64::MAX / 2 // push non-code models to the back
@@ -1246,8 +1348,8 @@ pub mod http_backend {
     //! library.  Enable with `--features std` or add `std` to
     //! `[features] default`.
 
-    use alloc::string::{String, ToString};
     use alloc::format;
+    use alloc::string::{String, ToString};
 
     /// POST a chat completion request to `{endpoint}/v1/chat/completions` and
     /// return `(content, tokens_in, tokens_out)`.
@@ -1269,9 +1371,7 @@ pub mod http_backend {
         max_tokens: u32,
     ) -> Result<(String, u64, u64), String> {
         let client = reqwest::Client::new();
-        call_model_api_with_client(
-            &client, endpoint, api_key, messages, model, max_tokens,
-        ).await
+        call_model_api_with_client(&client, endpoint, api_key, messages, model, max_tokens).await
     }
 
     /// Perform a completion with a caller-owned persistent HTTP client.
@@ -1285,10 +1385,7 @@ pub mod http_backend {
     ) -> Result<(String, u64, u64), String> {
         use serde_json::{json, Value};
 
-        let url = format!(
-            "{}/v1/chat/completions",
-            endpoint.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/chat/completions", endpoint.trim_end_matches('/'));
 
         let body = json!({
             "model": model,
@@ -1297,9 +1394,7 @@ pub mod http_backend {
             "stream": false,
         });
 
-        let mut builder = client
-            .post(&url)
-            .json(&body);
+        let mut builder = client.post(&url).json(&body);
 
         // Only set the Authorization header when a non-empty key is supplied.
         // Local Ollama instances reject requests that carry an unexpected header
@@ -1329,12 +1424,8 @@ pub mod http_backend {
             .ok_or_else(|| "missing choices[0].message.content".to_string())?
             .to_string();
 
-        let tokens_in = json["usage"]["prompt_tokens"]
-            .as_u64()
-            .unwrap_or(0);
-        let tokens_out = json["usage"]["completion_tokens"]
-            .as_u64()
-            .unwrap_or(0);
+        let tokens_in = json["usage"]["prompt_tokens"].as_u64().unwrap_or(0);
+        let tokens_out = json["usage"]["completion_tokens"].as_u64().unwrap_or(0);
 
         Ok((content, tokens_in, tokens_out))
     }
@@ -1347,14 +1438,14 @@ pub mod http_backend {
 #[cfg(feature = "std")]
 pub mod codegen {
     //! Free-function helpers for code-generation backends used by the bridge's
-    //! `/api/agentos/vibe/*` routes.
+    //! `/api/fractalos/vibe/*` routes.
     //!
     //! All functions are gated behind the `std` feature because they depend on
     //! `reqwest`, environment variables, and process spawning — none of which
     //! are available in the no_std seL4 target.
 
-    use alloc::string::{String, ToString};
     use alloc::format;
+    use alloc::string::{String, ToString};
 
     use crate::BackendType;
     use crate::TokenCount;
@@ -1382,10 +1473,7 @@ pub mod codegen {
         use reqwest::Client;
         use serde_json::{json, Value};
 
-        let url = format!(
-            "{}/v1/chat/completions",
-            endpoint_url.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/chat/completions", endpoint_url.trim_end_matches('/'));
 
         let messages = json!([
             { "role": "system", "content": system_prompt },
@@ -1425,8 +1513,12 @@ pub mod codegen {
             .ok_or_else(|| "missing choices[0].message.content".to_string())?
             .to_string();
 
-        let tokens_in  = json["usage"]["prompt_tokens"].as_u64().unwrap_or_else(|| estimate_tokens(user_prompt));
-        let tokens_out = json["usage"]["completion_tokens"].as_u64().unwrap_or_else(|| estimate_tokens(&content));
+        let tokens_in = json["usage"]["prompt_tokens"]
+            .as_u64()
+            .unwrap_or_else(|| estimate_tokens(user_prompt));
+        let tokens_out = json["usage"]["completion_tokens"]
+            .as_u64()
+            .unwrap_or_else(|| estimate_tokens(&content));
 
         Ok((content, tokens_in, tokens_out))
     }
@@ -1443,8 +1535,8 @@ pub mod codegen {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<(String, TokenCount, TokenCount), String> {
-        use std::process::{Command, Stdio};
         use std::io::Write;
+        use std::process::{Command, Stdio};
 
         // Build the full prompt: prepend system context then user request.
         let full_prompt = if system_prompt.is_empty() {
@@ -1478,10 +1570,11 @@ pub mod codegen {
         };
 
         cmd.stdin(Stdio::piped())
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| format!("failed to spawn '{}': {}", cli_path, e))?;
 
         // Write prompt to stdin (some CLIs read from stdin instead of args).
@@ -1490,7 +1583,8 @@ pub mod codegen {
             // stdin is dropped here, closing the pipe
         }
 
-        let output = child.wait_with_output()
+        let output = child
+            .wait_with_output()
             .map_err(|e| format!("CLI wait failed: {}", e))?;
 
         if !output.status.success() {
@@ -1499,7 +1593,7 @@ pub mod codegen {
         }
 
         let content = String::from_utf8_lossy(&output.stdout).to_string();
-        let tokens_in  = estimate_tokens(&full_prompt);
+        let tokens_in = estimate_tokens(&full_prompt);
         let tokens_out = estimate_tokens(&content);
 
         Ok((content, tokens_in, tokens_out))
@@ -1510,7 +1604,7 @@ pub mod codegen {
     /// Detect which codegen backend is available on this host.
     ///
     /// Checks (in order):
-    /// 1. `AGENTOS_CODEGEN_BACKEND` env var — if `"http"`, builds an
+    /// 1. `FRACTALOS_CODEGEN_BACKEND` env var — if `"http"`, builds an
     ///    `HttpApi` backend from `OPENAI_API_KEY` / `OPENAI_BASE_URL` /
     ///    `OPENAI_MODEL` (or `ANTHROPIC_API_KEY` for Anthropic).
     /// 2. PATH scan for `claude`, `codex`, `cursor` — first found becomes a
@@ -1519,19 +1613,19 @@ pub mod codegen {
     /// Returns `None` when no usable backend is detected.
     pub fn detect_codegen_backend() -> Option<BackendType> {
         // 1. Explicit backend selection via environment variable.
-        if let Ok(backend_val) = std::env::var("AGENTOS_CODEGEN_BACKEND") {
+        if let Ok(backend_val) = std::env::var("FRACTALOS_CODEGEN_BACKEND") {
             if backend_val.eq_ignore_ascii_case("http") {
                 // Try OpenAI-compatible HTTP first.
                 if let Ok(api_key) = std::env::var("OPENAI_API_KEY") {
                     if !api_key.is_empty() {
                         let base_url = std::env::var("OPENAI_BASE_URL")
                             .unwrap_or_else(|_| "https://api.openai.com".to_string());
-                        let model = std::env::var("OPENAI_MODEL")
-                            .unwrap_or_else(|_| "gpt-4o".to_string());
+                        let model =
+                            std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
                         return Some(BackendType::HttpApi {
                             endpoint_url: base_url,
-                            api_key_env:  "OPENAI_API_KEY".to_string(),
-                            model_name:   model,
+                            api_key_env: "OPENAI_API_KEY".to_string(),
+                            model_name: model,
                         });
                     }
                 }
@@ -1544,8 +1638,8 @@ pub mod codegen {
                             .unwrap_or_else(|_| "claude-sonnet-4-5".to_string());
                         return Some(BackendType::HttpApi {
                             endpoint_url: base_url,
-                            api_key_env:  "ANTHROPIC_API_KEY".to_string(),
-                            model_name:   model,
+                            api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                            model_name: model,
                         });
                     }
                 }
@@ -1558,12 +1652,11 @@ pub mod codegen {
             if !api_key.is_empty() {
                 let base_url = std::env::var("OPENAI_BASE_URL")
                     .unwrap_or_else(|_| "https://api.openai.com".to_string());
-                let model = std::env::var("OPENAI_MODEL")
-                    .unwrap_or_else(|_| "gpt-4o".to_string());
+                let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
                 return Some(BackendType::HttpApi {
                     endpoint_url: base_url,
-                    api_key_env:  "OPENAI_API_KEY".to_string(),
-                    model_name:   model,
+                    api_key_env: "OPENAI_API_KEY".to_string(),
+                    model_name: model,
                 });
             }
         }
@@ -1575,8 +1668,8 @@ pub mod codegen {
                     .unwrap_or_else(|_| "claude-sonnet-4-5".to_string());
                 return Some(BackendType::HttpApi {
                     endpoint_url: base_url,
-                    api_key_env:  "ANTHROPIC_API_KEY".to_string(),
-                    model_name:   model,
+                    api_key_env: "ANTHROPIC_API_KEY".to_string(),
+                    model_name: model,
                 });
             }
         }
@@ -1615,17 +1708,28 @@ pub mod codegen {
         user_prompt: &str,
     ) -> Result<(String, TokenCount, String), String> {
         match detect_codegen_backend() {
-            None => Err(
-                "No codegen backend available. \
+            None => Err("No codegen backend available. \
                  Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or install claude/codex."
-                .to_string()
-            ),
-            Some(BackendType::HttpApi { endpoint_url, api_key_env, model_name }) => {
+                .to_string()),
+            Some(BackendType::HttpApi {
+                endpoint_url,
+                api_key_env,
+                model_name,
+            }) => {
                 let api_key = std::env::var(&api_key_env).unwrap_or_default();
                 let (content, tok_in, tok_out) = execute_http_backend(
-                    &endpoint_url, &api_key, &model_name, system_prompt, user_prompt,
-                ).await?;
-                let label = if api_key_env.contains("ANTHROPIC") { "anthropic-api" } else { "http-api" };
+                    &endpoint_url,
+                    &api_key,
+                    &model_name,
+                    system_prompt,
+                    user_prompt,
+                )
+                .await?;
+                let label = if api_key_env.contains("ANTHROPIC") {
+                    "anthropic-api"
+                } else {
+                    "http-api"
+                };
                 Ok((content, tok_in + tok_out, label.to_string()))
             }
             Some(BackendType::CodingCli { cli_path }) => {
@@ -1639,11 +1743,10 @@ pub mod codegen {
                 let sp = system_prompt.to_string();
                 let up = user_prompt.to_string();
                 let cp = cli_path.clone();
-                let (content, tok_in, tok_out) = tokio::task::spawn_blocking(move || {
-                    execute_cli_backend(&cp, &sp, &up)
-                })
-                .await
-                .map_err(|e| format!("CLI task panicked: {}", e))??;
+                let (content, tok_in, tok_out) =
+                    tokio::task::spawn_blocking(move || execute_cli_backend(&cp, &sp, &up))
+                        .await
+                        .map_err(|e| format!("CLI task panicked: {}", e))??;
                 Ok((content, tok_in + tok_out, label))
             }
             Some(_) => Err("Unsupported backend type for codegen".to_string()),
@@ -1658,7 +1761,7 @@ pub mod codegen {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     fn make_endpoint(id: &str, cost: u8) -> ModelEndpoint {
         ModelEndpoint {
             model_id: id.into(),
@@ -1673,7 +1776,7 @@ mod tests {
             stats: ModelStats::default(),
         }
     }
-    
+
     fn make_budget(badge: u64) -> TokenBudget {
         TokenBudget {
             agent_id: [0x42u8; 32],
@@ -1686,7 +1789,7 @@ mod tests {
             max_per_request: 8192,
         }
     }
-    
+
     fn make_request(prompt: &str, badge: u64) -> InferenceRequest {
         InferenceRequest {
             agent_id: [0x42u8; 32],
@@ -1704,68 +1807,68 @@ mod tests {
             },
         }
     }
-    
+
     #[test]
     fn test_basic_inference() {
         let mut proxy = ModelProxy::new();
         proxy.register_model(make_endpoint("test-model", 1));
         proxy.set_budget(make_budget(42));
-        
-        let req = make_request("Hello, agentOS!", 42);
+
+        let req = make_request("Hello, FractalOS!", 42);
         let resp = proxy.infer(&req);
-        
+
         assert_eq!(resp.status, InferenceStatus::Ok);
         assert!(!resp.content.is_empty());
         assert_eq!(resp.model_used, "test-model");
     }
-    
+
     #[test]
     fn test_access_denied_no_budget() {
         let mut proxy = ModelProxy::new();
         proxy.register_model(make_endpoint("test-model", 1));
         // No budget set for badge 99
-        
+
         let req = make_request("Hello", 99);
         let resp = proxy.infer(&req);
-        
+
         assert_eq!(resp.status, InferenceStatus::AccessDenied);
     }
-    
+
     #[test]
     fn test_budget_enforcement() {
         let mut proxy = ModelProxy::new();
         proxy.register_model(make_endpoint("test-model", 1));
-        
+
         let mut budget = make_budget(42);
         budget.tokens_per_period = 10_000; // Small but sufficient for one 4096-token request
         proxy.set_budget(budget);
-        
+
         // First request should work
         let req = make_request("Short prompt", 42);
         let resp = proxy.infer(&req);
         assert_eq!(resp.status, InferenceStatus::Ok);
-        
+
         // After consuming tokens, budget should be reduced
         let budget = proxy.budgets.get(&42).unwrap();
         assert!(budget.tokens_used > 0);
     }
-    
+
     #[test]
     fn test_cache_hit() {
         let mut proxy = ModelProxy::new();
         proxy.register_model(make_endpoint("test-model", 1));
         proxy.set_budget(make_budget(42));
-        
+
         let req = make_request("Same prompt twice", 42);
-        
+
         // First call: cache miss
         let resp1 = proxy.infer(&req);
         assert!(!resp1.from_cache);
-        
+
         // Second call: cache hit
         let resp2 = proxy.infer(&req);
         assert!(resp2.from_cache);
-        
+
         assert_eq!(proxy.cache.hits, 1);
     }
 
@@ -1791,17 +1894,17 @@ mod tests {
         assert!(responses.iter().all(|r| r.status == InferenceStatus::Ok));
         assert!(proxy.budgets.get(&42).unwrap().tokens_used > 0);
     }
-    
+
     #[test]
     fn test_model_routing_prefers_cheaper() {
         let mut proxy = ModelProxy::new();
         proxy.register_model(make_endpoint("cheap-model", 1));
         proxy.register_model(make_endpoint("expensive-model", 3));
         proxy.set_budget(make_budget(42));
-        
+
         let req = make_request("Route me", 42);
         let resp = proxy.infer(&req);
-        
+
         // Should prefer cheaper model for general tasks
         assert_eq!(resp.model_used, "cheap-model");
     }
@@ -1860,12 +1963,15 @@ mod tests {
         assert_eq!(cache.stats(), (0, 1));
 
         // Insert and hit
-        cache.insert(key, CacheEntry {
-            response: "hi".into(),
-            model: "m1".into(),
-            tokens_used: 5,
-            created_at: 0,
-        });
+        cache.insert(
+            key,
+            CacheEntry {
+                response: "hi".into(),
+                model: "m1".into(),
+                tokens_used: 5,
+                created_at: 0,
+            },
+        );
         assert!(cache.get(&key).is_some());
         assert_eq!(cache.stats(), (1, 1));
     }
@@ -1877,7 +1983,12 @@ mod tests {
         let k2 = InferenceCache::hash_prompt("prompt-2");
         let k3 = InferenceCache::hash_prompt("prompt-3");
 
-        let entry = |s: &str| CacheEntry { response: s.into(), model: "m".into(), tokens_used: 1, created_at: 0 };
+        let entry = |s: &str| CacheEntry {
+            response: s.into(),
+            model: "m".into(),
+            tokens_used: 1,
+            created_at: 0,
+        };
         cache.insert(k1, entry("r1"));
         cache.insert(k2, entry("r2"));
 
@@ -1895,8 +2006,20 @@ mod tests {
     #[test]
     fn test_route_request_context_filter() {
         let models = alloc::vec![
-            ModelEntry { id: "small".into(), context_window: 4096, available: true, avg_latency_us: 100, cost_per_1k: 1 },
-            ModelEntry { id: "large".into(), context_window: 128_000, available: true, avg_latency_us: 200, cost_per_1k: 5 },
+            ModelEntry {
+                id: "small".into(),
+                context_window: 4096,
+                available: true,
+                avg_latency_us: 100,
+                cost_per_1k: 1
+            },
+            ModelEntry {
+                id: "large".into(),
+                context_window: 128_000,
+                available: true,
+                avg_latency_us: 200,
+                cost_per_1k: 5
+            },
         ];
         // Only "large" fits a 100k context request
         let chosen = route_request(&models, "general", 100_000).unwrap();
@@ -1906,8 +2029,20 @@ mod tests {
     #[test]
     fn test_route_request_prefers_code_model() {
         let models = alloc::vec![
-            ModelEntry { id: "gpt-4".into(), context_window: 8192, available: true, avg_latency_us: 50, cost_per_1k: 2 },
-            ModelEntry { id: "code-llama".into(), context_window: 8192, available: true, avg_latency_us: 150, cost_per_1k: 1 },
+            ModelEntry {
+                id: "gpt-4".into(),
+                context_window: 8192,
+                available: true,
+                avg_latency_us: 50,
+                cost_per_1k: 2
+            },
+            ModelEntry {
+                id: "code-llama".into(),
+                context_window: 8192,
+                available: true,
+                avg_latency_us: 150,
+                cost_per_1k: 1
+            },
         ];
         // Even though code-llama is slower, it should win for code tasks
         let chosen = route_request(&models, "code", 1024).unwrap();
@@ -1917,8 +2052,20 @@ mod tests {
     #[test]
     fn test_route_request_latency_tiebreak() {
         let models = alloc::vec![
-            ModelEntry { id: "model-a".into(), context_window: 8192, available: true, avg_latency_us: 300, cost_per_1k: 1 },
-            ModelEntry { id: "model-b".into(), context_window: 8192, available: true, avg_latency_us: 100, cost_per_1k: 1 },
+            ModelEntry {
+                id: "model-a".into(),
+                context_window: 8192,
+                available: true,
+                avg_latency_us: 300,
+                cost_per_1k: 1
+            },
+            ModelEntry {
+                id: "model-b".into(),
+                context_window: 8192,
+                available: true,
+                avg_latency_us: 100,
+                cost_per_1k: 1
+            },
         ];
         let chosen = route_request(&models, "general", 1024).unwrap();
         assert_eq!(chosen.id, "model-b");
@@ -1927,8 +2074,20 @@ mod tests {
     #[test]
     fn test_route_request_unavailable_excluded() {
         let models = alloc::vec![
-            ModelEntry { id: "offline".into(), context_window: 8192, available: false, avg_latency_us: 10, cost_per_1k: 0 },
-            ModelEntry { id: "online".into(), context_window: 8192, available: true, avg_latency_us: 500, cost_per_1k: 0 },
+            ModelEntry {
+                id: "offline".into(),
+                context_window: 8192,
+                available: false,
+                avg_latency_us: 10,
+                cost_per_1k: 0
+            },
+            ModelEntry {
+                id: "online".into(),
+                context_window: 8192,
+                available: true,
+                avg_latency_us: 500,
+                cost_per_1k: 0
+            },
         ];
         let chosen = route_request(&models, "general", 1024).unwrap();
         assert_eq!(chosen.id, "online");

@@ -14,8 +14,8 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 pub const CODEX_VERSION: &str = "0.149.1";
-pub const OUTPUT_INITRD: &str = "agentos-codex-0.149.1-aarch64-initrd.cpio.gz";
-pub const OUTPUT_MANIFEST: &str = "agentos-codex-0.149.1-aarch64.json";
+pub const OUTPUT_INITRD: &str = "fractalos-codex-0.149.1-aarch64-initrd.cpio.gz";
+pub const OUTPUT_MANIFEST: &str = "fractalos-codex-0.149.1-aarch64.json";
 const RECIPE_REVISION: u64 = 1;
 
 const CODEX_PACKAGE_URL: &str =
@@ -35,9 +35,9 @@ const ROOTFS_ARCHIVE_SHA256: &str =
 const CA_BUNDLE_URL: &str = "https://curl.se/ca/cacert-2025-12-02.pem";
 const CA_BUNDLE_SHA256: &str = "f1407d974c5ed87d544bd931a278232e13925177e239fca370619aba63c757b4";
 
-const CODEX_PACKAGE_ENV: &str = "AGENTOS_CODEX_PACKAGE";
-const ROOTFS_ARCHIVE_ENV: &str = "AGENTOS_CODEX_BASE_ROOTFS";
-const CA_BUNDLE_ENV: &str = "AGENTOS_CODEX_CA_BUNDLE";
+const CODEX_PACKAGE_ENV: &str = "FRACTALOS_CODEX_PACKAGE";
+const ROOTFS_ARCHIVE_ENV: &str = "FRACTALOS_CODEX_BASE_ROOTFS";
+const CA_BUNDLE_ENV: &str = "FRACTALOS_CODEX_CA_BUNDLE";
 
 #[derive(Serialize)]
 struct Artifact<'a> {
@@ -71,7 +71,7 @@ struct Manifest<'a> {
 pub fn fetch(output_dir: &Path) -> Result<()> {
     fs::create_dir_all(output_dir)
         .with_context(|| format!("failed to create {}", output_dir.display()))?;
-    if std::env::var_os("AGENTOS_CODEX_REBUILD").is_none() && existing_output_ready(output_dir)? {
+    if std::env::var_os("FRACTALOS_CODEX_REBUILD").is_none() && existing_output_ready(output_dir)? {
         println!(
             "[codex-guest] official Codex {} image already verified: {}",
             CODEX_VERSION,
@@ -127,7 +127,7 @@ pub fn fetch(output_dir: &Path) -> Result<()> {
     write_atomic(&initrd_path, &initrd)?;
     let output_hash = sha256_bytes(&initrd);
     let manifest = Manifest {
-        schema: "agentos.codex-guest.v1",
+        schema: "fractalos.codex-guest.v1",
         recipe_revision: RECIPE_REVISION,
         architecture: "aarch64-linux-musl",
         codex_version: CODEX_VERSION,
@@ -146,7 +146,7 @@ pub fn fetch(output_dir: &Path) -> Result<()> {
         },
         credential_policy: "runtime-only; no credential is stored in this image",
         workspace: "/workspace",
-        preflight_marker: "AGENTOS_CODEX_PREFLIGHT",
+        preflight_marker: "FRACTALOS_CODEX_PREFLIGHT",
         output: OutputArtifact {
             path: OUTPUT_INITRD.to_string(),
             sha256: output_hash,
@@ -181,7 +181,7 @@ fn existing_output_ready(output_dir: &Path) -> Result<bool> {
         Ok(value) => value,
         Err(_) => return Ok(false),
     };
-    if manifest.get("schema").and_then(|v| v.as_str()) != Some("agentos.codex-guest.v1")
+    if manifest.get("schema").and_then(|v| v.as_str()) != Some("fractalos.codex-guest.v1")
         || manifest.get("recipe_revision").and_then(|v| v.as_u64()) != Some(RECIPE_REVISION)
         || manifest.get("codex_version").and_then(|v| v.as_str()) != Some(CODEX_VERSION)
         || manifest.get("codex_binary_sha256").and_then(|v| v.as_str()) != Some(CODEX_BINARY_SHA256)
@@ -212,7 +212,7 @@ fn obtain_verified(env_name: &str, url: &str, expected: &str, cache: &Path) -> R
 
     println!("[codex-guest] downloading {url}");
     let response = reqwest::blocking::Client::builder()
-        .user_agent("agentos-xtask/codex-guest-v1")
+        .user_agent("fractalos-xtask/codex-guest-v1")
         .build()?
         .get(url)
         .send()
@@ -427,7 +427,7 @@ fn append_newc(
 }
 
 fn pad4(out: &mut Vec<u8>) {
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
 }
@@ -451,7 +451,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
 const NETWORK_INTERFACES: &str = r#"auto lo
 iface lo inet loopback
 
-# Activated by the AgentOS network broker once virtio-net mediation is ready.
+# Activated by the FractalOS network broker once virtio-net mediation is ready.
 iface eth0 inet dhcp
 "#;
 
@@ -474,10 +474,10 @@ version="$(/usr/local/bin/codex --version 2>&1)"
 status=$?
 after="$(cut -d. -f1 /proc/uptime 2>/dev/null)"
 ram_kib="$(sed -n 's/^MemTotal:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo)"
-printf 'AGENTOS_CODEX_PREFLIGHT status=%s version="%s" uptime_before_s=%s uptime_after_s=%s ram_kib=%s workspace=/workspace auth=runtime-only\n' "$status" "$version" "$before" "$after" "$ram_kib"
+printf 'FRACTALOS_CODEX_PREFLIGHT status=%s version="%s" uptime_before_s=%s uptime_after_s=%s ram_kib=%s workspace=/workspace auth=runtime-only\n' "$status" "$version" "$before" "$after" "$ram_kib"
 "#;
 
-const WORKSPACE_AGENTS: &str = r#"# AgentOS guest fixture
+const WORKSPACE_AGENTS: &str = r#"# FractalOS guest fixture
 
 Keep changes inside `/workspace`. Run `./test.sh` after modifying the fixture.
 "#;
@@ -511,8 +511,8 @@ mod tests {
         assert_eq!(one, two);
         assert!(one.windows(codex.len()).any(|window| window == codex));
         assert!(one
-            .windows(b"AGENTOS_CODEX_PREFLIGHT".len())
-            .any(|window| window == b"AGENTOS_CODEX_PREFLIGHT"));
+            .windows(b"FRACTALOS_CODEX_PREFLIGHT".len())
+            .any(|window| window == b"FRACTALOS_CODEX_PREFLIGHT"));
         for forbidden in [b"OPENAI_API_KEY".as_slice(), b"auth.json", b"sk-"] {
             assert!(!one
                 .windows(forbidden.len())
@@ -529,9 +529,9 @@ mod tests {
     }
 
     #[test]
-    fn codex_guest_layout_has_unpack_headroom_and_avoids_agentos_image() {
-        let dts = include_str!("../../kernel/agentos-root-task/codex-overlay.dts.in");
-        let vmm = include_str!("../../kernel/agentos-root-task/src/linux_vmm.c");
+    fn codex_guest_layout_has_unpack_headroom_and_avoids_fractalos_image() {
+        let dts = include_str!("../../kernel/fractalos-root-task/codex-overlay.dts.in");
+        let vmm = include_str!("../../kernel/fractalos-root-task/src/linux_vmm.c");
         assert!(dts.contains("reg = <0x00 0x80000000 0x00 0x30000000>"));
         assert!(dts.contains("linux,initrd-start = <0x00 0x90000000>"));
         assert!(vmm.contains("#define GUEST_RAM_SIZE          0x30000000"));

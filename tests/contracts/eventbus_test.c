@@ -9,14 +9,14 @@
  *
  * Channel: MONITOR_CH_EVENTBUS (1) from the controller's perspective.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/agent_task_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/agent_task_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/eventbus_contract.h"
 
 #define ASSERT_EVENT_CONTRACT(condition, name)                         \
     do {                                                               \
@@ -75,7 +75,7 @@ void run_eventbus_tests(microkit_channel ch)
 {
     TEST_SECTION("eventbus");
 
-    /* STATUS — must succeed; the root task maps the ring on target (agentos-gom)
+    /* STATUS — must succeed; the root task maps the ring on target (fos-gom)
      * and event_bus_main initialises it before entering its server loop. */
     ASSERT_IPC_OK(ch, MSG_EVENTBUS_STATUS, "eventbus: STATUS returns ok");
 

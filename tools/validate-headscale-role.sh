@@ -6,7 +6,7 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 role="$repo_root/guest/roles/mesh-controller"
 manifest="$role/manifest.json"
 version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["headscale_version"])' "$manifest")"
-work="$(mktemp -d /tmp/agentos-headscale-validation.XXXXXX)"
+work="$(mktemp -d /tmp/fractalos-headscale-validation.XXXXXX)"
 server_pid=""
 cleanup() {
     [ -z "$server_pid" ] || kill "$server_pid" 2>/dev/null || true
@@ -53,7 +53,7 @@ read -r http_port grpc_port metrics_port <<<"$ports"
 mkdir -p "$work/secrets" "$work/state" "$work/run"
 cp "$role/files/config.yaml" "$work/config.yaml"
 cp "$role/files/policy.hujson" "$work/policy.hujson"
-if [ "${AGENTOS_TAILSCALE_E2E:-0}" = "1" ]; then
+if [ "${FRACTALOS_TAILSCALE_E2E:-0}" = "1" ]; then
     advertised_host=host.docker.internal
     listen_host=0.0.0.0
 else
@@ -65,11 +65,11 @@ import pathlib, sys
 path=pathlib.Path(sys.argv[1])
 root=sys.argv[2]
 text=path.read_text()
-text=text.replace('https://mesh.agentos.internal:8080', f'https://{sys.argv[6]}:{sys.argv[3]}')
+text=text.replace('https://mesh.fractalos.internal:8080', f'https://{sys.argv[6]}:{sys.argv[3]}')
 text=text.replace('0.0.0.0:8080', f'{sys.argv[7]}:{sys.argv[3]}')
 text=text.replace('127.0.0.1:50443', f'127.0.0.1:{sys.argv[4]}')
 text=text.replace('127.0.0.1:9090', f'127.0.0.1:{sys.argv[5]}')
-text=text.replace('/var/db/agentos-secrets/headscale', f'{root}/secrets')
+text=text.replace('/var/db/fractalos-secrets/headscale', f'{root}/secrets')
 text=text.replace('/var/db/headscale', f'{root}/state')
 text=text.replace('/var/run/headscale', f'{root}/run')
 text=text.replace('/usr/local/etc/headscale/policy.hujson', f'{root}/policy.hujson')
@@ -106,20 +106,20 @@ base="https://127.0.0.1:${http_port}"
     enroll-key --ttl-seconds 600 --ephemeral \
     | python3 -c 'import json,sys; p=json.load(sys.stdin); assert p["ok"] and p["result"]["preAuthKey"]["key"]'
 
-if [ "${AGENTOS_TAILSCALE_E2E:-0}" = "1" ]; then
-    AGENTOS_HEADSCALE_URL="$base" \
-    AGENTOS_HEADSCALE_LOGIN_URL="https://host.docker.internal:${http_port}" \
-    AGENTOS_HEADSCALE_TOKEN_FILE="$work/api.token" \
-    AGENTOS_HEADSCALE_CA_FILE="$work/secrets/tls.crt" \
-    AGENTOS_MESH_DOCKER=1 \
+if [ "${FRACTALOS_TAILSCALE_E2E:-0}" = "1" ]; then
+    FRACTALOS_HEADSCALE_URL="$base" \
+    FRACTALOS_HEADSCALE_LOGIN_URL="https://host.docker.internal:${http_port}" \
+    FRACTALOS_HEADSCALE_TOKEN_FILE="$work/api.token" \
+    FRACTALOS_HEADSCALE_CA_FILE="$work/secrets/tls.crt" \
+    FRACTALOS_MESH_DOCKER=1 \
         bash "$repo_root/tests/e2e/test_headscale_mesh.sh"
-    if [ "${AGENTOS_MESH_TRACE:-0}" = "1" ]; then
+    if [ "${FRACTALOS_MESH_TRACE:-0}" = "1" ]; then
         "$binary" -c "$work/config.yaml" nodes list --output json >&2
     fi
-    AGENTOS_HEADSCALE_BIN="$binary" \
-    AGENTOS_HEADSCALE_CONFIG="$work/config.yaml" \
-    AGENTOS_NETCAP_MAP="$role/files/netcap-map.json" \
-    AGENTOS_NETCAP_STATE="$work/netcap-state.json" \
+    FRACTALOS_HEADSCALE_BIN="$binary" \
+    FRACTALOS_HEADSCALE_CONFIG="$work/config.yaml" \
+    FRACTALOS_NETCAP_MAP="$role/files/netcap-map.json" \
+    FRACTALOS_NETCAP_STATE="$work/netcap-state.json" \
         "$role/files/policy-sync.py"
     python3 - "$work/netcap-state.json" <<'PY'
 import json, sys

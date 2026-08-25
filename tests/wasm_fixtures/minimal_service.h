@@ -1,7 +1,7 @@
 /*
  * minimal_service.h — hand-crafted minimal WASM service module fixture
  *
- * A valid agentOS service WASM binary containing:
+ * A valid FractalOS service WASM binary containing:
  *   - WASM magic + version 1
  *   - Type section: one function type () -> ()
  *   - Function section: 4 functions (init, handle_ppc, health_check, notified)
@@ -10,13 +10,13 @@
  *                     memory (linear memory) — all exports required by the
  *                     vibe-engine validator (VSWAP_VAL_EXPORTS | VSWAP_VAL_MEMORY)
  *   - Code section: 4 minimal no-op function bodies
- *   - Custom section: "agentos.capabilities" with version byte
+ *   - Custom section: "fractalos.capabilities" with version byte
  *                     (required for VSWAP_VAL_CAPS_SECT)
  *
  * All required validation checks (VSWAP_VAL_REQUIRED) pass on this binary.
  * Use as the WASM payload in E13 pipeline tests and agent boot integration tests.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -35,7 +35,7 @@
  *  [0x1A]  export section   (58 bytes) — init, handle_ppc, health_check,
  *                                        notified, memory
  *  [0x54]  code section     (15 bytes) — 4 empty bodies
- *  [0x63]  custom section   (24 bytes) — "agentos.capabilities"
+ *  [0x63]  custom section   (24 bytes) — "fractalos.capabilities"
  */
 static const uint8_t g_minimal_wasm[] = {
     /* ── Header ──────────────────────────────────────── */
@@ -79,10 +79,10 @@ static const uint8_t g_minimal_wasm[] = {
     0x02, 0x00, 0x0B,         /* body 2                      */
     0x02, 0x00, 0x0B,         /* body 3                      */
 
-    /* ── Custom section "agentos.capabilities" ────────── */
+    /* ── Custom section "fractalos.capabilities" ────────── */
     0x00, 0x16,               /* id=0 (custom), size=22      */
     0x14,                     /* name length: 20             */
-    /* "agentos.capabilities" */
+    /* "fractalos.capabilities" */
     0x61, 0x67, 0x65, 0x6E, 0x74, 0x6F, 0x73, 0x2E,
     0x63, 0x61, 0x70, 0x61, 0x62, 0x69, 0x6C, 0x69,
     0x74, 0x69, 0x65, 0x73,

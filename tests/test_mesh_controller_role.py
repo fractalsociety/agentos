@@ -26,11 +26,11 @@ def main():
     require(len(manifest["validation_assets"]) == 4, "host validation assets incomplete")
 
     config = (files / "config.yaml").read_text()
-    require("server_url: https://mesh.agentos.internal:8080" in config,
+    require("server_url: https://mesh.fractalos.internal:8080" in config,
             "advertised and listening Headscale ports must agree")
     require("randomize_client_port" not in config, "removed v0.29 key present")
     require("write_ahead_log: true" in config, "SQLite WAL must be enabled")
-    require("/var/db/agentos-secrets/headscale" in config, "secret path missing")
+    require("/var/db/fractalos-secrets/headscale" in config, "secret path missing")
 
     policy = (files / "policy.hujson").read_text()
     require('"randomizeClientPort": true' in policy, "WireGuard port policy missing")
@@ -39,7 +39,7 @@ def main():
 
     install = (role / "install.sh").read_text()
     require("-g headscale -m 0640" in install, "Headscale cannot read role config")
-    require("subjectAltName = DNS:mesh.agentos.internal" in install,
+    require("subjectAltName = DNS:mesh.fractalos.internal" in install,
             "generated TLS certificate needs a SAN")
     require("users create agent-admin" in install and "users create agents" in install,
             "required policy identities are not provisioned")
@@ -51,15 +51,15 @@ def main():
             "FreeBSD python311 needs an unversioned python3 entry point")
     require("#!/usr/local/bin/python3.11" in install,
             "installed policy sync must not depend on the rc/cron PATH")
-    require("agentos-headscale-policy-sync || true" not in install,
+    require("fractalos-headscale-policy-sync || true" not in install,
             "first boot must not hide NetCap reconciliation failures")
     require("headscale_ready=0" in install and "management socket did not become ready" in install,
             "controller provisioning must wait for the Headscale management socket")
 
-    firstboot = (files / "agentos_mesh_firstboot.rc").read_text()
+    firstboot = (files / "fractalos_mesh_firstboot.rc").read_text()
     require("installed=0" in firstboot and 'if [ "$installed" -ne 1 ]' in firstboot,
             "first boot must propagate controller installation failures")
-    require("agentos-mesh-firstboot.log" in firstboot and 'attempt=$((attempt + 1))' in firstboot,
+    require("fractalos-mesh-firstboot.log" in firstboot and 'attempt=$((attempt + 1))' in firstboot,
             "first boot must log and retry transient installation failures")
 
     bootstrap = (repo / "tools/bootstrap-guest.sh").read_text()
@@ -88,10 +88,10 @@ EOF
         output = tmp / "netcap-state.json"
         env = os.environ.copy()
         env.update({
-            "AGENTOS_HEADSCALE_BIN": str(fake),
-            "AGENTOS_HEADSCALE_CONFIG": str(tmp / "config.yaml"),
-            "AGENTOS_NETCAP_MAP": str(files / "netcap-map.json"),
-            "AGENTOS_NETCAP_STATE": str(output),
+            "FRACTALOS_HEADSCALE_BIN": str(fake),
+            "FRACTALOS_HEADSCALE_CONFIG": str(tmp / "config.yaml"),
+            "FRACTALOS_NETCAP_MAP": str(files / "netcap-map.json"),
+            "FRACTALOS_NETCAP_STATE": str(output),
         })
         subprocess.run([str(files / "policy-sync.py")], check=True, env=env)
         state = json.loads(output.read_text())

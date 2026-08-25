@@ -1,11 +1,11 @@
 //! Capability enforcement for the simulation layer.
 //!
-//! The sim reuses the `agentos_sdk::capability` types but adds runtime
+//! The sim reuses the `fractalos_sdk::capability` types but adds runtime
 //! enforcement:  every host import that accesses a resource checks the
 //! calling agent's capability set before proceeding.
 
+use fractalos_sdk::capability::{Capability, CapabilityKind, CapabilitySet, Right, Rights};
 use std::collections::HashMap;
-use agentos_sdk::capability::{Capability, CapabilityKind, CapabilitySet, Right, Rights};
 
 /// Errors raised by capability checks.
 #[derive(Debug, thiserror::Error)]
@@ -33,8 +33,8 @@ impl SimCapStore {
     pub fn new() -> Self {
         Self {
             agent_caps: HashMap::new(),
-            revoked:    std::collections::HashSet::new(),
-            next_cptr:  1,
+            revoked: std::collections::HashSet::new(),
+            next_cptr: 1,
         }
     }
 
@@ -47,19 +47,25 @@ impl SimCapStore {
 
     /// Grant a capability to a named agent.
     pub fn grant(&mut self, agent: &str, cap: Capability) {
-        self.agent_caps.entry(agent.to_string()).or_default().add(cap);
+        self.agent_caps
+            .entry(agent.to_string())
+            .or_default()
+            .add(cap);
     }
 
     /// Convenience: grant all default capabilities needed by a generic agent.
     pub fn grant_defaults(&mut self, agent: &str) {
-
         let caps = [
             Capability::new(CapabilityKind::Compute, self.alloc_cptr(), Rights::ALL)
                 .with_hint("budget_ms=1000"),
             Capability::new(CapabilityKind::Memory, self.alloc_cptr(), Rights::ALL)
                 .with_hint("pool=standard,limit_bytes=4194304"),
-            Capability::new(CapabilityKind::ObjectStore, self.alloc_cptr(), Rights::READ_WRITE)
-                .with_hint("namespace=/"),
+            Capability::new(
+                CapabilityKind::ObjectStore,
+                self.alloc_cptr(),
+                Rights::READ_WRITE,
+            )
+            .with_hint("namespace=/"),
             Capability::new(CapabilityKind::Audit, self.alloc_cptr(), Rights::READ),
         ];
         for cap in caps {
@@ -74,9 +80,14 @@ impl SimCapStore {
 
     /// Check that `agent` holds a capability of `kind` with `right`.
     pub fn check(
-        &self, agent: &str, kind: &CapabilityKind, right: Right,
+        &self,
+        agent: &str,
+        kind: &CapabilityKind,
+        right: Right,
     ) -> Result<(), CapCheckError> {
-        let set = self.agent_caps.get(agent)
+        let set = self
+            .agent_caps
+            .get(agent)
             .ok_or_else(|| CapCheckError::Missing(format!("{:?}", kind)))?;
 
         let caps = set.find(kind);
@@ -103,5 +114,7 @@ impl SimCapStore {
 }
 
 impl Default for SimCapStore {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

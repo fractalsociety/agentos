@@ -10,15 +10,15 @@ def block(text, start, end):
 
 def main():
     repo = pathlib.Path(__file__).resolve().parents[1]
-    desc = (repo / "kernel/agentos-root-task/src/system_desc_aarch64.c").read_text()
-    root = (repo / "kernel/agentos-root-task/src/main.c").read_text()
+    desc = (repo / "kernel/fractalos-root-task/src/system_desc_aarch64.c").read_text()
+    root = (repo / "kernel/fractalos-root-task/src/main.c").read_text()
     driver = (repo / "services/net-service/net_pd.c").read_text()
     stack = (repo / "services/net-server/net_server.c").read_text()
-    wireguard = (repo / "kernel/agentos-root-task/src/wg_net.c").read_text()
+    wireguard = (repo / "kernel/fractalos-root-task/src/wg_net.c").read_text()
 
     net_pd = block(desc, '.name           = "net_pd"', '/* pd[13]')
     net_server = block(desc, '.name           = "net_server"', '/* Native inference')
-    vmm = block(desc, '/* pd[15] — guest VMM', '#if defined(AGENTOS_GUEST_BOTH)')
+    vmm = block(desc, '/* pd[15] — guest VMM', '#if defined(FRACTALOS_GUEST_BOTH)')
     assert '.irq_number = 48u' in net_pd
     assert 'SVC_ID_NET_PD' in net_server and 'PD_CNODE_SLOT_NET_PD_EP' in net_server
     assert 'NET_PD_RIGHT_FASTPATH' in net_server

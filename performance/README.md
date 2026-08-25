@@ -1,6 +1,6 @@
 # Target performance gates
 
-agentOS performance claims are backed by measurements emitted from a booted
+FractalOS performance claims are backed by measurements emitted from a booted
 seL4 target. Host-side mocks are useful for correctness checks but are not
 accepted as performance evidence.
 

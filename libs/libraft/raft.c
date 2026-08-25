@@ -1,10 +1,10 @@
 /*
- * raft.c — Raft consensus implementation for agentOS mesh
+ * raft.c — Raft consensus implementation for FractalOS mesh
  *
  * Implements §5 of the Raft paper (Ongaro & Ousterhout, 2014).
  * No dynamic allocation. Thread-safe if caller serialises raft_tick/handle_msg.
  *
- * Copyright 2026 agentOS Project (BSD-2-Clause)
+ * Copyright 2026 FractalOS Project (BSD-2-Clause)
  */
 
 #include "raft.h"

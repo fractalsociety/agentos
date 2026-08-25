@@ -1,5 +1,5 @@
 /*
- * agentOS watchdog_pd — per-slot heartbeat monitoring with hot-reload freeze
+ * FractalOS watchdog_pd — per-slot heartbeat monitoring with hot-reload freeze
  *
  * Passive PD, priority 107 (below mem_profiler at 108).
  *
@@ -37,14 +37,14 @@
  *
  * State: table[WD_MAX_SLOTS] of watchdog_slot_t
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 
-/* Opcodes OP_WD_REGISTER (0x50) .. OP_WD_RESUME (0x55) defined in agentos.h.
+/* Opcodes OP_WD_REGISTER (0x50) .. OP_WD_RESUME (0x55) defined in fractalos.h.
  * Return codes WD_OK (0x00), WD_ERR_NOENT (0x01), WD_ERR_FULL (0x02) likewise. */
 
 /* ── Channel IDs (local to this PD) ────────────────────────────────── */

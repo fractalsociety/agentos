@@ -10,12 +10,12 @@
  *   MSG_BLOCK_STATUS               — query device status
  *   MSG_BLOCK_TRIM                 — trim/discard sectors
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_block_tests(microkit_channel ch)
 {

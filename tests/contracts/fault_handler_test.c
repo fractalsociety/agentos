@@ -5,17 +5,17 @@
  *   OP_FAULT_POLICY_SET (0xE0) — set per-slot restart policy
  *   0xE1                       — FAULT_QUERY: query fault history for a slot
  *
- * Channel: 0 (placeholder — update when ch is assigned in agentos.system).
+ * Channel: 0 (placeholder — update when ch is assigned in fractalos.system).
  *
  * TODO: replace opcode literals with
  *       #include "../../contracts/fault-handler/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define FAULT_OP_QUERY   0xE1u   /* FAULT_QUERY: query fault history for slot */
 #define FAULT_OP_RESET   0xE2u   /* FAULT_RESET: clear fault counters for slot */

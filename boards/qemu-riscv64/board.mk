@@ -1,4 +1,4 @@
-# ── agentOS board: QEMU RISC-V 64 ─────────────────────────────────────────────
+# ── FractalOS board: QEMU RISC-V 64 ─────────────────────────────────────────────
 # RISC-V development / reference target.
 BOARD_NAME     := qemu-riscv64
 MICROKIT_BOARD := qemu_virt_riscv64
@@ -18,7 +18,7 @@ QEMU_CPU_TCG := rv64
 QEMU_MEM     := -m 2G
 QEMU_DISPLAY := -display none -monitor none
 
-QEMU_SERIAL_FLAGS := -serial unix:/tmp/agentos-serial.sock,server=on,wait=off
+QEMU_SERIAL_FLAGS := -serial unix:/tmp/fractalos-serial.sock,server=on,wait=off
 
 # BIOS: OpenSBI (required for RISC-V boot)
 QEMU_BIOS_FLAGS = $(if $(BIOS),-bios $(BIOS),)

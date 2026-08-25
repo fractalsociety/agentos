@@ -1,11 +1,11 @@
 /*
- * agentOS — virtio_blk PD contract test
+ * FractalOS — virtio_blk PD contract test
  * Covered opcodes: OP_BLK_READ, OP_BLK_WRITE, OP_BLK_FLUSH,
  *   OP_BLK_INFO, OP_BLK_HEALTH
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/virtio_blk_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/virtio_blk_contract.h"
 
 void run_virtio_blk_tests(microkit_channel ch) {
     TEST_SECTION("virtio_blk");

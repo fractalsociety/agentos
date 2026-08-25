@@ -1,5 +1,5 @@
 /*
- * test_logsvc.c — API tests for the agentOS LogSvc (log service)
+ * test_logsvc.c — API tests for the FractalOS LogSvc (log service)
  *
  * Covered opcodes:
  *   OP_LOG_WRITE   (0x40) — write a log entry (level, message)
@@ -11,14 +11,14 @@
  *       #include "../../contracts/logsvc/interface.h"
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST -I tests/api -o /tmp/t_logsvc \
+ *   cc -DFRACTALOS_TEST_HOST -I tests/api -o /tmp/t_logsvc \
  *       tests/api/test_logsvc.c && /tmp/t_logsvc
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 
 /* ── Opcodes ─────────────────────────────────────────────────────────────── */
@@ -430,5 +430,5 @@ int main(void) {
 }
 
 #else
-typedef int _agentos_api_test_logsvc_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_logsvc_dummy;
+#endif /* FRACTALOS_TEST_HOST */

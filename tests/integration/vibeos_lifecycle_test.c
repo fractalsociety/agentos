@@ -14,13 +14,13 @@
  * AOS_ERR_NOSYS / VIBEOS_ERR_NOT_IMPL are accepted as graceful TODO-skips
  * when the vm_manager is not wired in the simulator topology.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vibeos_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vibeos_contract.h"
 
 void run_vibeos_lifecycle_tests(void)
 {

@@ -1,14 +1,14 @@
-# agentOS Service Code Generation Prompt
+# FractalOS Service Code Generation Prompt
 
-This document is the canonical prompt template injected by the agentOS bridge
+This document is the canonical prompt template injected by the FractalOS bridge
 when requesting code generation for a hot-swappable service. The LLM must
-produce a single C99 source file that conforms to the agentOS Service ABI.
+produce a single C99 source file that conforms to the FractalOS Service ABI.
 
 ---
 
-## agentOS Service Model
+## FractalOS Service Model
 
-agentOS is a seL4-based operating system for AI agents. Services run as
+FractalOS is a seL4-based operating system for AI agents. Services run as
 Protection Domains (PDs) under the Microkit framework. The hot-swap mechanism
 lets running services be replaced at runtime without rebooting the system.
 
@@ -37,11 +37,11 @@ via the WASM module's export table.
 ## ABI Header
 
 Every generated service source file must be compatible with the following
-header. The header is provided to the compiler via `-include agentos_service_abi.h`.
+header. The header is provided to the compiler via `-include fractalos_service_abi.h`.
 
 ```c
 /*
- * agentOS Service ABI — canonical interface for hot-swappable services
+ * FractalOS Service ABI — canonical interface for hot-swappable services
  *
  * Every service loaded by the vibe hot-swap mechanism MUST implement
  * the three functions below. They are the contract between the kernel's
@@ -49,13 +49,13 @@ header. The header is provided to the compiler via `-include agentos_service_abi
  *
  * Build command (for WASM target):
  *   clang --target=wasm32-wasi -O2 -nostdlib -Wl,--no-entry -Wl,--export-all \
- *         -include agentos_service_abi.h -o service.wasm service.c
+ *         -include fractalos_service_abi.h -o service.wasm service.c
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
-#ifndef AGENTOS_SERVICE_ABI_H
-#define AGENTOS_SERVICE_ABI_H
+#ifndef FRACTALOS_SERVICE_ABI_H
+#define FRACTALOS_SERVICE_ABI_H
 
 #include <stdint.h>
 #include <stddef.h>
@@ -112,7 +112,7 @@ int service_dispatch(uint32_t label, uint32_t in_count, uint32_t out_count);
  */
 int service_health(void);
 
-#endif /* AGENTOS_SERVICE_ABI_H */
+#endif /* FRACTALOS_SERVICE_ABI_H */
 ```
 
 ---
@@ -191,13 +191,13 @@ and AOS_LABEL_HEALTH in sequence.
 
 ```c
 /*
- * storage_passthrough.c — minimal agentOS storage.v1 service
+ * storage_passthrough.c — minimal FractalOS storage.v1 service
  *
  * Implements a flat key/value store using a fixed-size static table.
- * Conforms to the agentOS Service ABI.
+ * Conforms to the FractalOS Service ABI.
  */
 
-/* agentos_service_abi.h is injected by the build system via -include */
+/* fractalos_service_abi.h is injected by the build system via -include */
 
 /* ── Storage table ──────────────────────────────────────────────────────── */
 #define MAX_ENTRIES   64
@@ -423,7 +423,7 @@ clang --target=wasm32-wasi \
       -Wl,--no-entry \
       -Wl,--export-all \
       -Wl,--allow-undefined \
-      -include /path/to/agentos_service_abi.h \
+      -include /path/to/fractalos_service_abi.h \
       -o storage_passthrough.wasm \
       storage_passthrough.c
 ```

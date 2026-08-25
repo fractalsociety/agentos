@@ -1,8 +1,8 @@
 [package]
-name = "agentos-codex-harness"
+name = "fractalos-codex-harness"
 version = "0.1.3"
 edition = "2021"
-description = "Capability-native Codex-style planning and execution loop for agentOS"
+description = "Capability-native Codex-style planning and execution loop for FractalOS"
 license = "Apache-2.0"
 
 [lib]

@@ -1,5 +1,5 @@
 /*
- * test_framework.h — agentOS Phase 5 on-target TAP test framework
+ * test_framework.h — FractalOS Phase 5 on-target TAP test framework
  *
  * This framework targets real Microkit protection domains running on seL4 or
  * the in-process simulator.  It does NOT use libc stdio; all output goes
@@ -19,7 +19,7 @@
  *       tf_tap_finish();
  *   }
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -261,7 +261,7 @@ static inline void _tf_fail_point(const char *name, const char *diag) {
         }                                                                \
     } while (0)
 
-/* ── Common agentOS error codes ──────────────────────────────────────────── */
+/* ── Common FractalOS error codes ──────────────────────────────────────────── */
 
 #define AOS_OK            0x00u
 #define AOS_ERR_NOT_FOUND 0x01u

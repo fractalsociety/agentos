@@ -1,4 +1,4 @@
-# agentOS Agent Manifest — hello-agent
+# FractalOS Agent Manifest — hello-agent
 #
 # This manifest declares the hello-agent's identity, resource requirements,
 # and capability grants. The init task reads this during boot to provision
@@ -9,8 +9,8 @@
 [agent]
 name = "hello-agent"
 version = "0.1.0"
-description = "The first agent on agentOS. Proves the system works."
-binary = "agentos-hello"
+description = "The first agent on FractalOS. Proves the system works."
+binary = "fractalos-hello"
 trust_level = 1
 
 [agent.identity]

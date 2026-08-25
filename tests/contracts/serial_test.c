@@ -1,11 +1,11 @@
 /*
- * agentOS — serial PD contract test
+ * FractalOS — serial PD contract test
  * Covered opcodes: MSG_SERIAL_OPEN, MSG_SERIAL_CLOSE, MSG_SERIAL_WRITE,
  *   MSG_SERIAL_READ, MSG_SERIAL_STATUS, MSG_SERIAL_CONFIGURE
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/serial_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/serial_contract.h"
 
 void run_serial_tests(microkit_channel ch) {
     TEST_SECTION("serial");

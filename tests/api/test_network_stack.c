@@ -40,17 +40,17 @@
  *     unknown opcode — must return SEL4_ERR_INVALID_OP
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_network_stack \
  *      tests/api/test_network_stack.c && /tmp/test_network_stack
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
@@ -83,10 +83,10 @@ static inline void dw32(uint8_t *d, int off, uint32_t v)
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Pull in the three PD implementations under AGENTOS_TEST_HOST.
- * Each file's #ifdef AGENTOS_TEST_HOST block replaces seL4 types with stubs.
+ * Pull in the three PD implementations under FRACTALOS_TEST_HOST.
+ * Each file's #ifdef FRACTALOS_TEST_HOST block replaces seL4 types with stubs.
  * ══════════════════════════════════════════════════════════════════════════ */
-#include "../../kernel/agentos-root-task/src/net_server.c"
+#include "../../kernel/fractalos-root-task/src/net_server.c"
 
 /*
  * net_pd.c and wg_net.c define overlapping static globals (active_clients,
@@ -124,7 +124,7 @@ static inline void dw32(uint8_t *d, int off, uint32_t v)
 #define net_pd_dispatch_one  _net_pd_dispatch_one
 #define net_pd_test_init     _net_pd_test_init_fn
 
-#include "../../kernel/agentos-root-task/src/net_pd.c"
+#include "../../kernel/fractalos-root-task/src/net_pd.c"
 
 #undef active_clients
 #undef slot_bitmap
@@ -158,7 +158,7 @@ static inline void dw32(uint8_t *d, int off, uint32_t v)
 #define wg_net_test_init      _wg_net_test_init_fn
 #define wg_net_timer_tick     _wg_net_timer_tick_fn
 
-#include "../../kernel/agentos-root-task/src/wg_net.c"
+#include "../../kernel/fractalos-root-task/src/wg_net.c"
 
 #undef peers
 #undef active_peer_count
@@ -774,6 +774,6 @@ int main(void)
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_test_network_stack_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_test_network_stack_dummy;
+#endif /* FRACTALOS_TEST_HOST */

@@ -14,7 +14,7 @@
  *   Root task calls vmm_register_vcpu(id, vcpu_cap, tcb_cap) for each vCPU
  *   before the VMM PD's main() runs.  After that, all vmm_vcpu_* calls work.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

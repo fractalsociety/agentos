@@ -1,9 +1,9 @@
 /*
- * mesh_raft.c — Raft integration for agentOS mesh_agent
+ * mesh_raft.c — Raft integration for FractalOS mesh_agent
  *
  * Wires raft.c into the mesh agent loop:
  *   - Serialises RaftMsg to/from a compact wire format
- *   - Sends outgoing RPCs via an agentOS MsgBus topic
+ *   - Sends outgoing RPCs via an FractalOS MsgBus topic
  *       "raft.<node_id>.<msg_type>"  (routed by the SquirrelBus)
  *   - Receives incoming RPCs via mesh_raft_on_msg() called by the
  *     mesh_agent's message-dispatch loop after deserialisation
@@ -40,7 +40,7 @@
  *   0 = rocky   (do-host1, 146.190.134.110)
  *   1 = natasha (sparky GB10)
  *
- * Copyright 2026 agentOS Project (BSD-2-Clause)
+ * Copyright 2026 FractalOS Project (BSD-2-Clause)
  */
 
 #include "raft.h"

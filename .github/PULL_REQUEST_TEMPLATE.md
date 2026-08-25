@@ -7,7 +7,7 @@ Describe the user-visible behavior or API contract changed by this PR.
 - [ ] `make test TARGET_ARCH=aarch64` passes, or the reason it was not run is documented
 - [ ] `make test TARGET_ARCH=x86_64` passes, or the reason it was not run is documented
 - [ ] New or changed IPC opcodes have contract tests
-- [ ] New PD code has a contract header under `kernel/agentos-root-task/include/contracts/`
+- [ ] New PD code has a contract header under `kernel/fractalos-root-task/include/contracts/`
 
 ## Repository Boundary
 

@@ -1,5 +1,5 @@
 /*
- * agentOS Power Manager — Unit Test
+ * FractalOS Power Manager — Unit Test
  *
  * Tests the DVFS thermal model and hysteresis logic from power_mgr.c by
  * inlining the relevant state and helper functions and exercising them
@@ -7,11 +7,11 @@
  *
  * Build:  cc -o /tmp/test_power_mgr \
  *             tests/test_power_mgr.c \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_power_mgr
  *
- * (The -DAGENTOS_POWER_MGR flag is NOT required here; the test inlines only
+ * (The -DFRACTALOS_POWER_MGR flag is NOT required here; the test inlines only
  * the thermal model logic, not the Microkit entry points.)
  */
 
@@ -24,7 +24,7 @@
 /* ══════════════════════════════════════════════════════════════════════════
  * Host-side stubs
  * ══════════════════════════════════════════════════════════════════════════ */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 static uint64_t _mrs[64];
 static inline void     microkit_mr_set(uint32_t i, uint64_t v) { _mrs[i] = v; }
@@ -41,7 +41,7 @@ static inline void microkit_dbg_puts(const char *s) { printf("%s", s); }
 
 #define LOG(fmt, ...) printf("[test] " fmt "\n", ##__VA_ARGS__)
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Inline thermal model (mirrored from power_mgr.c)
@@ -271,7 +271,7 @@ static void test_no_throttle_without_load(void) {
 
 int main(void) {
     printf("╔═════════════════════════════════════════════╗\n");
-    printf("║   agentOS Power Manager — Test Suite        ║\n");
+    printf("║   FractalOS Power Manager — Test Suite        ║\n");
     printf("╚═════════════════════════════════════════════╝\n");
 
     test_initial_state();

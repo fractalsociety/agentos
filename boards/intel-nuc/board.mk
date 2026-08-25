@@ -1,4 +1,4 @@
-# ── agentOS board: Intel NUC (x86_64 UEFI native hardware) ───────────────────
+# ── FractalOS board: Intel NUC (x86_64 UEFI native hardware) ───────────────────
 #
 # Supports any x86_64 machine with UEFI firmware and a COM1 serial port.
 # Tested on Intel NUC 12/13 series.

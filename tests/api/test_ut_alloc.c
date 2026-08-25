@@ -2,7 +2,7 @@
  * test_ut_alloc.c — API tests for the root-task untyped allocator
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 #include "ut_alloc.h"
@@ -69,7 +69,7 @@ seL4_Error seL4_Untyped_Retype(seL4_CPtr service,
     return g_default_retype_result;
 }
 
-#include "../../kernel/agentos-root-task/src/ut_alloc.c"
+#include "../../kernel/fractalos-root-task/src/ut_alloc.c"
 
 static seL4_BootInfo make_bi(seL4_SlotPos empty_start,
                               seL4_SlotPos empty_end,

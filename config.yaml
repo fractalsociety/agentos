@@ -1,8 +1,8 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# agentOS Build Configuration
+# FractalOS Build Configuration
 # ──────────────────────────────────────────────────────────────────────────────
 #
-# This file controls the target and host architectures for agentOS builds.
+# This file controls the target and host architectures for FractalOS builds.
 # The Makefile reads these values and passes them through the build pipeline.
 #
 # Supported target architectures:
@@ -15,7 +15,7 @@
 #   x86_64    — force x86_64 host toolchain
 #   aarch64   — force aarch64/arm64 host toolchain
 #
-# The target is what agentOS runs ON. The host is what you BUILD ON.
+# The target is what FractalOS runs ON. The host is what you BUILD ON.
 # Cross-compilation is fully supported: e.g. build for riscv64 on an arm64 Mac.
 #
 # Override from command line:
@@ -24,17 +24,17 @@
 #   make demo HOST_ARCH=x86_64
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Target architecture — the platform agentOS will execute on
+# Target architecture — the platform FractalOS will execute on
 target_arch: aarch64
 
-# Host architecture — the machine building agentOS (auto = detect via uname -m)
+# Host architecture — the machine building FractalOS (auto = detect via uname -m)
 host_arch: auto
 
-# Guest OS: selects the VMM guest bundled into the agentOS image.
+# Guest OS: selects the VMM guest bundled into the FractalOS image.
 #
 #   ubuntu  — include the Ubuntu Linux guest (default)
 #
-#   none    — native agentOS protection domains only
+#   none    — native FractalOS protection domains only
 #             controller, event_bus, init_agent, workers, vibe_engine,
 #             agentfs, console_mux, net_isolator
 #

@@ -16,11 +16,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../../../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
+#include "../../../kernel/fractalos-root-task/include/contracts/agent_harness_contract.h"
 #include "../../../contracts/toolsvc/interface.h"
 #include "../../../contracts/execsvc/interface.h"
-#include "../../../kernel/agentos-root-task/include/contracts/agentfs_contract.h"
-#include "../../../kernel/agentos-root-task/include/cap_authority.h"
+#include "../../../kernel/fractalos-root-task/include/contracts/agentfs_contract.h"
+#include "../../../kernel/fractalos-root-task/include/cap_authority.h"
 
 #ifndef AGENT_HARNESS_INITIAL_CAPS
 #define AGENT_HARNESS_INITIAL_CAPS CAPBROKER_HARNESS_INITIAL_CAPS
@@ -61,19 +61,19 @@
 
 #if AGENT_HARNESS_READ_ONLY
 static const char harness_system_prompt[] =
-    "You are an AgentOS read-only agent. Return exactly one JSON object and "
+    "You are an FractalOS read-only agent. Return exactly one JSON object and "
     "no markdown. Actions: {\"action\":\"tool\",\"tool\":\"name\","
     "\"input\":\"text\"}; or {\"action\":\"final\",\"summary\":\"result\"}. "
     "Available repository tools are repo.search and repo.read. You cannot "
     "write memory, execute code, or access the network directly.";
 #else
 static const char harness_system_prompt[] =
-    "You are an AgentOS coding agent. Return exactly one JSON object and no "
+    "You are an FractalOS coding agent. Return exactly one JSON object and no "
     "markdown. Actions: {\"action\":\"memory_write\",\"path\":\"relative/path\","
     "\"content\":\"text\"}; {\"action\":\"memory_read\",\"path\":\"relative/path\"}; "
     "{\"action\":\"verify\",\"path\":\"relative/path\",\"expected\":\"text\"}; "
     "{\"action\":\"test\",\"path\":\"relative/path\",\"profile\":"
-    "\"c11_compile|agentos_repo_tests\"}; "
+    "\"c11_compile|fractalos_repo_tests\"}; "
     "{\"action\":\"tool\",\"tool\":\"name\",\"input\":\"text\"}; or "
     "{\"action\":\"final\",\"summary\":\"result\"}. Never return final before "
     "required verification succeeds. repo.search accepts a literal query and "
@@ -485,7 +485,7 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
     char *exec_observation = (char *)(runtime_arena
                                       + HARNESS_EXEC_OUTPUT_OFFSET);
 #endif
-    static const char echo_prefix[] = "agentos:";
+    static const char echo_prefix[] = "fractalos:";
 
     for (uint32_t step = 1u; step <= req->max_steps; step++) {
         current_task.state = HARNESS_STATE_PLANNING;
@@ -722,8 +722,9 @@ uint32_t harness_runtime_submit(const struct harness_req_submit *req,
                             "c11_compile", 11u))
                 profile_id = EXECSVC_PROFILE_C11_COMPILE;
             else if (bytes_equal(decoded_profile, decoded_profile_len,
-                                 "agentos_repo_tests", 18u))
-                profile_id = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+                                 "fractalos_repo_tests",
+                                 sizeof("fractalos_repo_tests") - 1u))
+                profile_id = EXECSVC_PROFILE_FRACTALOS_REPO_TEST;
             else
                 return fail_task(HARNESS_ERR_PROTOCOL, rep);
 
@@ -829,12 +830,12 @@ uint32_t harness_runtime_cancel(uint32_t task_id)
     return HARNESS_OK;
 }
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 
 #include "../../../contracts/modelsvc/interface.h"
-#include "../../../kernel/agentos-root-task/include/sel4_client.h"
-#include "../../../kernel/agentos-root-task/include/sel4_server.h"
-#include "../../../kernel/agentos-root-task/include/system_desc.h"
+#include "../../../kernel/fractalos-root-task/include/sel4_client.h"
+#include "../../../kernel/fractalos-root-task/include/sel4_server.h"
+#include "../../../kernel/fractalos-root-task/include/system_desc.h"
 
 static sel4_server_t harness_server;
 
@@ -1059,7 +1060,7 @@ static uint32_t target_test_backend(
     const uint32_t source_rel = 0x100u;
     const uint32_t output_rel = 0x7000u;
     if ((profile_id != EXECSVC_PROFILE_C11_COMPILE
-         && profile_id != EXECSVC_PROFILE_AGENTOS_REPO_TEST)
+         && profile_id != EXECSVC_PROFILE_FRACTALOS_REPO_TEST)
         || source_len == 0u || source_len > EXECSVC_SOURCE_MAX
         || output_capacity == 0u || output_capacity > EXECSVC_OUTPUT_MAX
         || exit_code == NULL || output_len == NULL)
@@ -1067,7 +1068,7 @@ static uint32_t target_test_backend(
     uint8_t *exec_arena = (uint8_t *)(uintptr_t)
         EXECSVC_CLIENT_ARENA_VADDR(AGENT_HARNESS_BOOTSTRAP_CLIENT_ID);
     uint32_t transport_len = source_len;
-    if (profile_id == EXECSVC_PROFILE_AGENTOS_REPO_TEST) {
+    if (profile_id == EXECSVC_PROFILE_FRACTALOS_REPO_TEST) {
         (void)path;
         (void)path_len;
         const uint32_t export_rel = 0x100u;

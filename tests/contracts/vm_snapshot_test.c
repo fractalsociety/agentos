@@ -1,10 +1,10 @@
 /*
- * agentOS — vm_snapshot PD contract test
+ * FractalOS — vm_snapshot PD contract test
  * Covered opcodes: OP_VM_SNAPSHOT_REQ (OP_VM_SNAPSHOT), OP_VM_RESTORE_REQ (OP_VM_RESTORE)
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vm_snapshot_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vm_snapshot_contract.h"
 
 void run_vm_snapshot_tests(microkit_channel ch) {
     TEST_SECTION("vm_snapshot");

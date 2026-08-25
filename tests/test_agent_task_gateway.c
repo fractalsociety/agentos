@@ -3,10 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../kernel/agentos-root-task/include/contracts/agent_harness_contract.h"
-#include "../kernel/agentos-root-task/include/contracts/eventbus_contract.h"
-#include "../kernel/agentos-root-task/include/agentos.h"
-#include "../kernel/agentos-root-task/include/agent_task_gateway.h"
+#include "../kernel/fractalos-root-task/include/contracts/agent_harness_contract.h"
+#include "../kernel/fractalos-root-task/include/contracts/eventbus_contract.h"
+#include "../kernel/fractalos-root-task/include/fractalos.h"
+#include "../kernel/fractalos-root-task/include/agent_task_gateway.h"
 
 static uint8_t arena[HARNESS_SHMEM_SIZE];
 static uint32_t installed_caps;
@@ -15,7 +15,7 @@ static uint32_t submit_calls;
 static struct eventbus_agent_event recorded_events[128];
 static uint32_t recorded_event_count;
 
-uint32_t agentos_eventbus_record(struct eventbus_agent_event *event)
+uint32_t fractalos_eventbus_record(struct eventbus_agent_event *event)
 {
     if (event == NULL || recorded_event_count >= 128u)
         return EVENTBUS_AGENT_EVENT_ERR_INVALID;
@@ -351,7 +351,47 @@ int main(void)
     assert(agent_task_gateway_verify(AGENT_TASK_GATEWAY_RIGHT, &verify,
                                      &verify_reply) == AGENT_TASK_OK);
     assert(verify_reply.verify_status == AGENT_TASK_VERIFY_ACCEPTED);
+    assert(verify_reply.feedback_code == AGENT_TASK_FEEDBACK_NONE);
     assert(recorded_type_count(EVENTBUS_EVENT_TASK_VERIFY) == 1u);
+
+    /* v1 VERIFY cannot mint commit/promotion authority. */
+    struct agent_task_req_verify legacy = verify;
+    legacy.evidence.evidence_version = AGENT_TASK_VERIFY_VERSION_V1;
+    assert(agent_task_gateway_verify(AGENT_TASK_GATEWAY_RIGHT, &legacy,
+                                     &verify_reply)
+           == AGENT_TASK_ERR_PROMOTION_FORBIDDEN);
+    assert(verify_reply.verify_status == AGENT_TASK_VERIFY_REJECTED);
+    assert(verify_reply.feedback_code == AGENT_TASK_FEEDBACK_POLICY);
+
+    /* Incomplete v2 evidence returns repair-safe rejection, not promotion data. */
+    struct agent_task_req_verify incomplete = verify;
+    incomplete.evidence.test_count = 0u;
+    assert(agent_task_gateway_verify(AGENT_TASK_GATEWAY_RIGHT, &incomplete,
+                                     &verify_reply) == AGENT_TASK_OK);
+    assert(verify_reply.verify_status == AGENT_TASK_VERIFY_REJECTED);
+    assert(verify_reply.feedback_code
+           == AGENT_TASK_FEEDBACK_EVIDENCE_INCOMPLETE);
+
+    /* Re-admit canonical evidence after the repair-safe reject. */
+    assert(agent_task_gateway_verify(AGENT_TASK_GATEWAY_RIGHT, &verify,
+                                     &verify_reply) == AGENT_TASK_OK);
+    assert(verify_reply.verify_status == AGENT_TASK_VERIFY_ACCEPTED);
+
+    struct agent_task_req_commit commit = {0};
+    commit.task = fractal_reply.task;
+    commit.authority_epoch = authority_epoch;
+    commit.nonblocking = AGENT_TASK_NONBLOCKING;
+    commit.candidate_root[0] = 1u;
+    commit.evidence_sequence = verify_reply.evidence_sequence;
+    struct agent_task_reply_commit commit_reply;
+    assert(agent_task_gateway_commit(AGENT_TASK_GATEWAY_RIGHT, &commit,
+                                     &commit_reply) == AGENT_TASK_OK);
+    assert(commit_reply.consumed == 1u);
+
+    /* Unconsumed evidence is single-use. */
+    assert(agent_task_gateway_commit(AGENT_TASK_GATEWAY_RIGHT, &commit,
+                                     &commit_reply)
+           == AGENT_TASK_ERR_VERIFY_REQUIRED);
 
     struct agent_task_req_terminal_result terminal = {
         .task = fractal_reply.task,

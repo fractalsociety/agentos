@@ -1,14 +1,14 @@
 /*
- * raft.h — Raft consensus for agentOS multi-board mesh
+ * raft.h — Raft consensus for FractalOS multi-board mesh
  *
- * Implements Raft leader election and log replication for the agentOS mesh,
+ * Implements Raft leader election and log replication for the FractalOS mesh,
  * enabling automatic failover when Rocky (do-host1) goes offline and
  * consistent GPU task queue state across sparky and do-host1.
  *
  * Scope: leader election + log replication for GPU scheduler queue state.
  *        Non-GPU queue state remains eventually consistent (no Raft).
  *
- * Transport: messages are exchanged via the agentOS SquirrelBus
+ * Transport: messages are exchanged via the FractalOS SquirrelBus
  *   (POST /api/squirrelbus/raft) or directly via TCP (port 8790).
  *   Agents call raft_tick() periodically from their heartbeat loop.
  *
@@ -17,7 +17,7 @@
  * Reference: Ongaro & Ousterhout "In Search of an Understandable Consensus
  *            Algorithm" (2014). Section numbers in comments refer to the paper.
  *
- * Copyright 2026 agentOS Project (BSD-2-Clause)
+ * Copyright 2026 FractalOS Project (BSD-2-Clause)
  */
 
 #pragma once

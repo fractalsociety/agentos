@@ -1,12 +1,12 @@
 /*
- * main.c — agentOS AArch64 ELF loader (runs before seL4)
+ * main.c — FractalOS AArch64 ELF loader (runs before seL4)
  *
  * QEMU loads loader.elf as a proper ELF at 0x44000000 (entry = _start in
  * start.S which calls loader_main here).  A second QEMU loader device places
- * the agentos.img blob at IMAGE_DATA_ADDR.
+ * the fractalos.img blob at IMAGE_DATA_ADDR.
  *
  * Boot sequence:
- *   1. Parse agentos_img_hdr_t from IMAGE_DATA_ADDR
+ *   1. Parse fractalos_img_hdr_t from IMAGE_DATA_ADDR
  *   2. Load seL4 kernel ELF LOAD segments → physical addresses
  *   3. Load root_task ELF LOAD segments → physical addresses
  *   4. Set up EL2 page tables (L0 + L1, 1 GB blocks)
@@ -17,7 +17,7 @@
  *   0x40000000  DRAM start (QEMU virt, 2 GB)
  *   0x44000000  loader.elf load address (this code)
  *   0x44010000  loader stack top
- *   0x48000000  agentos.img blob (mapped by QEMU loader device, addr=)
+ *   0x48000000  fractalos.img blob (mapped by QEMU loader device, addr=)
  *   0x60000000  seL4 kernel physical load address (from sel4.elf p_paddr)
  *   0x41000000  root_task physical load address (from root_task.elf p_paddr)
  *
@@ -30,17 +30,17 @@
  *   x5 = dtb_size        (0 = no DTB)
  *   PC = 0x8060000000    (kernel virtual entry)
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdint.h>
 #include "elf.h"
-#include "agentos_img.h"
+#include "fractalos_img.h"
 
 /* ── Memory addresses ─────────────────────────────────────────────────────── */
 
-/* QEMU loads the agentos.img blob here */
+/* QEMU loads the fractalos.img blob here */
 #define IMAGE_DATA_ADDR   UINT64_C(0x48000000)
 
 /* ── Minimal PL011 UART (QEMU virt AArch64 at 0x09000000) ───────────────── */
@@ -254,14 +254,14 @@ extern void setup_mmu(uint64_t l0_table_pa);
 
 void loader_main(void)
 {
-    uart_puts("\nagentOS loader\n");
+    uart_puts("\nFractalOS loader\n");
 
     const uint8_t *img = (const uint8_t *)IMAGE_DATA_ADDR;
 
     /* 1. Validate image header */
-    const agentos_img_hdr_t *hdr = (const agentos_img_hdr_t *)img;
+    const fractalos_img_hdr_t *hdr = (const fractalos_img_hdr_t *)img;
     uart_puts("image magic: "); uart_puthex(hdr->magic); uart_puts("\n");
-    if (hdr->magic != AGENTOS_IMAGE_MAGIC) {
+    if (hdr->magic != FRACTALOS_IMAGE_MAGIC) {
         uart_puts("FATAL: bad magic\n");
         for (;;) { __asm__ volatile("wfe"); }
     }

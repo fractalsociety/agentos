@@ -12,12 +12,12 @@
  * TODO: replace opcode literals with
  *       #include "../../contracts/time-partition/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define TPART_OP_ALLOC   0x01u
 #define TPART_OP_FREE    0x02u

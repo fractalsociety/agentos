@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — guest_contract.h lifecycle tests
+# FractalOS E2E — guest_contract.h lifecycle tests
 #
 # Exercises the full MSG_GUEST_* lifecycle:
 #   MSG_GUEST_CREATE → MSG_GUEST_BIND_DEVICE → MSG_GUEST_SET_MEMORY →
@@ -34,13 +34,13 @@ VMM_TYPE="${E2E_GUEST_VMM_TYPE:-freebsd}"
 
 cc_post() {
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
 
 cc_get() {
-    curl -sf --max-time 5 "${CC_BASE}/api/agentos/cc/$1" 2>/dev/null
+    curl -sf --max-time 5 "${CC_BASE}/api/fractalos/cc/$1" 2>/dev/null
 }
 
 ok_field() {
@@ -51,7 +51,7 @@ ok_field() {
 
 if [ "${BRIDGE_AVAIL}" = "0" ]; then
     skip "guest_contract: CC bridge not available — skipping lifecycle tests"
-    printf "  (filed as known gap: bridge must expose /api/agentos/cc/guest/* endpoints)\n"
+    printf "  (filed as known gap: bridge must expose /api/fractalos/cc/guest/* endpoints)\n"
     exit 2
 fi
 

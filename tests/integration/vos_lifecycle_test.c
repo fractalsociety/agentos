@@ -9,24 +9,24 @@
  * the instance table and blob store.
  *
  * Build:
- *   cc -DAGENTOS_TEST_HOST \
- *      -I kernel/agentos-root-task/include \
+ *   cc -DFRACTALOS_TEST_HOST \
+ *      -I kernel/fractalos-root-task/include \
  *      -I tests/harness \
  *      tests/integration/vos_lifecycle_test.c \
- *      kernel/agentos-root-task/src/vos_create.c \
- *      kernel/agentos-root-task/src/vos_destroy.c \
- *      kernel/agentos-root-task/src/vos_snapshot.c \
- *      kernel/agentos-root-task/src/vos_restore.c \
+ *      kernel/fractalos-root-task/src/vos_create.c \
+ *      kernel/fractalos-root-task/src/vos_destroy.c \
+ *      kernel/fractalos-root-task/src/vos_snapshot.c \
+ *      kernel/fractalos-root-task/src/vos_restore.c \
  *      -o test_lifecycle && ./test_lifecycle
  *
  * Expected output on pass: last line "TAP_DONE:0"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifndef AGENTOS_TEST_HOST
-#error "vos_lifecycle_test.c must be compiled with -DAGENTOS_TEST_HOST"
+#ifndef FRACTALOS_TEST_HOST
+#error "vos_lifecycle_test.c must be compiled with -DFRACTALOS_TEST_HOST"
 #endif
 
 #include <stdio.h>    /* include system stdio before any project headers */

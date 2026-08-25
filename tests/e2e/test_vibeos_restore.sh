@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — VOS_RESTORE tests
+# FractalOS E2E — VOS_RESTORE tests
 #
 # Exercises the full snapshot→restore lifecycle:
 #   VOS_CREATE → VOS_BIND_DEVICE → VOS_BOOT → VOS_SNAPSHOT →
@@ -38,13 +38,13 @@ HAVE_SSH="${HAVE_SSH_TOOLS:-0}"
 
 cc_post() {
     curl -sf --max-time 10 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
 
 cc_get() {
-    curl -sf --max-time 10 "${CC_BASE}/api/agentos/cc/$1" 2>/dev/null
+    curl -sf --max-time 10 "${CC_BASE}/api/fractalos/cc/$1" 2>/dev/null
 }
 
 ok_field() { printf '%s' "$1" | grep -q '"ok":true'; }
@@ -124,7 +124,7 @@ else
 fi
 
 # Optionally write a sentinel file via SSH to verify state survives restore
-SENTINEL_VALUE="agentos-restore-$(date +%s)"
+SENTINEL_VALUE="fractalos-restore-$(date +%s)"
 if [ "${HAVE_SSH}" = "1" ] && guest_ssh true 2>/dev/null; then
     guest_ssh "echo '${SENTINEL_VALUE}' > /tmp/restore_sentinel" 2>/dev/null && \
         pass "SSH: sentinel file written (${SENTINEL_VALUE})" || \

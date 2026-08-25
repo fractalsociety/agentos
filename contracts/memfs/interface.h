@@ -1,12 +1,12 @@
 /*
- * agentOS MemFS IPC Contract — interface.h
+ * FractalOS MemFS IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the MemFS virtual filesystem service.
  * MemFS is an in-memory filesystem with per-agent namespaces and semantic
  * tagging.  It is the reference storage service; agents may vibe-code a
  * replacement (e.g. the storage.v1 service which provides identical opcodes).
  *
- * The storage.v1 ABI (in services/abi/agentos_service_abi.h) reuses the
+ * The storage.v1 ABI (in services/abi/fractalos_service_abi.h) reuses the
  * same STORAGE_OP_* opcode space; MemFS implements those same semantics.
  *
  * IPC mechanism: seL4_Call / seL4_Reply.
@@ -14,7 +14,7 @@
  * File paths and data pass through seL4 message registers for small payloads;
  * larger data uses a shared memory region (shmem offset/length pair).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -43,7 +43,7 @@
 
 /* ── Opcodes ─────────────────────────────────────────────────────────────── */
 
-/* Primary storage ops (match STORAGE_OP_* in agentos_service_abi.h) */
+/* Primary storage ops (match STORAGE_OP_* in fractalos_service_abi.h) */
 #define MEMFS_OP_WRITE          0x30u   /* create or overwrite */
 #define MEMFS_OP_READ           0x31u   /* read file contents */
 #define MEMFS_OP_DELETE         0x32u   /* delete file */

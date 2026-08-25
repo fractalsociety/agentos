@@ -1,6 +1,6 @@
 # ExecSvc
 
-ExecSvc is the capability-gated validation boundary for native AgentOS
+ExecSvc is the capability-gated validation boundary for native FractalOS
 workers. A caller must possess a minted `SVC_ID_EXEC_SERVER` endpoint cap, and
 the cap's immutable badge selects one 48 KiB window in the service arena and
 contains the exact profile-right mask. Holding compile-only authority does not
@@ -18,7 +18,7 @@ compile-only C11 validation with fixed flags through the shared
 `exec_transport` PD. The worker has no transport endpoint, device frame, host
 socket, compiler process, ModelCap, or NetCap.
 
-`EXECSVC_PROFILE_AGENTOS_REPO_TEST` accepts a badge-owned AgentFS overlay bundle
+`EXECSVC_PROFILE_FRACTALOS_REPO_TEST` accepts a badge-owned AgentFS overlay bundle
 containing at most 64 relative-path files within the common 24 KiB input bound,
 snapshots the administrator-selected Git `HEAD` into a temporary workspace,
 and runs the administrator-built shared `xtask test` binary. The worker cannot

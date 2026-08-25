@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bridge AgentOS's dedicated VirtIO model console to the local model bridge."""
+"""Bridge FractalOS's dedicated VirtIO model console to the local model bridge."""
 
 from __future__ import annotations
 
@@ -69,9 +69,9 @@ def serve(sock: socket.socket, bridge_url: str, timeout: float, trace: bool = Fa
         raw = recv_exact(sock, HEADER.size)
         magic, version, body_len, response_cap = HEADER.unpack(raw)
         if magic != MAGIC or version != VERSION:
-            raise ValueError("invalid AgentOS model transport header")
+            raise ValueError("invalid FractalOS model transport header")
         if not 0 < body_len <= MAX_BODY or response_cap > MAX_BODY:
-            raise ValueError("AgentOS model transport bounds violation")
+            raise ValueError("FractalOS model transport bounds violation")
         body = recv_exact(sock, body_len)
         if trace:
             print(

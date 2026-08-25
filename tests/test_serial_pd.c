@@ -1,5 +1,5 @@
 /*
- * agentOS serial_pd — Contract Unit Test
+ * FractalOS serial_pd — Contract Unit Test
  *
  * Tests all IPC opcodes (success + error paths) without seL4 or Microkit.
  * UART hardware I/O is stubbed; the test exercises client-slot lifecycle,
@@ -7,8 +7,8 @@
  *
  * Build:  cc -o /tmp/test_serial_pd \
  *             tests/test_serial_pd.c \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_serial_pd
  */
 
@@ -19,7 +19,7 @@
 #include <assert.h>
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Host-side Microkit stubs — must come before any agentos.h include
+ * Host-side Microkit stubs — must come before any fractalos.h include
  * ══════════════════════════════════════════════════════════════════════════ */
 
 static uint64_t _mrs[64];
@@ -34,10 +34,10 @@ static inline void microkit_dbg_puts(const char *s) { (void)s; }
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Serial contract constants — inlined to avoid microkit.h pull-in
- * These must stay in sync with agentos.h and serial_contract.h.
+ * These must stay in sync with fractalos.h and serial_contract.h.
  * ══════════════════════════════════════════════════════════════════════════ */
 
-/* Opcodes (from agentos.h) */
+/* Opcodes (from fractalos.h) */
 #define MSG_SERIAL_OPEN       0x2001u
 #define MSG_SERIAL_CLOSE      0x2002u
 #define MSG_SERIAL_WRITE      0x2003u

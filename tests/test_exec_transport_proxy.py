@@ -95,7 +95,7 @@ class ExecTransportProxyTests(unittest.TestCase):
             self.assertEqual(blocked, 2)
 
     def test_repository_bundle_is_bounded_and_cannot_escape_workspace(self):
-        content = b"int agentos_repo_answer(void) { return 42; }\n"
+        content = b"int fractalos_repo_answer(void) { return 42; }\n"
         path, decoded = PROXY.parse_repo_bundle(self.repo_bundle(
             b"tests/fixtures/repo_agent/answer.c", content
         ))
@@ -123,15 +123,15 @@ class ExecTransportProxyTests(unittest.TestCase):
     def test_shared_repository_index_searches_and_reads_bounded_snapshot(self):
         index = PROXY.RepositoryIndex({
             pathlib.PurePosixPath("src/answer.c"):
-                b"int agentos_repo_answer(void) { return 0; }\n",
+                b"int fractalos_repo_answer(void) { return 0; }\n",
             pathlib.PurePosixPath("README.md"): b"agent operating system\n",
         })
-        code, matches = index.search(b"agentos_repo_answer", 4096)
+        code, matches = index.search(b"fractalos_repo_answer", 4096)
         self.assertEqual(code, 0)
         self.assertIn(b"src/answer.c:1:", matches)
         code, content = index.read(b"src/answer.c", 4096)
         self.assertEqual(code, 0)
-        self.assertEqual(content, b"int agentos_repo_answer(void) { return 0; }\n")
+        self.assertEqual(content, b"int fractalos_repo_answer(void) { return 0; }\n")
         for unsafe in (b"../etc/passwd", b".git/config", b"/etc/passwd"):
             code, _ = index.read(unsafe, 4096)
             self.assertEqual(code, 2)
@@ -146,12 +146,12 @@ class ExecTransportProxyTests(unittest.TestCase):
             "clang", 1.0, repository_index=index
         )
         status, exit_code, output = runner(
-            PROXY.PROFILE_AGENTOS_REPO_SEARCH, b"needle", 1024
+            PROXY.PROFILE_FRACTALOS_REPO_SEARCH, b"needle", 1024
         )
         self.assertEqual((status, exit_code), (0, 0))
         self.assertIn(b"tracked.txt:1", output)
         status, exit_code, output = runner(
-            PROXY.PROFILE_AGENTOS_REPO_READ, b"tracked.txt", 1024
+            PROXY.PROFILE_FRACTALOS_REPO_READ, b"tracked.txt", 1024
         )
         self.assertEqual((status, exit_code, output),
                          (0, 0, b"shared needle\n"))
@@ -162,7 +162,7 @@ class ExecTransportProxyTests(unittest.TestCase):
             shutil.which("clang"), 5.0, None, "/nonexistent/xtask", 5.0
         )
         status, exit_code, output = runner(
-            PROXY.PROFILE_AGENTOS_REPO_TEST,
+            PROXY.PROFILE_FRACTALOS_REPO_TEST,
             self.repo_bundle(b"src/answer.c", b"int answer(void){return 42;}\n"),
             1024,
         )

@@ -1,7 +1,7 @@
-# agentOS IPC Contract Framework
+# FractalOS IPC Contract Framework
 
 This directory contains the formal seL4 IPC API contracts for every
-protection domain (PD) service in agentOS.  Each subdirectory defines the
+protection domain (PD) service in FractalOS.  Each subdirectory defines the
 wire-level ABI for one service: opcodes, packed request/reply structs, error
 codes, and a prose description of the PD's role, channels, and shared memory
 conventions.
@@ -102,7 +102,7 @@ To avoid collisions, opcode ranges are allocated per service:
 
 | Range | Service |
 |-------|---------|
-| 0x0001 – 0x00FF | Legacy seL4 label opcodes (agentos.h MSG_*) |
+| 0x0001 – 0x00FF | Legacy seL4 label opcodes (fractalos.h MSG_*) |
 | 0x0010 – 0x001F | VM manager (OP_VM_*) |
 | 0x0040 – 0x005F | VibeEngine (OP_VIBE_*) |
 | 0x0050 – 0x005F | WatchdogPD (OP_WD_*) |
@@ -139,7 +139,7 @@ is no conflict at the seL4 channel level.
 ## Source References
 
 - `tools/topology.yaml` — authoritative PD and channel definitions
-- `kernel/agentos-root-task/include/agentos.h` — system-wide opcode constants
-- `kernel/agentos-root-task/include/net_server.h` — NetServer OP_NET_* values
-- `services/abi/agentos_service_abi.h` — WASM hot-swap service ABI
+- `kernel/fractalos-root-task/include/fractalos.h` — system-wide opcode constants
+- `kernel/fractalos-root-task/include/net_server.h` — NetServer OP_NET_* values
+- `services/abi/fractalos_service_abi.h` — WASM hot-swap service ABI
 - `userspace/servers/*/src/lib.rs` — Rust userspace server implementations

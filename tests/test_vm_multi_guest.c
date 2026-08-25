@@ -20,7 +20,7 @@
  * Run:
  *   /tmp/test_vm_multi_guest
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -406,7 +406,7 @@ static void test_four_slots_round_robin(void)
 int main(void)
 {
     printf("╔══════════════════════════════════════════════════════╗\n");
-    printf("║  agentOS Multi-Guest VM Scheduler — Test Suite       ║\n");
+    printf("║  FractalOS Multi-Guest VM Scheduler — Test Suite       ║\n");
     printf("╚══════════════════════════════════════════════════════╝\n");
 
     test_single_slot_accumulates_ticks();

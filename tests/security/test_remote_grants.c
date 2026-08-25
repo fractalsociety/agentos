@@ -12,8 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "../../kernel/agentos-root-task/include/contracts/auth_server_contract.h"
-#include "../../kernel/agentos-root-task/include/contracts/cap_broker_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/auth_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/contracts/cap_broker_contract.h"
 
 #define CALLER_BADGE UINT64_C(0x4d45534800000001)
 
@@ -66,11 +66,11 @@ static uint32_t emit_event(uint32_t event_type, uint32_t decision,
                            const mesh_execution_lease_t *lease,
                            uint64_t local_badge, void *ctx)
 {
-    (void)event_type; (void)decision; (void)grant; (void)lease;
+    (void)event_type; (void)decision; (void)status; (void)grant; (void)lease;
     (void)local_badge;
     struct fixture *fixture = (struct fixture *)ctx;
     fixture->events++;
-    return status;
+    return EVENTBUS_AGENT_EVENT_OK;
 }
 
 static mesh_remote_grant_t valid_grant(struct fixture *fixture)
@@ -177,6 +177,32 @@ int main(void)
     check(!mesh_grant_audience_matches(&wrong_audience, &fixture.ctx.local_node),
           "tampered audience cannot match the local node");
 
+    mesh_remote_grant_t expired = grant;
+    expired.expiry_unix_ms = fixture.ctx.now_unix_ms;
+    check(mesh_agent_admit_remote_grant(&fixture.mesh, &expired, &fixture.ctx,
+                                        0u, &badge) == MESH_AUTHZ_ERR_EXPIRED,
+          "expired grant is denied before dispatch");
+
+    mesh_remote_grant_t over_budget = grant;
+    over_budget.budget_units = 0u;
+    check(mesh_agent_admit_remote_grant(&fixture.mesh, &over_budget,
+                                        &fixture.ctx, 0u, &badge)
+              == MESH_AUTHZ_ERR_BUDGET,
+          "over-budget grant is denied before dispatch");
+
+    mesh_remote_grant_t fabricated = grant;
+    fabricated.signature[0] = 0u;
+    check(mesh_agent_admit_remote_grant(&fixture.mesh, &fabricated,
+                                        &fixture.ctx, 0u, &badge)
+              == MESH_AUTHZ_ERR_SIGNATURE,
+          "fabricated grant signature is denied before dispatch");
+
+    check(mesh_agent_admit_remote_grant(&fixture.mesh, &grant, &fixture.ctx,
+                                        CAP_BROKER_REMOTE_BADGE_PREFIX | 1u,
+                                        &badge)
+              == MESH_AUTHZ_ERR_REMOTE_BADGE,
+          "remote-badge injection is denied before CapBroker derivation");
+
     mesh_revocation_epoch_t current = {
         .authority_epoch = grant.authority_epoch,
         .revocation_epoch = grant.revocation_epoch + 1u,
@@ -185,6 +211,27 @@ int main(void)
           "stale revocation epoch is rejected");
     check(!mesh_remote_badge_accepted(CAP_BROKER_REMOTE_BADGE_PREFIX | 1u),
           "remote-badge injection is never accepted as authority");
+
+    mesh_execution_lease_t lease;
+    memset(&lease, 0, sizeof(lease));
+    lease.lease_id = 1u;
+    lease.fence_epoch = 99u;
+    lease.expires_unix_ms = 1500u;
+    lease.authority_epoch = grant.authority_epoch;
+    lease.revocation_epoch = grant.revocation_epoch;
+    lease.holder_node = grant.subject_node;
+    lease.subject_agent = grant.subject_agent;
+    lease.space_id = grant.space_id;
+    lease.nonce[0] = 0xA1u;
+    lease.signature[0] = 0xA5u;
+    fixture.ctx.expected_lease_fence_epoch = 99u;
+    fixture.ctx.verify_lease = NULL; /* force lease path through field checks when wired */
+    check(mesh_agent_validate_execution_lease(&lease, &grant, &fixture.ctx)
+              == MESH_AUTHZ_ERR_BAD_ARG,
+          "execution lease validation requires a lease verifier callback");
+    fixture.ctx.expected_lease_fence_epoch = 100u;
+    /* Partition fence is checked only after signature verify is present; the
+     * dedicated remote_authority suite covers the full lease fence. */
 
     mesh_replay_cursor_t cursor = { .highest_sequence = 12u };
     check(!mesh_sequence_accept(&cursor, 12u), "replayed frame is rejected");

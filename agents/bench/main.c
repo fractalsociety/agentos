@@ -1,10 +1,10 @@
 /*
- * agentOS Bench Agent — IPC batch throughput test
+ * FractalOS Bench Agent — IPC batch throughput test
  *
  * Compares single-publish vs batch-publish to the EventBus PD.
  * Runs 100 events through each path and reports cycle counts.
  *
- * Protection domain layout (must match agentos.system):
+ * Protection domain layout (must match fractalos.system):
  *   CH_BENCH_EVENTBUS   — this PD's PPC channel to event_bus
  *
  * The bench agent shares the eventbus_ring memory region (read/write)
@@ -12,8 +12,8 @@
  * MSG_EVENTBUS_PUBLISH_BATCH.
  */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 
 /* Channel ID to the EventBus from this PD (must match .system file) */
 #define CH_BENCH_EVENTBUS  3
@@ -73,8 +73,8 @@ static uint64_t bench_single(void) {
 /* ── Batch-publish benchmark ────────────────────────────────────────────── */
 
 static uint64_t bench_batch(void) {
-    volatile agentos_batch_event_t *staging =
-        (volatile agentos_batch_event_t *)
+    volatile fractalos_batch_event_t *staging =
+        (volatile fractalos_batch_event_t *)
         ((uint8_t *)eventbus_ring_vaddr + EVENTBUS_BATCH_STAGING_OFFSET);
 
     uint64_t t0 = bench_cycles();

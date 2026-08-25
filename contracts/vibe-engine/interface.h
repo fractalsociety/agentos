@@ -6,7 +6,7 @@
  *
  * The VibeEngine is conceptually separate from vibeOS (guest OS lifecycle):
  *   vibeOS    — create/destroy/configure full guest OS instances
- *   vibe-engine — hot-swap individual WASM service components within agentOS
+ *   vibe-engine — hot-swap individual WASM service components within FractalOS
  *
  * Hot-swap pipeline:
  *
@@ -18,7 +18,7 @@
  *         │
  *         ▼  VSWAP_OP_VALIDATE
  *   VibeEngine checks WASM magic, required exports (init, handle_ppc,
- *   health_check, notified), agentos.capabilities custom section, and
+ *   health_check, notified), fractalos.capabilities custom section, and
  *   capability declarations. Runs wasm_validator internally.
  *         │
  *         ▼  VSWAP_OP_COMMIT
@@ -47,10 +47,10 @@
  *   of the previous proposal returns VSWAP_ERR_BUSY.
  *
  * Kernel-side implementation:
- *   vibe_engine.c / vibe_swap.c in kernel/agentos-root-task/src/
+ *   vibe_engine.c / vibe_swap.c in kernel/fractalos-root-task/src/
  *   Userspace wasm_validator: userspace/servers/vibe-engine/src/wasm_validator.rs
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -84,7 +84,7 @@
 /* ── Service identifiers ─────────────────────────────────────────────────── */
 
 /*
- * VSWAP_SVC_* — service IDs for swappable agentOS kernel services.
+ * VSWAP_SVC_* — service IDs for swappable FractalOS kernel services.
  *
  * These match the SVC_* constants in vibe_engine.c and vibe_swap.c.
  * Not all services are swappable — VSWAP_SVC_EVENTBUS is critical and
@@ -193,7 +193,7 @@ typedef uint32_t vswap_err_t;
  * Bit 3 — caller capability badge authorised for this service
  * Bit 4 — required exports present (init, handle_ppc, health_check, notified)
  * Bit 5 — WASM linear memory section declared
- * Bit 6 — agentos.capabilities custom section present
+ * Bit 6 — fractalos.capabilities custom section present
  * Bit 7 — all imports from known modules (aos.*, env)
  */
 typedef uint32_t vswap_val_flags_t;

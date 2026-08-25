@@ -55,7 +55,7 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
     std::fs::create_dir_all(&tmp_dir)
         .with_context(|| format!("failed to create {}", tmp_dir.display()))?;
     let log_file = tempfile::Builder::new()
-        .prefix("agentos-qemu-")
+        .prefix("fractalos-qemu-")
         .suffix(".log")
         .tempfile_in(&tmp_dir)
         .context("failed to create build/tmp QEMU log file")?;
@@ -129,13 +129,13 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
             println!("[xtask:test] Waiting for official in-guest Codex preflight...");
             wait_for_markers(
                 &log_path,
-                &["AGENTOS_CODEX_PREFLIGHT status=0"],
+                &["FRACTALOS_CODEX_PREFLIGHT status=0"],
                 Duration::from_secs(args.timeout_secs),
             )
         }
         _ => {
             /* Success markers: any match is a pass.
-             * "agentOS boot complete" = root task + all PDs launched.
+             * "FractalOS boot complete" = root task + all PDs launched.
              * "[rt] boot complete"    = x86 root-task smoke boot; service PD
              *                           runtime health is tracked separately.
              * "buildroot login:"      = Linux guest reached login prompt (buildroot). */
@@ -144,7 +144,7 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
             } else {
                 wait_for_markers(
                     &log_path,
-                    &["agentOS boot complete", "buildroot login:"],
+                    &["FractalOS boot complete", "buildroot login:"],
                     Duration::from_secs(args.timeout_secs),
                 )
             }
@@ -161,12 +161,12 @@ pub fn run(args: &TestArgs) -> anyhow::Result<()> {
         repo_root
             .join("build")
             .join(&args.board)
-            .join("agentos.img"),
+            .join("fractalos.img"),
     )
     .map(|meta| meta.len())
     .unwrap_or(0);
     println!(
-        "AGENTOS_QEMU_METRICS {}",
+        "FRACTALOS_QEMU_METRICS {}",
         serde_json::json!({
             "guest_os": args.guest_os,
             "boot_to_marker_ms": boot_ms,
@@ -259,7 +259,7 @@ fn start_ubuntu_seed_server(repo_root: &Path) -> anyhow::Result<SeedServer> {
         .context("system clock is before UNIX_EPOCH")?
         .as_secs();
     let meta_data = format!(
-        "instance-id: agentos-linux-ubuntu-{}-{}\nlocal-hostname: agentos-linux\n",
+        "instance-id: fractalos-linux-ubuntu-{}-{}\nlocal-hostname: fractalos-linux\n",
         std::process::id(),
         now
     );
@@ -285,7 +285,7 @@ chpasswd:
   expire: false
   users:
     - name: root
-      password: agentos
+      password: fractalos
       type: text
 write_files:
   - path: /root/.ssh/authorized_keys
@@ -302,7 +302,7 @@ write_files:
     std::fs::create_dir_all(&tmp_dir)
         .with_context(|| format!("failed to create {}", tmp_dir.display()))?;
     let dir = tempfile::Builder::new()
-        .prefix("agentos-nocloud-ubuntu-")
+        .prefix("fractalos-nocloud-ubuntu-")
         .tempdir_in(&tmp_dir)
         .context("failed to create Ubuntu NoCloud tempdir")?;
     std::fs::write(dir.path().join("meta-data"), meta_data)
@@ -377,13 +377,13 @@ pub fn spawn_qemu_with_guest(
     let log_file = std::fs::File::create(log_path).context("failed to create QEMU log file")?;
     let netdev = qemu_netdev_arg(ssh_port)?;
 
-    let build_image = repo_root.join("build").join(board).join("agentos.img");
+    let build_image = repo_root.join("build").join(board).join("fractalos.img");
 
     let mut cmd = match board {
         "qemu_virt_aarch64" => {
             let build_dir = repo_root.join("build").join(board);
             let loader = build_dir.join("loader.elf");
-            let _ = std::fs::remove_file(&cc_sock);
+            let _ = std::fs::remove_file(cc_sock);
             let machine = if guest_os == "freebsd" || guest_os == "both" {
                 "virt,virtualization=on,highmem=off,secure=off,acpi=off"
             } else {
@@ -503,7 +503,7 @@ pub fn spawn_qemu_with_guest(
                 "-kernel",
                 build_image
                     .to_str()
-                    .unwrap_or("build/qemu_virt_riscv64/agentos.img"),
+                    .unwrap_or("build/qemu_virt_riscv64/fractalos.img"),
                 /* virtio-net (slot 0 → 0x10001000, IRQ 1) with SSH port forward */
                 "-device",
                 "virtio-net-device,netdev=net0",
@@ -586,7 +586,7 @@ fn ubuntu_disk_image(repo_root: &Path) -> std::path::PathBuf {
 }
 
 fn freebsd_disk_image(repo_root: &Path) -> std::path::PathBuf {
-    if let Ok(path) = std::env::var("AGENTOS_FREEBSD_IMAGE") {
+    if let Ok(path) = std::env::var("FRACTALOS_FREEBSD_IMAGE") {
         let override_path = std::path::PathBuf::from(path);
         if override_path.exists() {
             return override_path;
@@ -863,7 +863,7 @@ fn wait_for_guest_console_login_via_cc(
 
 fn guest_prompt_markers(guest_os: &str) -> &'static [&'static str] {
     match guest_os {
-        "ubuntu" => &["agentos-linux login:", "ubuntu login:", "login:"],
+        "ubuntu" => &["fractalos-linux login:", "ubuntu login:", "login:"],
         "freebsd" => &["login:"],
         _ => &["login:"],
     }
@@ -909,7 +909,7 @@ fn verify_guest_console_input(
     qemu: &mut Child,
 ) -> anyhow::Result<String> {
     let probe = if guest_os == "ubuntu" {
-        "agentos-linux-proof\n"
+        "fractalos-linux-proof\n"
     } else {
         "~"
     };
@@ -1004,13 +1004,13 @@ fn create_guest_via_cc_wait(
                 if status != CC_ERR_RELAY_FAULT {
                     anyhow::bail!("failed to create {label} guest: {last_err}");
                 }
-                if attempts == 1 || attempts % 5 == 0 {
+                if attempts == 1 || attempts.is_multiple_of(5) {
                     println!("[xtask:test] {label} guest create not ready yet: {last_err}");
                 }
             }
             Err(err) => {
                 last_err = format!("{err:#}");
-                if attempts == 1 || attempts % 5 == 0 {
+                if attempts == 1 || attempts.is_multiple_of(5) {
                     println!(
                         "[xtask:test] {label} guest create transport not ready yet: {last_err}"
                     );

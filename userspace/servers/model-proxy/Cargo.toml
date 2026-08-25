@@ -1,8 +1,8 @@
 [package]
-name = "agentos-model-proxy"
+name = "fractalos-model-proxy"
 version = "0.1.3"
 edition = "2021"
-description = "Model Proxy - capability-gated LLM inference service for agentOS"
+description = "Model Proxy - capability-gated LLM inference service for FractalOS"
 
 [features]
 std = [
@@ -13,7 +13,7 @@ std = [
 ]
 
 [dependencies]
-agentos-sdk = { path = "../../sdk" }
+fractalos-sdk = { path = "../../sdk" }
 sha2 = { version = "0.10", default-features = false }
 
 # Optional — only needed when the std HTTP backend is compiled in

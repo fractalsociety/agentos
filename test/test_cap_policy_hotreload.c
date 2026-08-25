@@ -1,5 +1,5 @@
 /*
- * test_cap_policy_hotreload.c — unit tests for agentOS cap_policy hot-reload
+ * test_cap_policy_hotreload.c — unit tests for FractalOS cap_policy hot-reload
  *
  * Standalone host test that mirrors the CBOR parsing, runtime policy table
  * management, grant revalidation, and diff logic from cap_policy_hotreload.c

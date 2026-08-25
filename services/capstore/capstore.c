@@ -1,11 +1,11 @@
 /*
- * agentOS CapStore — Capability Database Service
+ * FractalOS CapStore — Capability Database Service
  *
  * Tracks all capability derivations, grants, and revocations.
  * Provides audit trail and query interface for capability management.
  * Built on seL4's Capability Derivation Tree (CDT).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -16,7 +16,7 @@
 /* Maximum tracked capabilities */
 #define CAPSTORE_MAX_ENTRIES 4096
 
-/* Capability types (agentOS semantic layer) */
+/* Capability types (FractalOS semantic layer) */
 typedef enum {
     CAP_TYPE_TOOL       = 0x01,
     CAP_TYPE_MODEL      = 0x02,

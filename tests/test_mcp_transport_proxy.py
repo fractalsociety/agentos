@@ -22,9 +22,9 @@ class McpTransportProxyTests(unittest.TestCase):
         self.assertIn(b'"name":"mcp.fixture_echo"', payload)
 
     def test_invokes_real_stdio_tool(self) -> None:
-        payload = self.client.invoke("mcp.fixture_echo", b'{"message":"agentos-ok"}')
-        self.assertIn(b'"text":"agentos-ok"', payload)
-        self.assertIn(b'"echo":"agentos-ok"', payload)
+        payload = self.client.invoke("mcp.fixture_echo", b'{"message":"fractalos-ok"}')
+        self.assertIn(b'"text":"fractalos-ok"', payload)
+        self.assertIn(b'"echo":"fractalos-ok"', payload)
 
     def test_unknown_tool_is_not_forwarded(self) -> None:
         with self.assertRaises(KeyError):

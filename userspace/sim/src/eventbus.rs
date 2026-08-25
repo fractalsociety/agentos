@@ -2,13 +2,15 @@
 
 use std::collections::HashMap;
 
+type Subscriber = Box<dyn FnMut(&SimEvent) + Send>;
+
 /// A single published event.
 #[derive(Debug, Clone)]
 pub struct SimEvent {
-    pub topic:   String,
+    pub topic: String,
     pub payload: Vec<u8>,
     /// Which agent/slot published this event (None = external inject)
-    pub source:  Option<String>,
+    pub source: Option<String>,
 }
 
 /// The simulation EventBus.
@@ -21,20 +23,21 @@ pub struct SimEventBus {
     pub history: Vec<SimEvent>,
 
     /// Per-topic subscriber lists.  `"*"` subscribers receive every event.
-    subscribers: HashMap<String, Vec<Box<dyn FnMut(&SimEvent) + Send>>>,
+    subscribers: HashMap<String, Vec<Subscriber>>,
 }
 
 impl SimEventBus {
     pub fn new() -> Self {
         Self {
-            history:     Vec::new(),
+            history: Vec::new(),
             subscribers: HashMap::new(),
         }
     }
 
     /// Subscribe to a topic.  Use `"*"` to receive every event.
     pub fn subscribe<F>(&mut self, topic: impl Into<String>, handler: F)
-    where F: FnMut(&SimEvent) + Send + 'static,
+    where
+        F: FnMut(&SimEvent) + Send + 'static,
     {
         self.subscribers
             .entry(topic.into())
@@ -44,10 +47,16 @@ impl SimEventBus {
 
     /// Publish an event; delivers to exact-match and wildcard subscribers.
     pub fn publish(&mut self, topic: impl Into<String>, payload: Vec<u8>, source: Option<String>) {
-        let event = SimEvent { topic: topic.into(), payload, source };
+        let event = SimEvent {
+            topic: topic.into(),
+            payload,
+            source,
+        };
 
         // Collect matching keys first to avoid borrow split
-        let keys: Vec<String> = self.subscribers.keys()
+        let keys: Vec<String> = self
+            .subscribers
+            .keys()
             .filter(|k| k.as_str() == "*" || k.as_str() == event.topic)
             .cloned()
             .collect();
@@ -75,5 +84,7 @@ impl SimEventBus {
 }
 
 impl Default for SimEventBus {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

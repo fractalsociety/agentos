@@ -1,5 +1,5 @@
 //! AgentNet - capability-native networking
-//! 
+//!
 //! Every network operation requires an explicit capability.
 //! No ambient network access. Zero-trust by architecture.
 
@@ -15,7 +15,7 @@ pub struct NetEndpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NetProtocol {
-    AgentMesh,  // intra-agentOS
+    AgentMesh, // intra-FractalOS
     Tcp,
     Udp,
     Quic,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — cc_contract.h tests
+# FractalOS E2E — cc_contract.h tests
 #
 # Tests the Command-and-Control PD relay API:
 #   MSG_CC_CONNECT / MSG_CC_DISCONNECT (session management)
@@ -39,13 +39,13 @@ FREEBSD_BOOTED="${FREEBSD_BOOTED:-0}"
 
 cc_post() {
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
 
 cc_get() {
-    curl -sf --max-time 5 "${CC_BASE}/api/agentos/cc/$1" 2>/dev/null
+    curl -sf --max-time 5 "${CC_BASE}/api/fractalos/cc/$1" 2>/dev/null
 }
 
 ok_field() {

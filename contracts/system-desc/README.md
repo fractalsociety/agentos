@@ -1,12 +1,12 @@
 # system-desc — C-Struct System Description Format
 
-**Version:** 1  
-**Header:** `kernel/agentos-root-task/include/system_desc.h`  
+**Version:** 1
+**Header:** `kernel/fractalos-root-task/include/system_desc.h`
 **Replaces:** Microkit `.system` XML files
 
 ## Purpose
 
-`system_desc_t` is a statically-initialized C struct that describes the complete protection domain topology for one agentOS boot image. The build tool (`xtask gen-image`) emits it as a `.rodata` section embedded in the root task ELF. The root task reads it at startup to allocate all seL4 kernel objects and configure IPC endpoints.
+`system_desc_t` is a statically-initialized C struct that describes the complete protection domain topology for one FractalOS boot image. The build tool (`xtask gen-image`) emits it as a `.rodata` section embedded in the root task ELF. The root task reads it at startup to allocate all seL4 kernel objects and configure IPC endpoints.
 
 ## How system_desc_t Maps to seL4 Boot
 

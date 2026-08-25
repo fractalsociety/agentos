@@ -1,12 +1,12 @@
 /*
- * agentOS — vfs_server PD contract test
+ * FractalOS — vfs_server PD contract test
  * Covered opcodes: OP_VFS_OPEN, OP_VFS_CLOSE, OP_VFS_READ, OP_VFS_WRITE,
  *   OP_VFS_STAT, OP_VFS_UNLINK, OP_VFS_MKDIR, OP_VFS_READDIR,
  *   OP_VFS_TRUNCATE, OP_VFS_SYNC, OP_VFS_MOUNT, OP_VFS_HEALTH
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vfs_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vfs_server_contract.h"
 
 void run_vfs_server_tests(microkit_channel ch) {
     TEST_SECTION("vfs_server");

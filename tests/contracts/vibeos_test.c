@@ -1,5 +1,5 @@
 /*
- * agentOS — vibeos PD contract test
+ * FractalOS — vibeos PD contract test
  * Covered opcodes: MSG_VIBEOS_CREATE, MSG_VIBEOS_DESTROY, MSG_VIBEOS_STATUS,
  *   MSG_VIBEOS_LIST, MSG_VIBEOS_BIND_DEVICE, MSG_VIBEOS_UNBIND_DEVICE,
  *   MSG_VIBEOS_SNAPSHOT, MSG_VIBEOS_RESTORE, MSG_VIBEOS_MIGRATE,
@@ -7,8 +7,8 @@
  *   MSG_VIBEOS_CONFIGURE
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vibeos_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vibeos_contract.h"
 
 void run_vibeos_tests(microkit_channel ch) {
     TEST_SECTION("vibeos");

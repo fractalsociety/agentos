@@ -1,7 +1,7 @@
 /*
- * agentOS Vibe Agent
+ * FractalOS Vibe Agent
  *
- * The showcase agent that demonstrates the core agentOS innovation:
+ * The showcase agent that demonstrates the core FractalOS innovation:
  * agents vibe-coding their own system services and swapping them in.
  *
  * This agent:
@@ -13,13 +13,13 @@
  *
  * This is not science fiction. This is what the vibe layer makes possible.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdio.h>
 #include <string.h>
-#include <agentOS.h>
+#include <FractalOS.h>
 
 static const char *AGENT_NAME = "vibe-agent";
 
@@ -31,7 +31,7 @@ static int vibe_analyze_current_fs(void) {
     aos_log(AOS_LOG_INFO, "Phase 1: Analyzing current MemFS implementation");
     
     const char *analysis_prompt = 
-        "You are running inside agentOS, built on seL4 microkernel. "
+        "You are running inside FractalOS, built on seL4 microkernel. "
         "The current storage service (MemFS) is a flat-namespace, "
         "in-memory filesystem. For agent workloads, this is suboptimal because:\n"
         "1. Agents frequently do semantic/similarity searches\n"
@@ -129,7 +129,7 @@ static int vibe_generate_agentstore(void) {
     aos_log(AOS_LOG_INFO, "Phase 2: Generating AgentStore via ModelSvc+Bridge");
 
     const char *prompt =
-        "Generate a replacement for the agentOS MemFS storage service. "
+        "Generate a replacement for the FractalOS MemFS storage service. "
         "The replacement must implement all STORAGE_OP_* operations "
         "(WRITE=0x30, READ=0x31, DELETE=0x32, STAT=0x33, LIST=0x34) "
         "and the STAT_SVC operation (0x20, returns file_count in MR1 and total_bytes in MR2). "
@@ -192,9 +192,9 @@ use_fallback:
  *
  * These functions implement the four swap phases directly via Microkit IPC
  * (microkit_mr_set / microkit_ppcall) for use when running as a Microkit PD
- * rather than through the agentOS high-level SDK above.
+ * rather than through the FractalOS high-level SDK above.
  *
- * Channel and opcode assignments (must match agentos.system):
+ * Channel and opcode assignments (must match fractalos.system):
  *   CH_MEMSVC  — vibe-agent's PPC channel to MemFS
  *   CH_VIBE    — vibe-agent's PPC channel to VibeEngine
  *
@@ -227,7 +227,7 @@ use_fallback:
 
 /* Minimal LOG shim for freestanding builds */
 #ifndef LOG
-#ifdef AGENTOS_DEBUG
+#ifdef FRACTALOS_DEBUG
 #define LOG(fmt, ...) microkit_dbg_puts("[vibe-agent] " fmt)
 #else
 #define LOG(fmt, ...) ((void)0)
@@ -272,7 +272,7 @@ static void phase2_generate_service(void) {
     aos_log(AOS_LOG_INFO, "vibe-agent: requesting code generation via bridge...");
 
     const char *prompt =
-        "Generate a minimal replacement for the agentOS storage.v1 service. "
+        "Generate a minimal replacement for the FractalOS storage.v1 service. "
         "Implement STORAGE_OP_WRITE (0x30), STORAGE_OP_READ (0x31), "
         "STORAGE_OP_STAT_SVC (0x20). Use a flat array of 64 entries max.";
 
@@ -428,7 +428,7 @@ int main(int argc, char *argv[]) {
     if (hello && sys_ch != AOS_CAP_NULL) {
         snprintf((char *)hello->payload, 256,
                  "vibe-agent online. I'm going to analyze MemFS and propose "
-                 "an agent-optimized replacement. This is what agentOS is for.");
+                 "an agent-optimized replacement. This is what FractalOS is for.");
         hello->payload_len = strlen((char *)hello->payload);
         aos_msg_publish(sys_ch, hello);
         aos_msg_free(hello);
@@ -441,7 +441,7 @@ int main(int argc, char *argv[]) {
 
     /*
      * Microkit-layer four-phase swap (used when running as a bare Microkit PD
-     * rather than through the agentOS AOS SDK).  These run after the AOS-API
+     * rather than through the FractalOS AOS SDK).  These run after the AOS-API
      * phases above so the full demo path is exercised in either environment.
      */
 #ifdef __MICROKIT__

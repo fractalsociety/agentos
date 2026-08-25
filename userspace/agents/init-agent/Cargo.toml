@@ -1,5 +1,5 @@
 [package]
-name = "agentos-init-agent"
+name = "fractalos-init-agent"
 version = "0.1.3"
 edition = "2021"
 
@@ -8,7 +8,7 @@ std = ["alloc"]
 alloc = []
 
 [[bin]]
-name = "agentos-init-agent"
+name = "fractalos-init-agent"
 path = "src/main.rs"
 required-features = ["std"]
 

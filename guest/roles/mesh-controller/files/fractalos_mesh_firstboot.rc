@@ -1,0 +1,37 @@
+#!/bin/sh
+# PROVIDE: fractalos_mesh_firstboot
+# REQUIRE: NETWORKING
+# BEFORE: headscale
+
+. /etc/rc.subr
+name="fractalos_mesh_firstboot"
+rcvar="fractalos_mesh_firstboot_enable"
+start_cmd="fractalos_mesh_firstboot_start"
+
+fractalos_mesh_firstboot_start()
+{
+    marker=/var/db/fractalos-mesh-controller.installed
+    log=/var/log/fractalos-mesh-firstboot.log
+    [ -f "$marker" ] && return 0
+    attempt=1
+    installed=0
+    while [ "$attempt" -le 3 ]; do
+        if /usr/local/share/fractalos/roles/mesh-controller/install.sh >>"$log" 2>&1; then
+            installed=1
+            break
+        fi
+        echo "attempt $attempt failed" >>"$log"
+        attempt=$((attempt + 1))
+        [ "$attempt" -gt 3 ] || sleep 5
+    done
+    if [ "$installed" -ne 1 ]; then
+        logger -t fractalos_mesh_firstboot "mesh-controller installation failed"
+        return 1
+    fi
+    touch "$marker"
+    sysrc fractalos_mesh_firstboot_enable=NO >/dev/null
+}
+
+load_rc_config "$name"
+: ${fractalos_mesh_firstboot_enable:="NO"}
+run_rc_command "$1"

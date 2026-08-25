@@ -1,14 +1,14 @@
 {
   "schema": "fractal.prd.v1",
-  "title": "AgentOS Fractal Multi-Machine Worker and Companion Vertical Slice",
-  "summary": "Build and prove a production-quality AgentOS program in which real Codex, Cursor, Claude, and Hermes compatibility workers execute capability-scoped asynchronous work through Fractal across at least two authorized Headscale/Tailscale device environments, share immutable verified workspaces through disconnects, expose honest memory and progress telemetry, and feed a separate local companion application without adding UI code to controlplane.",
+  "title": "FractalOS Fractal Multi-Machine Worker and Companion Vertical Slice",
+  "summary": "Build and prove a production-quality FractalOS program in which real Codex, Cursor, Claude, and Hermes compatibility workers execute capability-scoped asynchronous work through Fractal across at least two authorized Headscale/Tailscale device environments, share immutable verified workspaces through disconnects, expose honest memory and progress telemetry, and feed a separate local companion application without adding UI code to controlplane.",
   "architecture": {
     "approach": "Preserve the existing seL4 Microkit service ABI and implement a contract-first vertical slice above it: AgentLang compiles deterministically through canonical Agent IR to capability-scoped WASM in a trusted no_std Rust host; worker-specific host or Linux-guest adapters speak one typed Fractal worker protocol; a singleton MeshGateway carries typed QUIC frames over the existing Headscale/Tailscale route; CapBroker converts audience-bound remote grants into narrow local capabilities; AgentFS and the canonical hashed event stream own immutable objects, task lineage, CAS roots, and verified merge evidence; read-only typed projections are exported through a local gateway to a sibling companion repository.",
-    "rationale": "This design follows the existing PRD and Beads decisions, keeps seL4 as the only authority boundary, avoids duplicating heavyweight services per worker, keeps tailnet identity strictly separate from AgentOS authority, supports offline-first immutable state and deterministic replay, and isolates all human-facing code outside controlplane while retaining a testable typed boundary.",
+    "rationale": "This design follows the existing PRD and Beads decisions, keeps seL4 as the only authority boundary, avoids duplicating heavyweight services per worker, keeps tailnet identity strictly separate from FractalOS authority, supports offline-first immutable state and deterministic replay, and isolates all human-facing code outside controlplane while retaining a testable typed boundary.",
     "components": [
       {
         "name": "FractalControlPlane",
-        "responsibility": "Owns asynchronous semantic dispatch, task handles, cancellation, verification evidence, and adapters from AgentLang operations to existing AgentOS PD contracts.",
+        "responsibility": "Owns asynchronous semantic dispatch, task handles, cancellation, verification evidence, and adapters from AgentLang operations to existing FractalOS PD contracts.",
         "technology": "Freestanding C Microkit PD adapters plus generated WIT interfaces and no_std Rust SDK bindings"
       },
       {
@@ -24,7 +24,7 @@
       {
         "name": "CompatibilityWorkers",
         "responsibility": "Runs official Codex, Cursor, Claude, and Hermes CLIs behind one capability-scoped Fractal session protocol with isolated workspaces, structured results, resource metrics, and credential redaction.",
-        "technology": "Rust host or Linux-guest launch adapters, JSONL protocol parsers, AgentOS CC-PD, and explicit secret handles"
+        "technology": "Rust host or Linux-guest launch adapters, JSONL protocol parsers, FractalOS CC-PD, and explicit secret handles"
       },
       {
         "name": "TailnetTransport",
@@ -48,7 +48,7 @@
       },
       {
         "name": "CompanionApplication",
-        "responsibility": "Renders project, daily, worker-memory, and health pages and submits only explicitly granted typed intents outside the AgentOS repository.",
+        "responsibility": "Renders project, daily, worker-memory, and health pages and submits only explicitly granted typed intents outside the FractalOS repository.",
         "technology": "Sibling repository with TypeScript, React, Vite, generated typed client, CSP, and local-only deployment"
       },
       {
@@ -71,7 +71,7 @@
     },
     {
       "id": "AC-3",
-      "criterion": "AgentOS boots and its contract and performance suites pass on supported AArch64 and x86_64 QEMU targets.",
+      "criterion": "FractalOS boots and its contract and performance suites pass on supported AArch64 and x86_64 QEMU targets.",
       "verification": "Run make gate, make test-target-all, and make perf-gate; require zero exit codes, TAP_DONE from both target runners, boot success markers, and threshold-checked JSON performance reports."
     },
     {
@@ -86,7 +86,7 @@
     },
     {
       "id": "AC-6",
-      "criterion": "Tailnet identity never creates AgentOS authority, and a revoked, expired, wrong-audience, stale-epoch, or fabricated grant is rejected before local PD dispatch.",
+      "criterion": "Tailnet identity never creates FractalOS authority, and a revoked, expired, wrong-audience, stale-epoch, or fabricated grant is rejected before local PD dispatch.",
       "verification": "Run tests/security/test_remote_grants and the revocation phase of tests/e2e/test_two_device_fractal.sh; require auditable denial events, unchanged service invocation counters, and immediate rejection after revocation."
     },
     {
@@ -112,7 +112,7 @@
     {
       "id": "AC-11",
       "criterion": "No UI or browser-serving implementation is added to controlplane; all companion pages and assets live in a sibling repository.",
-      "verification": "Run git diff --name-only against the planning baseline and fail if controlplane adds html, css, js, mjs, jsx, tsx, vue, svelte, package.json, node_modules, yarn.lock, or bun.lockb; separately require the companion page tests in ../agentos-companion to pass."
+      "verification": "Run git diff --name-only against the planning baseline and fail if controlplane adds html, css, js, mjs, jsx, tsx, vue, svelte, package.json, node_modules, yarn.lock, or bun.lockb; separately require the companion page tests in ../fractalos-companion to pass."
     },
     {
       "id": "AC-12",
@@ -137,7 +137,7 @@
   ],
   "non_goals": [
     "Replacing seL4, Microkit IPC, or existing per-PD lower contracts",
-    "Granting AgentOS authority from Headscale identity, tailnet IP, MagicDNS, WireGuard keys, device tags, or remote badges",
+    "Granting FractalOS authority from Headscale identity, tailnet IP, MagicDNS, WireGuard keys, device tags, or remote badges",
     "Adding HTML, CSS, JavaScript, TypeScript, browser assets, dashboards, WebSockets, or interactive UI code to controlplane",
     "Putting Python, Node.js, or another interpreted runtime in kernel, services, libs, or userspace/servers",
     "Giving generated AgentLang or worker code ambient filesystem, shell, network, environment, credential, or promotion-verifier access",

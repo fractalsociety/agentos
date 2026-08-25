@@ -1,5 +1,5 @@
 /*
- * agentOS cc_contract — Contract Unit Tests
+ * FractalOS cc_contract — Contract Unit Tests
  *
  * Validates all MSG_CC_* opcodes, struct layouts, error codes, device type
  * constants, and input event types without seL4 or Microkit.  No cc_pd
@@ -9,8 +9,8 @@
  * Build:  cc -o /tmp/test_cc_contract \
  *             tests/test_cc_contract.c \
  *             -I tests \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_cc_contract
  */
 

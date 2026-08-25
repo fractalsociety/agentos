@@ -2,7 +2,7 @@
 
 ## Overview
 
-MsgBus is the inter-agent communication backbone of agentOS.  It provides:
+MsgBus is the inter-agent communication backbone of FractalOS.  It provides:
 
 - Named publish/subscribe channels with configurable flags (broadcast, ordered,
   persistent, exclusive)

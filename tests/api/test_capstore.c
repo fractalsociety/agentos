@@ -1,5 +1,5 @@
 /*
- * test_capstore.c — API tests for the agentOS CapabilityBroker service
+ * test_capstore.c — API tests for the FractalOS CapabilityBroker service
  *
  * Covered opcodes:
  *   OP_CAP_GRANT    (0x20) — issue a capability grant
@@ -13,14 +13,14 @@
  *       #include "../../contracts/capability-broker/interface.h"
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST -I tests/api -o /tmp/t_capstore \
+ *   cc -DFRACTALOS_TEST_HOST -I tests/api -o /tmp/t_capstore \
  *       tests/api/test_capstore.c && /tmp/t_capstore
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include "framework.h"
 
 /* ── Opcode definitions ───────────────────────────────────────────────────── */
@@ -616,5 +616,5 @@ int main(void) {
 }
 
 #else
-typedef int _agentos_api_test_capstore_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_capstore_dummy;
+#endif /* FRACTALOS_TEST_HOST */

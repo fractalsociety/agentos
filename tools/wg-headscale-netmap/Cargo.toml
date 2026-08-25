@@ -1,0 +1,19 @@
+[package]
+name = "wg-headscale-netmap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Convert Headscale node listings into packed OP_WG_APPLY_NETMAP blobs"
+
+[[bin]]
+name = "wg-headscale-netmap"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = "0.22"
+clap = { workspace = true, features = ["derive", "env"] }
+hex = "0.4"
+serde = { workspace = true }
+serde_json = { workspace = true }
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }

@@ -1,6 +1,8 @@
-# agentOS
+# FractalOS
 
 **The world's first operating system designed for agents, not humans.**
+
+FractalOS was forked from agentOS.
 
 [![License](https://img.shields.io/badge/license-BSD--2--Clause-blue.svg)](LICENSE)
 [![Kernel](https://img.shields.io/badge/kernel-seL4-green.svg)](https://sel4.systems)
@@ -8,13 +10,13 @@
 
 ---
 
-## What is agentOS?
+## What is FractalOS?
 
-agentOS is a bootable operating system built on the [seL4 microkernel](https://sel4.systems/) — the world's only formally verified, capability-secured microkernel. It's designed from the ground up for AI agents running autonomous workloads.
+FractalOS is a bootable operating system built on the [seL4 microkernel](https://sel4.systems/) — the world's only formally verified, capability-secured microkernel. It's designed from the ground up for AI agents running autonomous workloads.
 
-Every other "agent OS" is a Python framework running on Linux. They borrow a human OS, bolt some agent abstractions on top, and call it done. **agentOS is different.**
+Every other "agent OS" is a Python framework running on Linux. They borrow a human OS, bolt some agent abstractions on top, and call it done. **FractalOS is different.**
 
-agentOS boots bare metal. The root task, the seL4/Microkit boot path, and Linux
+FractalOS boots bare metal. The root task, the seL4/Microkit boot path, and Linux
 and FreeBSD guest boot are **boot-proven** under QEMU (see the status table
 below). The capability model — agents running in isolated address spaces with
 hardware-enforced boundaries so an agent cannot touch memory, a tool, a model, or
@@ -113,9 +115,9 @@ proven against a booted seL4 target.
 
 The system is implemented as seL4 Microkit Protection Domains with explicit IPC
 contracts. External tools consume the contracts; UI code lives in separate
-repositories such as `../agentos_gui`.
+repositories such as `../fractalos_gui`.
 
-## agentOS SDK (libagent)
+## FractalOS SDK (libagent)
 
 ```c
 // Initialize agent
@@ -168,7 +170,7 @@ matching GUI command, and leaves QEMU on the foreground serial console. The
 external GUI can be launched from the sibling project:
 
 ```bash
-cd ../agentos_gui && make run
+cd ../fractalos_gui && make run
 ```
 
 ### Build Examples
@@ -184,7 +186,7 @@ make fetch-guest GUEST_OS=both                    # stage both guest OS assets
 ```
 
 Guest images and temporary build artifacts stay under `build/`. Use
-`AGENTOS_IMAGES=/path/to/cache` only when intentionally overriding the default.
+`FRACTALOS_IMAGES=/path/to/cache` only when intentionally overriding the default.
 `make run GUEST_OS=both` automatically uses `QEMU_RUN_MEM=3G` so Linux and
 FreeBSD can use independent identity-mapped guest RAM windows.
 
@@ -200,7 +202,7 @@ make build
 
 ### Post-boot CC-PD client
 
-Once agentOS is running in QEMU, use `agentctl` to inspect and control guests
+Once FractalOS is running in QEMU, use `agentctl` to inspect and control guests
 via the CC-PD socket:
 
 ```bash
@@ -228,19 +230,19 @@ exposes only pool status, guest listing, and guest status.
 
 ```sh
 make build-tools
-target/release/codex-agentos \
+target/release/codex-fractalos \
   --metrics \
   --agentctl tools/agentctl/agentctl \
   --socket build/cc_pd.sock \
   -- exec --sandbox workspace-write --cd /path/to/worktree \
-  'Query AgentOS capacity, implement the task, and run the tests.'
+  'Query FractalOS capacity, implement the task, and run the tests.'
 ```
 
-See [`tools/agentos-mcp/README.md`](tools/agentos-mcp/README.md) for the threat
+See [`tools/fractalos-mcp/README.md`](tools/fractalos-mcp/README.md) for the threat
 boundary, exact setup, metrics, and live E2E command.
 
 For compatibility testing, build a credential-free initramfs containing the
-hash-pinned official AArch64 Codex CLI and boot it under the AgentOS VMM:
+hash-pinned official AArch64 Codex CLI and boot it under the FractalOS VMM:
 
 ```sh
 cargo xtask fetch-guest --os codex --output-dir build/guest-images
@@ -249,7 +251,7 @@ cargo xtask qemu-test --board qemu_virt_aarch64 \
 ```
 
 The automated gate waits for Codex's own version preflight. Its passing marker
-starts with `AGENTOS_CODEX_PREFLIGHT status=0` and reports `codex-cli 0.149.1`.
+starts with `FRACTALOS_CODEX_PREFLIGHT status=0` and reports `codex-cli 0.149.1`.
 No API credential is stored in the image; authenticated in-guest model work
 still requires the capability-gated network and runtime-secret handoff. The
 native capability-scoped harness remains the production target.
@@ -257,12 +259,12 @@ native capability-scoped harness remains the production target.
 ### Run a capability-native Codex-style agent
 
 With the official Codex CLI authenticated, one command now builds and boots
-AgentOS, starts the single shared Codex-backed ModelSvc bridge, and submits a
+FractalOS, starts the single shared Codex-backed ModelSvc bridge, and submits a
 bounded coding task through CC-PD and Controller to the native harness:
 
 ```sh
 tools/run_native_agent.py --prompt \
-  'Create src/live.c containing exactly int agentos_live(void){return 42;} then compile it with the fixed c11_compile profile.'
+  'Create src/live.c containing exactly int fractalos_live(void){return 42;} then compile it with the fixed c11_compile profile.'
 ```
 
 The worker contains only the native agent loop, task state, small AgentFS
@@ -277,8 +279,8 @@ boundary and reproducible measurements.
 ## Project Structure
 
 ```
-agentos/
-├── kernel/agentos-root-task/  # seL4 root task, PD code, IPC contracts
+fractalos/
+├── kernel/fractalos-root-task/  # seL4 root task, PD code, IPC contracts
 ├── kernel/freebsd-vmm/        # FreeBSD VMM support code
 ├── services/                  # host-side service models and prototypes
 ├── libs/                      # shared C/Rust support libraries
@@ -294,7 +296,7 @@ agentos/
 
 ## Development Status
 
-agentOS is **alpha**. Many subsystems exist as host-validated scaffolding rather
+FractalOS is **alpha**. Many subsystems exist as host-validated scaffolding rather
 than proven bare-metal behavior. To avoid overstating maturity, every subsystem
 below is labeled by **proof level**, not by "done / not done".
 
@@ -304,7 +306,7 @@ below is labeled by **proof level**, not by "done / not done".
 |-------|---------|
 | **boot-proven** | Exercised on a booted seL4 target under QEMU (or hardware) and asserted by an automated E2E/boot test. |
 | **target-tested** | Built into the seL4 target image and validated by a test that runs against the target, but not full end-to-end boot of the feature. |
-| **host-tested** | Validated only by host-compiled tests (`-DAGENTOS_TEST_HOST`) where seL4/Microkit IPC is stubbed. Proves contract/logic shape, **not** production IPC or hardware behavior. |
+| **host-tested** | Validated only by host-compiled tests (`-DFRACTALOS_TEST_HOST`) where seL4/Microkit IPC is stubbed. Proves contract/logic shape, **not** production IPC or hardware behavior. |
 | **stubbed** | Code links and returns a defined value, but the real behavior is a placeholder / `not implemented` / no-op. |
 | **planned** | Described in design docs; little or no implementation yet. |
 
@@ -328,26 +330,26 @@ below is labeled by **proof level**, not by "done / not done".
 | serial-mux / serial PD | boot-proven | Guest console login flows through CC-PD over the serial path (`make test-guest-login`) |
 | Native NIC / net-service | boot-proven | `net_pd` is the sole writable VirtIO-net MMIO/IRQ owner; the AArch64 target gate proves DMA TX completion and host-injected RX IRQ plus badge denial. Native UDP/TCP integration above the device path remains incomplete. |
 | Native WireGuard PD | target-tested | Canonical Noise/BLAKE2s and bidirectional session/transport/replay behavior pass host crypto integration tests; AArch64 proves boot, key-staging wipe, and fail-closed no-session transport. UDP encapsulation and standard-client interoperability remain open. |
-| Headscale private mesh | boot-proven | A clean FreeBSD 15 first boot installs and starts the pinned controller (`make e2e-mesh-freebsd`); two real Tailscale clients and an agent endpoint are exercised by `AGENTOS_TAILSCALE_E2E=1 make validate-headscale-role`; see `docs/mesh-network.md` |
+| Headscale private mesh | boot-proven | A clean FreeBSD 15 first boot installs and starts the pinned controller (`make e2e-mesh-freebsd`); two real Tailscale clients and an agent endpoint are exercised by `FRACTALOS_TAILSCALE_E2E=1 make validate-headscale-role`; see `docs/mesh-network.md` |
 | block-service / block PD | host-tested | Host contract tests (`tests/contracts/block_*`); VirtIO-blk path not independently boot-asserted |
-| usb-service | stubbed | `usb_pd.c` runs in "stub mode" (simulated HID device) unless built with `AGENTOS_USB_PD` and real MMIO is wired |
+| usb-service | stubbed | `usb_pd.c` runs in "stub mode" (simulated HID device) unless built with `FRACTALOS_USB_PD` and real MMIO is wired |
 | timer-service | host-tested | Host contract tests (`tests/contracts/timer_test.c`) |
 | entropy-service | host-tested | `services/entropy-service/entropy_svc.c` + contract; not target-validated |
 | CC-PD host API (list/status/console) | boot-proven | Unix socket bridge at `build/cc_pd.sock`; list/status/console-drain proven by guest-login E2E |
-| Official Codex external agent loop | boot-proven | `AGENTOS_CODEX_LIVE=1 make e2e-codex-agent` requires official Codex to query a booted CC-PD through the read-only MCP bridge, edit one C file in an isolated Git worktree, and pass its test |
-| Official Codex compatibility guest | boot-proven | `cargo xtask qemu-test --guest-os codex --timeout-secs 300` boots the pinned official AArch64 CLI and requires `AGENTOS_CODEX_PREFLIGHT status=0`; authenticated in-guest inference is not yet wired |
+| Official Codex external agent loop | boot-proven | `FRACTALOS_CODEX_LIVE=1 make e2e-codex-agent` requires official Codex to query a booted CC-PD through the read-only MCP bridge, edit one C file in an isolated Git worktree, and pass its test |
+| Official Codex compatibility guest | boot-proven | `cargo xtask qemu-test --guest-os codex --timeout-secs 300` boots the pinned official AArch64 CLI and requires `FRACTALOS_CODEX_PREFLIGHT status=0`; authenticated in-guest inference is not yet wired |
 | Native Codex-style capability harness | boot-proven | AArch64/seL4 gate passes 51/51, including real CSpace capability mint/delete/re-mint, Controller task ingress, AgentFS edits, fixed execution profiles, repository tools, resource telemetry, and an isolated external MCP stdio provider; the one-command runner has completed a genuine authenticated Codex-backed compile task; see `docs/native-agent-harness.md` |
 | CC-PD snapshot relay | stubbed | Returns `CC_ERR_RELAY_FAULT` for the boot guest (snapshot not implemented) |
-| VibeOS lifecycle API (`VOS_*`) | host-tested | Contract tests build with `-DAGENTOS_TEST_HOST` (`make test-vibeos-contract`, `tests/api/test_vibeos*.c`); create/destroy/list/status logic proven on host, not on target |
+| VibeOS lifecycle API (`VOS_*`) | host-tested | Contract tests build with `-DFRACTALOS_TEST_HOST` (`make test-vibeos-contract`, `tests/api/test_vibeos*.c`); create/destroy/list/status logic proven on host, not on target |
 | vibe-engine WASM hot-swap | host-tested | `tests/integration/vibe_hotswap_test.c` exercises read/probe paths only; actual WASM propose+swap needs a mapped staging region (hardware-dependent) |
 | Tracing (trace_recorder PD) | host-tested | 512-entry ring with START/STOP/QUERY/DUMP; covered by host contract tests, not boot-asserted |
 | Host integration/contract test suite | host-tested | `make test-integration` runs host-compiled tests with stubbed IPC |
 | Build artifact hygiene | host-tested | Images, sockets, logs, temp files under `build/` |
-| External GUI | Separate project | Lives in `../agentos_gui`; not part of this repo |
+| External GUI | Separate project | Lives in `../fractalos_gui`; not part of this repo |
 
 ## Philosophy
 
-agentOS is built on a few core beliefs:
+FractalOS is built on a few core beliefs:
 
 1. **Agents deserve their own OS.** Running on Linux is running on someone else's OS, designed for someone else's needs.
 
@@ -355,7 +357,7 @@ agentOS is built on a few core beliefs:
 
 3. **Agents should design their environment.** The hardest part of building agent infrastructure is that humans are guessing at what agents need. Let agents figure it out themselves.
 
-4. **Boot it or it doesn't count.** An "agent OS" that's a Python package is an agent library. agentOS boots.
+4. **Boot it or it doesn't count.** An "agent OS" that's a Python package is an agent library. FractalOS boots.
 
 ## CUDA Compute Offload
 
@@ -364,11 +366,11 @@ agentOS is built on a few core beliefs:
 > gpu_scheduler is bookkeeping only; real `nvrtc` JIT + CUDA-context binding on
 > Sparky GB10 (Blackwell) is **planned** and not boot-proven here.
 
-agentOS is designed to support GPU kernel offload via CUDA PTX embedded in WASM modules.
+FractalOS is designed to support GPU kernel offload via CUDA PTX embedded in WASM modules.
 
 ### How it works
 
-1. **Embed PTX in WASM**: Add a custom section named `agentos.cuda` to any WASM module. The section payload is a raw PTX source file (must begin with `.version`).
+1. **Embed PTX in WASM**: Add a custom section named `fractalos.cuda` to any WASM module. The section payload is a raw PTX source file (must begin with `.version`).
 
 2. **Submit via VibeEngine**: When an agent submits a WASM module with this section, VibeEngine automatically extracts and validates the PTX during `OP_VIBE_VALIDATE`.
 
@@ -379,7 +381,7 @@ agentOS is designed to support GPU kernel offload via CUDA PTX embedded in WASM 
 ### Rust SDK
 
 ```rust
-use agentos_sdk::cuda::CudaKernel;
+use fractalos_sdk::cuda::CudaKernel;
 
 let ptx = b".version 7.5\n.target sm_90\n.address_size 64\n\
             .visible .entry matmul(.param .u64 A, .param .u64 B, .param .u64 C) {\n\
@@ -403,7 +405,7 @@ controller  (CH=51)    ──ppcall──► gpu_scheduler (CH_CTRL=1)
 
 ## FreeBSD VM Guest
 
-agentOS stages and boots **FreeBSD 15.0 AArch64** as a virtual machine guest
+FractalOS stages and boots **FreeBSD 15.0 AArch64** as a virtual machine guest
 under the seL4 hypervisor path (proof level: **boot-proven** — `run_dual_os_e2e.sh`
 boots it under QEMU and proves it over SSH). The same CC-PD API surface used by
 Ubuntu enumerates the guest, drains serial output, and injects console input.
@@ -459,7 +461,7 @@ make run GUEST_OS=freebsd
 
 ### Inspecting the Guest
 
-Once agentOS is running, inspect the FreeBSD guest through the CC-PD reference
+Once FractalOS is running, inspect the FreeBSD guest through the CC-PD reference
 consumer:
 
 ```bash
@@ -491,8 +493,8 @@ Per-slot RAM:
 - BSD license aligns with seL4's formal verification story
 - **Jails** map naturally to seL4 capability domains (Phase 3 roadmap)
 - `pf` firewall ruleset = capability policy layer
-- ZFS + GEOM: a principled storage stack for agentOS's BlobSvc
-- bhyve inside FreeBSD = agents can *nest* hypervisors within agentOS
+- ZFS + GEOM: a principled storage stack for FractalOS's BlobSvc
+- bhyve inside FreeBSD = agents can *nest* hypervisors within FractalOS
 
 See [`docs/freebsd-vm-guest.md`](docs/freebsd-vm-guest.md) for the full design doc.
 
@@ -500,7 +502,7 @@ See [`docs/freebsd-vm-guest.md`](docs/freebsd-vm-guest.md) for the full design d
 
 ## Contributing
 
-agentOS is in early (alpha) development. The design is stable; the implementation
+FractalOS is in early (alpha) development. The design is stable; the implementation
 is growing and much of it is still host-tested scaffolding (see the proof-level
 status table above). Contributions welcome in:
 

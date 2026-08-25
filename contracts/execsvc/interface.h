@@ -21,28 +21,28 @@
  * supplied argv or shell command.  The first profile performs a real C11
  * compile-only validation with fixed warning/error flags. */
 #define EXECSVC_PROFILE_C11_COMPILE         1u
-#define EXECSVC_PROFILE_AGENTOS_REPO_TEST   2u
-#define EXECSVC_PROFILE_AGENTOS_REPO_SEARCH 3u
-#define EXECSVC_PROFILE_AGENTOS_REPO_READ   4u
+#define EXECSVC_PROFILE_FRACTALOS_REPO_TEST   2u
+#define EXECSVC_PROFILE_FRACTALOS_REPO_SEARCH 3u
+#define EXECSVC_PROFILE_FRACTALOS_REPO_READ   4u
 #define EXECSVC_RIGHT_VERIFY_EXACT          (1u << 0)
 #define EXECSVC_RIGHT_C11_COMPILE           (1u << 1)
-#define EXECSVC_RIGHT_AGENTOS_REPO_TEST     (1u << 2)
-#define EXECSVC_RIGHT_AGENTOS_REPO_SEARCH   (1u << 3)
-#define EXECSVC_RIGHT_AGENTOS_REPO_READ     (1u << 4)
-#define EXECSVC_RIGHT_AGENTOS_REPOSITORY    \
-    (EXECSVC_RIGHT_AGENTOS_REPO_SEARCH | EXECSVC_RIGHT_AGENTOS_REPO_READ)
+#define EXECSVC_RIGHT_FRACTALOS_REPO_TEST     (1u << 2)
+#define EXECSVC_RIGHT_FRACTALOS_REPO_SEARCH   (1u << 3)
+#define EXECSVC_RIGHT_FRACTALOS_REPO_READ     (1u << 4)
+#define EXECSVC_RIGHT_FRACTALOS_REPOSITORY    \
+    (EXECSVC_RIGHT_FRACTALOS_REPO_SEARCH | EXECSVC_RIGHT_FRACTALOS_REPO_READ)
 #define EXECSVC_RIGHT_ALL                   \
     (EXECSVC_RIGHT_VERIFY_EXACT | EXECSVC_RIGHT_C11_COMPILE \
-     | EXECSVC_RIGHT_AGENTOS_REPO_TEST | EXECSVC_RIGHT_AGENTOS_REPOSITORY)
+     | EXECSVC_RIGHT_FRACTALOS_REPO_TEST | EXECSVC_RIGHT_FRACTALOS_REPOSITORY)
 #define EXECSVC_PROFILE_RIGHT(profile_id)                         \
     ((profile_id) == EXECSVC_PROFILE_C11_COMPILE                  \
          ? EXECSVC_RIGHT_C11_COMPILE                              \
-         : ((profile_id) == EXECSVC_PROFILE_AGENTOS_REPO_TEST     \
-                ? EXECSVC_RIGHT_AGENTOS_REPO_TEST                  \
-                : ((profile_id) == EXECSVC_PROFILE_AGENTOS_REPO_SEARCH \
-                       ? EXECSVC_RIGHT_AGENTOS_REPO_SEARCH         \
-                       : ((profile_id) == EXECSVC_PROFILE_AGENTOS_REPO_READ \
-                              ? EXECSVC_RIGHT_AGENTOS_REPO_READ : 0u))))
+         : ((profile_id) == EXECSVC_PROFILE_FRACTALOS_REPO_TEST     \
+                ? EXECSVC_RIGHT_FRACTALOS_REPO_TEST                  \
+                : ((profile_id) == EXECSVC_PROFILE_FRACTALOS_REPO_SEARCH \
+                       ? EXECSVC_RIGHT_FRACTALOS_REPO_SEARCH         \
+                       : ((profile_id) == EXECSVC_PROFILE_FRACTALOS_REPO_READ \
+                              ? EXECSVC_RIGHT_FRACTALOS_REPO_READ : 0u))))
 #define EXECSVC_SOURCE_MAX                  (24u * 1024u)
 #define EXECSVC_OUTPUT_MAX                  (16u * 1024u)
 #define EXECSVC_REPO_PATH_MAX               256u
@@ -111,12 +111,12 @@ _Static_assert(sizeof(execsvc_repo_bundle_header_t) == 16u,
 _Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_C11_COMPILE)
                    == EXECSVC_RIGHT_C11_COMPILE,
                "C11 profile must map to its immutable capability right");
-_Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_AGENTOS_REPO_TEST)
-                   == EXECSVC_RIGHT_AGENTOS_REPO_TEST,
+_Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_FRACTALOS_REPO_TEST)
+                   == EXECSVC_RIGHT_FRACTALOS_REPO_TEST,
                "repository profile must map to its immutable capability right");
-_Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_AGENTOS_REPO_SEARCH)
-                   == EXECSVC_RIGHT_AGENTOS_REPO_SEARCH,
+_Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_FRACTALOS_REPO_SEARCH)
+                   == EXECSVC_RIGHT_FRACTALOS_REPO_SEARCH,
                "repository search must map to its immutable capability right");
-_Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_AGENTOS_REPO_READ)
-                   == EXECSVC_RIGHT_AGENTOS_REPO_READ,
+_Static_assert(EXECSVC_PROFILE_RIGHT(EXECSVC_PROFILE_FRACTALOS_REPO_READ)
+                   == EXECSVC_RIGHT_FRACTALOS_REPO_READ,
                "repository read must map to its immutable capability right");

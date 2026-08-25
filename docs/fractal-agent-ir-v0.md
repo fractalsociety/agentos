@@ -562,7 +562,7 @@ state.
 
 The first deployable controller remains the full Go Headscale service in the
 FreeBSD `mesh-controller` guest described by `docs/mesh-network.md`. Supported
-devices use standard `tailscaled` clients. An AgentOS node first reaches the
+devices use standard `tailscaled` clients. An FractalOS node first reaches the
 tailnet through the existing tailscaled shared-memory bridge; a native tailnet
 PD is a later replacement after the `net_pd` and WireGuard paths are boot-proven
 with standard-tailnet interoperability. FractalOS does not port the entire
@@ -895,7 +895,7 @@ of the winning transport and codec.
 
 ### Multi-device mesh
 
-- Two standard tailnet devices and one AgentOS node exchange authenticated
+- Two standard tailnet devices and one FractalOS node exchange authenticated
   task messages, event ranges, and immutable objects through the MeshGateway.
 - Direct connectivity is preferred and operation continues through relay/DERP
   fallback without changing AgentHandles, ObjectIDs, or service interfaces.
@@ -973,7 +973,7 @@ requirements in this PRD, not claims about the current implementation.
 The repository has a documented Headscale architecture and ongoing `net_pd`
 and WireGuard work, but it does not yet provide the Fractal Mesh QUIC protocol,
 remote audience-bound grants, cross-device AgentHandles, shared-space
-anti-entropy, authority leases, or the external local gateway. Native AgentOS
+anti-entropy, authority leases, or the external local gateway. Native FractalOS
 standard-tailnet interoperability is not boot-proven. The initial deployable
 path therefore remains Headscale in the FreeBSD controller guest plus standard
 tailscaled clients and the shared-memory bridge.

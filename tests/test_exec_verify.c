@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AGENTOS_TEST_HOST 1
+#define FRACTALOS_TEST_HOST 1
 #include "../services/exec-server/exec_verify.c"
 
 static uint8_t arena[EXECSVC_SHMEM_SIZE];
@@ -104,22 +104,22 @@ int main(void)
                                  EXECSVC_RIGHT_VERIFY_EXACT),
                &run, &run_reply) == EXECSVC_ERR_DENIED);
     assert(transport_calls == 1u);
-    run.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+    run.profile_id = EXECSVC_PROFILE_FRACTALOS_REPO_TEST;
     assert(execsvc_run_profile_dispatch(
                badge_with_rights(SVC_ID_EXEC_SERVER, client,
                                  EXECSVC_RIGHT_C11_COMPILE),
                &run, &run_reply) == EXECSVC_ERR_DENIED);
     assert(transport_calls == 1u);
-    run.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_SEARCH;
+    run.profile_id = EXECSVC_PROFILE_FRACTALOS_REPO_SEARCH;
     assert(execsvc_run_profile_dispatch(
                badge_with_rights(SVC_ID_EXEC_SERVER, client,
-                                 EXECSVC_RIGHT_AGENTOS_REPO_READ),
+                                 EXECSVC_RIGHT_FRACTALOS_REPO_READ),
                &run, &run_reply) == EXECSVC_ERR_DENIED);
     assert(transport_calls == 1u);
-    run.profile_id = EXECSVC_PROFILE_AGENTOS_REPO_READ;
+    run.profile_id = EXECSVC_PROFILE_FRACTALOS_REPO_READ;
     assert(execsvc_run_profile_dispatch(
                badge_with_rights(SVC_ID_EXEC_SERVER, client,
-                                 EXECSVC_RIGHT_AGENTOS_REPO_SEARCH),
+                                 EXECSVC_RIGHT_FRACTALOS_REPO_SEARCH),
                &run, &run_reply) == EXECSVC_ERR_DENIED);
     assert(transport_calls == 1u);
 

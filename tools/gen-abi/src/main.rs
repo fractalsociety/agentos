@@ -1,7 +1,7 @@
-//! gen-abi — agentOS per-PD ABI table generator.
+//! gen-abi — FractalOS per-PD ABI table generator.
 //!
 //! Reads the source-of-truth ABI spec (`tools/abi_spec.toml`) and emits a
-//! generated C header (`agentos_abi.h`) containing per-PD ABI tables.
+//! generated C header (`fractalos_abi.h`) containing per-PD ABI tables.
 //!
 //! The build MUST fail (nonzero exit) when the spec is internally
 //! inconsistent. We detect and hard-fail on:
@@ -11,7 +11,7 @@
 //!
 //! Drift between a generated value and the hand-written constant it mirrors
 //! (`legacy`) is caught at C-compile time: the header emits a `_Static_assert`
-//! per entry, so a stale agentos.h constant fails the C build.
+//! per entry, so a stale fractalos.h constant fails the C build.
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -46,7 +46,7 @@ struct PdSpec {
 struct Entry {
     name: String,
     value: u32,
-    /// Existing agentos.h constant this entry mirrors.
+    /// Existing fractalos.h constant this entry mirrors.
     legacy: Option<String>,
 }
 
@@ -127,10 +127,10 @@ fn generate(spec: &Spec, source_name: &str) -> String {
         "/* Regenerate with: cargo run -p gen-abi -- tools/{} \\\n */\n",
         source_name
     ));
-    out.push_str("/*     -o kernel/agentos-root-task/include/agentos_abi.h   */\n\n");
+    out.push_str("/*     -o kernel/fractalos-root-task/include/fractalos_abi.h   */\n\n");
     out.push_str("#pragma once\n");
-    out.push_str("#ifndef AGENTOS_ABI_H\n");
-    out.push_str("#define AGENTOS_ABI_H\n\n");
+    out.push_str("#ifndef FRACTALOS_ABI_H\n");
+    out.push_str("#define FRACTALOS_ABI_H\n\n");
     out.push_str("#include <stdint.h>\n\n");
     out.push_str(
         "/*\n * Per-PD ABI tables. Each PD's opcodes and channels live in their own\n\
@@ -187,17 +187,17 @@ fn generate(spec: &Spec, source_name: &str) -> String {
     // Drift guard: tie each generated value to the legacy constant.
     out.push_str(
         "/*\n * Stale-constant guard. Each _Static_assert ties a generated ABI value\n\
-         \x20* to the hand-written constant in agentos.h it mirrors. If agentos.h\n\
+         \x20* to the hand-written constant in fractalos.h it mirrors. If fractalos.h\n\
          \x20* drifts from this generated table, the C build fails here.\n\
          \x20* (Skipped for the gen-abi unit tests / standalone preprocessing.)\n */\n",
     );
-    out.push_str("#ifdef AGENTOS_ABI_CHECK_LEGACY\n");
+    out.push_str("#ifdef FRACTALOS_ABI_CHECK_LEGACY\n");
     for pd in &spec.pd {
         let pdu = upper(&pd.name);
         for op in &pd.opcode {
             if let Some(legacy) = &op.legacy {
                 out.push_str(&format!(
-                    "_Static_assert((uint32_t)({}) == ABI_{}_OP_{}, \"agentos.h {} drifted from abi_spec.toml\");\n",
+                    "_Static_assert((uint32_t)({}) == ABI_{}_OP_{}, \"fractalos.h {} drifted from abi_spec.toml\");\n",
                     legacy, pdu, upper(&op.name), legacy
                 ));
             }
@@ -205,22 +205,22 @@ fn generate(spec: &Spec, source_name: &str) -> String {
         for ch in &pd.channel {
             if let Some(legacy) = &ch.legacy {
                 out.push_str(&format!(
-                    "_Static_assert((uint32_t)({}) == ABI_{}_CH_{}, \"agentos.h {} drifted from abi_spec.toml\");\n",
+                    "_Static_assert((uint32_t)({}) == ABI_{}_CH_{}, \"fractalos.h {} drifted from abi_spec.toml\");\n",
                     legacy, pdu, upper(&ch.name), legacy
                 ));
             }
         }
     }
-    out.push_str("#endif /* AGENTOS_ABI_CHECK_LEGACY */\n\n");
+    out.push_str("#endif /* FRACTALOS_ABI_CHECK_LEGACY */\n\n");
 
-    out.push_str("#endif /* AGENTOS_ABI_H */\n");
+    out.push_str("#endif /* FRACTALOS_ABI_H */\n");
     out
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────── //
 
 #[derive(Parser)]
-#[command(name = "gen-abi", about = "agentOS per-PD ABI table generator")]
+#[command(name = "gen-abi", about = "FractalOS per-PD ABI table generator")]
 struct Cli {
     /// TOML ABI spec file (source of truth).
     spec: PathBuf,
@@ -243,8 +243,7 @@ fn main() -> Result<()> {
 
     let content = std::fs::read_to_string(&cli.spec)
         .with_context(|| format!("failed to read {}", cli.spec.display()))?;
-    let spec: Spec =
-        toml::from_str(&content).with_context(|| "TOML parse error in ABI spec")?;
+    let spec: Spec = toml::from_str(&content).with_context(|| "TOML parse error in ABI spec")?;
 
     let errors = validate(&spec, &cli.contracts);
     if !errors.is_empty() {
@@ -253,7 +252,10 @@ fn main() -> Result<()> {
             eprintln!("  x {}", e);
         }
         // Hard-fail the build.
-        bail!("{} ABI spec error(s); refusing to emit header", errors.len());
+        bail!(
+            "{} ABI spec error(s); refusing to emit header",
+            errors.len()
+        );
     }
 
     let source_name = cli
@@ -276,7 +278,7 @@ fn main() -> Result<()> {
     let code = generate(&spec, &source_name);
     let out_path = cli
         .output
-        .unwrap_or_else(|| PathBuf::from("agentos_abi.h"));
+        .unwrap_or_else(|| PathBuf::from("fractalos_abi.h"));
     std::fs::write(&out_path, &code)
         .with_context(|| format!("failed to write {}", out_path.display()))?;
     println!("OK: generated {}", out_path.display());
@@ -391,7 +393,11 @@ mod tests {
             pd("b", None, vec![op("Y", 1)], vec![]),
         ]);
         let errs = validate(&s, &no_contracts());
-        assert!(errs.is_empty(), "cross-PD same value should be ok, got {:?}", errs);
+        assert!(
+            errs.is_empty(),
+            "cross-PD same value should be ok, got {:?}",
+            errs
+        );
     }
 
     #[test]
@@ -406,6 +412,6 @@ mod tests {
         assert!(code.contains("#define ABI_EVENT_BUS_OP_INIT 0x1u"));
         assert!(code.contains("#define ABI_EVENT_BUS_CH_MONITOR 2u"));
         assert!(code.contains("_Static_assert"));
-        assert!(code.contains("AGENTOS_ABI_CHECK_LEGACY"));
+        assert!(code.contains("FRACTALOS_ABI_CHECK_LEGACY"));
     }
 }

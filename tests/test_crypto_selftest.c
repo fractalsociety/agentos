@@ -1,7 +1,7 @@
 /*
- * test_crypto_selftest.c — host-side validation of agentOS Ed25519 selftest
+ * test_crypto_selftest.c — host-side validation of FractalOS Ed25519 selftest
  *
- * Proves three things required by agentos-c7i:
+ * Proves three things required by fos-c7i:
  *   1. Ed25519 known-GOOD RFC 8032 test vector verifies (returns 0).
  *   2. Ed25519 known-BAD vectors (corrupted sig / msg / pk) are REJECTED.
  *   3. The fatal selftest gate (crypto_selftest()) returns 0 on success and
@@ -9,17 +9,17 @@
  *      when the gate fails — mirroring the boot-time hard-fail behaviour.
  *
  * The selftest gate exercised here is the SAME function the controller calls
- * at boot (kernel/agentos-root-task/src/verify.c :: crypto_selftest), which on
+ * at boot (kernel/fractalos-root-task/src/verify.c :: crypto_selftest), which on
  * the target panics via crypto_selftest_panic() if any vector fails.
  *
  * Build:
  *   cc -o /tmp/test_crypto_selftest \
  *       tests/test_crypto_selftest.c \
- *       kernel/agentos-root-task/src/verify.c \
- *       kernel/agentos-root-task/src/ed25519_verify.c \
- *       kernel/agentos-root-task/src/monocypher.c \
- *       -I tests -I kernel/agentos-root-task/include \
- *       -DAGENTOS_TEST_HOST
+ *       kernel/fractalos-root-task/src/verify.c \
+ *       kernel/fractalos-root-task/src/ed25519_verify.c \
+ *       kernel/fractalos-root-task/src/monocypher.c \
+ *       -I tests -I kernel/fractalos-root-task/include \
+ *       -DFRACTALOS_TEST_HOST
  * Run:
  *   /tmp/test_crypto_selftest    # exits 0 on success, nonzero on failure
  */
@@ -32,7 +32,7 @@
 
 #include "monocypher.h"
 
-/* verify.c logs via log_drain_write() (inline in agentos.h), which references
+/* verify.c logs via log_drain_write() (inline in fractalos.h), which references
  * this seL4cp setvar global.  Host builds have no log ring mapped, so define
  * it as 0 — log_drain_write() then becomes a no-op. */
 uintptr_t log_drain_rings_vaddr = 0;
@@ -143,7 +143,7 @@ static void test_selftest_gate_fails_fatally(void)
 int main(void)
 {
     printf("TAP version 13\n");
-    printf("# agentOS Ed25519 cryptographic selftest validation (agentos-c7i)\n");
+    printf("# FractalOS Ed25519 cryptographic selftest validation (fos-c7i)\n");
 
     test_known_good();
     test_known_bad();

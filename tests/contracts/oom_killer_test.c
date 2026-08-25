@@ -6,17 +6,17 @@
  *   0x02 — OOM_SET_POLICY: configure eviction policy (thresholds, strategy)
  *   0x03 — OOM_PROBE     : manually trigger a pressure probe
  *
- * Channel: 0 (placeholder — update when ch is assigned in agentos.system).
+ * Channel: 0 (placeholder — update when ch is assigned in fractalos.system).
  *
  * TODO: replace opcode literals with
  *       #include "../../contracts/oom-killer/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define OOM_OP_STATUS     0x01u
 #define OOM_OP_SET_POLICY 0x02u

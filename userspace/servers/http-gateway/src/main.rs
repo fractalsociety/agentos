@@ -1,7 +1,7 @@
-//! agentOS HTTP Gateway
+//! FractalOS HTTP Gateway
 //!
 //! A Tokio/hyper HTTP/1.1 server that acts as the public-facing HTTP entry
-//! point for agentOS full-stack applications.  Each incoming request is
+//! point for FractalOS full-stack applications.  Each incoming request is
 //! dispatched to the appropriate application by querying the IPC bridge
 //! (GATEWAY_IPC) via HTTP POST, with a static per-app env-var route table as
 //! fallback.
@@ -24,8 +24,8 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use bytes::Bytes;
@@ -81,7 +81,7 @@ fn route_lookup(path: &str) -> Option<String> {
     let mut best: Option<(&str, &str)> = None;
     for (prefix, upstream) in table.iter() {
         if path.starts_with(prefix.as_str()) {
-            let is_longer = best.map_or(true, |(bp, _)| prefix.len() > bp.len());
+            let is_longer = best.is_none_or(|(bp, _)| prefix.len() > bp.len());
             if is_longer {
                 best = Some((prefix.as_str(), upstream.as_str()));
             }
@@ -112,8 +112,7 @@ async fn dispatch_via_http_svc(path: &str) -> Option<SocketAddr> {
     // Keep the legacy constants referenced so they remain reachable.
     let _ = (OP_HTTP_DISPATCH, HTTP_OK, HTTP_APP_ID_NONE);
 
-    let bridge_addr = std::env::var("GATEWAY_IPC")
-        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+    let bridge_addr = std::env::var("GATEWAY_IPC").unwrap_or_else(|_| "127.0.0.1:9090".to_string());
 
     let url = format!("http://{}/dispatch", bridge_addr);
 
@@ -159,7 +158,10 @@ async fn dispatch_via_http_svc(path: &str) -> Option<SocketAddr> {
 
 // ── Response helpers ─────────────────────────────────────────────────────────
 
-fn json_response(status: StatusCode, body: serde_json::Value) -> Response<BoxBody<Bytes, Infallible>> {
+fn json_response(
+    status: StatusCode,
+    body: serde_json::Value,
+) -> Response<BoxBody<Bytes, Infallible>> {
     let json_bytes = body.to_string();
     Response::builder()
         .status(status)
@@ -226,27 +228,28 @@ async fn proxy_request(
 async fn handle_request(
     req: Request<Incoming>,
 ) -> Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
-    let start    = Instant::now();
-    let method   = req.method().clone();
-    let path     = req.uri().path().to_owned();
-    let req_id   = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let start = Instant::now();
+    let method = req.method().clone();
+    let path = req.uri().path().to_owned();
+    let req_id = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
 
     debug!("[req-{}] {} {}", req_id, method, path);
 
     // ── Built-in gateway endpoints ───────────────────────────────────────────
 
-    if method == Method::GET && (path == "/health" || path == "/healthz" || path == "/_gateway/health") {
-        let route_count = ROUTE_TABLE
-            .get()
-            .map(|t| t.len())
-            .unwrap_or(0);
+    if method == Method::GET
+        && (path == "/health" || path == "/healthz" || path == "/_gateway/health")
+    {
+        let route_count = ROUTE_TABLE.get().map(|t| t.len()).unwrap_or(0);
         let resp = json_response(
             StatusCode::OK,
             json!({ "status": "ok", "routes": route_count }),
         );
         info!(
             "[req-{}] GET {} → 200 ({}ms)",
-            req_id, path, start.elapsed().as_millis()
+            req_id,
+            path,
+            start.elapsed().as_millis()
         );
         return Ok(resp);
     }
@@ -267,7 +270,10 @@ async fn handle_request(
     let upstream: Option<String> = if let Some(addr) = dispatch_via_http_svc(&path).await {
         info!(
             "[req-{}] ipc-dispatch: {} → {} ({}ms)",
-            req_id, path, addr, start.elapsed().as_millis()
+            req_id,
+            path,
+            addr,
+            start.elapsed().as_millis()
         );
         Some(addr.to_string())
     } else {
@@ -277,7 +283,10 @@ async fn handle_request(
         if let Some(addr) = static_route(&path) {
             info!(
                 "[req-{}] static-route (env): {} → {} ({}ms)",
-                req_id, path, addr, start.elapsed().as_millis()
+                req_id,
+                path,
+                addr,
+                start.elapsed().as_millis()
             );
             Some(addr.to_string())
         } else {
@@ -285,7 +294,10 @@ async fn handle_request(
             if let Some(up) = route_lookup(&path) {
                 info!(
                     "[req-{}] static-route (prefix): {} → {} ({}ms)",
-                    req_id, path, up, start.elapsed().as_millis()
+                    req_id,
+                    path,
+                    up,
+                    start.elapsed().as_millis()
                 );
                 Some(up)
             } else {
@@ -297,10 +309,9 @@ async fn handle_request(
     if let Some(upstream_addr) = upstream {
         // Re-attach X-Request-Id header before forwarding.
         let (mut parts, body) = req.into_parts();
-        parts.headers.insert(
-            "x-request-id",
-            format!("{}", req_id).parse().unwrap(),
-        );
+        parts
+            .headers
+            .insert("x-request-id", format!("{}", req_id).parse().unwrap());
         let req = Request::from_parts(parts, body);
 
         match proxy_request(&upstream_addr, req).await {
@@ -308,7 +319,12 @@ async fn handle_request(
                 let status = upstream_resp.status();
                 info!(
                     "[req-{}] {} {} → {} via {} ({}ms)",
-                    req_id, method, path, status, upstream_addr, start.elapsed().as_millis()
+                    req_id,
+                    method,
+                    path,
+                    status,
+                    upstream_addr,
+                    start.elapsed().as_millis()
                 );
                 let (parts, body) = upstream_resp.into_parts();
                 let infallible_body = body.map_err(|_| -> Infallible { unreachable!() }).boxed();
@@ -319,7 +335,10 @@ async fn handle_request(
                 let resp = error_response(StatusCode::BAD_GATEWAY, "upstream error");
                 info!(
                     "[req-{}] {} {} → 502 ({}ms)",
-                    req_id, method, path, start.elapsed().as_millis()
+                    req_id,
+                    method,
+                    path,
+                    start.elapsed().as_millis()
                 );
                 return Ok(resp);
             }
@@ -332,7 +351,10 @@ async fn handle_request(
     }
     info!(
         "[req-{}] {} {} → 404 ({}ms)",
-        req_id, method, path, start.elapsed().as_millis()
+        req_id,
+        method,
+        path,
+        start.elapsed().as_millis()
     );
     Ok(json_response(
         StatusCode::NOT_FOUND,
@@ -364,11 +386,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .expect("GATEWAY_LISTEN must be a valid socket address");
 
-    let ipc_addr = std::env::var("GATEWAY_IPC")
-        .unwrap_or_else(|_| "127.0.0.1:9090".to_string());
+    let ipc_addr = std::env::var("GATEWAY_IPC").unwrap_or_else(|_| "127.0.0.1:9090".to_string());
 
     let route_count = ROUTE_TABLE.get().map(|t| t.len()).unwrap_or(0);
-    info!("agentOS HTTP gateway starting on {}", listen_addr);
+    info!("FractalOS HTTP gateway starting on {}", listen_addr);
     info!("IPC bridge: http://{}/dispatch", ipc_addr);
     info!("route table: {} entries", route_count);
 

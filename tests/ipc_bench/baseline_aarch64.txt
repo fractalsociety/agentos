@@ -1,8 +1,8 @@
-# agentOS IPC benchmark baseline — AArch64 QEMU TCG
+# FractalOS IPC benchmark baseline — AArch64 QEMU TCG
 # Generated: 2026-04-24
 # Architecture: AArch64 (cntvct_el0, 1 GHz reference)
 #
-# NOTE: Values below are from the AGENTOS_TEST_HOST simulation build running
+# NOTE: Values below are from the FRACTALOS_TEST_HOST simulation build running
 # on the development host (macOS/Linux).  They reflect host function-call
 # overhead, not real seL4 kernel-crossing latency.
 #

@@ -40,13 +40,13 @@
  * Tests that need valid WASM first write the 4-byte magic into the staging
  * window before calling PROPOSE.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vibeos_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vibeos_contract.h"
 
 /* ── Opcode aliases matching vibe_engine.c local #defines ───────────── */
 #define VE_OP_PROPOSE          0x40u

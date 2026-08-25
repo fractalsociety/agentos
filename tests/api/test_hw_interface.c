@@ -7,27 +7,27 @@
  *   gpu_sched.c    — GPU work scheduler, MSG_GPU_* and OP_GPU_SUBMIT_CMD
  *
  * All tests run entirely on the host — no seL4 or Microkit required.
- * The AGENTOS_TEST_HOST guard in each PD source swaps in stub types and
+ * The FRACTALOS_TEST_HOST guard in each PD source swaps in stub types and
  * a no-op seL4_DebugPutChar / sel4_call so tests compile and run cleanly.
  *
  * Build & run:
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -o /tmp/test_hw_interface \
  *      tests/api/test_hw_interface.c && /tmp/test_hw_interface
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
 /* ── Pull in PD implementations under the test guard ──────────────────────── */
 
-#include "../../kernel/agentos-root-task/src/serial_pd.c"
+#include "../../kernel/fractalos-root-task/src/serial_pd.c"
 
 /*
  * framebuffer_pd.c and gpu_sched.c both define data_rd32/data_wr32, so we
@@ -558,6 +558,6 @@ int main(void)
     return tap_exit();
 }
 
-#else /* !AGENTOS_TEST_HOST */
-typedef int _agentos_api_test_hw_interface_dummy;
-#endif /* AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
+typedef int _fractalos_api_test_hw_interface_dummy;
+#endif /* FRACTALOS_TEST_HOST */

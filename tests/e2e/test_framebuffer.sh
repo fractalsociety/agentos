@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — framebuffer_contract.h tests
+# FractalOS E2E — framebuffer_contract.h tests
 #
 # Tests MSG_FB_CREATE (NULL backend), MSG_FB_WRITE, MSG_FB_FLIP, MSG_FB_RESIZE,
 # and MSG_FB_DESTROY via the CC bridge.
@@ -32,7 +32,7 @@ BRIDGE_AVAIL="${BRIDGE_AVAILABLE:-0}"
 
 cc_post() {
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }

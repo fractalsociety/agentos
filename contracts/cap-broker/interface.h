@@ -1,5 +1,5 @@
 /*
- * agentOS CapabilityBroker IPC Contract — interface.h
+ * FractalOS CapabilityBroker IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the Capability Broker protection domain.
  * The capability broker is the only PD permitted to perform CNode operations
@@ -18,7 +18,7 @@
  * IPC mechanism: seL4_Call / seL4_Reply.
  * MR0 carries the opcode on request; MR0 carries the status on reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

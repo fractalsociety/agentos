@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # agentctl End-to-End Test
 #
-# Tests agentctl --batch against a running agentOS QEMU environment.
+# Tests agentctl --batch against a running FractalOS QEMU environment.
 #
 # Exit codes:
 #   0 — PASS
@@ -11,7 +11,7 @@
 # Environment variables (all optional):
 #   CC_PD_SOCK        Path to cc_pd bridge socket (default: build/cc_pd.sock)
 #   AGENTCTL          Path to agentctl binary (default: tools/agentctl/agentctl)
-#   AGENTOS_SKIP_E2E  Skip this test unconditionally (set to any non-empty value)
+#   FRACTALOS_SKIP_E2E  Skip this test unconditionally (set to any non-empty value)
 
 set -euo pipefail
 
@@ -39,8 +39,8 @@ SOCK="${CC_PD_SOCK:-${REPO_ROOT}/build/cc_pd.sock}"
 
 # ── Skip conditions ────────────────────────────────────────────────────────────
 
-if [ -n "${AGENTOS_SKIP_E2E:-}" ]; then
-    skip "AGENTOS_SKIP_E2E is set"
+if [ -n "${FRACTALOS_SKIP_E2E:-}" ]; then
+    skip "FRACTALOS_SKIP_E2E is set"
 fi
 
 if [ ! -f "${BINARY}" ]; then
@@ -48,7 +48,7 @@ if [ ! -f "${BINARY}" ]; then
 fi
 
 if [ ! -S "${SOCK}" ] && [ ! -e "${SOCK}" ]; then
-    skip "cc_pd socket not found (expected: ${SOCK}) — start agentOS first"
+    skip "cc_pd socket not found (expected: ${SOCK}) — start FractalOS first"
 fi
 
 # ── Test 1: --batch list-guests ────────────────────────────────────────────────

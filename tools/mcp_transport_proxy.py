@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bridge AgentOS's private MCP console to one shared MCP stdio server."""
+"""Bridge FractalOS's private MCP console to one shared MCP stdio server."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ def request_meta(protocol: str) -> dict[str, object]:
     return {
         "io.modelcontextprotocol/protocolVersion": protocol,
         "io.modelcontextprotocol/clientInfo": {
-            "name": "agentos-mcp-transport",
+            "name": "fractalos-mcp-transport",
             "version": "1",
         },
         "io.modelcontextprotocol/clientCapabilities": {},
@@ -105,7 +105,7 @@ class McpStdioClient:
             initialized = self._rpc("initialize", {
                 "protocolVersion": LEGACY_PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "agentos-mcp-transport", "version": "1"},
+                "clientInfo": {"name": "fractalos-mcp-transport", "version": "1"},
             }, protocol=None)
             selected = initialized.get("protocolVersion")
             if not isinstance(selected, str):
@@ -296,10 +296,10 @@ def serve(sock: socket.socket, client: McpStdioClient, trace: bool = False) -> N
         magic, version, operation, name_len, input_len, output_cap, tag = \
             REQUEST_HEADER.unpack(raw)
         if magic != MAGIC or version != VERSION:
-            raise ValueError("invalid AgentOS MCP transport header")
+            raise ValueError("invalid FractalOS MCP transport header")
         if not 4 <= name_len < 128 or input_len > MAX_INPUT \
                 or not 0 < output_cap <= MAX_OUTPUT:
-            raise ValueError("AgentOS MCP transport bounds violation")
+            raise ValueError("FractalOS MCP transport bounds violation")
         name_raw = recv_exact(sock, name_len)
         input_bytes = recv_exact(sock, input_len)
         status = STATUS_PROVIDER_DOWN

@@ -1,7 +1,7 @@
-# agentOS Image Format — `agentos.img`
+# FractalOS Image Format — `fractalos.img`
 
 This document specifies the flat-binary image format produced by
-`cargo xtask gen-image`.  The agentOS root task parses this image at boot
+`cargo xtask gen-image`.  The FractalOS root task parses this image at boot
 time to locate the kernel ELF, root task ELF, and all protection-domain ELFs.
 
 ---
@@ -10,7 +10,7 @@ time to locate the kernel ELF, root task ELF, and all protection-domain ELFs.
 
 The standard seL4 ELF-loader format (used by the Microkit SDK's `bin/microkit`
 tool) is tightly coupled to the Microkit build toolchain and requires a
-separately-maintained host binary.  agentOS replaces this with a
+separately-maintained host binary.  FractalOS replaces this with a
 self-describing flat-binary format that:
 
 - Has no toolchain dependency beyond `cargo xtask`.
@@ -45,7 +45,7 @@ All multi-byte integers are **little-endian**.
 
 | Offset | Size | Field          | Description                                      |
 |--------|------|----------------|--------------------------------------------------|
-| 0      | 8    | `magic`        | `0x4147454E544F5300` (ASCII `AGENTOS\0`)         |
+| 0      | 8    | `magic`        | `0x4652414354414C4F` (ASCII `FRACTALO`)             |
 | 8      | 4    | `version`      | Format version, currently `1`                    |
 | 12     | 4    | `num_pds`      | Number of protection-domain entries              |
 | 16     | 4    | `kernel_off`   | Byte offset of the kernel ELF in this file       |
@@ -58,8 +58,8 @@ All multi-byte integers are **little-endian**.
 The magic value written as a C constant:
 
 ```c
-#define AGENTOS_IMAGE_MAGIC   UINT64_C(0x4147454E544F5300)
-#define AGENTOS_IMAGE_VERSION 1U
+#define FRACTALOS_IMAGE_MAGIC   UINT64_C(0x4652414354414C4F)
+#define FRACTALOS_IMAGE_VERSION 1U
 ```
 
 ---
@@ -86,14 +86,14 @@ TOML used as input to `gen-image`.
 ```c
 #include <stdint.h>
 
-#define AGENTOS_IMAGE_MAGIC   UINT64_C(0x4147454E544F5300)
-#define AGENTOS_IMAGE_VERSION 1U
-#define AGENTOS_IMG_HDR_SIZE  64U
-#define AGENTOS_PD_ENTRY_SIZE 64U
+#define FRACTALOS_IMAGE_MAGIC   UINT64_C(0x4652414354414C4F)
+#define FRACTALOS_IMAGE_VERSION 1U
+#define FRACTALOS_IMG_HDR_SIZE  64U
+#define FRACTALOS_PD_ENTRY_SIZE 64U
 
 typedef struct __attribute__((packed)) {
-    uint64_t magic;        /* AGENTOS_IMAGE_MAGIC            */
-    uint32_t version;      /* AGENTOS_IMAGE_VERSION          */
+    uint64_t magic;        /* FRACTALOS_IMAGE_MAGIC            */
+    uint32_t version;      /* FRACTALOS_IMAGE_VERSION          */
     uint32_t num_pds;      /* number of PD entries           */
     uint32_t kernel_off;   /* byte offset of kernel ELF      */
     uint32_t kernel_len;   /* byte length of kernel ELF      */
@@ -101,7 +101,7 @@ typedef struct __attribute__((packed)) {
     uint32_t root_len;     /* byte length of root-task ELF   */
     uint32_t pd_table_off; /* byte offset of PD entry table  */
     uint8_t  _pad[28];
-} agentos_img_hdr_t;
+} fractalos_img_hdr_t;
 
 typedef struct __attribute__((packed)) {
     char     name[48];     /* NUL-terminated PD name         */
@@ -109,7 +109,7 @@ typedef struct __attribute__((packed)) {
     uint32_t elf_len;      /* byte length of PD ELF          */
     uint8_t  priority;     /* scheduling priority            */
     uint8_t  _pad[7];
-} agentos_pd_entry_t;
+} fractalos_pd_entry_t;
 ```
 
 ---
@@ -124,11 +124,11 @@ being finalised in issue E1-S6: root-task boot sequence).
 The root task performs the following steps:
 
 1. Receive the physical base address of the image from the loader.
-2. Cast the first 64 bytes to `agentos_img_hdr_t *` and verify:
-   - `magic == AGENTOS_IMAGE_MAGIC`
-   - `version == AGENTOS_IMAGE_VERSION` (or a version it supports)
+2. Cast the first 64 bytes to `fractalos_img_hdr_t *` and verify:
+   - `magic == FRACTALOS_IMAGE_MAGIC`
+   - `version == FRACTALOS_IMAGE_VERSION` (or a version it supports)
 3. Walk the PD entry table at `base + hdr->pd_table_off`, one
-   `agentos_pd_entry_t` per PD.
+   `fractalos_pd_entry_t` per PD.
 4. For each PD, map `base + entry->elf_off` with length `entry->elf_len` into
    a fresh VSpace, then create a TCB and schedule it at `entry->priority`.
 5. Load the kernel ELF from `base + hdr->kernel_off` if running in a
@@ -149,7 +149,7 @@ cargo xtask gen-image \
   --kernel    path/to/sel4.elf \
   --root-task path/to/root_task.elf \
   --pd-dir    path/to/pd/elfs/ \
-  --out       agentos.img
+  --out       fractalos.img
 ```
 
 The `--pd-dir` directory must contain one file named `<pd_name>.elf` for

@@ -49,5 +49,5 @@ a 64-bit quantity split across two 32-bit MRs: `(hi << 32 | lo)`.
 ## Source Files
 
 - `contracts/timer-service/interface.h` — canonical IPC contract
-- `kernel/agentos-root-task/src/time_partition.c` — PD implementation
-- `kernel/agentos-root-task/include/agentos.h` — CH_TIMER, ctrl_tp channel
+- `kernel/fractalos-root-task/src/time_partition.c` — PD implementation
+- `kernel/fractalos-root-task/include/fractalos.h` — CH_TIMER, ctrl_tp channel

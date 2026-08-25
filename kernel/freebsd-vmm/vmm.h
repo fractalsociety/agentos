@@ -1,6 +1,6 @@
 /*
- * agentOS FreeBSD VMM
- * Copyright 2026, agentOS Project
+ * FractalOS FreeBSD VMM
+ * Copyright 2026, FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * VMM Protection Domain for running FreeBSD AArch64 as a seL4 Microkit
@@ -96,7 +96,7 @@
  *
  * These are the channel IDs as seen from freebsd_vmm's perspective.
  * They must match the <end pd="freebsd_vmm" id="N" /> entries in the
- * agentos-freebsd.system manifest.
+ * fractalos-freebsd.system manifest.
  */
 #define CH_VMM_CONTROLLER_PPC   0u   /* controller → freebsd_vmm (pp=true) */
 #define CH_VMM_CONTROLLER_EVT   1u   /* freebsd_vmm → controller (notify) */

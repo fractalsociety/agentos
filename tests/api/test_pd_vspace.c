@@ -2,12 +2,12 @@
  * test_pd_vspace.c — host ABI tests for PD VSpace entry points
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 #include "pd_vspace.h"
 
-#include "../../kernel/agentos-root-task/src/pd_vspace.c"
+#include "../../kernel/fractalos-root-task/src/pd_vspace.c"
 
 static void test_create_host_stub(void)
 {

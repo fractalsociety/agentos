@@ -1,5 +1,5 @@
 /*
- * agentOS MemFS — Virtual Filesystem Service
+ * FractalOS MemFS — Virtual Filesystem Service
  *
  * In-memory filesystem with per-agent namespaces.
  * This is the REFERENCE implementation — agents can vibe-code replacements.
@@ -10,7 +10,7 @@
  *   - Capability-gated access per namespace
  *   - Semantic tagging (agents can attach metadata/embeddings)
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

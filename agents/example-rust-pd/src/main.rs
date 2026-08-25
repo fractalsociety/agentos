@@ -1,6 +1,6 @@
 //! # example-rust-pd
 //!
-//! A minimal agentOS Protection Domain written entirely in Rust.
+//! A minimal FractalOS Protection Domain written entirely in Rust.
 //!
 //! ## Behaviour
 //!
@@ -19,9 +19,9 @@
 #![no_std]
 #![no_main]
 
-use agentos_pd::ipc::{self, MsgInfo};
-use agentos_pd::pd::ProtectionDomain;
-use agentos_pd::{console, export_pd};
+use fractalos_pd::ipc::{self, MsgInfo};
+use fractalos_pd::pd::ProtectionDomain;
+use fractalos_pd::{console, export_pd};
 
 // ── Opcodes ───────────────────────────────────────────────────────────────────
 
@@ -63,7 +63,7 @@ impl ProtectionDomain for ExamplePd {
         // grepped by the end-to-end test script.
         console::info("[example-rust-pd] booting\n");
         console::info("[example-rust-pd] runtime version: ");
-        console::info(agentos_pd::PD_RUNTIME_VERSION);
+        console::info(fractalos_pd::PD_RUNTIME_VERSION);
         console::info("\n");
         console::info("[example-rust-pd] READY\n");
     }

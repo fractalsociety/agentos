@@ -1,9 +1,9 @@
 /*
- * agentOS CapStore IPC Contract — interface.h
+ * FractalOS CapStore IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the CapStore protection domain.
  * CapStore is the semantic capability database.  It tracks every
- * capability derivation, grant, and revocation at the agentOS application
+ * capability derivation, grant, and revocation at the FractalOS application
  * layer (above seL4's own CNode machinery).  Every capability check in the
  * system is audited here.
  *
@@ -12,7 +12,7 @@
  * Bulk parameters (labels, owner IDs) are packed inline into the request
  * structs; these fit within the seL4 IPC message register budget (120 bytes).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

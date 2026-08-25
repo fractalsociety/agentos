@@ -7,13 +7,13 @@
 //! - Its memory allocator (where it can allocate)
 //! - Lifecycle hooks (init, notified, fault)
 
-use alloc::vec::Vec;
-use alloc::string::String;
 use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
-use crate::capability::{Capability, CapabilitySet, CapabilityKind, Right};
-use crate::event::{EventChannel, Event, EventKind, Priority};
-use crate::identity::{AgentId, AgentIdentity, AgentClass};
+use crate::capability::{Capability, CapabilityKind, CapabilitySet, Right};
+use crate::event::{Event, EventChannel, EventKind, Priority};
+use crate::identity::{AgentClass, AgentId, AgentIdentity};
 
 /// Base seL4 cap slot used in simulation mode for event channels.
 /// In production the monitor assigns real slots; this value is never used
@@ -27,7 +27,7 @@ const SIM_NONCE_XOR: u64 = 0x5A5A_5A5A_5A5A_5A5A;
 /// An agent's complete runtime context
 ///
 /// This is the root of everything an agent has access to.
-/// In production this is constructed by the agentOS monitor at agent startup.
+/// In production this is constructed by the FractalOS monitor at agent startup.
 pub struct AgentContext {
     /// This agent's identity
     pub identity: AgentIdentity,
@@ -60,14 +60,16 @@ impl AgentContext {
 
     /// Subscribe to an event topic
     /// Returns a channel capability or an error if we don't have EventBus access
-    pub fn subscribe(&mut self, topic: impl Into<String>, priority: Priority) 
-        -> Result<usize, ContextError> 
-    {
+    pub fn subscribe(
+        &mut self,
+        topic: impl Into<String>,
+        priority: Priority,
+    ) -> Result<usize, ContextError> {
         // In production: IPC to EventBus server to create subscription
         // Returns a seL4 notification capability
         // Here: create a simulation channel
         let topic = topic.into();
-        
+
         // Check we have an endpoint capability for the EventBus
         // (simplified check - production would verify the EventBus endpoint cap)
 
@@ -76,20 +78,24 @@ impl AgentContext {
             SIM_CAP_BASE + self.channels.len() as u64,
             crate::capability::Rights::READ_WRITE,
         );
-        
+
         let idx = self.channels.len();
-        self.channels.push(EventChannel::new(cap, format!("ch-{idx}"), topic, priority));
+        self.channels
+            .push(EventChannel::new(cap, format!("ch-{idx}"), topic, priority));
         Ok(idx)
     }
 
     /// Publish an event on a channel
-    pub fn publish(&mut self, channel_idx: usize, kind: EventKind, priority: Priority)
-        -> Result<(), ContextError>
-    {
+    pub fn publish(
+        &mut self,
+        channel_idx: usize,
+        kind: EventKind,
+        priority: Priority,
+    ) -> Result<(), ContextError> {
         if channel_idx >= self.channels.len() {
             return Err(ContextError::InvalidChannel);
         }
-        
+
         let event = Event::new(
             self.identity.id.clone(),
             kind,
@@ -97,8 +103,9 @@ impl AgentContext {
             crate::event::EventPayload::Empty,
             priority,
         );
-        
-        self.channels[channel_idx].publish(event)
+
+        self.channels[channel_idx]
+            .publish(event)
             .map(|_| ())
             .map_err(|_| ContextError::PublishFailed)
     }
@@ -114,11 +121,13 @@ impl AgentContext {
         if !self.caps.can(&CapabilityKind::AgentSpawn, Right::Execute) {
             return Err(ContextError::CapabilityDenied);
         }
-        
+
         // Derive child capability set
-        let _child_caps = self.caps.derive_for_child(&granted_caps)
+        let _child_caps = self
+            .caps
+            .derive_for_child(&granted_caps)
             .map_err(|_| ContextError::CapabilityDenied)?;
-        
+
         // In production: IPC to monitor to spawn the child agent
         // Returns the new agent's ID
         let child_id = AgentId::new(
@@ -127,7 +136,7 @@ impl AgentContext {
             self.now_ns,
             self.now_ns ^ SIM_NONCE_XOR, // production: random from TRNG
         );
-        
+
         Ok(child_id)
     }
 
@@ -182,7 +191,7 @@ impl core::fmt::Display for ContextError {
     }
 }
 
-/// The trait every agentOS agent must implement
+/// The trait every FractalOS agent must implement
 ///
 /// This is the Microkit-compatible interface:
 /// - `init()` is called once at startup
@@ -194,20 +203,25 @@ pub trait Agent {
     /// Called once at agent startup, before any events arrive
     /// Agents should set up their subscriptions and internal state here
     fn init(&mut self, ctx: &mut AgentContext);
-    
+
     /// Called when a notification arrives on a seL4 channel
     /// Maps to Microkit's `notified()` callback
     fn notified(&mut self, ctx: &mut AgentContext, channel: u32);
-    
+
     /// Called when a protected procedure call arrives (optional)
     /// Maps to Microkit's `protected()` callback
     fn protected(&mut self, _ctx: &mut AgentContext, _channel: u32, _msginfo: u64) -> u64 {
         0
     }
-    
+
     /// Called when this agent's child has faulted
     /// If not handled, the fault propagates up
-    fn child_faulted(&mut self, _ctx: &mut AgentContext, _child: &AgentId, _fault: &crate::event::FaultKind) -> bool {
+    fn child_faulted(
+        &mut self,
+        _ctx: &mut AgentContext,
+        _child: &AgentId,
+        _fault: &crate::event::FaultKind,
+    ) -> bool {
         false // don't handle, propagate
     }
 }

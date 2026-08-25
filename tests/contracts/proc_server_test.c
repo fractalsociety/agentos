@@ -1,12 +1,12 @@
 /*
- * agentOS — proc_server PD contract test
+ * FractalOS — proc_server PD contract test
  * Covered opcodes: OP_PROC_SPAWN, OP_PROC_EXIT, OP_PROC_WAIT, OP_PROC_STATUS,
  *   OP_PROC_LIST, OP_PROC_KILL, OP_PROC_SETCAP
- * NOTE: agentos.h redefines OP_PROC_* to 0xD0-0xD6, overriding contract header values
+ * NOTE: fractalos.h redefines OP_PROC_* to 0xD0-0xD6, overriding contract header values
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/proc_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/proc_server_contract.h"
 
 void run_proc_server_tests(microkit_channel ch) {
     TEST_SECTION("proc_server");

@@ -1,5 +1,5 @@
 /*
- * test_cap_policy_reload.c — unit tests for agentOS cap_broker policy hot-reload
+ * test_cap_policy_reload.c — unit tests for FractalOS cap_broker policy hot-reload
  *
  * Standalone host test that mirrors the policy parsing, grant-checking, and
  * reload logic from cap_broker.c without any seL4 / Microkit dependencies.
@@ -481,7 +481,7 @@ static bool test_empty_policy_allows_all(void) {
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
 int main(void) {
-    printf("=== agentOS cap_broker policy hot-reload tests ===\n");
+    printf("=== FractalOS cap_broker policy hot-reload tests ===\n");
 
     int failures = 0;
     failures += !test_initial_state();

@@ -1,5 +1,5 @@
 /*
- * agentOS NetServer IPC Contract — interface.h
+ * FractalOS NetServer IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the NetServer protection domain.
  * NetServer manages per-application virtual NICs and provides the TCP/IP
@@ -24,7 +24,7 @@
  * OP_NET_* opcodes and NET_ERR_* codes are defined in net_server.h;
  * the packed IPC structs here are the formal wire protocol.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -272,7 +272,7 @@ typedef struct net_health_rep {
 /*
  * NET_OP_HTTP_POST (0x500)
  *
- * High-level HTTP POST proxy to the agentOS bridge at 10.0.2.2:8790.
+ * High-level HTTP POST proxy to the FractalOS bridge at 10.0.2.2:8790.
  * Used by libagent's aos_http_post(); agents do not manage raw TCP.
  *
  * The URL and body must be placed in the vibe_staging shared MR

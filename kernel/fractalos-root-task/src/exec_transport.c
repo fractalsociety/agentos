@@ -1,0 +1,363 @@
+/*
+ * exec_transport.c — native FractalOS execution bridge transport PD
+ *
+ * This PD is deliberately small and profile-bound. ExecSvc supplies checked
+ * offsets into ExecSvc's service-private arena.  The PD frames the source over
+ * a dedicated VirtIO console and writes the bounded response back to the same
+ * arena. It has no ModelSvc, ToolSvc, AgentFS, repository, or worker caps.
+ */
+
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
+#include "exec_transport.h"
+#include "system_desc.h"
+#include "../../../contracts/execsvc/interface.h"
+#include "sel4_server.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+#define ET_VIRTIO_VA   0x10009000UL
+#define ET_STARTUP_VA  0x1000a000UL
+#define ET_SLOT_OFF    0u /* QEMU bus.8 starts on its own 4 KiB MMIO page. */
+
+#define VMMIO_MAGIC         0x000u
+#define VMMIO_VERSION       0x004u
+#define VMMIO_DEVICE_ID     0x008u
+#define VMMIO_DEV_FEAT      0x010u
+#define VMMIO_DEV_FEAT_SEL  0x014u
+#define VMMIO_DRV_FEAT      0x020u
+#define VMMIO_DRV_FEAT_SEL  0x024u
+#define VMMIO_QUEUE_SEL     0x030u
+#define VMMIO_QUEUE_NUM_MAX 0x034u
+#define VMMIO_QUEUE_NUM     0x038u
+#define VMMIO_QUEUE_READY   0x044u
+#define VMMIO_QUEUE_NOTIFY  0x050u
+#define VMMIO_STATUS        0x070u
+#define VMMIO_Q_DESC_LO     0x080u
+#define VMMIO_Q_DESC_HI     0x084u
+#define VMMIO_Q_AVAIL_LO    0x090u
+#define VMMIO_Q_AVAIL_HI    0x094u
+#define VMMIO_Q_USED_LO     0x0a0u
+#define VMMIO_Q_USED_HI     0x0a4u
+
+#define VSTATUS_ACK       1u
+#define VSTATUS_DRIVER    2u
+#define VSTATUS_DRIVER_OK 4u
+#define VSTATUS_FEAT_OK   8u
+#define VSTATUS_FAILED    128u
+#define VIRTIO_MAGIC      0x74726976u
+#define VIRTIO_ID_CONSOLE 3u
+#define VQ_DEPTH          4u
+#define ET_WAIT_LIMIT     5000000u
+
+typedef struct __attribute__((packed)) {
+    uint64_t addr;
+    uint32_t len;
+    uint16_t flags;
+    uint16_t next;
+} vq_desc_t;
+typedef struct __attribute__((packed)) {
+    uint16_t flags;
+    uint16_t idx;
+    uint16_t ring[VQ_DEPTH];
+    uint16_t used_event;
+} vq_avail_t;
+typedef struct __attribute__((packed)) {
+    uint32_t id;
+    uint32_t len;
+} vq_used_elem_t;
+typedef struct __attribute__((packed)) {
+    uint16_t flags;
+    uint16_t idx;
+    vq_used_elem_t ring[VQ_DEPTH];
+    uint16_t avail_event;
+} vq_used_t;
+
+#define TX_DESC_OFF  0u
+#define TX_AVAIL_OFF 128u
+#define TX_USED_OFF  256u
+#define RX_DESC_OFF  512u
+#define RX_AVAIL_OFF 640u
+#define RX_USED_OFF  768u
+
+static seL4_Word g_vq_pa[3];
+static volatile uint32_t *g_virtio;
+static uint16_t g_rx_used_last;
+static uint8_t g_rx_stash[4096];
+static uint32_t g_rx_stash_offset;
+static uint32_t g_rx_stash_length;
+static bool g_ready;
+static sel4_server_t g_server;
+
+#define QP       ((uintptr_t)g_vq_pa[0])
+#define TX_DESC  ((volatile vq_desc_t *)(QP + TX_DESC_OFF))
+#define TX_AVAIL ((volatile vq_avail_t *)(QP + TX_AVAIL_OFF))
+#define TX_USED  ((volatile vq_used_t *)(QP + TX_USED_OFF))
+#define RX_DESC  ((volatile vq_desc_t *)(QP + RX_DESC_OFF))
+#define RX_AVAIL ((volatile vq_avail_t *)(QP + RX_AVAIL_OFF))
+#define RX_USED  ((volatile vq_used_t *)(QP + RX_USED_OFF))
+
+#if defined(__aarch64__)
+#define ET_MB() __asm__ volatile("dsb sy" ::: "memory")
+#elif defined(__riscv)
+#define ET_MB() __asm__ volatile("fence rw,rw" ::: "memory")
+#elif defined(__x86_64__)
+#define ET_MB() __asm__ volatile("mfence" ::: "memory")
+#else
+#define ET_MB() __asm__ volatile("" ::: "memory")
+#endif
+
+static inline uint32_t vio_read(uint32_t offset)
+{
+    return *(volatile uint32_t *)((uintptr_t)g_virtio + offset);
+}
+
+static inline void vio_write(uint32_t offset, uint32_t value)
+{
+    *(volatile uint32_t *)((uintptr_t)g_virtio + offset) = value;
+    ET_MB();
+}
+
+static void bytes_zero(volatile void *dst, uint32_t len)
+{
+    volatile uint8_t *bytes = (volatile uint8_t *)dst;
+    for (uint32_t i = 0u; i < len; i++) bytes[i] = 0u;
+}
+
+static bool arena_range(uint32_t offset, uint32_t len)
+{
+    return offset <= EXECSVC_SHMEM_SIZE && len <= EXECSVC_SHMEM_SIZE - offset;
+}
+
+static bool queue_setup(uint32_t queue, seL4_Word desc,
+                        seL4_Word avail, seL4_Word used)
+{
+    vio_write(VMMIO_QUEUE_SEL, queue);
+    if (vio_read(VMMIO_QUEUE_NUM_MAX) < VQ_DEPTH) return false;
+    vio_write(VMMIO_QUEUE_NUM, VQ_DEPTH);
+    vio_write(VMMIO_Q_DESC_LO, (uint32_t)desc);
+    vio_write(VMMIO_Q_DESC_HI, (uint32_t)(desc >> 32u));
+    vio_write(VMMIO_Q_AVAIL_LO, (uint32_t)avail);
+    vio_write(VMMIO_Q_AVAIL_HI, (uint32_t)(avail >> 32u));
+    vio_write(VMMIO_Q_USED_LO, (uint32_t)used);
+    vio_write(VMMIO_Q_USED_HI, (uint32_t)(used >> 32u));
+    vio_write(VMMIO_QUEUE_READY, 1u);
+    return vio_read(VMMIO_QUEUE_READY) == 1u;
+}
+
+static void transport_init(void)
+{
+    volatile seL4_Word *startup = (volatile seL4_Word *)ET_STARTUP_VA;
+    g_vq_pa[0] = startup[0];
+    g_vq_pa[1] = startup[1];
+    g_vq_pa[2] = startup[2];
+    g_virtio = (volatile uint32_t *)(ET_VIRTIO_VA + ET_SLOT_OFF);
+    g_ready = false;
+
+    if (g_vq_pa[0] == 0u || g_vq_pa[1] == 0u || g_vq_pa[2] == 0u
+        || vio_read(VMMIO_MAGIC) != VIRTIO_MAGIC
+        || vio_read(VMMIO_VERSION) != 2u
+        || vio_read(VMMIO_DEVICE_ID) != VIRTIO_ID_CONSOLE) {
+        log_drain_write(31, 31, "[exec_transport] VirtIO console unavailable\n");
+        return;
+    }
+
+    bytes_zero((void *)QP, 4096u);
+    vio_write(VMMIO_STATUS, 0u);
+    uint32_t status = VSTATUS_ACK | VSTATUS_DRIVER;
+    vio_write(VMMIO_STATUS, status);
+
+    vio_write(VMMIO_DEV_FEAT_SEL, 0u);
+    uint32_t features0 = vio_read(VMMIO_DEV_FEAT) & ~(1u << 1u);
+    vio_write(VMMIO_DEV_FEAT_SEL, 1u);
+    uint32_t features1 = vio_read(VMMIO_DEV_FEAT);
+    vio_write(VMMIO_DRV_FEAT_SEL, 0u);
+    vio_write(VMMIO_DRV_FEAT, features0);
+    vio_write(VMMIO_DRV_FEAT_SEL, 1u);
+    vio_write(VMMIO_DRV_FEAT, features1);
+    status |= VSTATUS_FEAT_OK;
+    vio_write(VMMIO_STATUS, status);
+    if ((vio_read(VMMIO_STATUS) & VSTATUS_FEAT_OK) == 0u) {
+        vio_write(VMMIO_STATUS, VSTATUS_FAILED);
+        return;
+    }
+
+    if (!queue_setup(0u, g_vq_pa[0] + RX_DESC_OFF,
+                     g_vq_pa[0] + RX_AVAIL_OFF, g_vq_pa[0] + RX_USED_OFF)
+        || !queue_setup(1u, g_vq_pa[0] + TX_DESC_OFF,
+                        g_vq_pa[0] + TX_AVAIL_OFF, g_vq_pa[0] + TX_USED_OFF)) {
+        vio_write(VMMIO_STATUS, VSTATUS_FAILED);
+        return;
+    }
+
+    status |= VSTATUS_DRIVER_OK;
+    vio_write(VMMIO_STATUS, status);
+    RX_DESC[0].addr = g_vq_pa[2];
+    RX_DESC[0].len = 4096u;
+    RX_DESC[0].flags = 2u;
+    RX_DESC[0].next = 0u;
+    RX_AVAIL->ring[0] = 0u;
+    ET_MB();
+    RX_AVAIL->idx = 1u;
+    ET_MB();
+    vio_write(VMMIO_QUEUE_NOTIFY, 0u);
+    g_rx_used_last = 0u;
+    g_rx_stash_offset = 0u;
+    g_rx_stash_length = 0u;
+    g_ready = true;
+    log_drain_write(31, 31, "[exec_transport] VirtIO console ready\n");
+}
+
+static bool serial_write(const void *buffer, uint32_t length)
+{
+    const uint8_t *src = (const uint8_t *)buffer;
+    while (length != 0u) {
+        uint32_t chunk = length > 4096u ? 4096u : length;
+        __builtin_memcpy((void *)g_vq_pa[1], src, chunk);
+        TX_DESC[0].addr = g_vq_pa[1];
+        TX_DESC[0].len = chunk;
+        TX_DESC[0].flags = 0u;
+        TX_DESC[0].next = 0u;
+        uint16_t used = TX_USED->idx;
+        TX_AVAIL->ring[TX_AVAIL->idx & (VQ_DEPTH - 1u)] = 0u;
+        ET_MB();
+        TX_AVAIL->idx++;
+        ET_MB();
+        vio_write(VMMIO_QUEUE_NOTIFY, 1u);
+        uint32_t waits = 0u;
+        while (TX_USED->idx == used) {
+            ET_MB();
+            seL4_Yield();
+            if (++waits == ET_WAIT_LIMIT) return false;
+        }
+        src += chunk;
+        length -= chunk;
+    }
+    return true;
+}
+
+static bool serial_read(void *buffer, uint32_t length)
+{
+    uint8_t *dst = (uint8_t *)buffer;
+    while (length != 0u) {
+        if (g_rx_stash_length != 0u) {
+            uint32_t take = g_rx_stash_length > length
+                ? length : g_rx_stash_length;
+            __builtin_memcpy(dst, &g_rx_stash[g_rx_stash_offset], take);
+            dst += take;
+            length -= take;
+            g_rx_stash_offset += take;
+            g_rx_stash_length -= take;
+            if (g_rx_stash_length == 0u) g_rx_stash_offset = 0u;
+            continue;
+        }
+        uint32_t waits = 0u;
+        while (RX_USED->idx == g_rx_used_last) {
+            ET_MB();
+            seL4_Yield();
+            if (++waits == ET_WAIT_LIMIT) return false;
+        }
+        uint32_t got = RX_USED->ring[g_rx_used_last & (VQ_DEPTH - 1u)].len;
+        if (got == 0u || got > 4096u) return false;
+        __builtin_memcpy(g_rx_stash, (const void *)g_vq_pa[2], got);
+        g_rx_stash_offset = 0u;
+        g_rx_stash_length = got;
+        g_rx_used_last++;
+        RX_DESC[0].addr = g_vq_pa[2];
+        RX_DESC[0].len = 4096u;
+        RX_DESC[0].flags = 2u;
+        RX_DESC[0].next = 0u;
+        RX_AVAIL->ring[RX_AVAIL->idx & (VQ_DEPTH - 1u)] = 0u;
+        ET_MB();
+        RX_AVAIL->idx++;
+        ET_MB();
+        vio_write(VMMIO_QUEUE_NOTIFY, 0u);
+    }
+    return true;
+}
+
+static uint32_t handle_run(sel4_badge_t badge, const sel4_msg_t *req,
+                           sel4_msg_t *rep,
+                           void *ctx __attribute__((unused)))
+{
+    execsvc_run_profile_reply_t reply = {
+        .status = EXECSVC_ERR_TRANSPORT,
+        .exit_code = -1,
+        .output_len = 0u,
+        .request_tag = 0u,
+    };
+    execsvc_run_profile_wire_t wire;
+    if ((uint16_t)(badge >> 48u) != SVC_ID_EXEC_TRANSPORT) {
+        reply.status = EXECSVC_ERR_DENIED;
+        goto out;
+    }
+    if (req->length != sizeof(wire)) {
+        reply.status = EXECSVC_ERR_INVALID;
+        goto out;
+    }
+    __builtin_memcpy(&wire, req->data, sizeof(wire));
+    reply.request_tag = wire.request_tag;
+    if (EXECSVC_PROFILE_RIGHT(wire.profile_id) == 0u) {
+        reply.status = EXECSVC_ERR_UNSUPPORTED;
+        goto out;
+    }
+    if (!g_ready || wire.source_len == 0u
+        || wire.source_len > EXECSVC_SOURCE_MAX
+        || wire.output_capacity == 0u
+        || wire.output_capacity > EXECSVC_OUTPUT_MAX
+        || !arena_range(wire.source_offset, wire.source_len)
+        || !arena_range(wire.output_offset, wire.output_capacity))
+        goto out;
+
+    exec_transport_request_header_t header = {
+        .magic = EXEC_TRANSPORT_WIRE_MAGIC,
+        .version = EXEC_TRANSPORT_WIRE_VERSION,
+        .profile_id = wire.profile_id,
+        .source_len = wire.source_len,
+        .output_capacity = wire.output_capacity,
+        .request_tag = wire.request_tag,
+    };
+    uint8_t *source = (uint8_t *)(uintptr_t)
+        (EXECSVC_SHMEM_VADDR + wire.source_offset);
+    if (!serial_write(&header, sizeof(header))
+        || !serial_write(source, wire.source_len)) {
+        g_ready = false;
+        goto out;
+    }
+
+    exec_transport_response_header_t response;
+    if (!serial_read(&response, sizeof(response))
+        || response.magic != EXEC_TRANSPORT_WIRE_MAGIC
+        || response.request_tag != wire.request_tag
+        || response.output_len > wire.output_capacity
+        || response.output_len > EXECSVC_OUTPUT_MAX) {
+        g_ready = false;
+        goto out;
+    }
+    uint8_t *output = (uint8_t *)(uintptr_t)
+        (EXECSVC_SHMEM_VADDR + wire.output_offset);
+    if (response.output_len != 0u
+        && !serial_read(output, response.output_len)) {
+        g_ready = false;
+        goto out;
+    }
+    reply.status = response.status;
+    reply.exit_code = response.exit_code;
+    reply.output_len = response.output_len;
+
+out:
+    __builtin_memcpy(rep->data, &reply, sizeof(reply));
+    rep->length = sizeof(reply);
+    return SEL4_ERR_OK;
+}
+
+void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
+{
+    (void)ns_ep;
+    fractalos_log_boot("exec_transport");
+    transport_init();
+    sel4_server_init(&g_server, my_ep);
+    (void)sel4_server_register(&g_server, EXEC_TRANSPORT_OP_RUN,
+                               handle_run, NULL);
+    sel4_server_run(&g_server);
+}

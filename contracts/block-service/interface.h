@@ -3,8 +3,8 @@
  *
  * // STATUS: IMPLEMENTED
  *
- * This is the canonical contract for the block-service device service in agentOS.
- * The concrete implementation lives in kernel/agentos-root-task/src/virtio_blk.c,
+ * This is the canonical contract for the block-service device service in FractalOS.
+ * The concrete implementation lives in kernel/fractalos-root-task/src/virtio_blk.c,
  * with the VFS layer in vfs_server.c.
  *
  * The block-service provides sector-granularity read/write access to the virtio-blk
@@ -29,7 +29,7 @@
  *   vm_manager.c grants a PPC capability to the block-service endpoint and a
  *   read-write mapping of blk_dma_shmem at guest OS creation time.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

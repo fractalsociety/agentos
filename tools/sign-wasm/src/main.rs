@@ -47,7 +47,7 @@ fn write_leb128(mut value: u32) -> Vec<u8> {
 ///
 /// Returns `(payload_offset, payload_len)` where the payload is the bytes
 /// after the section name string (i.e. the raw capability / signature data).
-fn find_custom_section<'a>(wasm: &'a [u8], name: &str) -> Option<(usize, usize)> {
+fn find_custom_section(wasm: &[u8], name: &str) -> Option<(usize, usize)> {
     if wasm.len() < 8 {
         return None;
     }
@@ -104,8 +104,8 @@ fn make_custom_section(name: &str, payload: &[u8]) -> Vec<u8> {
 
 // ── Core sign / verify logic ──────────────────────────────────────────── //
 
-/// Sign a WASM binary: locate `agentos.capabilities`, compute SHA-512,
-/// and append an `agentos.signature` custom section.
+/// Sign a WASM binary: locate `fractalos.capabilities`, compute SHA-512,
+/// and append an `fractalos.signature` custom section.
 fn sign_wasm(input: &[u8], key_id: &[u8; 8]) -> Result<Vec<u8>> {
     // Verify WASM magic
     if input.len() < 4 || &input[..4] != b"\0asm" {
@@ -113,8 +113,8 @@ fn sign_wasm(input: &[u8], key_id: &[u8; 8]) -> Result<Vec<u8>> {
     }
 
     // Find capabilities section
-    let (caps_off, caps_len) = find_custom_section(input, "agentos.capabilities")
-        .ok_or_else(|| anyhow!("no agentos.capabilities section found"))?;
+    let (caps_off, caps_len) = find_custom_section(input, "fractalos.capabilities")
+        .ok_or_else(|| anyhow!("no fractalos.capabilities section found"))?;
     let caps_data = &input[caps_off..caps_off + caps_len];
 
     // Compute SHA-512
@@ -129,7 +129,7 @@ fn sign_wasm(input: &[u8], key_id: &[u8; 8]) -> Result<Vec<u8>> {
     // bytes 40..64 remain zero
 
     // Append signature section
-    let sig_section = make_custom_section("agentos.signature", &sig_payload);
+    let sig_section = make_custom_section("fractalos.signature", &sig_payload);
     let mut signed = input.to_vec();
     signed.extend_from_slice(&sig_section);
 
@@ -141,16 +141,16 @@ fn sign_wasm(input: &[u8], key_id: &[u8; 8]) -> Result<Vec<u8>> {
     Ok(signed)
 }
 
-/// Verify the `agentos.signature` section in a WASM binary.
+/// Verify the `fractalos.signature` section in a WASM binary.
 /// Returns `true` if the signature is valid.
 fn verify_wasm(input: &[u8]) -> Result<bool> {
-    let caps = find_custom_section(input, "agentos.capabilities");
-    let sig = find_custom_section(input, "agentos.signature");
+    let caps = find_custom_section(input, "fractalos.capabilities");
+    let sig = find_custom_section(input, "fractalos.signature");
 
-    let (caps_off, caps_len) = caps
-        .ok_or_else(|| anyhow!("no agentos.capabilities section found"))?;
-    let (sig_off, sig_len) = sig
-        .ok_or_else(|| anyhow!("no agentos.signature section found (unsigned module)"))?;
+    let (caps_off, caps_len) =
+        caps.ok_or_else(|| anyhow!("no fractalos.capabilities section found"))?;
+    let (sig_off, sig_len) =
+        sig.ok_or_else(|| anyhow!("no fractalos.signature section found (unsigned module)"))?;
 
     if sig_len != 64 {
         bail!("bad signature size: {} (expected 64)", sig_len);
@@ -185,7 +185,7 @@ fn verify_wasm(input: &[u8]) -> Result<bool> {
 // ── CLI ───────────────────────────────────────────────────────────────── //
 
 #[derive(Parser, Debug)]
-#[command(name = "sign-wasm", about = "Sign agentOS WASM modules")]
+#[command(name = "sign-wasm", about = "Sign FractalOS WASM modules")]
 struct Cli {
     /// Input .wasm file
     input: PathBuf,
@@ -206,8 +206,8 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let input = std::fs::read(&cli.input)
-        .with_context(|| format!("reading {}", cli.input.display()))?;
+    let input =
+        std::fs::read(&cli.input).with_context(|| format!("reading {}", cli.input.display()))?;
 
     if cli.verify {
         let ok = verify_wasm(&input)?;
@@ -215,10 +215,12 @@ fn main() -> Result<()> {
     }
 
     // Parse key_id
-    let key_id_bytes = hex::decode(&cli.key_id)
-        .context("key_id must be valid hex")?;
+    let key_id_bytes = hex::decode(&cli.key_id).context("key_id must be valid hex")?;
     if key_id_bytes.len() != 8 {
-        bail!("key_id must be 8 bytes (16 hex chars), got {}", key_id_bytes.len());
+        bail!(
+            "key_id must be 8 bytes (16 hex chars), got {}",
+            key_id_bytes.len()
+        );
     }
     let mut key_id = [0u8; 8];
     key_id.copy_from_slice(&key_id_bytes);
@@ -231,8 +233,7 @@ fn main() -> Result<()> {
         PathBuf::from(format!("{}.signed.wasm", base))
     });
 
-    std::fs::write(&output, &signed)
-        .with_context(|| format!("writing {}", output.display()))?;
+    std::fs::write(&output, &signed).with_context(|| format!("writing {}", output.display()))?;
     println!("Output: {}", output.display());
 
     Ok(())
@@ -267,14 +268,14 @@ mod tests {
         );
     }
 
-    /// Build a minimal WASM binary that has a `agentos.capabilities` section.
+    /// Build a minimal WASM binary that has a `fractalos.capabilities` section.
     fn make_test_wasm(caps_payload: &[u8]) -> Vec<u8> {
         let mut wasm = Vec::new();
         // WASM magic + version
         wasm.extend_from_slice(b"\0asm");
         wasm.extend_from_slice(&[1u8, 0, 0, 0]);
-        // Append a custom section named "agentos.capabilities"
-        let sec = make_custom_section("agentos.capabilities", caps_payload);
+        // Append a custom section named "fractalos.capabilities"
+        let sec = make_custom_section("fractalos.capabilities", caps_payload);
         wasm.extend_from_slice(&sec);
         wasm
     }

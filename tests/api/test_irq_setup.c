@@ -8,18 +8,18 @@
  *   badge dispatch (0x1 → net, 0x2 → blk, 0x3 → both)
  *
  * Build & run (host-side, no seL4 required):
- *   cc -DAGENTOS_TEST_HOST \
+ *   cc -DFRACTALOS_TEST_HOST \
  *      -I tests/api \
- *      -I kernel/agentos-root-task/include \
+ *      -I kernel/fractalos-root-task/include \
  *      -std=c11 -Wall -Wextra \
  *      -o /tmp/t_irq_setup \
  *      tests/api/test_irq_setup.c && /tmp/t_irq_setup
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 
@@ -468,5 +468,5 @@ int main(void)
 }
 
 #else
-typedef int _agentos_api_test_irq_setup_dummy;
-#endif /* AGENTOS_TEST_HOST */
+typedef int _fractalos_api_test_irq_setup_dummy;
+#endif /* FRACTALOS_TEST_HOST */

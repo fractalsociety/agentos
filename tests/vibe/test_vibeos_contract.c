@@ -1,5 +1,5 @@
 /*
- * agentOS VibeOS Contract Test Suite
+ * FractalOS VibeOS Contract Test Suite
  *
  * Comprehensive contract tests for the VibeOS lifecycle API:
  *
@@ -23,8 +23,8 @@
  *   cc -o /tmp/test_vibeos_contract \
  *       tests/vibe/test_vibeos_contract.c \
  *       -I tests \
- *       -I kernel/agentos-root-task/include \
- *       -DAGENTOS_TEST_HOST
+ *       -I kernel/fractalos-root-task/include \
+ *       -DFRACTALOS_TEST_HOST
  * Run:
  *   /tmp/test_vibeos_contract
  */
@@ -52,7 +52,7 @@ static void log_drain_write(int ch, int tag, const char *s) { (void)ch; (void)ta
 static uint8_t _stub_staging[0x400000];
 static uintptr_t vibe_staging_vaddr;
 
-static inline void agentos_wmb(void) {}
+static inline void fractalos_wmb(void) {}
 
 /* ─── VibeOS constants (mirrors vibeos_contract.h) ───────────────────────── */
 
@@ -96,7 +96,7 @@ static inline void agentos_wmb(void) {}
 #define CAP_POLICY_FUNC_CLASS_MAX     0x05u
 #define STAGING_SIZE                  0x400000UL
 
-/* Known ring-0 system channels (subset; mirrors cap_policy.c / agentos.h).
+/* Known ring-0 system channels (subset; mirrors cap_policy.c / fractalos.h).
  * Guest VMMs and untrusted callers must NOT pass these as dev_handle in
  * MSG_VIBEOS_BIND_DEVICE — doing so is a privilege escalation attempt. */
 static const uint32_t g_ring0_channels[] = {
@@ -937,7 +937,7 @@ static void test_boot_requires_creating_state_after_restore(void)
 int main(void)
 {
     printf("╔══════════════════════════════════════════════════════════════╗\n");
-    printf("║  agentOS VibeOS Contract Test Suite                          ║\n");
+    printf("║  FractalOS VibeOS Contract Test Suite                          ║\n");
     printf("║  Tests: non-reinvention, non-escalation, snapshot/restore,   ║\n");
     printf("║         migrate, double-boot                                  ║\n");
     printf("╚══════════════════════════════════════════════════════════════╝\n");

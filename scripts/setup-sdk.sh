@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# agentOS SDK Setup
+# FractalOS SDK Setup
 #
 # Downloads and installs the correct Microkit SDK for the current host arch.
 # The repo ships the linux-x86-64 SDK (built on do-host1). On AArch64 hosts
@@ -13,7 +13,7 @@
 # Flags:
 #   --force   Re-download even if SDK already exists at the correct path.
 #
-# Copyright (c) 2026 The agentOS Project
+# Copyright (c) 2026 The FractalOS Project
 # SPDX-License-Identifier: BSD-2-Clause
 
 set -euo pipefail
@@ -34,7 +34,7 @@ if [[ "${1:-}" == "--force" ]]; then
 fi
 
 echo "╔═══════════════════════════════════════════╗"
-echo "║         agentOS SDK Setup                  ║"
+echo "║         FractalOS SDK Setup                  ║"
 echo "╚═══════════════════════════════════════════╝"
 echo ""
 echo "Host: ${HOST_OS} / ${HOST_ARCH}"

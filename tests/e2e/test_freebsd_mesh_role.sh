@@ -4,7 +4,7 @@ set -euo pipefail
 
 fail() { echo "[FAIL] $*" >&2; exit 1; }
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
-image="${AGENTOS_FREEBSD_MESH_IMAGE:-$repo_root/build/guest-images/freebsd15-mesh-controller.img}"
+image="${FRACTALOS_FREEBSD_MESH_IMAGE:-$repo_root/build/guest-images/freebsd15-mesh-controller.img}"
 key="${E2E_SSH_KEY:-$repo_root/tests/e2e/id_ed25519}"
 [ -s "$image" ] || fail "FreeBSD mesh image not found: $image"
 [ -s "$key" ] || fail "E2E SSH key not found: $key"
@@ -31,7 +31,7 @@ print(*p)
 PY
 )
 EOF
-work="$(mktemp -d /tmp/agentos-freebsd-mesh-e2e.XXXXXX)"
+work="$(mktemp -d /tmp/fractalos-freebsd-mesh-e2e.XXXXXX)"
 qemu_pid=""
 cleanup() {
     [ -z "$qemu_pid" ] || kill "$qemu_pid" 2>/dev/null || true
@@ -66,7 +66,7 @@ role_ready=0
 for _ in $(seq 1 300); do
     kill -0 "$qemu_pid" 2>/dev/null || { tail -100 "$work/serial.log" >&2; fail "FreeBSD VM exited during role installation"; }
     if ssh "${ssh_args[@]}" root@127.0.0.1 \
-        "test -f /var/db/agentos-mesh-controller.installed" >/dev/null 2>&1; then
+        "test -f /var/db/fractalos-mesh-controller.installed" >/dev/null 2>&1; then
         role_ready=1
         break
     fi
@@ -74,8 +74,8 @@ for _ in $(seq 1 300); do
 done
 if [ "$role_ready" != 1 ]; then
     ssh "${ssh_args[@]}" root@127.0.0.1 \
-        "set +e; tail -200 /var/log/agentos-mesh-firstboot.log; \
-         pgrep -laf 'pkg|fetch|headscale|agentos'; tail -100 /var/log/messages" >&2 || true
+        "set +e; tail -200 /var/log/fractalos-mesh-firstboot.log; \
+         pgrep -laf 'pkg|fetch|headscale|fractalos'; tail -100 /var/log/messages" >&2 || true
     tail -100 "$work/serial.log" >&2
     fail "mesh-controller first boot did not complete"
 fi
@@ -93,23 +93,23 @@ remote_check "Headscale service is not running" \
 remote_check "Headscale is not pinned to 0.29.3" \
     "/usr/local/sbin/headscale version | grep -q '0.29.3'"
 remote_check "Headscale secret directory permissions are not 0700" \
-    "test \"\$(stat -f %Lp /var/db/agentos-secrets/headscale)\" = 700"
+    "test \"\$(stat -f %Lp /var/db/fractalos-secrets/headscale)\" = 700"
 remote_check "Headscale API token permissions are not 0600" \
-    "test \"\$(stat -f %Lp /var/db/agentos-secrets/headscale/api.token)\" = 600"
+    "test \"\$(stat -f %Lp /var/db/fractalos-secrets/headscale/api.token)\" = 600"
 if ! ssh "${ssh_args[@]}" root@127.0.0.1 \
     "test -s /var/db/headscale/netcap-state.json"; then
     ssh "${ssh_args[@]}" root@127.0.0.1 \
         "set +e; echo '--- /var/db/headscale'; ls -la /var/db/headscale; \
          echo '--- python'; command -v python3; python3 --version; \
-         echo '--- reconciliation'; /usr/local/sbin/agentos-headscale-policy-sync; echo status=\$?; \
+         echo '--- reconciliation'; /usr/local/sbin/fractalos-headscale-policy-sync; echo status=\$?; \
          echo '--- state search'; find /var/db -name 'netcap-state*' -ls" >&2 || true
     fail "NetCap reconciliation state is missing"
 fi
 
-scp "${scp_args[@]}" root@127.0.0.1:/var/db/agentos-secrets/headscale/tls.crt "$work/tls.crt" >/dev/null
+scp "${scp_args[@]}" root@127.0.0.1:/var/db/fractalos-secrets/headscale/tls.crt "$work/tls.crt" >/dev/null
 curl --fail --silent --show-error --noproxy '*' --cacert "$work/tls.crt" \
-    --resolve "mesh.agentos.internal:${http_port}:127.0.0.1" \
-    "https://mesh.agentos.internal:${http_port}/health" \
+    --resolve "mesh.fractalos.internal:${http_port}:127.0.0.1" \
+    "https://mesh.fractalos.internal:${http_port}/health" \
     | grep -q '"status":"pass"' || fail "Headscale TLS health check failed"
 
 echo "[PASS] FreeBSD first boot installed and started Headscale 0.29.3"

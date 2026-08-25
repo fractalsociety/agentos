@@ -1,5 +1,5 @@
 /*
- * agentOS LogSvc IPC Contract — interface.h
+ * FractalOS LogSvc IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the LogSvc audit and logging service.
  * LogSvc is the centralized, capability-audited logging sink for the entire
@@ -13,7 +13,7 @@
  * IPC mechanism: seL4_Call / seL4_Reply.
  * MR0 is the opcode on request; MR0 is the status on reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

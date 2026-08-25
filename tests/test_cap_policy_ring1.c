@@ -1,5 +1,5 @@
 /*
- * agentOS Cap-Policy Ring-1 Enforcement — Unit Tests
+ * FractalOS Cap-Policy Ring-1 Enforcement — Unit Tests
  *
  * Tests the ring-1 guest IPC enforcement logic:
  *   cap_policy_is_ring0_channel()  — channel classification
@@ -9,8 +9,8 @@
  * Build:  cc -o /tmp/test_cap_policy_ring1 \
  *             tests/test_cap_policy_ring1.c \
  *             -I tests \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_cap_policy_ring1
  */
 
@@ -22,11 +22,11 @@
 /* ══════════════════════════════════════════════════════════════════════════
  * Host-side stubs (microkit.h replacement for host builds)
  * ══════════════════════════════════════════════════════════════════════════ */
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 static inline void microkit_dbg_puts(const char *s) { (void)s; }
 
-/* Minimal channel ID definitions (mirrors agentos.h) */
+/* Minimal channel ID definitions (mirrors fractalos.h) */
 #define CH_SERIAL_PD   67u
 #define CH_NET_PD      68u
 #define CH_BLOCK_PD    69u
@@ -53,7 +53,7 @@ static inline void microkit_dbg_puts(const char *s) { (void)s; }
 #define CH_GPU_SHMEM   61u
 #define CH_DEBUG_BRIDGE 62u
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Inline copy of the ring-1 enforcement logic from cap_policy.c
@@ -333,7 +333,7 @@ static void test_x86_cpl0_rejected(void)
 int main(void)
 {
     printf("╔══════════════════════════════════════════════════════╗\n");
-    printf("║  agentOS Cap-Policy Ring-1 Enforcement — Test Suite  ║\n");
+    printf("║  FractalOS Cap-Policy Ring-1 Enforcement — Test Suite  ║\n");
     printf("╚══════════════════════════════════════════════════════╝\n");
 
     /* Channel classification */

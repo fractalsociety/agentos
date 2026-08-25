@@ -1,6 +1,6 @@
-//! `cargo xtask test-api` — compile and run the agentOS API test suite.
+//! `cargo xtask test-api` — compile and run the FractalOS API test suite.
 //!
-//! Each test file in `tests/api/` is compiled with `-DAGENTOS_TEST_HOST` and
+//! Each test file in `tests/api/` is compiled with `-DFRACTALOS_TEST_HOST` and
 //! run individually.  Output is in TAP (Test Anything Protocol) format.
 //!
 //! Exit code:
@@ -34,7 +34,7 @@ pub fn run(args: &TestApiArgs) -> Result<()> {
     // Build temporary output directory under the system temp dir.
     let build_dir = {
         let mut d = std::env::temp_dir();
-        d.push(format!("agentos-api-tests-{}", std::process::id()));
+        d.push(format!("fractalos-api-tests-{}", std::process::id()));
         d
     };
     std::fs::create_dir_all(&build_dir).context("failed to create API test build directory")?;
@@ -56,7 +56,7 @@ pub fn run(args: &TestApiArgs) -> Result<()> {
         // ── Compile ──────────────────────────────────────────────────────
         let compile_status = std::process::Command::new(&cc)
             .args([
-                "-DAGENTOS_TEST_HOST",
+                "-DFRACTALOS_TEST_HOST",
                 &format!("-I{}", tests_dir.display()),
                 "-std=c11",
                 "-Wall",

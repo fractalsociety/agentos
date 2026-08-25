@@ -1,8 +1,8 @@
 /*
- * agentOS EventBus IPC Contract — interface.h
+ * FractalOS EventBus IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the EventBus protection domain.
- * EventBus is the pub/sub event routing layer of agentOS.  Agents publish
+ * EventBus is the pub/sub event routing layer of FractalOS.  Agents publish
  * typed events to named topics; the bus delivers them to all subscribers.
  *
  * Design constraints (from the seL4 implementation):
@@ -19,7 +19,7 @@
  * IPC mechanism: seL4_Call / seL4_Reply (passive PD).
  * MR0 carries the opcode on request; MR0 carries the status on reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -49,7 +49,7 @@
 #define EVENTBUS_OP_STATUS          0x605u  /* topic/subscriber statistics */
 #define EVENTBUS_OP_HEALTH          0x606u  /* liveness probe */
 
-/* Additional opcodes from agentos.h used by the seL4 IPC label field */
+/* Additional opcodes from fractalos.h used by the seL4 IPC label field */
 #define EVENTBUS_OP_INIT            0x0001u  /* MSG_EVENTBUS_INIT */
 #define EVENTBUS_OP_SUBSCRIBE_OLD   0x0002u  /* MSG_EVENTBUS_SUBSCRIBE (legacy) */
 #define EVENTBUS_OP_UNSUBSCRIBE_OLD 0x0003u  /* MSG_EVENTBUS_UNSUBSCRIBE (legacy) */

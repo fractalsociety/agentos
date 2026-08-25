@@ -1,6 +1,6 @@
-//! Capability system - the core security primitive of agentOS
+//! Capability system - the core security primitive of FractalOS
 //!
-//! Every resource access in agentOS is mediated by an unforgeable capability token.
+//! Every resource access in FractalOS is mediated by an unforgeable capability token.
 //! Capabilities are seL4 kernel objects — you cannot forge or copy them without
 //! kernel cooperation. This gives us the strongest possible security guarantees
 //! without relying on software enforcement.
@@ -17,8 +17,8 @@
 //! - **AgentSpawnCap**: Spawn a child agent with bounded capabilities
 //! - **AuditCap**: Read the capability audit log
 
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 /// A recorded delegation event — provides an immutable audit trail of every
 /// capability grant made through `derive_for_child`.
@@ -44,7 +44,12 @@ pub struct DelegationRecord {
 /// digest.  Otherwise a simple position-tagged XOR construction is used so
 /// that the no-std / no-external-dep path always produces a *distinct*
 /// 32-byte value for distinct inputs (good enough for the simulation layer).
-fn compute_chain_hash(parent_cptr: u64, child_cptr: u64, rights_bits: u64, timestamp_ns: u64) -> [u8; 32] {
+fn compute_chain_hash(
+    parent_cptr: u64,
+    child_cptr: u64,
+    rights_bits: u64,
+    timestamp_ns: u64,
+) -> [u8; 32] {
     // Concatenate the four 8-byte little-endian fields into a 32-byte message.
     let mut msg = [0u8; 32];
     msg[0..8].copy_from_slice(&parent_cptr.to_le_bytes());
@@ -82,10 +87,10 @@ fn compute_chain_hash(parent_cptr: u64, child_cptr: u64, rights_bits: u64, times
     }
 }
 
-/// A capability - an unforgeable reference to a kernel object or agentOS resource.
+/// A capability - an unforgeable reference to a kernel object or FractalOS resource.
 ///
 /// In the seL4 layer, this maps to a CPtr (capability pointer) in the thread's CSpace.
-/// Above the kernel, agentOS capabilities extend this to cover AgentFS objects,
+/// Above the kernel, FractalOS capabilities extend this to cover AgentFS objects,
 /// VectorStore partitions, and network endpoints.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Capability {
@@ -157,7 +162,7 @@ impl Capability {
     }
 }
 
-/// The kinds of capabilities in agentOS.
+/// The kinds of capabilities in FractalOS.
 ///
 /// Associated data (namespace, partition, protocol, etc.) has been moved to
 /// `Capability::kind_hint` (a plain `String`).  This makes `CapabilityKind`
@@ -173,7 +178,7 @@ pub enum CapabilityKind {
     CNode,
     Untyped,
 
-    // agentOS extension capabilities
+    // FractalOS extension capabilities
     /// Access to an AgentFS namespace (path prefix stored in kind_hint)
     ObjectStore,
     /// Access to a VectorStore partition (partition name in kind_hint)
@@ -198,11 +203,11 @@ pub struct Rights(u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum Right {
-    Read    = 1 << 0,
-    Write   = 1 << 1,
+    Read = 1 << 0,
+    Write = 1 << 1,
     Execute = 1 << 2,
-    Grant   = 1 << 3,  // Can delegate to others
-    Revoke  = 1 << 4,  // Can revoke delegated copies
+    Grant = 1 << 3,  // Can delegate to others
+    Revoke = 1 << 4, // Can revoke delegated copies
 }
 
 impl Rights {
@@ -246,7 +251,10 @@ pub struct CapabilitySet {
 
 impl CapabilitySet {
     pub fn new() -> Self {
-        Self { caps: Vec::new(), delegation_log: Vec::new() }
+        Self {
+            caps: Vec::new(),
+            delegation_log: Vec::new(),
+        }
     }
 
     pub fn add(&mut self, cap: Capability) {
@@ -255,14 +263,13 @@ impl CapabilitySet {
 
     /// Find capabilities of a given kind
     pub fn find(&self, kind: &CapabilityKind) -> Vec<&Capability> {
-        self.caps.iter()
-            .filter(|c| &c.kind == kind)
-            .collect()
+        self.caps.iter().filter(|c| &c.kind == kind).collect()
     }
 
     /// Check if this set has at least one capability with the given kind and right
     pub fn can(&self, kind: &CapabilityKind, right: Right) -> bool {
-        self.caps.iter()
+        self.caps
+            .iter()
             .any(|c| &c.kind == kind && c.has_right(right))
     }
 
@@ -334,7 +341,7 @@ impl CapabilitySet {
 /// Network protocol for network capabilities
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NetworkProtocol {
-    AgentMesh,  // intra-agentOS agent-to-agent
+    AgentMesh, // intra-FractalOS agent-to-agent
     Tcp,
     Udp,
     Quic,
@@ -343,9 +350,9 @@ pub enum NetworkProtocol {
 /// Network scope
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NetworkScope {
-    Local,      // loopback
-    Mesh,       // intra-agentOS cluster
-    External,   // outbound internet
+    Local,    // loopback
+    Mesh,     // intra-FractalOS cluster
+    External, // outbound internet
 }
 
 /// Memory pool types
@@ -354,7 +361,7 @@ pub enum MemoryPool {
     Standard,
     HugePage2M,
     HugePage1G,
-    VectorAccelerated,  // NUMA-local to vector compute
+    VectorAccelerated, // NUMA-local to vector compute
 }
 
 /// Capability errors
@@ -470,11 +477,10 @@ mod tests {
 
     #[test]
     fn capability_restrict_subset_succeeds() {
-        let cap = Capability::new(CapabilityKind::ObjectStore, 5, Rights::ALL)
-            .with_delegation();
+        let cap = Capability::new(CapabilityKind::ObjectStore, 5, Rights::ALL).with_delegation();
         let restricted = cap.restrict(Rights::READ).unwrap();
         assert_eq!(restricted.rights, Rights::READ);
-        assert!(!restricted.delegatable);  // restricted caps are not delegatable
+        assert!(!restricted.delegatable); // restricted caps are not delegatable
     }
 
     #[test]
@@ -533,7 +539,11 @@ mod tests {
     #[test]
     fn capability_set_can() {
         let mut cs = CapabilitySet::new();
-        cs.add(Capability::new(CapabilityKind::VectorStore, 9, Rights::READ_WRITE));
+        cs.add(Capability::new(
+            CapabilityKind::VectorStore,
+            9,
+            Rights::READ_WRITE,
+        ));
         assert!(cs.can(&CapabilityKind::VectorStore, Right::Read));
         assert!(cs.can(&CapabilityKind::VectorStore, Right::Write));
         assert!(!cs.can(&CapabilityKind::VectorStore, Right::Execute));
@@ -551,9 +561,7 @@ mod tests {
         let mut parent = CapabilitySet::new();
         parent.add(make_delegatable(100, CapabilityKind::Endpoint, Rights::ALL));
 
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::Endpoint, 100, Rights::READ),
-        ];
+        let granted = alloc::vec![Capability::new(CapabilityKind::Endpoint, 100, Rights::READ),];
         let child = parent.derive_for_child(&granted).unwrap();
         assert_eq!(child.len(), 1);
         assert!(child.can(&CapabilityKind::Endpoint, Right::Read));
@@ -565,9 +573,7 @@ mod tests {
         let mut parent = CapabilitySet::new();
         parent.add(make_delegatable(200, CapabilityKind::Thread, Rights::ALL));
 
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::Thread, 200, Rights::READ),
-        ];
+        let granted = alloc::vec![Capability::new(CapabilityKind::Thread, 200, Rights::READ),];
         parent.derive_for_child(&granted).unwrap();
 
         let log = parent.delegation_log();
@@ -580,9 +586,7 @@ mod tests {
         let mut parent = CapabilitySet::new();
         parent.add(make_delegatable(300, CapabilityKind::Memory, Rights::ALL));
 
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::Memory, 300, Rights::READ),
-        ];
+        let granted = alloc::vec![Capability::new(CapabilityKind::Memory, 300, Rights::READ),];
         let child = parent.derive_for_child(&granted).unwrap();
         let child_caps = child.find(&CapabilityKind::Memory);
         assert_ne!(child_caps[0].cptr, 300);
@@ -592,9 +596,7 @@ mod tests {
     fn derive_for_child_not_owned_returns_error() {
         let mut parent = CapabilitySet::new();
         // cptr 999 is not in parent set
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::Endpoint, 999, Rights::READ),
-        ];
+        let granted = alloc::vec![Capability::new(CapabilityKind::Endpoint, 999, Rights::READ),];
         let err = parent.derive_for_child(&granted).unwrap_err();
         assert_eq!(err, CapError::NotOwned);
     }
@@ -605,9 +607,7 @@ mod tests {
         // Capability without .with_delegation()
         parent.add(Capability::new(CapabilityKind::Endpoint, 50, Rights::ALL));
 
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::Endpoint, 50, Rights::READ),
-        ];
+        let granted = alloc::vec![Capability::new(CapabilityKind::Endpoint, 50, Rights::READ),];
         let err = parent.derive_for_child(&granted).unwrap_err();
         assert_eq!(err, CapError::NotDelegatable);
     }
@@ -615,12 +615,18 @@ mod tests {
     #[test]
     fn derive_for_child_rights_exceeded_returns_error() {
         let mut parent = CapabilitySet::new();
-        parent.add(make_delegatable(60, CapabilityKind::ObjectStore, Rights::READ));
+        parent.add(make_delegatable(
+            60,
+            CapabilityKind::ObjectStore,
+            Rights::READ,
+        ));
 
         // Request WRITE which parent doesn't have
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::ObjectStore, 60, Rights::READ_WRITE),
-        ];
+        let granted = alloc::vec![Capability::new(
+            CapabilityKind::ObjectStore,
+            60,
+            Rights::READ_WRITE
+        ),];
         let err = parent.derive_for_child(&granted).unwrap_err();
         assert_eq!(err, CapError::RightsExceeded);
     }
@@ -630,11 +636,17 @@ mod tests {
     #[test]
     fn delegation_chain_hash_nonzero_for_nonzero_inputs() {
         let mut parent = CapabilitySet::new();
-        parent.add(make_delegatable(0xABCD, CapabilityKind::Endpoint, Rights::ALL));
+        parent.add(make_delegatable(
+            0xABCD,
+            CapabilityKind::Endpoint,
+            Rights::ALL,
+        ));
 
-        let granted = alloc::vec![
-            Capability::new(CapabilityKind::Endpoint, 0xABCD, Rights::READ),
-        ];
+        let granted = alloc::vec![Capability::new(
+            CapabilityKind::Endpoint,
+            0xABCD,
+            Rights::READ
+        ),];
         parent.derive_for_child(&granted).unwrap();
         let hash = parent.delegation_log()[0].chain_hash;
         // Hash should not be all zeros (extremely unlikely collision)
@@ -661,10 +673,22 @@ mod tests {
 
     #[test]
     fn cap_error_display() {
-        assert_eq!(CapError::NotOwned.to_string(), "capability not owned by this agent");
-        assert_eq!(CapError::NotDelegatable.to_string(), "capability is not delegatable");
-        assert_eq!(CapError::RightsExceeded.to_string(), "requested rights exceed owned rights");
+        assert_eq!(
+            CapError::NotOwned.to_string(),
+            "capability not owned by this agent"
+        );
+        assert_eq!(
+            CapError::NotDelegatable.to_string(),
+            "capability is not delegatable"
+        );
+        assert_eq!(
+            CapError::RightsExceeded.to_string(),
+            "requested rights exceed owned rights"
+        );
         assert_eq!(CapError::Revoked.to_string(), "capability has been revoked");
-        assert_eq!(CapError::InvalidKind.to_string(), "invalid capability kind for this operation");
+        assert_eq!(
+            CapError::InvalidKind.to_string(),
+            "invalid capability kind for this operation"
+        );
     }
 }

@@ -1,5 +1,5 @@
 /*
- * mock_memfs.c — minimal agentOS storage.v1 conformance test service
+ * mock_memfs.c — minimal FractalOS storage.v1 conformance test service
  *
  * Used by the vibe integration test as a known-good WASM module.
  * Tests all required STORAGE_OP_* labels and verifies the swap
@@ -7,7 +7,7 @@
  *
  * Implements an in-memory flat file table with 64 slots, each holding
  * a 256-byte key and a 4096-byte value.  All message-register access goes
- * through the agentOS WASM ABI (aos_mr_get / aos_mr_set).
+ * through the FractalOS WASM ABI (aos_mr_get / aos_mr_set).
  *
  * Compile with:
  *   clang --target=wasm32-wasi -O2 -nostdlib \
@@ -18,17 +18,17 @@
  * (0x00 0x61 0x73 0x6D) and export service_init, service_dispatch, and
  * service_health.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include <stdint.h>
 #include <stddef.h>
 
-/* ── agentOS WASM runtime imports ────────────────────────────────────────── */
+/* ── FractalOS WASM runtime imports ────────────────────────────────────────── */
 
 /*
- * Message registers: provided by the agentOS WASM runtime.
+ * Message registers: provided by the FractalOS WASM runtime.
  * Do not implement these — they are resolved by the host at load time.
  */
 extern uint32_t aos_mr_get(int idx);
@@ -38,7 +38,7 @@ extern void     aos_mr_set(int idx, uint32_t val);
 
 /*
  * IPC label space for storage.v1.  Matches the values expected by the
- * agentOS VibeEngine conformance checker.
+ * FractalOS VibeEngine conformance checker.
  */
 #define STORAGE_OP_WRITE    0x30u   /* MR1=key_ptr MR2=key_len MR3=data_ptr MR4=data_len */
 #define STORAGE_OP_READ     0x31u   /* MR1=key_ptr MR2=key_len → MR0=data_ptr MR1=data_len */
@@ -75,7 +75,7 @@ static uint32_t  g_total_bytes = 0;
 
 /*
  * Copy up to `n` bytes from a pointer encoded in a uint32_t MR value into
- * a local buffer.  In a real agentOS WASM service the pointer is an offset
+ * a local buffer.  In a real FractalOS WASM service the pointer is an offset
  * into the WASM linear memory that both the runtime and the service share.
  * In this test implementation we treat the MR value directly as a host
  * pointer cast — safe because the WASM sandbox enforces bounds.

@@ -1,4 +1,4 @@
-# agentOS Vibe Integration Test
+# FractalOS Vibe Integration Test
 
 Tests the full vibe-coding loop end-to-end:
 
@@ -10,10 +10,10 @@ Agent prompt → bridge generate → C source → compile → WASM → bridge he
 
 | Phase | What is tested |
 |-------|----------------|
-| 1 — Generate | `POST /api/agentos/vibe/generate` accepts a prompt and returns either generated C code (real LLM) or a well-formed error (no backend). |
-| 2 — Compile  | `POST /api/agentos/vibe/compile` accepts C source and returns a base64-encoded WASM binary, or skips gracefully if clang/wasm32-wasi is unavailable. |
+| 1 — Generate | `POST /api/fractalos/vibe/generate` accepts a prompt and returns either generated C code (real LLM) or a well-formed error (no backend). |
+| 2 — Compile  | `POST /api/fractalos/vibe/compile` accepts C source and returns a base64-encoded WASM binary, or skips gracefully if clang/wasm32-wasi is unavailable. |
 | 3 — WASM magic | Decodes the base64 WASM and confirms the first four bytes are `\x00asm` (WebAssembly module magic). |
-| 4 — Health    | `GET /api/agentos/agents` confirms the bridge is still alive and returning an agents list after the test run. |
+| 4 — Health    | `GET /api/fractalos/agents` confirms the bridge is still alive and returning an agents list after the test run. |
 
 The test is designed to **pass in CI without a real LLM or real QEMU**:
 
@@ -33,7 +33,7 @@ chmod +x tests/vibe_integration_test.sh
 ./tests/vibe_integration_test.sh
 ```
 
-The script starts `agentos-console` on port 8790, waits for it to become
+The script starts `fractalos-console` on port 8790, waits for it to become
 ready, runs the four phases, then kills it.  If a bridge is already running
 on port 8790, it is reused and not stopped after the test.
 
@@ -45,21 +45,21 @@ Expected output (mock mode, no clang):
 [INFO] curl: curl 8.x (...)
 [INFO] clang with wasm32-wasi not found — compile phase will be skipped
 [INFO] Checking bridge on port 8790...
-[INFO] Starting bridge: cargo run --bin agentos-console ...
+[INFO] Starting bridge: cargo run --bin fractalos-console ...
 [INFO] Bridge PID: 12345
 [INFO] Waiting for bridge to become ready (up to 30 s)...
 [INFO] Bridge is ready.
 
---- Phase 1: Generate endpoint (POST /api/agentos/vibe/generate) ---
-[SKIP] Phase 1: no LLM backend available (AGENTOS_CODEGEN_BACKEND=mock) — expected in CI
+--- Phase 1: Generate endpoint (POST /api/fractalos/vibe/generate) ---
+[SKIP] Phase 1: no LLM backend available (FRACTALOS_CODEGEN_BACKEND=mock) — expected in CI
 
---- Phase 2: Compile endpoint (POST /api/agentos/vibe/compile) ---
+--- Phase 2: Compile endpoint (POST /api/fractalos/vibe/compile) ---
 [SKIP] Phase 2: clang with wasm32-wasi not found — install llvm to enable compile phase
 
 --- Phase 3: WASM magic byte verification ---
 [SKIP] Phase 3: skipped — no WASM output from Phase 2
 
---- Phase 4: Bridge health check (GET /api/agentos/agents) ---
+--- Phase 4: Bridge health check (GET /api/fractalos/agents) ---
 [INFO] Bridge returned 6 agent(s)
 [PASS] Phase 4: bridge is healthy and returned agents list
 
@@ -106,10 +106,10 @@ apt install clang wasi-libc
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `AGENTOS_BRIDGE_PORT` | `8790` | Bridge port to use |
-| `AGENTOS_TIMEOUT` | `120` | Seconds allowed for the compile phase |
-| `AGENTOS_CODEGEN_BACKEND` | `mock` | `mock` = skip LLM, `http` = use API key |
-| `AGENTOS_DEBUG` | (unset) | Set to any value to print bridge logs to stdout |
+| `FRACTALOS_BRIDGE_PORT` | `8790` | Bridge port to use |
+| `FRACTALOS_TIMEOUT` | `120` | Seconds allowed for the compile phase |
+| `FRACTALOS_CODEGEN_BACKEND` | `mock` | `mock` = skip LLM, `http` = use API key |
+| `FRACTALOS_DEBUG` | (unset) | Set to any value to print bridge logs to stdout |
 | `ANTHROPIC_API_KEY` | (unset) | Enables Anthropic API backend |
 | `OPENAI_API_KEY` | (unset) | Enables OpenAI API backend |
 
@@ -150,7 +150,7 @@ Add to your CI pipeline (GitHub Actions example):
     chmod +x tests/vibe_integration_test.sh
     ./tests/vibe_integration_test.sh
   env:
-    AGENTOS_CODEGEN_BACKEND: mock
+    FRACTALOS_CODEGEN_BACKEND: mock
 ```
 
 The test exits 0 (pass) in mock mode even without an LLM or QEMU, making it

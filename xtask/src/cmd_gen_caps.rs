@@ -75,50 +75,50 @@ fn render_header(source: &Path, desc: &SystemDesc) -> Result<String> {
     writeln!(out)?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_SYSTEM_MAX_PDS {}u",
+        "#define FRACTALOS_CAP_SYSTEM_MAX_PDS {}u",
         SYSTEM_MAX_PDS
     )?;
-    writeln!(out, "#define AGENTOS_CAP_SLOTS_PER_PD {}u", SLOTS_PER_PD)?;
-    writeln!(out, "#define AGENTOS_CAP_PD_COUNT {}u", desc.pd.len())?;
+    writeln!(out, "#define FRACTALOS_CAP_SLOTS_PER_PD {}u", SLOTS_PER_PD)?;
+    writeln!(out, "#define FRACTALOS_CAP_PD_COUNT {}u", desc.pd.len())?;
     writeln!(out)?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_PD_SLOT_CNODE(i)      ((i) * AGENTOS_CAP_SLOTS_PER_PD + 0u)"
+        "#define FRACTALOS_CAP_PD_SLOT_CNODE(i)      ((i) * FRACTALOS_CAP_SLOTS_PER_PD + 0u)"
     )?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_PD_SLOT_TCB(i)        ((i) * AGENTOS_CAP_SLOTS_PER_PD + 1u)"
+        "#define FRACTALOS_CAP_PD_SLOT_TCB(i)        ((i) * FRACTALOS_CAP_SLOTS_PER_PD + 1u)"
     )?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_PD_SLOT_VSPACE(i)     ((i) * AGENTOS_CAP_SLOTS_PER_PD + 2u)"
+        "#define FRACTALOS_CAP_PD_SLOT_VSPACE(i)     ((i) * FRACTALOS_CAP_SLOTS_PER_PD + 2u)"
     )?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_PD_SLOT_IPC_FRAME(i)  ((i) * AGENTOS_CAP_SLOTS_PER_PD + 3u)"
+        "#define FRACTALOS_CAP_PD_SLOT_IPC_FRAME(i)  ((i) * FRACTALOS_CAP_SLOTS_PER_PD + 3u)"
     )?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_PD_SLOT_SC(i)         ((i) * AGENTOS_CAP_SLOTS_PER_PD + 4u)"
+        "#define FRACTALOS_CAP_PD_SLOT_SC(i)         ((i) * FRACTALOS_CAP_SLOTS_PER_PD + 4u)"
     )?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_PD_SLOT_NTFN(i)       ((i) * AGENTOS_CAP_SLOTS_PER_PD + 5u)"
+        "#define FRACTALOS_CAP_PD_SLOT_NTFN(i)       ((i) * FRACTALOS_CAP_SLOTS_PER_PD + 5u)"
     )?;
     writeln!(out)?;
     writeln!(
         out,
-        "#define AGENTOS_CAP_EP_POOL_BASE_REL      (AGENTOS_CAP_SYSTEM_MAX_PDS * AGENTOS_CAP_SLOTS_PER_PD)"
+        "#define FRACTALOS_CAP_EP_POOL_BASE_REL      (FRACTALOS_CAP_SYSTEM_MAX_PDS * FRACTALOS_CAP_SLOTS_PER_PD)"
     )?;
-    writeln!(out, "#define AGENTOS_CAP_EP_POOL_SIZE          256u")?;
+    writeln!(out, "#define FRACTALOS_CAP_EP_POOL_SIZE          256u")?;
     writeln!(out)?;
 
     for (idx, pd) in desc.pd.iter().enumerate() {
         let ident = c_ident(&pd.name);
-        writeln!(out, "#define AGENTOS_CAP_PD_{}_INDEX {}u", ident, idx)?;
+        writeln!(out, "#define FRACTALOS_CAP_PD_{}_INDEX {}u", ident, idx)?;
         writeln!(
             out,
-            "#define AGENTOS_CAP_PD_{}_PRIORITY {}u",
+            "#define FRACTALOS_CAP_PD_{}_PRIORITY {}u",
             ident, pd.priority
         )?;
     }
@@ -159,12 +159,12 @@ priority = 160
 "#,
         )
         .unwrap();
-        let header = render_header(Path::new("agentos.toml"), &desc).unwrap();
-        assert!(header.contains("#define AGENTOS_CAP_SYSTEM_MAX_PDS 64u"));
-        assert!(header.contains("#define AGENTOS_CAP_SLOTS_PER_PD 6u"));
-        assert!(header.contains("#define AGENTOS_CAP_EP_POOL_BASE_REL      (AGENTOS_CAP_SYSTEM_MAX_PDS * AGENTOS_CAP_SLOTS_PER_PD)"));
-        assert!(header.contains("#define AGENTOS_CAP_PD_NAMESERVER_INDEX 0u"));
-        assert!(header.contains("#define AGENTOS_CAP_PD_CC_PD_INDEX 1u"));
+        let header = render_header(Path::new("fractalos.toml"), &desc).unwrap();
+        assert!(header.contains("#define FRACTALOS_CAP_SYSTEM_MAX_PDS 64u"));
+        assert!(header.contains("#define FRACTALOS_CAP_SLOTS_PER_PD 6u"));
+        assert!(header.contains("#define FRACTALOS_CAP_EP_POOL_BASE_REL      (FRACTALOS_CAP_SYSTEM_MAX_PDS * FRACTALOS_CAP_SLOTS_PER_PD)"));
+        assert!(header.contains("#define FRACTALOS_CAP_PD_NAMESERVER_INDEX 0u"));
+        assert!(header.contains("#define FRACTALOS_CAP_PD_CC_PD_INDEX 1u"));
     }
 
     #[test]

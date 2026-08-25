@@ -1,5 +1,5 @@
 /*
- * agentOS ModelSvc IPC Contract — interface.h
+ * FractalOS ModelSvc IPC Contract — interface.h
  *
  * Formal seL4 IPC API contract for the ModelSvc model inference proxy.
  * ModelSvc abstracts all LLM inference behind a capability-gated interface.
@@ -15,7 +15,7 @@
  * MR0 carries the opcode on request; MR0 carries the status on reply.
  * Prompt text and responses pass through a shared memory region.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

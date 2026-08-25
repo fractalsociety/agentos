@@ -2,7 +2,7 @@
  * test_ep_alloc.c — API tests for the root-task endpoint allocator
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 #include "ep_alloc.h"
@@ -85,7 +85,7 @@ seL4_Error seL4_CNode_Mint(seL4_CPtr service,
     return g_mint_result;
 }
 
-#include "../../kernel/agentos-root-task/src/ep_alloc.c"
+#include "../../kernel/fractalos-root-task/src/ep_alloc.c"
 
 static void test_alloc_first_endpoint(void)
 {

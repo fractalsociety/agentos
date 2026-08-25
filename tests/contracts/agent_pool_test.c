@@ -6,17 +6,17 @@
  *   0x02 — POOL_RELEASE : release a slot back to the pool
  *   0x03 — POOL_STATUS  : query pool occupancy and capacity
  *
- * Channel: 0 (placeholder — update when ch is assigned in agentos.system).
+ * Channel: 0 (placeholder — update when ch is assigned in fractalos.system).
  *
  * TODO: replace opcode literals with
  *       #include "../../contracts/agent-pool/interface.h"
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 #define AGENTPOOL_OP_ACQUIRE 0x01u
 #define AGENTPOOL_OP_RELEASE 0x02u

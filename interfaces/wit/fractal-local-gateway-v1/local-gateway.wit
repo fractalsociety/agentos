@@ -1,0 +1,109 @@
+// Fractal Local Gateway fence, version 1 (fos-gz0.14.10.5).
+//
+// External companion / guest gateways open sessions here before consuming
+// fractal-companion projections. HTTPS, TLS, and page rendering are outside
+// this repository. Ambient ACT/COMMIT/credential/shell/promotion authority
+// is never grantable.
+
+package fractalos:fractal-local-gateway@1.0.0;
+
+interface types {
+    type digest = list<u8>; // exactly 32 bytes
+
+    record event-range {
+        stream-id: u32,
+        first-seq: u64,
+        last-seq: u64,
+        head: digest,
+    }
+
+    flags grant {
+        project,
+        progress,
+        daily-root,
+        health,
+        worker-memory,
+        task-intent,
+    }
+
+    enum intent-kind {
+        acknowledge,
+        defer,
+        prioritize,
+        request-proof,
+        cancel,
+    }
+
+    enum gateway-error {
+        ok,
+        invalid,
+        denied,
+        not-found,
+        expired,
+        revoked,
+        stale-epoch,
+        stale-root,
+        ambient-denied,
+        no-grant,
+        full,
+        duplicate,
+        derive-denied,
+    }
+}
+
+interface local-gateway {
+    use types.{digest, event-range, grant, intent-kind, gateway-error};
+
+    /// Publish an expiring, user-approved service capability.
+    publish-service: func(
+        service-id: digest,
+        audience: digest,
+        parent-service: digest,
+        grants: grant,
+        authority-epoch: u64,
+        expires-unix-ms: u64,
+        effect-ledger-event: digest,
+    ) -> result<digest, gateway-error>;
+
+    /// Revoke a service: invalidate sessions and block derivation.
+    revoke-service: func(
+        service-id: digest,
+        authority-epoch: u64,
+        effect-ledger-event: digest,
+    ) -> result<tuple<u32, u32>, gateway-error>;
+
+    /// Open a session pinned to a shared-space root + event range.
+    open-session: func(
+        service-id: digest,
+        session-id: digest,
+        pinned-root: digest,
+        range: event-range,
+        grants: grant,
+        authority-epoch: u64,
+        now-unix-ms: u64,
+    ) -> result<digest, gateway-error>;
+
+    /// Query one pinned daily workspace (requires daily-root grant).
+    get-daily-workspace: func(
+        session-id: digest,
+        date-key: string,
+        tz-key: string,
+        authority-epoch: u64,
+        now-unix-ms: u64,
+    ) -> result<digest, gateway-error>;
+
+    /// Sole mutation path (requires task-intent grant).
+    submit-task-intent: func(
+        session-id: digest,
+        kind: intent-kind,
+        subject: digest,
+        expect-root: digest,
+        note: string,
+        authority-epoch: u64,
+        now-unix-ms: u64,
+    ) -> result<digest, gateway-error>;
+}
+
+world local-gateway-host {
+    export local-gateway;
+}

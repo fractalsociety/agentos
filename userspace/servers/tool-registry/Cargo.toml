@@ -1,11 +1,11 @@
 [package]
-name = "agentos-tool-registry"
+name = "fractalos-tool-registry"
 version = "0.1.3"
 edition = "2021"
-description = "Tool Registry - capability-gated tool registration and dispatch for agentOS"
+description = "Tool Registry - capability-gated tool registration and dispatch for FractalOS"
 
 [features]
 std = []
 
 [dependencies]
-agentos-sdk = { path = "../../sdk" }
+fractalos-sdk = { path = "../../sdk" }

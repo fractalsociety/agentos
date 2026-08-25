@@ -1,4 +1,4 @@
-//! Unit tests for the `agentos-pd` library (Issue #11).
+//! Unit tests for the `fractalos-pd` library (Issue #11).
 //!
 //! These tests run on the host with `cargo test` and exercise:
 //!
@@ -30,7 +30,7 @@
 #![cfg(test)]
 
 // Re-export the library modules we test directly.
-use agentos_pd::ipc::{self, MsgInfo};
+use fractalos_pd::ipc::{self, MsgInfo};
 
 // ── Mock FFI back-end ─────────────────────────────────────────────────────────
 //
@@ -49,7 +49,7 @@ thread_local! {
 }
 
 // These `#[no_mangle]` functions satisfy the `extern "C"` references in
-// `agentos_pd::ffi` when linking the test binary.  They must not be `unsafe`
+// `fractalos_pd::ffi` when linking the test binary.  They must not be `unsafe`
 // at the declaration site, but the extern block in ffi.rs declares them unsafe
 // to call — that's on the caller side.
 
@@ -196,7 +196,10 @@ fn msginfo_from_raw_round_trip() {
     let original = MsgInfo::new(0xDEAD_BEEF, 3, 1, 7);
     let raw = original.raw();
     let reconstructed = MsgInfo::from_raw(raw);
-    assert_eq!(original, reconstructed, "from_raw(raw()) should reconstruct identical MsgInfo");
+    assert_eq!(
+        original, reconstructed,
+        "from_raw(raw()) should reconstruct identical MsgInfo"
+    );
 }
 
 #[test]
@@ -225,11 +228,7 @@ fn mr_get_set_round_trip_all_registers() {
     for idx in 0u32..64 {
         let val = 0xA5A5_0000_0000_0000u64 | (idx as u64);
         ipc::set_mr(idx, val);
-        assert_eq!(
-            ipc::get_mr(idx),
-            val,
-            "MR[{idx}] round-trip failed"
-        );
+        assert_eq!(ipc::get_mr(idx), val, "MR[{idx}] round-trip failed");
     }
 }
 
@@ -247,7 +246,11 @@ fn mr_registers_are_independent() {
 fn mr_default_value_is_zero() {
     reset_state();
     for idx in 0u32..64 {
-        assert_eq!(ipc::get_mr(idx), 0, "MR[{idx}] should default to 0 after reset");
+        assert_eq!(
+            ipc::get_mr(idx),
+            0,
+            "MR[{idx}] should default to 0 after reset"
+        );
     }
 }
 
@@ -272,7 +275,7 @@ fn mr_overwrite_preserves_other_registers() {
 #[test]
 fn console_log_basic_message() {
     reset_state();
-    agentos_pd::console::info("[test] hello from Rust PD\n");
+    fractalos_pd::console::info("[test] hello from Rust PD\n");
     let out = take_console();
     assert!(
         out.contains("[test] hello from Rust PD"),
@@ -283,7 +286,7 @@ fn console_log_basic_message() {
 #[test]
 fn console_log_empty_message() {
     reset_state();
-    agentos_pd::console::info("");
+    fractalos_pd::console::info("");
     // Should not panic and should produce no output.
     let out = take_console();
     assert_eq!(out, "");
@@ -293,35 +296,35 @@ fn console_log_empty_message() {
 fn console_log_max_length_message() {
     reset_state();
     // A message exactly at the limit should not be truncated.
-    let msg = "x".repeat(agentos_pd::console::MAX_MSG_LEN);
-    agentos_pd::console::log(0, 0, &msg);
+    let msg = "x".repeat(fractalos_pd::console::MAX_MSG_LEN);
+    fractalos_pd::console::log(0, 0, &msg);
     let out = take_console();
-    assert_eq!(out.len(), agentos_pd::console::MAX_MSG_LEN);
+    assert_eq!(out.len(), fractalos_pd::console::MAX_MSG_LEN);
 }
 
 #[test]
 fn console_log_overlong_message_is_truncated() {
     reset_state();
     // A message longer than MAX_MSG_LEN should be silently clipped.
-    let msg = "y".repeat(agentos_pd::console::MAX_MSG_LEN + 100);
-    agentos_pd::console::log(0, 0, &msg);
+    let msg = "y".repeat(fractalos_pd::console::MAX_MSG_LEN + 100);
+    fractalos_pd::console::log(0, 0, &msg);
     let out = take_console();
     assert_eq!(
         out.len(),
-        agentos_pd::console::MAX_MSG_LEN,
+        fractalos_pd::console::MAX_MSG_LEN,
         "Message was not truncated to MAX_MSG_LEN ({}) bytes",
-        agentos_pd::console::MAX_MSG_LEN
+        fractalos_pd::console::MAX_MSG_LEN
     );
 }
 
 #[test]
 fn console_convenience_levels_all_work() {
     reset_state();
-    agentos_pd::console::critical("crit\n");
-    agentos_pd::console::error("err\n");
-    agentos_pd::console::warn("warn\n");
-    agentos_pd::console::info("info\n");
-    agentos_pd::console::debug("debug\n");
+    fractalos_pd::console::critical("crit\n");
+    fractalos_pd::console::error("err\n");
+    fractalos_pd::console::warn("warn\n");
+    fractalos_pd::console::info("info\n");
+    fractalos_pd::console::debug("debug\n");
     let out = take_console();
     assert!(out.contains("crit"));
     assert!(out.contains("err"));
@@ -357,7 +360,11 @@ fn health_check_returns_success_reply() {
     reset_state();
     let req = MsgInfo::new(0xFF, 0, 0, 0);
     let reply = simulate_protected_handler(req);
-    assert_eq!(reply.label(), 0, "health check should reply with label 0 (success)");
+    assert_eq!(
+        reply.label(),
+        0,
+        "health check should reply with label 0 (success)"
+    );
     assert_eq!(reply.count(), 2, "health check should populate 2 MR words");
 }
 
@@ -381,7 +388,11 @@ fn health_check_populates_call_count_in_mr1() {
     let req = MsgInfo::new(0xFF, 0, 0, 0);
     let _reply = simulate_protected_handler(req);
     // The simulated handler always writes 1 (first call).
-    assert_eq!(ipc::get_mr(1), 1, "MR1 should contain health-check call count");
+    assert_eq!(
+        ipc::get_mr(1),
+        1,
+        "MR1 should contain health-check call count"
+    );
 }
 
 #[test]
@@ -418,7 +429,7 @@ fn various_unknown_opcodes_all_return_error() {
 #[test]
 fn pd_runtime_version_is_non_empty() {
     assert!(
-        !agentos_pd::PD_RUNTIME_VERSION.is_empty(),
+        !fractalos_pd::PD_RUNTIME_VERSION.is_empty(),
         "PD_RUNTIME_VERSION should be set from Cargo.toml"
     );
 }
@@ -426,5 +437,5 @@ fn pd_runtime_version_is_non_empty() {
 #[test]
 fn microkit_abi_version_is_one() {
     // ABI version 1 is the initial Microkit ABI this crate targets.
-    assert_eq!(agentos_pd::MICROKIT_ABI_VERSION, 1);
+    assert_eq!(fractalos_pd::MICROKIT_ABI_VERSION, 1);
 }

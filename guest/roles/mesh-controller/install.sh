@@ -5,7 +5,7 @@ ROLE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 VERSION=0.29.3
 SOURCE_SHA=7289cf171176e7a6e3914763d1585b33020919caac23ed447fd9366347ba03c8
 AMD64_SHA=cb44be5032bf3ba552cb868805825d416dbee24f4e9f82e3ec214450dc3b20a5
-WORK_DIR=$(mktemp -d /tmp/agentos-headscale.XXXXXX)
+WORK_DIR=$(mktemp -d /tmp/fractalos-headscale.XXXXXX)
 trap 'rm -rf "$WORK_DIR"' EXIT INT TERM
 
 fetch_checked()
@@ -22,10 +22,10 @@ fetch_checked()
 }
 
 install -d -m 0755 /usr/local/etc/headscale
-install -d -o root -g wheel -m 0700 /var/db/agentos-secrets/headscale
+install -d -o root -g wheel -m 0700 /var/db/fractalos-secrets/headscale
 install -d -o root -g wheel -m 0750 /var/db/headscale
 pw usershow headscale >/dev/null 2>&1 || \
-    pw useradd headscale -d /var/db/headscale -s /usr/sbin/nologin -c "agentOS Headscale"
+    pw useradd headscale -d /var/db/headscale -s /usr/sbin/nologin -c "FractalOS Headscale"
 
 export ASSUME_ALWAYS_YES=yes
 pkg bootstrap -f
@@ -66,25 +66,25 @@ install -o root -g wheel -m 0555 "$ROLE_DIR/files/headscale.rc" /usr/local/etc/r
 # /usr/local/bin, so install a FreeBSD-specific absolute interpreter line.
 sed '1s|^.*$|#!/usr/local/bin/python3.11|' "$ROLE_DIR/files/policy-sync.py" \
     > "$WORK_DIR/policy-sync.py"
-install -o root -g wheel -m 0555 "$WORK_DIR/policy-sync.py" /usr/local/sbin/agentos-headscale-policy-sync
-printf '%s\n' '*/1 * * * * root /usr/local/sbin/agentos-headscale-policy-sync >/dev/null 2>&1' \
-    > /etc/cron.d/agentos-headscale-policy-sync
-chmod 0600 /etc/cron.d/agentos-headscale-policy-sync
+install -o root -g wheel -m 0555 "$WORK_DIR/policy-sync.py" /usr/local/sbin/fractalos-headscale-policy-sync
+printf '%s\n' '*/1 * * * * root /usr/local/sbin/fractalos-headscale-policy-sync >/dev/null 2>&1' \
+    > /etc/cron.d/fractalos-headscale-policy-sync
+chmod 0600 /etc/cron.d/fractalos-headscale-policy-sync
 
-if [ ! -s /var/db/agentos-secrets/headscale/tls.key ]; then
+if [ ! -s /var/db/fractalos-secrets/headscale/tls.key ]; then
     openssl req -x509 -newkey rsa:3072 -nodes -days 365 \
-        -subj "/CN=mesh.agentos.internal" \
-        -addext "subjectAltName = DNS:mesh.agentos.internal" \
-        -keyout /var/db/agentos-secrets/headscale/tls.key \
-        -out /var/db/agentos-secrets/headscale/tls.crt
+        -subj "/CN=mesh.fractalos.internal" \
+        -addext "subjectAltName = DNS:mesh.fractalos.internal" \
+        -keyout /var/db/fractalos-secrets/headscale/tls.key \
+        -out /var/db/fractalos-secrets/headscale/tls.crt
 fi
-chown -R headscale:headscale /var/db/headscale /var/db/agentos-secrets/headscale
-chmod 0700 /var/db/agentos-secrets/headscale
-chmod 0600 /var/db/agentos-secrets/headscale/*
+chown -R headscale:headscale /var/db/headscale /var/db/fractalos-secrets/headscale
+chmod 0700 /var/db/fractalos-secrets/headscale
+chmod 0600 /var/db/fractalos-secrets/headscale/*
 
 /usr/local/sbin/headscale configtest -c /usr/local/etc/headscale/config.yaml
-chown -R headscale:headscale /var/db/headscale /var/db/agentos-secrets/headscale
-chmod 0600 /var/db/agentos-secrets/headscale/*
+chown -R headscale:headscale /var/db/headscale /var/db/fractalos-secrets/headscale
+chmod 0600 /var/db/fractalos-secrets/headscale/*
 sysrc headscale_enable=YES >/dev/null
 # Reinstalling the role is supported, so replace an existing controller cleanly.
 service headscale onestop >/dev/null 2>&1 || true
@@ -107,12 +107,12 @@ done
 }
 /usr/local/sbin/headscale -c /usr/local/etc/headscale/config.yaml users create agent-admin >/dev/null 2>&1 || true
 /usr/local/sbin/headscale -c /usr/local/etc/headscale/config.yaml users create agents >/dev/null 2>&1 || true
-if [ ! -s /var/db/agentos-secrets/headscale/api.token ]; then
+if [ ! -s /var/db/fractalos-secrets/headscale/api.token ]; then
     /usr/local/sbin/headscale -c /usr/local/etc/headscale/config.yaml \
         apikeys create --expiration 365d \
-        > /var/db/agentos-secrets/headscale/api.token
-    chown headscale:headscale /var/db/agentos-secrets/headscale/api.token
-    chmod 0600 /var/db/agentos-secrets/headscale/api.token
+        > /var/db/fractalos-secrets/headscale/api.token
+    chown headscale:headscale /var/db/fractalos-secrets/headscale/api.token
+    chmod 0600 /var/db/fractalos-secrets/headscale/api.token
 fi
-/usr/local/sbin/agentos-headscale-policy-sync
-echo "agentOS mesh-controller ${VERSION} installed"
+/usr/local/sbin/fractalos-headscale-policy-sync
+echo "FractalOS mesh-controller ${VERSION} installed"

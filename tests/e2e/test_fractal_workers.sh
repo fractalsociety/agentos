@@ -27,6 +27,11 @@ echo "== fractal-worker contract: cursor =="
 cargo test -p fractal-worker-compat --test test_cursor_worker -- --nocapture \
     || fail "cursor compat tests"
 
+echo "== fractal-worker provider readiness (live vs blocked) =="
+cargo test -p fractal-worker-compat --test test_remote_worker_sessions \
+    readiness_report_distinguishes_fixture_live_and_blocked -- --nocapture \
+    || fail "provider readiness evidence"
+
 echo "== fractal-worker fixture replay via fractal-cursor-worker =="
 cargo build -p fractal-worker-compat --bin fractal-cursor-worker \
     || fail "build fractal-cursor-worker"
@@ -277,16 +282,98 @@ PY
 
 run_hermes_live
 
-# Placeholders for sibling workers (implemented by parallel tasks).
-for worker in codex; do
-    flag=$(echo "FRACTAL_${worker}_LIVE" | tr '[:lower:]' '[:upper:]')
-    # shellcheck disable=SC2086
-    eval "live=\${$flag:-0}"
-    if [ "$live" = "1" ]; then
-        echo "SKIP: $worker live branch not provided by this Claude adapter task"
+# --- Live Codex opt-in --------------------------------------------------------
+run_codex_live() {
+    [ "${FRACTAL_CODEX_LIVE:-0}" = "1" ] || {
+        echo "SKIP: set FRACTAL_CODEX_LIVE=1 to run live Codex worker"
+        return 0
+    }
+    if [ -n "${FRACTAL_CODEX_EXECUTABLE:-}" ]; then
+        [ -x "${FRACTAL_CODEX_EXECUTABLE}" ] || skip "FRACTAL_CODEX_EXECUTABLE not executable"
     else
-        echo "SKIP: set $flag=1 when the $worker adapter is available"
+        command -v codex >/dev/null 2>&1 || skip "codex CLI not installed"
     fi
-done
+    [ -n "${FRACTAL_CODEX_SECRET_HANDLE:-}" ] || skip "FRACTAL_CODEX_SECRET_HANDLE unset"
+
+    echo "== fractal-worker live: codex =="
+    cargo build -p fractal-worker-compat --bin fractal-codex-worker \
+        || fail "build fractal-codex-worker"
+    CBIN="$ROOT/target/debug/fractal-codex-worker"
+    FIXTURE="$ROOT/tests/fixtures/codex-worker"
+
+    "$CBIN" discover-version >"$OUT" || fail "live codex discover-version"
+    python3 - "$OUT" <<'PY' || fail "live codex version schema"
+import json, pathlib, sys
+v = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert v.get("provider") == "codex", v
+assert v.get("protocol_version") == "fractal-worker/v1", v
+assert v.get("cli_version"), v
+assert "stub" not in v["cli_version"].lower(), v
+print("codex version", v["cli_version"])
+PY
+
+    SEED=$(mktemp -d "${TMPDIR:-/tmp}/fractal-codex-seed.XXXXXX")
+    mkdir -p "$SEED/src"
+    printf '%s\n' 'int health(void) { return -1; }' >"$SEED/src/health.c"
+    PROMPT='Edit only src/health.c so health() returns 0. Do not touch any other file.'
+
+    "$CBIN" open-session \
+        --workspace-id e2e-codex-live \
+        --root-object-id root \
+        --allowed-file src/health.c \
+        --seed-dir "$SEED" \
+        --secret-handle "$FRACTAL_CODEX_SECRET_HANDLE" \
+        --prompt "$PROMPT" \
+        >"$OUT" || fail "live codex open-session"
+
+    python3 - "$OUT" "$FIXTURE/canary_secrets.txt" <<'PY' || fail "live codex result validation"
+import json, pathlib, sys
+result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+canary = pathlib.Path(sys.argv[2]).read_text()
+assert result.get("schema") == "fractal.worker.terminal-result.v1", result
+assert result.get("provider") == "codex", result
+peak = result.get("usage", {}).get("peak_rss_bytes", 0)
+assert 0 <= peak <= 157286400, result
+assert result.get("exit") in ("success", "failure", "cancelled"), result
+for f in result.get("changed_files") or []:
+    assert f.get("within_allowlist"), f
+    assert f.get("path") == "src/health.c", f
+blob = json.dumps(result)
+for line in canary.splitlines():
+    if "sk-CANARY" in line:
+        tok = line.split("=", 1)[-1].strip()
+        assert tok not in blob, f"canary leaked: {tok}"
+for needle in ["sk-CANARY", "/Users/someone"]:
+    assert needle not in blob, needle
+assert result.get("secret_handle"), result
+print("codex live envelope ok exit=", result.get("exit"), "status=", result.get("exit_status"))
+PY
+    rm -rf "$SEED"
+    pass "codex live worker"
+}
+
+run_codex_live
+
+echo "== fractal-worker fixture replay via fractal-codex-worker =="
+cargo build -p fractal-worker-compat --bin fractal-codex-worker \
+    || fail "build fractal-codex-worker"
+CBIN="$ROOT/target/debug/fractal-codex-worker"
+CFIXTURE="$ROOT/tests/fixtures/codex-worker"
+"$CBIN" replay-session \
+    --workspace-id e2e-codex-replay \
+    --root-object-id root \
+    --allowed-file src/health.c \
+    --jsonl-file "$CFIXTURE/session.jsonl" \
+    --peak-rss-bytes 1048576 \
+    --secret-handle "handle:e2e-codex" \
+    >"$OUT" || fail "codex replay-session"
+python3 - "$OUT" <<'PY' || fail "codex replay validation"
+import json, pathlib, sys
+result = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert result.get("schema") == "fractal.worker.terminal-result.v1", result
+assert result.get("provider") == "codex", result
+print("codex replay envelope ok")
+PY
+pass "codex fixture replay"
 
 pass "test_fractal_workers.sh"

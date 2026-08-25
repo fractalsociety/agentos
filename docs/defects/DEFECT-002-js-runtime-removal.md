@@ -9,7 +9,7 @@
 
 ## What js_runtime Did
 
-`kernel/agentos-root-task/src/js_runtime.c` was a passive seL4 Microkit
+`kernel/fractalos-root-task/src/js_runtime.c` was a passive seL4 Microkit
 protection domain (priority 120) that hosted a QuickJS JavaScript engine
 inside the kernel personality layer.  It accepted Protected Procedure Calls
 (PPCs) on two channels — one from `controller` (ch 60) and one from
@@ -38,7 +38,7 @@ State owned:
 
 ## Why It Was a Violation
 
-The agentOS project constitution (CLAUDE.md) forbids JavaScript entirely:
+The FractalOS project constitution (CLAUDE.md) forbids JavaScript entirely:
 the kernel is pure C + Rust + Assembly only.  A QuickJS embedding inside a
 seL4 protection domain brings:
 
@@ -76,10 +76,10 @@ PD other than libagent invoked these opcodes directly.
 
 | File | Reason |
 |---|---|
-| `kernel/agentos-root-task/src/js_runtime.c` | The offending PD implementation |
-| `kernel/agentos-root-task/include/js_runtime.h` | Public interface / opcode definitions |
-| `kernel/agentos-root-task/vendor/quickjs/quickjs_stub.c` | QuickJS stub implementation |
-| `kernel/agentos-root-task/vendor/quickjs/quickjs_stub.h` | QuickJS stub header |
+| `kernel/fractalos-root-task/src/js_runtime.c` | The offending PD implementation |
+| `kernel/fractalos-root-task/include/js_runtime.h` | Public interface / opcode definitions |
+| `kernel/fractalos-root-task/vendor/quickjs/quickjs_stub.c` | QuickJS stub implementation |
+| `kernel/fractalos-root-task/vendor/quickjs/quickjs_stub.h` | QuickJS stub header |
 
 ---
 
@@ -87,9 +87,9 @@ PD other than libagent invoked these opcodes directly.
 
 | File | Change |
 |---|---|
-| `kernel/agentos-root-task/Makefile` | Removed `PD_JS_RUNTIME_SRCS`, `PD_JS_RUNTIME_VENDOR_SRCS`, `JS_RUNTIME_OBJS`, `js_runtime.elf` from `IMAGES`, vendor build rule, and link rule |
-| `kernel/agentos-root-task/agentos-aarch64.system` | Removed `js_staging` memory region, `js_runtime` PD, channels 60 and 61, and `js_staging` map from `init_agent` |
-| `boards/rpi5/agentos.system` | Same removals as aarch64 system file |
+| `kernel/fractalos-root-task/Makefile` | Removed `PD_JS_RUNTIME_SRCS`, `PD_JS_RUNTIME_VENDOR_SRCS`, `JS_RUNTIME_OBJS`, `js_runtime.elf` from `IMAGES`, vendor build rule, and link rule |
+| `kernel/fractalos-root-task/fractalos-aarch64.system` | Removed `js_staging` memory region, `js_runtime` PD, channels 60 and 61, and `js_staging` map from `init_agent` |
+| `boards/rpi5/fractalos.system` | Same removals as aarch64 system file |
 | `libs/libagent/libagent.c` | Removed `#include "js_runtime.h"`, removed `SLOT_JS_RUNTIME`, replaced `aos_js_eval` and `aos_js_call` bodies with `AOS_ERR_IO` stubs and TODO comments |
 
 ---

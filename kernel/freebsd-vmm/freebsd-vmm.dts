@@ -1,5 +1,5 @@
 /*
- * Device Tree Source for FreeBSD guest on agentOS/seL4
+ * Device Tree Source for FreeBSD guest on FractalOS/seL4
  * QEMU virt AArch64 machine
  *
  * This DTB is embedded into the VMM ELF and placed at guest physical
@@ -12,7 +12,7 @@
 /dts-v1/;
 
 / {
-    model = "agentOS FreeBSD VM Guest (QEMU virt AArch64)";
+    model = "FractalOS FreeBSD VM Guest (QEMU virt AArch64)";
     compatible = "linux,dummy-virt";
     interrupt-parent = <&gic>;
     #address-cells = <2>;

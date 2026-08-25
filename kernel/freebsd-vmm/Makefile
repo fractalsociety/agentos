@@ -1,4 +1,4 @@
-# agentOS FreeBSD VMM PD — Makefile
+# FractalOS FreeBSD VMM PD — Makefile
 #
 # Builds freebsd_vmm.elf: the VMM protection domain that hosts FreeBSD
 # as a raw seL4 virtual machine guest using libvmm.
@@ -13,12 +13,12 @@
 #   - clang + ld.lld + llvm-objcopy (LLVM cross toolchain)
 
 BOARD           ?= qemu_virt_aarch64
-AGENTOS_ROOT    := $(abspath ../..)
-SEL4_BOARD_DIR  ?= $(AGENTOS_ROOT)/microkit-sdk-2.1.0/board/$(BOARD)/release
-LIBVMM_DIR      ?= $(AGENTOS_ROOT)/libvmm
+FRACTALOS_ROOT    := $(abspath ../..)
+SEL4_BOARD_DIR  ?= $(FRACTALOS_ROOT)/microkit-sdk-2.1.0/board/$(BOARD)/release
+LIBVMM_DIR      ?= $(FRACTALOS_ROOT)/libvmm
 BUILD_DIR       ?= build
-LIBVMM_LIB_DIR  ?= $(AGENTOS_ROOT)/build/$(BOARD)
-EDK2_FD         ?= $(AGENTOS_ROOT)/guest-images/edk2-aarch64-code.fd
+LIBVMM_LIB_DIR  ?= $(FRACTALOS_ROOT)/build/$(BOARD)
+EDK2_FD         ?= $(FRACTALOS_ROOT)/guest-images/edk2-aarch64-code.fd
 FREEBSD_DTB     ?= $(BUILD_DIR)/freebsd-guest.dtb
 
 SEL4_INCLUDE    := $(SEL4_BOARD_DIR)/include
@@ -31,7 +31,7 @@ CC      := clang --target=aarch64-none-elf
 LD      := ld.lld
 OBJCOPY := llvm-objcopy
 
-AGENTOS_INCLUDE := ../agentos-root-task/include
+FRACTALOS_INCLUDE := ../fractalos-root-task/include
 
 CFLAGS := \
     -mstrict-align \
@@ -44,7 +44,7 @@ CFLAGS := \
     -I$(SDDF_DIR)/include \
     -I$(SDDF_DIR)/include/sddf/util/custom_libc \
     -I$(SDDF_DIR)/include/microkit \
-    -I$(AGENTOS_INCLUDE) \
+    -I$(FRACTALOS_INCLUDE) \
     -I.
 
 LDFLAGS := \

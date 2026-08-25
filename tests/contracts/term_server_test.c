@@ -1,12 +1,12 @@
 /*
- * agentOS — term_server PD contract test
+ * FractalOS — term_server PD contract test
  * Covered opcodes: OP_TERM_OPENPTY, OP_TERM_RESIZE, OP_TERM_WRITE,
  *   OP_TERM_READ, OP_TERM_CLOSEPTY, OP_TERM_STATUS
- * NOTE: agentos.h redefines OP_TERM_* to 0xA0-0xA5, overriding contract header values
+ * NOTE: fractalos.h redefines OP_TERM_* to 0xA0-0xA5, overriding contract header values
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/term_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/term_server_contract.h"
 
 void run_term_server_tests(microkit_channel ch) {
     TEST_SECTION("term_server");

@@ -2,7 +2,7 @@
  * vibeOS API — OS Instance Lifecycle Interface
  *
  * This header defines the complete public API for vibeOS: the primary external
- * interface to agentOS for creating, destroying, configuring, and inspecting
+ * interface to FractalOS for creating, destroying, configuring, and inspecting
  * guest OS instances on demand.
  *
  * vibeOS sits above the vm_manager / vmm_mux kernel layer and presents a clean,
@@ -25,7 +25,7 @@
  *   input struct to that region before the PPC and reads the output struct
  *   after the reply.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -117,14 +117,14 @@ typedef enum __attribute__((packed)) {
     VOS_SVC_BLOCK   = (1u << 2),  /* virtio-blk (agentfs-backed)             */
     VOS_SVC_USB     = (1u << 3),  /* virtio-usb pass-through                 */
     VOS_SVC_TIMER   = (1u << 4),  /* high-resolution timer injection         */
-    VOS_SVC_ENTROPY = (1u << 5),  /* virtio-rng seeded from agentOS entropy  */
+    VOS_SVC_ENTROPY = (1u << 5),  /* virtio-rng seeded from FractalOS entropy  */
 } vos_service_type_t;
 
 /* ── Opcode constants ────────────────────────────────────────────────────── */
 
 /*
  * vibeOS opcodes are placed in the 0x5600 range to avoid collision with
- * existing agentOS IPC labels (see agentos.h MSG_* and OP_VM_* constants).
+ * existing FractalOS IPC labels (see fractalos.h MSG_* and OP_VM_* constants).
  *
  * All opcodes are sent in MR0 of the seL4 PPC to the vibeOS endpoint.
  */

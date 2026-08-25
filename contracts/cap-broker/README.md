@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Capability Broker is the only PD in agentOS permitted to perform CNode
+The Capability Broker is the only PD in FractalOS permitted to perform CNode
 operations that move seL4 capabilities between address spaces.  All inter-PD
 capability delegation flows through it.  The broker provides two complementary
 APIs:
@@ -84,5 +84,5 @@ is `ctrl_eventbus` (id_a=0) with the opcode in MR0.
 ## Source Files
 
 - `userspace/servers/capability-broker/src/lib.rs` — Rust implementation
-- `kernel/agentos-root-task/include/agentos.h` — OP_CAP_BROKER_RELOAD,
-  OP_CAP_STATUS, AGENTOS_CAP_* fine-grained constants
+- `kernel/fractalos-root-task/include/fractalos.h` — OP_CAP_BROKER_RELOAD,
+  OP_CAP_STATUS, FRACTALOS_CAP_* fine-grained constants

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to agentOS are documented here.
+All notable changes to FractalOS are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
@@ -30,16 +30,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - boards/intel-nuc: x86_64 system manifest with NS16550 UART at MMIO 0xFE034000; console_shell ring-buffer RX path (Microkit 2.1.0 lacks x86_64 IRQ support)
 - linux_vmm native stub (`LINUX_VMM_NATIVE_STUB`): bare-metal AArch64 boards compile linux_vmm as a no-op PD without libvmm's QEMU-specific GIC addresses
 - console_shell PD added to aarch64 QEMU, rpi5, and intel-nuc system manifests (priority 49, channels 41/42)
-- Bridge: `GET /api/agentos/console/stream` SSE endpoint — streams serial log lines live with optional `?slot=N` filter and historical replay on connect
-- Bridge: `POST /api/agentos/console/cmd` — injects commands to seL4 console_shell via QEMU serial socket
-- Bridge: `GET /api/agentos/console/vms` — seL4 VM lifecycle registry distinct from QEMU-hosted VMs
+- Bridge: `GET /api/fractalos/console/stream` SSE endpoint — streams serial log lines live with optional `?slot=N` filter and historical replay on connect
+- Bridge: `POST /api/fractalos/console/cmd` — injects commands to seL4 console_shell via QEMU serial socket
+- Bridge: `GET /api/fractalos/console/vms` — seL4 VM lifecycle registry distinct from QEMU-hosted VMs
 - Bridge serial reader: intercepts `\x01VM:start/stop:id` escape sequences from console_shell PD to track seL4 VM state
 - Multi-pane dashboard: Topology, Console, Profiler, Agents, Images, Docs panels (`270a825`)
 - Collapsible sidebar with mini topology SVG + system stat chips
 - Full SVG topology graph with live CPU/mem overlays and edge animation
 - WASM agent simulation layer (wasmi 0.31): SimEngine, SimCapStore, SimEventBus (`e74d6c1`)
 - run-agent CLI: load and execute signed WASM agents on the host
-- WASM agent signature verification (agentos.signature section, SHA-512)
+- WASM agent signature verification (fractalos.signature section, SHA-512)
 - Multi-agent orchestration via SimOrchestrator with channel routing
 - Console tab: default landing panel; Getting Started banner when offline
 - Agents panel: Spawn Agent modal with name + swap-slot selection
@@ -51,7 +51,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - trace_recorder PD: full 512-entry circular ring with START/STOP/QUERY/DUMP (`81d2c36`)
 - Runtime capability policy loading from binary blob (cap_policy.bin)
 - Per-agent fault restart policy (max_restarts, escalation threshold) (`755ff96`)
-- tools/gen-channels: auto-generate typed channel enums from agentos.system
+- tools/gen-channels: auto-generate typed channel enums from fractalos.system
 - tools/gen-policy: compile policy.txt to binary cap_policy.bin
 - GitHub Actions CI: cargo test, trunk build, WASM examples, QEMU boot test (`4732120`)
 - WASM examples: health-monitor and log-aggregator agents
@@ -64,7 +64,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - topology.yaml validation gate in GitHub Actions CI (`498b332`)
 - seL4 time-partitioning scheduler PD: fixed CPU budget per agent class (`8f581a0`)
 - OP_PUBLISH_BATCH: coalesce up to 16 MsgBus events per seL4_Call (`7d91ef4`, `f5f48dd`)
-- console_mux PD: session multiplexer ('tmux for agentOS') (`844d37c`)
+- console_mux PD: session multiplexer ('tmux for FractalOS') (`844d37c`)
 - VibeEngine hot-reload: zero-downtime WASM slot update (OP_VIBE_HOTRELOAD 0x47) (`6d33f96`)
 - VM multiplexer: create/destroy/switch 4 FreeBSD instances under seL4 (`5cf9a1d`)
 - mem_profiler PD: per-slot WASM heap tracking, leak detection, quota alerts (`3298a02`)
@@ -79,7 +79,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - dev_shell PD: interactive seL4 debug REPL for QEMU (`4b15330`, `3d4f2b7`)
 - Raft consensus for distributed agent mesh (`2adbe15`)
 - GPU scheduler PD for CUDA workload routing on Sparky (`0fe9d12`, `b1a5d3e`)
-- CUDA PTX compute offload via WASM custom sections (agentos.cuda) (`bfe77c0`)
+- CUDA PTX compute offload via WASM custom sections (fractalos.cuda) (`bfe77c0`)
 - Distributed agent mesh PD + SquirrelBus bridge (`e3518e5`)
 - WASM module registry cache + boot replay (`e683af6`)
 - Linux VMM integration via libvmm (AArch64) (`895f2fe`)
@@ -90,17 +90,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - IPC perf counters PD + wasm3 heap_stats hook (`de1fdb4`)
 - Multi-arch build system: riscv64, aarch64, x86_64 (`08d84fb`)
 - Profiler tab: live WASM slot flame graph on dashboard (`63dc89e`)
-- agentOS Python SDK (agentos_sdk) (`a1a7b9c`)
+- FractalOS Python SDK (fractalos_sdk) (`a1a7b9c`)
 - Release automation via `make release` (cargo xtask) (`26d72ac`)
 - Full-duplex console, trace_recorder PD, FreeBSD lazy loader, API tests (`7ef82d3`)
 - Idempotent guest OS fetch wired into make + GUI download buttons (`b23597d`)
 - xterm.js terminal console dashboard (`b472afb`)
 - Rust migration: all userspace and build tooling from Python/JS to Rust (`bd589c4`)
-- agentOS v0.1.0-alpha: first boot (`8650b14`)
+- FractalOS v0.1.0-alpha: first boot (`8650b14`)
 
 ### Build
 - Kernel builds cleanly for riscv64 and aarch64 targets (`806be81`, `f319000`)
-- Fixed: duplicate opcode OP_CAP_POLICY_RELOAD in agentos.h (`806be81`)
+- Fixed: duplicate opcode OP_CAP_POLICY_RELOAD in fractalos.h (`806be81`)
 - Fixed: SWAP_SLOT_BASE_CH was 8, corrected to 30
 - Fixed: off-by-one in log.c hex buffer (buf[18]→buf[19]) (`fab13bb`)
 - Fixed: NULL and integer limit macro redefinition guards
@@ -109,7 +109,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed: ring buffer overflow signal (`33c1531`)
 - Fixed: five major OS security findings addressed in two passes (`c8dd3ea`, `0c5dbdd`)
 - Fixed: critical OS security findings from design review (`ec868f8`, `8e98874`)
-- channels_generated.h auto-generated from agentos.system XML
+- channels_generated.h auto-generated from fractalos.system XML
 - Fixed: console_log migration build breaks — missing includes, redef, invalid channel id (`1f1fb41`)
 - Fixed: controller PD crash and serial output wiring to console panes (`dc2fbda`)
 - Fixed: bridge-as-server socket so QEMU connects as client (`94c6af7`)
@@ -120,7 +120,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed: Microkit SDK download + Homebrew LLVM PATH for macOS (`c8f243e`)
 - Fixed: stale microkit-sdk symlink removed (`1415452`)
 - Fixed: git submodule auto-initialisation when missing (`08dca11`)
-- Fixed: console renamed to agentOS console with build error fixes (`c2da13e`)
+- Fixed: console renamed to FractalOS console with build error fixes (`c2da13e`)
 - Fixed: controller links, system file validity (`9fd898f`)
 - scripts/boot-test.sh: reusable QEMU serial banner verification with configurable timeout
 - .github/workflows/ci.yml: dedicated boot-test job (riscv64 + QEMU serial banner check)

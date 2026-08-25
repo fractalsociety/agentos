@@ -29,7 +29,7 @@ pub struct TestArgs {
     #[arg(long, default_value = "buildroot")]
     pub guest_os: String,
     /// Host TCP port forwarded to guest SSH; 0 disables SSH forwarding.
-    #[arg(long, env = "AGENTOS_TEST_SSH_PORT", default_value_t = 0)]
+    #[arg(long, env = "FRACTALOS_TEST_SSH_PORT", default_value_t = 0)]
     pub ssh_port: u16,
     #[arg(long, default_value_t = 120)]
     pub timeout_secs: u64,
@@ -51,7 +51,10 @@ pub struct GenAbiArgs {
     #[arg(long, default_value = "tools/abi_spec.toml")]
     pub spec: std::path::PathBuf,
     /// Output header path.
-    #[arg(long, default_value = "kernel/agentos-root-task/include/agentos_abi.h")]
+    #[arg(
+        long,
+        default_value = "kernel/fractalos-root-task/include/fractalos_abi.h"
+    )]
     pub out: std::path::PathBuf,
     /// Validate the spec and exit without writing the header.
     #[arg(long)]
@@ -60,8 +63,8 @@ pub struct GenAbiArgs {
 
 #[derive(clap::Args)]
 pub struct GenCapsArgs {
-    /// Base system descriptor TOML, usually kernel/agentos-root-task/agentos.toml
-    #[arg(long, default_value = "kernel/agentos-root-task/agentos.toml")]
+    /// Base system descriptor TOML, usually kernel/fractalos-root-task/fractalos.toml
+    #[arg(long, default_value = "kernel/fractalos-root-task/fractalos.toml")]
     pub system: std::path::PathBuf,
     /// Board override TOML. The first existing non-empty path replaces --system.
     #[arg(long = "board-system")]

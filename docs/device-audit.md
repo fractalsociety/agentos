@@ -1,8 +1,8 @@
-# agentOS VMM Device Audit — Task 8
+# FractalOS VMM Device Audit — Task 8
 
 **Date:** 2026-04-15
 **Auditor:** Task 8 automated audit
-**Scope:** Linux VMM (`kernel/agentos-root-task/src/linux_vmm.c`) and FreeBSD VMM
+**Scope:** Linux VMM (`kernel/fractalos-root-task/src/linux_vmm.c`) and FreeBSD VMM
 (`kernel/freebsd-vmm/vmm.c`, `kernel/freebsd-vmm/vmm_mux.c`) against the OS-neutral
 generic device services.
 
@@ -14,10 +14,10 @@ Before examining the VMMs, these generic services are confirmed to exist in the 
 
 | Service | Source File | Role |
 |---|---|---|
-| `net-service` (NetServer) | `kernel/agentos-root-task/src/net_server.c` | Virtual NIC management, packet TX/RX, ACL |
-| `serial-mux` (console_mux) | `kernel/agentos-root-task/src/console_mux.c` | UART multiplexer, per-PD console rings, scrollback |
-| `block-service` (virtio_blk) | `kernel/agentos-root-task/src/virtio_blk.c` | VirtIO-blk read/write/flush, vfs_server-facing IPC |
-| `gpu-shmem` | `kernel/agentos-root-task/src/gpu_shmem.c` / `include/gpu_shmem.h` | Zero-copy tensor ring between seL4 PDs and Linux guest |
+| `net-service` (NetServer) | `kernel/fractalos-root-task/src/net_server.c` | Virtual NIC management, packet TX/RX, ACL |
+| `serial-mux` (console_mux) | `kernel/fractalos-root-task/src/console_mux.c` | UART multiplexer, per-PD console rings, scrollback |
+| `block-service` (virtio_blk) | `kernel/fractalos-root-task/src/virtio_blk.c` | VirtIO-blk read/write/flush, vfs_server-facing IPC |
+| `gpu-shmem` | `kernel/fractalos-root-task/src/gpu_shmem.c` / `include/gpu_shmem.h` | Zero-copy tensor ring between seL4 PDs and Linux guest |
 
 ---
 
@@ -41,7 +41,7 @@ Before examining the VMMs, these generic services are confirmed to exist in the 
 
 ### 3.1 Linux VMM: Direct PL011 UART, no console_mux binding
 
-**Location:** `kernel/agentos-root-task/src/linux_vmm.c:207–211` (AArch64 full impl)
+**Location:** `kernel/fractalos-root-task/src/linux_vmm.c:207–211` (AArch64 full impl)
 
 ```c
 /* Register UART IRQ passthrough */
@@ -198,7 +198,7 @@ missing for all VM slots. See §5 for the vm_manager hook location.
 
 ### 3.6 vm_manager: OP_VM_CONSOLE does not call console_mux
 
-**Location:** `kernel/agentos-root-task/src/vm_manager.c:419–424`
+**Location:** `kernel/fractalos-root-task/src/vm_manager.c:419–424`
 
 ```c
 case OP_VM_CONSOLE: {
@@ -244,7 +244,7 @@ capability-based access to generic services for each new VM. Currently it calls
 to the new VM's protection domain.
 
 **Target function:** `protected()` → `case OP_VM_CREATE:` in
-`kernel/agentos-root-task/src/vm_manager.c:330–354`
+`kernel/fractalos-root-task/src/vm_manager.c:330–354`
 
 The sequence that should happen after a successful `vmm_mux_create()` call is:
 

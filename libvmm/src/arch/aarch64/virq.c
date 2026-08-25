@@ -17,7 +17,7 @@ int virq_passthrough_map[MAX_PASSTHROUGH_IRQ] = {-1};
 #define NUM_GIC_SGIS        16
 #define PPI_VTIMER_IRQ      27
 
-__attribute__((weak)) bool agentos_vppi_defer_ack(size_t vcpu_id, int irq)
+__attribute__((weak)) bool fractalos_vppi_defer_ack(size_t vcpu_id, int irq)
 {
     (void)vcpu_id;
     (void)irq;
@@ -27,7 +27,7 @@ __attribute__((weak)) bool agentos_vppi_defer_ack(size_t vcpu_id, int irq)
 static void vppi_event_ack(size_t vcpu_id, int irq, void *cookie)
 {
     (void)cookie;
-    if (irq == PPI_VTIMER_IRQ && agentos_vppi_defer_ack(vcpu_id, irq)) {
+    if (irq == PPI_VTIMER_IRQ && fractalos_vppi_defer_ack(vcpu_id, irq)) {
         return;
     }
     vmm_vcpu_arm_ack_vppi(vcpu_id, irq);

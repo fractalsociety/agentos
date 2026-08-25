@@ -1,13 +1,13 @@
 /*
- * agentOS — pflocal_server PD contract test
+ * FractalOS — pflocal_server PD contract test
  * Covered opcodes: OP_PFLOCAL_SOCKET, OP_PFLOCAL_BIND, OP_PFLOCAL_LISTEN,
  *   OP_PFLOCAL_CONNECT, OP_PFLOCAL_ACCEPT, OP_PFLOCAL_SEND, OP_PFLOCAL_RECV,
  *   OP_PFLOCAL_CLOSE, OP_PFLOCAL_STATUS
- * NOTE: agentos.h redefines OP_PFLOCAL_* to 0xE1-0xE9, overriding contract header values
+ * NOTE: fractalos.h redefines OP_PFLOCAL_* to 0xE1-0xE9, overriding contract header values
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/pflocal_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/pflocal_server_contract.h"
 
 void run_pflocal_server_tests(microkit_channel ch) {
     TEST_SECTION("pflocal_server");

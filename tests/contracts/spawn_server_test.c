@@ -1,11 +1,11 @@
 /*
- * agentOS — spawn_server PD contract test
+ * FractalOS — spawn_server PD contract test
  * Covered opcodes: OP_SPAWN_LAUNCH, OP_SPAWN_KILL, OP_SPAWN_STATUS,
  *   OP_SPAWN_LIST, OP_SPAWN_HEALTH
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/spawn_server_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/spawn_server_contract.h"
 
 void run_spawn_server_tests(microkit_channel ch) {
     TEST_SECTION("spawn_server");

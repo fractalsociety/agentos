@@ -1,6 +1,6 @@
 # ipc_bridge_daemon
 
-The Linux-side counterpart to the agentOS seL4 IPC bridge: it maps the
+The Linux-side counterpart to the FractalOS seL4 IPC bridge: it maps the
 shared-memory command/response rings (physical address `0x4000000`) via
 `/dev/mem`, polls for commands enqueued by native seL4 protection domains,
 executes them (ping, file read/write, shell exec, process spawn/signal), and

@@ -2,12 +2,12 @@
  * test_cap_accounting.c — API tests for root-task capability accounting
  */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 
 #include "framework.h"
 #include "cap_accounting.h"
 
-#include "../../kernel/agentos-root-task/src/cap_accounting.c"
+#include "../../kernel/fractalos-root-task/src/cap_accounting.c"
 
 static void test_init_seeds_root_caps(void)
 {

@@ -1,8 +1,8 @@
 /*
- * agentOS NetServer Protection Domain — E5-S4: raw seL4 IPC
+ * FractalOS NetServer Protection Domain — E5-S4: raw seL4 IPC
  *
  * Manages per-application virtual NICs and provides the network stack
- * interface for all agents running under agentOS.
+ * interface for all agents running under FractalOS.
  *
  * Migration notes (E5-S4):
  *   - Priority ordering constraint ELIMINATED: net_server_main() runs its
@@ -26,13 +26,13 @@
  *   WireGuard session datagrams use OP_NET_WG_UDP_SEND with a packet-only
  *   staging view so Headscale/netmap endpoint bytes stay underlay metadata.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 /* ── Conditional compilation ─────────────────────────────────────────────── */
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * Host-side test build: minimal type stubs so this file compiles without
  * seL4 or Microkit headers.  framework.h (included by the test file before
@@ -154,18 +154,18 @@ static inline int tcp_close(struct tcp_pcb *p) { (void)p; return 0; }
 /* log_drain stub */
 static inline void log_drain_write(int a, int b, const char *s) { (void)a;(void)b;(void)s; }
 
-/* agentos_log_boot stub */
-static inline void agentos_log_boot(const char *s) { (void)s; }
+/* fractalos_log_boot stub */
+static inline void fractalos_log_boot(const char *s) { (void)s; }
 
 /* CAP_CLASS_NET */
 #ifndef CAP_CLASS_NET
 #define CAP_CLASS_NET  (1u << 1)
 #endif
 
-#else /* !AGENTOS_TEST_HOST */
+#else /* !FRACTALOS_TEST_HOST */
 
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 #include "lwip_sys.h"
 #include "lwip/pbuf.h"
 #include "lwip/tcp.h"
@@ -191,7 +191,7 @@ static inline void data_wr32(uint8_t *d, int off, uint32_t v)
     d[off+3] = (uint8_t)(v >> 24);
 }
 
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 /* ── Contract header (opcode constants, NET_OK etc.) ─────────────────────── */
 #include "net_server.h"
@@ -284,7 +284,7 @@ static volatile net_vnic_ring_t *slot_ring(uint32_t shmem_slot) {
 
 /* ── Capability-scoped driver probe ─────────────────────────────────────── */
 static void probe_virtio_net(void) {
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     sel4_msg_t rep = {0};
     uint32_t rc = sel4_client_call(g_net_pd_ep, MSG_NET_FASTPATH_STATUS,
                                    (const void *)0, 0u, &rep);
@@ -305,7 +305,7 @@ static void probe_virtio_net(void) {
     log_drain_write(16, 16, "[net_server] net_pd queues unavailable\n");
 }
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 /*
  * Host stand-in for net_pd's MSG_NET_FASTPATH_SEND path. Mirrors the
  * net_device ownership rules: frames enter DEVICE and stay there until an
@@ -345,11 +345,11 @@ static void net_server_host_net_pd_irq(void)
             (void)netfp_client_release(&g_host_netfp, 0u, id);
     }
 }
-#endif /* AGENTOS_TEST_HOST */
+#endif /* FRACTALOS_TEST_HOST */
 
 static uint32_t net_pd_submit(uint32_t packet_offset, uint32_t packet_len)
 {
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     net_fastpath_send_req_t request = {
         .packet_offset = packet_offset,
         .packet_len = packet_len,
@@ -479,7 +479,7 @@ static void register_with_nameserver(seL4_CPtr ns_ep) {
     /* Name "net" packed at data[16..] */
     req.data[16] = 'n'; req.data[17] = 'e'; req.data[18] = 't'; req.data[19] = '\0';
     req.length = 20;
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     sel4_call(ns_ep, &req, &rep);
 #else
     (void)rep;
@@ -1079,7 +1079,7 @@ static uint32_t handle_net_tcp_close(sel4_badge_t badge,
     if (!net_require_badge(badge, NET_SERVER_RIGHT_VNIC_ADMIN, rep, 4u))
         return SEL4_ERR_PERM;
     uint8_t vid = (uint8_t)data_rd32(req->data, 0);
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     if (vid < NET_MAX_VNICS && g_conns[vid].tcp) {
         tcp_close(g_conns[vid].tcp);
         g_conns[vid].tcp   = NULL;
@@ -1136,7 +1136,7 @@ static uint32_t handle_net_http_post(sel4_badge_t badge,
     uint32_t body_offset = data_rd32(req->data,  8);
     uint32_t body_len    = data_rd32(req->data, 12);
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     /* Preferred native path: the capability-scoped model transport owns a
      * dedicated VirtIO console.  NetServer remains the only caller exposed to
      * ModelSvc; workers never receive this transport capability. */
@@ -1195,7 +1195,7 @@ static uint32_t handle_net_http_post(sel4_badge_t badge,
 
     (void)body;   /* body used in actual lwIP send below */
 
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
     g_conns[HTTP_CONN_ID].rx_buf_len = 0u;
 
     /* Reuse an established bridge connection.  lwIP's pcb retains congestion
@@ -1418,7 +1418,7 @@ static uint32_t net_server_dispatch_one(sel4_badge_t badge,
  * sit at any priority because seL4 endpoint IPC is blocking; callers wait
  * for a reply rather than relying on Microkit PPC priority scheduling.
  * ═══════════════════════════════════════════════════════════════════════════ */
-#ifndef AGENTOS_TEST_HOST
+#ifndef FRACTALOS_TEST_HOST
 void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
                      seL4_CPtr timer_ntfn_cap __attribute__((unused)))
 {
@@ -1430,7 +1430,7 @@ void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
     net_mmio_vaddr = 0u;
     g_net_pd_ep = (seL4_CPtr)16u;
     g_model_transport_ep = (seL4_CPtr)21u;
-    agentos_log_boot("net_server");
+    fractalos_log_boot("net_server");
     log_drain_write(16, 16, "[net_server] Initialising NetServer PD (raw seL4 IPC)\n");
     log_drain_write(16, 16, "[net_server] priority ordering constraint ELIMINATED\n");
 
@@ -1458,4 +1458,4 @@ void net_server_main(seL4_CPtr my_ep, seL4_CPtr ns_ep,
 
 void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep) { net_server_main(my_ep, ns_ep, 0u); }
 
-#endif /* !AGENTOS_TEST_HOST */
+#endif /* !FRACTALOS_TEST_HOST */

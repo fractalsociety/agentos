@@ -3,11 +3,11 @@
 ## Overview
 
 NetService is the device-abstraction-layer (DAL) contract for network access
-in agentOS.  It complements the higher-level `net-server` contract by defining
+in FractalOS.  It complements the higher-level `net-server` contract by defining
 the lower-level vNIC and ACL interface that all guest OSes and VMMs must use.
 Direct access to physical or virtio-net NICs is prohibited.
 
-The concrete implementation lives in `kernel/agentos-root-task/src/net_server.c`
+The concrete implementation lives in `kernel/fractalos-root-task/src/net_server.c`
 with the lwIP shim in `lwip_shim.c`.
 
 ## Status
@@ -40,5 +40,5 @@ assignments and shared memory layout.
 
 - `contracts/net-service/interface.h` — DAL-style opcode listing
 - `contracts/net-server/interface.h` — packed struct wire protocol
-- `kernel/agentos-root-task/include/net_server.h` — authoritative OP_NET_* values
-- `kernel/agentos-root-task/src/net_server.c` — implementation
+- `kernel/fractalos-root-task/include/net_server.h` — authoritative OP_NET_* values
+- `kernel/fractalos-root-task/src/net_server.c` — implementation

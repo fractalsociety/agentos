@@ -96,10 +96,12 @@ impl EventBus {
     /// Create a topic owned by `owner_pd`.  Idempotent — if the topic already
     /// exists the call is a no-op (first creator wins).
     pub fn create_topic_owned(&mut self, owner_pd: u32, topic: impl Into<Topic>) {
-        self.topics.entry(topic.into()).or_insert_with(|| TopicEntry {
-            subscribers: Vec::new(),
-            owner_pd: Some(owner_pd),
-        });
+        self.topics
+            .entry(topic.into())
+            .or_insert_with(|| TopicEntry {
+                subscribers: Vec::new(),
+                owner_pd: Some(owner_pd),
+            });
     }
 
     /// Subscribe to a topic.  Returns a fresh SubscriberId.
@@ -165,7 +167,11 @@ impl EventBus {
             }
         }
 
-        let event = RawEvent { topic, payload, timestamp_ns };
+        let event = RawEvent {
+            topic,
+            payload,
+            timestamp_ns,
+        };
         for sub in &subs {
             self.pending.entry(*sub).or_default().push(event.clone());
         }
@@ -205,7 +211,9 @@ mod tests {
         let mut bus = EventBus::new();
         bus.create_topic("agent.fault");
         let sub = bus.subscribe("agent.fault").unwrap();
-        let delivered = bus.publish("agent.fault", b"test-payload".to_vec(), 1_000).unwrap();
+        let delivered = bus
+            .publish("agent.fault", b"test-payload".to_vec(), 1_000)
+            .unwrap();
         assert_eq!(delivered, 1);
         let events = bus.drain(sub).unwrap();
         assert_eq!(events.len(), 1);
@@ -266,14 +274,18 @@ mod tests {
         let sub = bus.subscribe("secure.topic").unwrap();
 
         // Owner can publish successfully
-        let n = bus.publish_as(42, "secure.topic", b"from owner".to_vec(), 1).unwrap();
+        let n = bus
+            .publish_as(42, "secure.topic", b"from owner".to_vec(), 1)
+            .unwrap();
         assert_eq!(n, 1);
         let events = bus.drain(sub).unwrap();
         assert_eq!(events[0].payload, b"from owner");
 
         // Another PD (99) attempting to publish is rejected
         let sub2 = bus.subscribe("secure.topic").unwrap();
-        let err = bus.publish_as(99, "secure.topic", b"squatter".to_vec(), 2).unwrap_err();
+        let err = bus
+            .publish_as(99, "secure.topic", b"squatter".to_vec(), 2)
+            .unwrap_err();
         assert_eq!(err, BusError::Unauthorized);
 
         // Drain should be empty (nothing was delivered from the squatter)
@@ -295,7 +307,11 @@ mod tests {
 
         // The next publish should fail with QueueFull
         let err = bus
-            .publish("flood", b"overflow".to_vec(), MAX_PENDING_PER_SUBSCRIBER as u64)
+            .publish(
+                "flood",
+                b"overflow".to_vec(),
+                MAX_PENDING_PER_SUBSCRIBER as u64,
+            )
             .unwrap_err();
         assert_eq!(err, BusError::QueueFull);
 
@@ -318,13 +334,17 @@ mod tests {
 
         // PD 10 can still publish (it was the original owner)
         let sub = bus.subscribe("owned.topic").unwrap();
-        let n = bus.publish_as(10, "owned.topic", b"ok".to_vec(), 0).unwrap();
+        let n = bus
+            .publish_as(10, "owned.topic", b"ok".to_vec(), 0)
+            .unwrap();
         assert_eq!(n, 1);
         let events = bus.drain(sub).unwrap();
         assert_eq!(events[0].payload, b"ok");
 
         // PD 20 cannot publish (it lost the ownership race)
-        let err = bus.publish_as(20, "owned.topic", b"no".to_vec(), 1).unwrap_err();
+        let err = bus
+            .publish_as(20, "owned.topic", b"no".to_vec(), 1)
+            .unwrap_err();
         assert_eq!(err, BusError::Unauthorized);
     }
 
@@ -380,7 +400,9 @@ mod tests {
         bus.create_topic("kernel.topic");
         let sub = bus.subscribe("kernel.topic").unwrap();
         // publish() uses publisher_pd = 0 — should succeed
-        let n = bus.publish("kernel.topic", b"kernel-event".to_vec(), 0).unwrap();
+        let n = bus
+            .publish("kernel.topic", b"kernel-event".to_vec(), 0)
+            .unwrap();
         assert_eq!(n, 1);
         let events = bus.drain(sub).unwrap();
         assert_eq!(events[0].payload, b"kernel-event");
@@ -409,7 +431,9 @@ mod tests {
     fn test_bus_error_display() {
         use alloc::string::ToString;
         assert!(BusError::UnknownTopic.to_string().contains("unknown topic"));
-        assert!(BusError::UnknownSubscriber.to_string().contains("unknown subscriber"));
+        assert!(BusError::UnknownSubscriber
+            .to_string()
+            .contains("unknown subscriber"));
         assert!(BusError::PayloadTooLarge.to_string().contains("too large"));
         assert!(BusError::Unauthorized.to_string().contains("owner"));
         assert!(BusError::QueueFull.to_string().contains("full"));

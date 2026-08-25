@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# agentOS dual-OS E2E proof
+# FractalOS dual-OS E2E proof
 #
-# Builds Linux/Ubuntu and FreeBSD agentOS images, starts both under QEMU at the
+# Builds Linux/Ubuntu and FreeBSD FractalOS images, starts both under QEMU at the
 # same time, then proves SSH connectivity to each guest by running `df /` while
 # both QEMU instances are still alive.
 #
@@ -14,9 +14,9 @@
 #   E2E_TIMEOUT              seconds to wait for each guest SSH (default: 600)
 #   E2E_BOARD                board to build/run (default: qemu_virt_aarch64)
 #   E2E_QEMU                 QEMU binary (default: qemu-system-aarch64)
-#   E2E_DUAL_NO_BUILD        set to 1 to reuse provided agentOS image paths
-#   E2E_LINUX_AGENTOS_IMAGE  Linux/Ubuntu agentOS image when NO_BUILD=1
-#   E2E_FREEBSD_AGENTOS_IMAGE FreeBSD agentOS image when NO_BUILD=1
+#   E2E_DUAL_NO_BUILD        set to 1 to reuse provided FractalOS image paths
+#   E2E_LINUX_FRACTALOS_IMAGE  Linux/Ubuntu FractalOS image when NO_BUILD=1
+#   E2E_FREEBSD_FRACTALOS_IMAGE FreeBSD FractalOS image when NO_BUILD=1
 #   E2E_DUAL_UBUNTU_IMG      Ubuntu guest disk image override
 #   E2E_DUAL_FREEBSD_IMG     FreeBSD guest disk image override
 #   E2E_DUAL_FREEBSD_PROVISION set to 0 to use FreeBSD disk as-is
@@ -162,7 +162,7 @@ abs_path() {
 ensure_ssh_key() {
     if [ ! -f "${E2E_SSH_KEY}" ]; then
         info "Generating test SSH key: ${E2E_SSH_KEY}"
-        ssh-keygen -t ed25519 -N "" -f "${E2E_SSH_KEY}" -C "agentos-e2e-test" >/dev/null 2>&1
+        ssh-keygen -t ed25519 -N "" -f "${E2E_SSH_KEY}" -C "fractalos-e2e-test" >/dev/null 2>&1
         if [ $? -ne 0 ]; then
             fail "ssh-keygen failed"
             exit 1
@@ -175,10 +175,10 @@ ensure_ssh_key() {
 start_ubuntu_seed_server() {
     local pubkey
     pubkey="$(cat "${E2E_SSH_KEY}.pub")"
-    SEED_DIR="$(mktemp -d "${BUILD_TMP_DIR}/agentos-dual-nocloud.XXXXXX")"
+    SEED_DIR="$(mktemp -d "${BUILD_TMP_DIR}/fractalos-dual-nocloud.XXXXXX")"
     {
-        printf "instance-id: agentos-dual-ubuntu-%s-%s\n" "$$" "$(date +%s)"
-        printf "local-hostname: agentos-linux\n"
+        printf "instance-id: fractalos-dual-ubuntu-%s-%s\n" "$$" "$(date +%s)"
+        printf "local-hostname: fractalos-linux\n"
     } > "${SEED_DIR}/meta-data"
     : > "${SEED_DIR}/vendor-data"
     {
@@ -203,7 +203,7 @@ start_ubuntu_seed_server() {
         printf "%s\n" "  expire: false"
         printf "%s\n" "  users:"
         printf "%s\n" "    - name: root"
-        printf "%s\n" "      password: agentos"
+        printf "%s\n" "      password: fractalos"
         printf "%s\n" "      type: text"
         printf "%s\n" "write_files:"
         printf "%s\n" "  - path: /root/.ssh/authorized_keys"
@@ -226,41 +226,41 @@ start_ubuntu_seed_server() {
 
 build_or_select_images() {
     if [ "${E2E_DUAL_NO_BUILD:-0}" = "1" ]; then
-        LINUX_AGENTOS_IMAGE="${E2E_LINUX_AGENTOS_IMAGE:-}"
-        FREEBSD_AGENTOS_IMAGE="${E2E_FREEBSD_AGENTOS_IMAGE:-}"
+        LINUX_FRACTALOS_IMAGE="${E2E_LINUX_FRACTALOS_IMAGE:-}"
+        FREEBSD_FRACTALOS_IMAGE="${E2E_FREEBSD_FRACTALOS_IMAGE:-}"
         if [ -z "${LOADER_ELF}" ]; then
             LOADER_ELF="${DEFAULT_BUILD_DIR}/loader.elf"
         fi
-        [ -n "${LINUX_AGENTOS_IMAGE}" ] || finish_with_missing_prereq "E2E_LINUX_AGENTOS_IMAGE is required with E2E_DUAL_NO_BUILD=1"
-        [ -n "${FREEBSD_AGENTOS_IMAGE}" ] || finish_with_missing_prereq "E2E_FREEBSD_AGENTOS_IMAGE is required with E2E_DUAL_NO_BUILD=1"
-        require_file "${LINUX_AGENTOS_IMAGE}" "Linux agentOS image"
-        require_file "${FREEBSD_AGENTOS_IMAGE}" "FreeBSD agentOS image"
+        [ -n "${LINUX_FRACTALOS_IMAGE}" ] || finish_with_missing_prereq "E2E_LINUX_FRACTALOS_IMAGE is required with E2E_DUAL_NO_BUILD=1"
+        [ -n "${FREEBSD_FRACTALOS_IMAGE}" ] || finish_with_missing_prereq "E2E_FREEBSD_FRACTALOS_IMAGE is required with E2E_DUAL_NO_BUILD=1"
+        require_file "${LINUX_FRACTALOS_IMAGE}" "Linux FractalOS image"
+        require_file "${FREEBSD_FRACTALOS_IMAGE}" "FreeBSD FractalOS image"
         return
     fi
 
     local linux_build_dir="${TMP_DIR}/build-ubuntu"
     local freebsd_build_dir="${TMP_DIR}/build-freebsd"
 
-    section "Build Linux/Ubuntu agentOS image"
+    section "Build Linux/Ubuntu FractalOS image"
     (cd "${REPO_ROOT}" && make build BOARD="${E2E_BOARD}" TARGET_ARCH=aarch64 GUEST_OS=ubuntu BUILD_DIR="${linux_build_dir}")
     if [ $? -ne 0 ]; then
         fail "Linux/Ubuntu image build failed"
         exit 1
     fi
-    require_file "${linux_build_dir}/agentos.img" "built Linux/Ubuntu agentOS image"
-    LINUX_AGENTOS_IMAGE="${linux_build_dir}/agentos.img"
+    require_file "${linux_build_dir}/fractalos.img" "built Linux/Ubuntu FractalOS image"
+    LINUX_FRACTALOS_IMAGE="${linux_build_dir}/fractalos.img"
     if [ -z "${LOADER_ELF}" ]; then
         LOADER_ELF="${linux_build_dir}/loader.elf"
     fi
 
-    section "Build FreeBSD agentOS image"
+    section "Build FreeBSD FractalOS image"
     (cd "${REPO_ROOT}" && make build BOARD="${E2E_BOARD}" TARGET_ARCH=aarch64 GUEST_OS=freebsd BUILD_DIR="${freebsd_build_dir}")
     if [ $? -ne 0 ]; then
         fail "FreeBSD image build failed"
         exit 1
     fi
-    require_file "${freebsd_build_dir}/agentos.img" "built FreeBSD agentOS image"
-    FREEBSD_AGENTOS_IMAGE="${freebsd_build_dir}/agentos.img"
+    require_file "${freebsd_build_dir}/fractalos.img" "built FreeBSD FractalOS image"
+    FREEBSD_FRACTALOS_IMAGE="${freebsd_build_dir}/fractalos.img"
     FREEBSD_KERNEL_IMAGE="${freebsd_build_dir}/freebsd-kernel.bin"
 }
 
@@ -478,7 +478,7 @@ main() {
     require_port_free "${E2E_FREEBSD_SSH_PORT}"
     require_port_free "${E2E_SEED_PORT}"
 
-    TMP_DIR="$(mktemp -d "${BUILD_TMP_DIR}/agentos-dual-os.XXXXXX")"
+    TMP_DIR="$(mktemp -d "${BUILD_TMP_DIR}/fractalos-dual-os.XXXXXX")"
     info "Temp dir: ${TMP_DIR}"
 
     ensure_ssh_key
@@ -494,21 +494,21 @@ main() {
 
     start_ubuntu_seed_server
 
-    section "Start both agentOS guests"
+    section "Start both FractalOS guests"
     UBUNTU_SERIAL_LOG="${TMP_DIR}/ubuntu-serial.log"
     FREEBSD_SERIAL_LOG="${TMP_DIR}/freebsd-serial.log"
     UBUNTU_QEMU_LOG="${TMP_DIR}/ubuntu-qemu.log"
     FREEBSD_QEMU_LOG="${TMP_DIR}/freebsd-qemu.log"
 
-    UBUNTU_QEMU_PID="$(start_qemu ubuntu "${LINUX_AGENTOS_IMAGE}" "${UBUNTU_GUEST_IMG}" 1 "${E2E_UBUNTU_SSH_PORT}" "${UBUNTU_SERIAL_LOG}" "${UBUNTU_QEMU_LOG}" raw 1)"
-    info "Ubuntu agentOS QEMU PID: ${UBUNTU_QEMU_PID}"
+    UBUNTU_QEMU_PID="$(start_qemu ubuntu "${LINUX_FRACTALOS_IMAGE}" "${UBUNTU_GUEST_IMG}" 1 "${E2E_UBUNTU_SSH_PORT}" "${UBUNTU_SERIAL_LOG}" "${UBUNTU_QEMU_LOG}" raw 1)"
+    info "Ubuntu FractalOS QEMU PID: ${UBUNTU_QEMU_PID}"
 
-    FREEBSD_QEMU_PID="$(start_qemu freebsd "${FREEBSD_AGENTOS_IMAGE}" "${FREEBSD_GUEST_IMG}" 31 "${E2E_FREEBSD_SSH_PORT}" "${FREEBSD_SERIAL_LOG}" "${FREEBSD_QEMU_LOG}" "${FREEBSD_DISK_FORMAT}" "${FREEBSD_DISK_SNAPSHOT}")"
-    info "FreeBSD agentOS QEMU PID: ${FREEBSD_QEMU_PID}"
+    FREEBSD_QEMU_PID="$(start_qemu freebsd "${FREEBSD_FRACTALOS_IMAGE}" "${FREEBSD_GUEST_IMG}" 31 "${E2E_FREEBSD_SSH_PORT}" "${FREEBSD_SERIAL_LOG}" "${FREEBSD_QEMU_LOG}" "${FREEBSD_DISK_FORMAT}" "${FREEBSD_DISK_SNAPSHOT}")"
+    info "FreeBSD FractalOS QEMU PID: ${FREEBSD_QEMU_PID}"
 
-    section "Wait for both agentOS instances"
-    wait_for_marker ubuntu "${UBUNTU_QEMU_PID}" "${UBUNTU_SERIAL_LOG}" "agentOS boot complete" 90 || exit 1
-    wait_for_marker freebsd "${FREEBSD_QEMU_PID}" "${FREEBSD_SERIAL_LOG}" "agentOS boot complete" 90 || exit 1
+    section "Wait for both FractalOS instances"
+    wait_for_marker ubuntu "${UBUNTU_QEMU_PID}" "${UBUNTU_SERIAL_LOG}" "FractalOS boot complete" 90 || exit 1
+    wait_for_marker freebsd "${FREEBSD_QEMU_PID}" "${FREEBSD_SERIAL_LOG}" "FractalOS boot complete" 90 || exit 1
 
     section "Wait for guest SSH"
     wait_for_ssh_probe ubuntu ubuntu "${E2E_UBUNTU_SSH_PORT}" "${UBUNTU_QEMU_PID}" "${E2E_TIMEOUT}" \

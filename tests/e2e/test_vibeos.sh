@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# agentOS E2E — vibeos_contract.h tests
+# FractalOS E2E — vibeos_contract.h tests
 #
 # Exercises the VibeOS lifecycle:
 #   MSG_VIBEOS_CREATE → MSG_VIBEOS_BIND_DEVICE → MSG_VIBEOS_BOOT →
 #   MSG_VIBEOS_STATUS → MSG_VIBEOS_SNAPSHOT → MSG_VIBEOS_DESTROY
 #
-# VibeOS (VibOS) is agentOS's WASM hot-swap execution environment.
+# VibeOS (VibOS) is FractalOS's WASM hot-swap execution environment.
 # Tests run via the CC bridge.
 #
 # Exit codes:
@@ -34,13 +34,13 @@ VMM_TYPE="${E2E_GUEST_VMM_TYPE:-freebsd}"
 
 cc_post() {
     curl -sf --max-time 5 \
-        -X POST "${CC_BASE}/api/agentos/cc/$1" \
+        -X POST "${CC_BASE}/api/fractalos/cc/$1" \
         -H "Content-Type: application/json" \
         -d "${2:-{}}" 2>/dev/null
 }
 
 cc_get() {
-    curl -sf --max-time 5 "${CC_BASE}/api/agentos/cc/$1" 2>/dev/null
+    curl -sf --max-time 5 "${CC_BASE}/api/fractalos/cc/$1" 2>/dev/null
 }
 
 ok_field() {

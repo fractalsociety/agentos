@@ -1,11 +1,11 @@
 /*
- * agentOS — swap_slot PD contract test (notification-only)
+ * FractalOS — swap_slot PD contract test (notification-only)
  * No IPC opcodes — tests verify struct definitions, error codes, and constants.
  * Notification status codes: MSG_VIBE_SLOT_READY, MSG_VIBE_SLOT_FAILED, MSG_VIBE_SLOT_HEALTHY
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/swap_slot_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/swap_slot_contract.h"
 
 void run_swap_slot_tests(microkit_channel ch) {
     (void)ch;  /* notification-only PD, no IPC channel needed */

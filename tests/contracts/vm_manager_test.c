@@ -18,13 +18,13 @@
  *
  * Channel: CH_VM_MANAGER (45) from the controller's perspective.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vm_manager_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vm_manager_contract.h"
 
 _Static_assert(sizeof(vm_manager_reply_info_t) == 48u,
                "OP_VM_INFO reply must fit in the 48-byte inline IPC payload");

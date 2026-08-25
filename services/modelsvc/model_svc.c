@@ -1,5 +1,5 @@
 /*
- * agentOS ModelSvc — capability-gated model inference protection domain.
+ * FractalOS ModelSvc — capability-gated model inference protection domain.
  *
  * The service keeps all state in fixed-size tables: there is no allocator,
  * libc, Linux, or ambient network access. Large prompts and responses use a
@@ -11,7 +11,7 @@
  * only PD with a network capability. Host contract tests inject a deterministic
  * transport while exercising this exact implementation.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -21,7 +21,7 @@
 
 #include "../../contracts/modelsvc/interface.h"
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 #include <string.h>
 
 typedef unsigned long seL4_CPtr;
@@ -79,8 +79,8 @@ static inline uint32_t sel4_server_dispatch(sel4_server_t *srv,
 }
 
 #else
-#define AGENTOS_DEBUG 1
-#include "agentos.h"
+#define FRACTALOS_DEBUG 1
+#include "fractalos.h"
 #include "net_server.h"
 #include "sel4_client.h"
 #include "sel4_server.h"
@@ -465,9 +465,9 @@ static uint32_t execute_query(const modelsvc_query_wire_t *wire,
     if ((model->info.flags & MODELSVC_FLAG_LOCAL) != 0u) {
         /* Dependency-free native fast path used for diagnostics and target
          * contract proof. Production model backends still route via transport. */
-        static const char prefix[] = "agentos:";
-        static const char smoke_model[] = "agentos-smoke-coder";
-        static const char mcp_model[] = "agentos-mcp-coder";
+        static const char prefix[] = "fractalos:";
+        static const char smoke_model[] = "fractalos-smoke-coder";
+        static const char mcp_model[] = "fractalos-mcp-coder";
         static const char smoke_task[] = "edit-and-readback-smoke";
         static const char mcp_task[] = "external-mcp-smoke";
         static const char mcp_observation[] = "\"echo\":\"mcp-ok\"";
@@ -877,11 +877,11 @@ static void modelsvc_init_state(uint8_t *shmem, uint32_t shmem_size)
     register_default("fast",
         "http://10.0.2.2:8790/v1/chat/completions", "OPENAI_API_KEY",
         16000u, 4096u, MODELSVC_FLAG_STREAMING);
-    register_default("agentos-echo", "builtin://echo", "",
+    register_default("fractalos-echo", "builtin://echo", "",
         16000u, 4096u, MODELSVC_FLAG_LOCAL | MODELSVC_FLAG_STREAMING);
-    register_default("agentos-smoke-coder", "builtin://smoke-coder", "",
+    register_default("fractalos-smoke-coder", "builtin://smoke-coder", "",
         16000u, 4096u, MODELSVC_FLAG_LOCAL);
-    register_default("agentos-mcp-coder", "builtin://mcp-coder", "",
+    register_default("fractalos-mcp-coder", "builtin://mcp-coder", "",
         16000u, 4096u, MODELSVC_FLAG_LOCAL);
 
     sel4_server_init(&server, 0u);
@@ -898,7 +898,7 @@ static void modelsvc_init_state(uint8_t *shmem, uint32_t shmem_size)
     (void)sel4_server_register(&server, MODELSVC_OP_CANCEL, h_cancel, NULL);
 }
 
-#ifdef AGENTOS_TEST_HOST
+#ifdef FRACTALOS_TEST_HOST
 void modelsvc_test_init(void *shmem, uint32_t shmem_size)
 {
     modelsvc_init_state((uint8_t *)shmem, shmem_size);

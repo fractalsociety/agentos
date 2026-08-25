@@ -7,14 +7,14 @@
  *   OP_SNAP_FORCE       (0xB2) — force an immediate snapshot round
  *   OP_SNAP_GET_HISTORY (0xB3) — retrieve last N round summaries
  *
- * Channel: 0 (placeholder — update when ch is assigned in agentos.system).
+ * Channel: 0 (placeholder — update when ch is assigned in fractalos.system).
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
 
 void run_snapshot_sched_tests(microkit_channel ch)
 {

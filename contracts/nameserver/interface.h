@@ -1,6 +1,6 @@
 #pragma once
 /* contracts/nameserver/interface.h
- * Nameserver contract v1 — capability registry for agentOS.
+ * Nameserver contract v1 — capability registry for FractalOS.
  *
  * The nameserver is a Ring-2 system service PD that acts as the authoritative
  * registry for all other service endpoints.  At boot each service registers

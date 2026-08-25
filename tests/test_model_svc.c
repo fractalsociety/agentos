@@ -13,7 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AGENTOS_TEST_HOST 1
+#define FRACTALOS_TEST_HOST 1
 #include "../services/modelsvc/model_svc.c"
 
 static uint8_t shmem[MODELSVC_SHMEM_SIZE];

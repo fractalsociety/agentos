@@ -1,5 +1,5 @@
 /*
- * agentOS Init Task (Root Task)
+ * FractalOS Init Task (Root Task)
  *
  * This is the first userspace code that runs after seL4 boots.
  * It receives all system resources via BootInfo and is responsible for:
@@ -8,7 +8,7 @@
  *   3. Creating and provisioning agents
  *   4. Entering steady state
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
@@ -23,12 +23,12 @@
 #include <allocman/bootstrap.h>
 #include <allocman/vka.h>
 
-/* agentOS headers */
+/* FractalOS headers */
 #include "init_services.h"
 #include "init_agents.h"
 
 /*
- * agentOS Boot Banner
+ * FractalOS Boot Banner
  */
 static const char *BANNER = 
     "\n"
@@ -132,7 +132,7 @@ static int init_platform(seL4_BootInfo *info) {
  * so agents can resolve service endpoints by name at runtime.
  */
 
-/* Channel IDs used for NameServer registration (must match agentos.system) */
+/* Channel IDs used for NameServer registration (must match fractalos.system) */
 #define CH_NAMESERVER  10
 #define CH_EVENTBUS    11
 #define CH_AGENTFS     12
@@ -299,7 +299,7 @@ static int init_agents(void) {
  */
 static void run_supervisor(void) {
     printf("[init] Phase 4: Entering steady state (supervisor mode)\n");
-    printf("[init]   agentOS is alive. Agents are running.\n");
+    printf("[init]   FractalOS is alive. Agents are running.\n");
     printf("[init]   Supervisor monitoring for:\n");
     printf("[init]     - Agent lifecycle events (create/terminate)\n");
     printf("[init]     - Service health checks\n");
@@ -370,7 +370,7 @@ int main(int argc, char *argv[]) {
     
     /* Print banner */
     printf("%s", BANNER);
-    printf("[init] agentOS init task starting\n");
+    printf("[init] FractalOS init task starting\n");
     printf("[init] Boot info at %p\n", (void *)info);
     
     /* Phase 1: Platform init */

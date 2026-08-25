@@ -1,12 +1,12 @@
 /*
- * agentOS — timer PD contract test
+ * FractalOS — timer PD contract test
  * Covered opcodes: TIMER_OP_CREATE, TIMER_OP_DESTROY, TIMER_OP_START,
  *   TIMER_OP_STOP, TIMER_OP_STATUS, TIMER_OP_CONFIGURE, TIMER_OP_SET_RTC,
  *   TIMER_OP_GET_RTC
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/timer_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/timer_contract.h"
 
 void run_timer_tests(microkit_channel ch) {
     TEST_SECTION("timer");

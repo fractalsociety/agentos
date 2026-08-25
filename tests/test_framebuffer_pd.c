@@ -1,5 +1,5 @@
 /*
- * agentOS framebuffer_pd — Contract Unit Test
+ * FractalOS framebuffer_pd — Contract Unit Test
  *
  * Tests all IPC opcodes (success + error paths) without seL4 or Microkit.
  * The NULL backend is exercised throughout; backend dispatch is tested via
@@ -8,8 +8,8 @@
  *
  * Build:  cc -o /tmp/test_framebuffer_pd \
  *             tests/test_framebuffer_pd.c \
- *             -I kernel/agentos-root-task/include \
- *             -DAGENTOS_TEST_HOST
+ *             -I kernel/fractalos-root-task/include \
+ *             -DFRACTALOS_TEST_HOST
  * Run:    /tmp/test_framebuffer_pd
  */
 
@@ -20,7 +20,7 @@
 #include <assert.h>
 
 /* ══════════════════════════════════════════════════════════════════════════
- * Host-side Microkit stubs — must come before any agentos.h include
+ * Host-side Microkit stubs — must come before any fractalos.h include
  * ══════════════════════════════════════════════════════════════════════════ */
 
 static uint64_t _mrs[64];
@@ -38,14 +38,14 @@ static inline void microkit_dbg_puts(const char *s) { (void)s; }
 static uint32_t notify_count = 0;
 static inline void microkit_notify(microkit_channel ch) { (void)ch; notify_count++; }
 
-/* microkit.h stub — needed so agentos.h compiles on the host */
+/* microkit.h stub — needed so fractalos.h compiles on the host */
 #define MICROKIT_H  /* prevent re-include guards from looking for real file */
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Framebuffer contract constants — inlined to avoid microkit.h pull-in
  * ══════════════════════════════════════════════════════════════════════════ */
 
-/* Opcodes (from agentos.h Phase 4a) */
+/* Opcodes (from fractalos.h Phase 4a) */
 #define MSG_FB_CREATE       0x2501u
 #define MSG_FB_WRITE        0x2502u
 #define MSG_FB_FLIP         0x2503u
@@ -78,7 +78,7 @@ static inline void microkit_notify(microkit_channel ch) { (void)ch; notify_count
 /* Sentinel */
 #define FB_HANDLE_INVALID   0u
 
-/* EventBus channel (from agentos.h) */
+/* EventBus channel (from fractalos.h) */
 #define EVENTBUS_CH_MONITOR  1u
 
 /* EVT_FB_FRAME_READY */

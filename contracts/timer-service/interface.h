@@ -3,9 +3,9 @@
  *
  * // STATUS: IMPLEMENTED
  *
- * This is the canonical contract for the timer-service device service in agentOS.
+ * This is the canonical contract for the timer-service device service in FractalOS.
  * The concrete implementation is provided through seL4 MCS scheduling contexts,
- * managed by kernel/agentos-root-task/src/time_partition.c (policy enforcement)
+ * managed by kernel/fractalos-root-task/src/time_partition.c (policy enforcement)
  * and the controller's tick mechanism (periodic notification on CH_TIMER).
  *
  * The timer service provides wall-clock reads, one-shot alarms, cancellation,
@@ -35,7 +35,7 @@
  *   guest OS creation time.  Guest OSes register an alarm callback channel
  *   via SET_ALARM and receive notifications on it.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

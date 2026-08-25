@@ -1,10 +1,10 @@
 /*
- * elf.h — minimal ELF64 types for the agentOS AArch64 loader
+ * elf.h — minimal ELF64 types for the FractalOS AArch64 loader
  *
  * Only the fields needed to load PT_LOAD segments are defined here.
  * No libc dependency.
  *
- * Copyright (c) 2026 The agentOS Project
+ * Copyright (c) 2026 The FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  */
 

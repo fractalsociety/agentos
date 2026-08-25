@@ -15,8 +15,8 @@ Features:
 ## Status
 
 **IMPLEMENTED.**  The concrete implementation is split between:
-- `kernel/agentos-root-task/src/virtio_blk.c` — virtio-blk driver
-- `kernel/agentos-root-task/src/vfs_server.c` — VFS layer
+- `kernel/fractalos-root-task/src/virtio_blk.c` — virtio-blk driver
+- `kernel/fractalos-root-task/src/vfs_server.c` — VFS layer
 
 ## Protection Domain
 
@@ -41,5 +41,5 @@ so the virtio device can DMA directly without IOMMU translation.
 ## Source Files
 
 - `contracts/block-service/interface.h` — canonical IPC contract
-- `kernel/agentos-root-task/src/virtio_blk.c` — driver implementation
-- `kernel/agentos-root-task/include/virtio_blk.h` — virtio constants
+- `kernel/fractalos-root-task/src/virtio_blk.c` — driver implementation
+- `kernel/fractalos-root-task/include/virtio_blk.h` — virtio constants

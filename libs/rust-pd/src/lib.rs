@@ -1,7 +1,7 @@
-//! # agentos-pd — Rust Protection Domain runtime for seL4 Microkit
+//! # fractalos-pd — Rust Protection Domain runtime for seL4 Microkit
 //!
 //! This crate provides the building blocks for writing seL4 Microkit Protection
-//! Domains (PDs) in Rust for the agentOS kernel.
+//! Domains (PDs) in Rust for the FractalOS kernel.
 //!
 //! ## Quick start
 //!
@@ -9,9 +9,9 @@
 //! #![no_std]
 //! #![no_main]
 //!
-//! use agentos_pd::pd::ProtectionDomain;
-//! use agentos_pd::ipc::MsgInfo;
-//! use agentos_pd::{console, export_pd};
+//! use fractalos_pd::pd::ProtectionDomain;
+//! use fractalos_pd::ipc::MsgInfo;
+//! use fractalos_pd::{console, export_pd};
 //!
 //! struct HelloPd;
 //!
@@ -61,7 +61,7 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
 
-/// agentOS PD runtime version string.
+/// FractalOS PD runtime version string.
 pub const PD_RUNTIME_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// ABI version of the Microkit entry-point protocol this crate targets.

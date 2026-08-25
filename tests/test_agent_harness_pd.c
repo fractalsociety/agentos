@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#define AGENTOS_TEST_HOST 1
+#define FRACTALOS_TEST_HOST 1
 #include "../userspace/agents/codex-harness/codex_harness_pd.c"
 
 static uint8_t arena[HARNESS_SHMEM_SIZE];
@@ -181,7 +181,7 @@ static uint32_t fake_test(uint32_t profile_id,
 static struct harness_req_submit request(uint32_t required_caps)
 {
     static const char prompt[] = "repair the workspace";
-    static const char model[] = "agentos-echo";
+    static const char model[] = "fractalos-echo";
     memcpy(arena + 0x1000u, prompt, sizeof(prompt));
     memcpy(arena + 0x2000u, model, sizeof(model));
     return (struct harness_req_submit){
@@ -286,9 +286,9 @@ static void test_managed_repository_profile_preserves_path_and_exec_cap(void)
     static const char source[] = "int answer(void) { return 42; }\n";
     memcpy(memory_content, source, sizeof(source));
     model_reply = "{\"action\":\"test\",\"path\":\"src/answer.c\","
-                  "\"profile\":\"agentos_repo_tests\"}";
+                  "\"profile\":\"fractalos_repo_tests\"}";
     model_echo_after_first = true;
-    expected_test_profile = EXECSVC_PROFILE_AGENTOS_REPO_TEST;
+    expected_test_profile = EXECSVC_PROFILE_FRACTALOS_REPO_TEST;
     harness_runtime_set_memory_backend(fake_memory, NULL);
     harness_runtime_set_test_backend(fake_test, NULL);
     struct harness_req_submit req = request(

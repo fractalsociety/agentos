@@ -1,5 +1,5 @@
 /*
- * agentOS — vmm PD contract test
+ * FractalOS — vmm PD contract test
  * Covered opcodes:
  *   Section A (external): MSG_VM_CREATE, MSG_VM_DESTROY, MSG_VM_SWITCH,
  *     MSG_VM_STATUS, MSG_VM_LIST
@@ -8,8 +8,8 @@
  *     MSG_VMM_VCPU_GET_REGS, MSG_VMM_INJECT_IRQ
  */
 #include "../harness/test_framework.h"
-#include "../../kernel/agentos-root-task/include/agentos.h"
-#include "../../kernel/agentos-root-task/include/contracts/vmm_contract.h"
+#include "../../kernel/fractalos-root-task/include/fractalos.h"
+#include "../../kernel/fractalos-root-task/include/contracts/vmm_contract.h"
 
 void run_vmm_tests(microkit_channel ch) {
     TEST_SECTION("vmm");

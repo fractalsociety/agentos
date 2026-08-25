@@ -1,4 +1,4 @@
-# ── agentOS board: QEMU AArch64 ───────────────────────────────────────────────
+# ── FractalOS board: QEMU AArch64 ───────────────────────────────────────────────
 # Primary development platform.
 # Uses QEMU's virt machine with software emulation (TCG) on Apple Silicon
 # where HVF has seL4-incompatible assertion failures, and KVM on Linux.
@@ -24,7 +24,7 @@ QEMU_MEM     := -m 2G
 QEMU_DISPLAY := -display none -monitor none
 
 QEMU_SERIAL_FLAGS := \
-  -chardev socket,id=char0,path=/tmp/agentos-serial.sock,server=on,wait=off \
+  -chardev socket,id=char0,path=/tmp/fractalos-serial.sock,server=on,wait=off \
   -serial chardev:char0 \
   -chardev socket,id=cc_pd_char,path=build/cc_pd.sock,server=on,wait=off \
   -serial chardev:cc_pd_char

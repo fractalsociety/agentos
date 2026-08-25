@@ -1,12 +1,12 @@
 // agent_context.rs — async AgentContext with Unix socket RPC
 //
-// Port of sdk/python/agentos_sdk/context.py to Rust.
+// Port of sdk/python/fractalos_sdk/context.py to Rust.
 //
 // Only compiled when the `async-context` feature is enabled.
 // This module requires std + tokio and is NOT compatible with the bare-metal
 // seL4 environment; it is intended for host-side simulation and testing.
 //
-// Copyright (c) 2026 The agentOS Project
+// Copyright (c) 2026 The FractalOS Project
 // SPDX-License-Identifier: Apache-2.0
 
 #![cfg(feature = "async-context")]
@@ -118,7 +118,9 @@ impl Connection {
             .await
             .map_err(|_| "send channel closed".to_string())?;
 
-        resp_rx.await.map_err(|_| "response channel dropped".to_string())?
+        resp_rx
+            .await
+            .map_err(|_| "response channel dropped".to_string())?
     }
 }
 
@@ -127,7 +129,7 @@ impl Connection {
 /// Async agent context backed by a Unix-socket RPC channel.
 ///
 /// In mock mode (no socket available) every operation returns a canned response
-/// so that agent code can be tested without a running agentOS daemon.
+/// so that agent code can be tested without a running FractalOS daemon.
 pub struct AgentContext {
     pub agent_id: String,
     socket_path: String,
@@ -350,7 +352,10 @@ mod tests {
     async fn test_mock_mode_list_tools() {
         let ctx = mock_ctx();
         let tools = ctx.list_tools().await;
-        assert!(!tools.is_empty(), "Mock list_tools should return at least one tool");
+        assert!(
+            !tools.is_empty(),
+            "Mock list_tools should return at least one tool"
+        );
     }
 
     #[tokio::test]
@@ -359,7 +364,10 @@ mod tests {
         // store is a no-op in mock mode; recall returns a mock response
         ctx.store("key1", serde_json::json!("value1"), None).await;
         let results = ctx.recall("key1", 5).await;
-        assert!(!results.is_empty(), "Mock recall should return at least one result");
+        assert!(
+            !results.is_empty(),
+            "Mock recall should return at least one result"
+        );
         assert!(
             results[0].contains("key1"),
             "Mock recall result should echo the query"

@@ -9,7 +9,7 @@ storage service and the provider of the `storage.v1` WASM ABI.  Features:
 - Capability-gated access: each file tracks an owner AgentID (32 bytes)
 - Semantic tagging: up to 4 human/agent-readable tags per file
 - Opcode space shared with the storage.v1 hot-swap ABI (see
-  `services/abi/agentos_service_abi.h`), so WASM replacements are
+  `services/abi/fractalos_service_abi.h`), so WASM replacements are
   drop-in compatible
 
 The service is intentionally small (64 files, 4KB each) for the seL4
@@ -30,7 +30,7 @@ MemFS library.
 
 ## Operations
 
-The opcode space is aligned with `agentos_service_abi.h` STORAGE_OP_*:
+The opcode space is aligned with `fractalos_service_abi.h` STORAGE_OP_*:
 
 | Opcode | Value | Description |
 |--------|-------|-------------|
@@ -68,4 +68,4 @@ writes into that region before replying.
 ## Source Files
 
 - `services/memfs/memfs.c` — implementation
-- `services/abi/agentos_service_abi.h` — WASM ABI compatibility opcodes
+- `services/abi/fractalos_service_abi.h` — WASM ABI compatibility opcodes

@@ -1,6 +1,6 @@
 /*
- * agentOS VM Multiplexer
- * Copyright 2026, agentOS Project
+ * FractalOS VM Multiplexer
+ * Copyright 2026, FractalOS Project
  * SPDX-License-Identifier: BSD-2-Clause
  *
  * Manages a pool of VM slots, each capable of running an independent
@@ -85,7 +85,7 @@ typedef struct { uint32_t _opaque; } vm_t;
 #define VM_FLASH_PADDR      0x00000000UL
 #define VM_FLASH_SIZE       0x04000000UL   /* 64MB */
 
-/* VMM IPC opcodes — agentos.h is authoritative; guard against redefinition */
+/* VMM IPC opcodes — fractalos.h is authoritative; guard against redefinition */
 #ifndef OP_VM_CREATE
 #define OP_VM_CREATE        0x10
 #endif

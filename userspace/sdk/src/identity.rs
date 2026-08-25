@@ -1,4 +1,4 @@
-//! Agent identity - who an agent is in agentOS
+//! Agent identity - who an agent is in FractalOS
 //!
 //! Every agent has a cryptographically unique identity assigned at spawn time.
 //! Identity is immutable — an agent cannot change its ID, only its metadata.
@@ -19,7 +19,12 @@ pub struct AgentId {
 }
 
 impl AgentId {
-    pub fn new(namespace: impl Into<String>, name: impl Into<String>, epoch: u64, random: u64) -> Self {
+    pub fn new(
+        namespace: impl Into<String>,
+        name: impl Into<String>,
+        epoch: u64,
+        random: u64,
+    ) -> Self {
         Self {
             namespace: namespace.into(),
             name: name.into(),
@@ -27,7 +32,7 @@ impl AgentId {
             random,
         }
     }
-    
+
     /// Parse an AgentId from its canonical string representation
     pub fn parse(s: &str) -> Result<Self, IdentityError> {
         // Format: namespace/name@epoch:random
@@ -36,28 +41,35 @@ impl AgentId {
             return Err(IdentityError::InvalidFormat);
         }
         let namespace = parts[0];
-        
+
         let rest: Vec<&str> = parts[1].splitn(2, '@').collect();
         if rest.len() != 2 {
             return Err(IdentityError::InvalidFormat);
         }
         let name = rest[0];
-        
+
         let ep_rnd: Vec<&str> = rest[1].splitn(2, ':').collect();
         if ep_rnd.len() != 2 {
             return Err(IdentityError::InvalidFormat);
         }
-        
-        let epoch = ep_rnd[0].parse::<u64>().map_err(|_| IdentityError::InvalidFormat)?;
-        let random = u64::from_str_radix(ep_rnd[1], 16).map_err(|_| IdentityError::InvalidFormat)?;
-        
+
+        let epoch = ep_rnd[0]
+            .parse::<u64>()
+            .map_err(|_| IdentityError::InvalidFormat)?;
+        let random =
+            u64::from_str_radix(ep_rnd[1], 16).map_err(|_| IdentityError::InvalidFormat)?;
+
         Ok(AgentId::new(namespace, name, epoch, random))
     }
 }
 
 impl core::fmt::Display for AgentId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}/{}@{}:{:016x}", self.namespace, self.name, self.epoch, self.random)
+        write!(
+            f,
+            "{}/{}@{}:{:016x}",
+            self.namespace, self.name, self.epoch, self.random
+        )
     }
 }
 
@@ -70,7 +82,7 @@ pub struct AgentIdentity {
     pub display_name: String,
     /// The agent's parent (who spawned it)
     pub parent_id: Option<AgentId>,
-    /// Spawn timestamp (nanoseconds since agentOS epoch)
+    /// Spawn timestamp (nanoseconds since FractalOS epoch)
     pub spawned_at_ns: u64,
     /// Attestation: hash of the agent binary + config at spawn time
     pub attestation: [u8; 32],
@@ -116,24 +128,24 @@ pub enum AgentClass {
     /// Core system services (event bus, capability broker, etc.)
     /// Highest priority, killed last
     SystemService,
-    
+
     /// Persistent agent that runs indefinitely
     /// Example: a filesystem server, a monitor agent
     Persistent,
-    
+
     /// An agent spawned to complete a specific task, then exits
     TaskAgent {
         /// Optional deadline in ns
         deadline_ns: Option<u64>,
     },
-    
+
     /// An interactive agent that responds to external events
     /// Gets lowest latency scheduling
     Interactive,
-    
+
     /// A batch processing agent (can be preempted freely)
     Batch,
-    
+
     /// An inference agent (model weights in memory, long-running compute)
     Inference {
         /// Approximate working set size in bytes (for memory planning)
@@ -237,7 +249,8 @@ mod tests {
     #[test]
     fn agent_identity_new_defaults() {
         let id = AgentId::new("core", "test", 0, 0);
-        let ident = AgentIdentity::new(id.clone(), "Test Agent", None, 1000, AgentClass::Persistent);
+        let ident =
+            AgentIdentity::new(id.clone(), "Test Agent", None, 1000, AgentClass::Persistent);
         assert_eq!(ident.id, id);
         assert_eq!(ident.display_name, "Test Agent");
         assert!(ident.parent_id.is_none());
@@ -270,7 +283,15 @@ mod tests {
     fn agent_identity_with_parent() {
         let parent_id = AgentId::new("core", "init", 0, 0);
         let child_id = AgentId::new("user", "worker", 1, 42);
-        let ident = AgentIdentity::new(child_id, "Worker", Some(parent_id.clone()), 500, AgentClass::TaskAgent { deadline_ns: Some(1_000_000) });
+        let ident = AgentIdentity::new(
+            child_id,
+            "Worker",
+            Some(parent_id.clone()),
+            500,
+            AgentClass::TaskAgent {
+                deadline_ns: Some(1_000_000),
+            },
+        );
         assert_eq!(ident.parent_id, Some(parent_id));
     }
 
@@ -278,7 +299,9 @@ mod tests {
 
     #[test]
     fn agent_class_task_agent_has_deadline() {
-        let class = AgentClass::TaskAgent { deadline_ns: Some(1_000_000_000) };
+        let class = AgentClass::TaskAgent {
+            deadline_ns: Some(1_000_000_000),
+        };
         if let AgentClass::TaskAgent { deadline_ns } = class {
             assert_eq!(deadline_ns, Some(1_000_000_000));
         } else {
@@ -288,7 +311,9 @@ mod tests {
 
     #[test]
     fn agent_class_inference_has_model_size() {
-        let class = AgentClass::Inference { model_size_bytes: 7_000_000_000 };
+        let class = AgentClass::Inference {
+            model_size_bytes: 7_000_000_000,
+        };
         if let AgentClass::Inference { model_size_bytes } = class {
             assert_eq!(model_size_bytes, 7_000_000_000);
         } else {
@@ -300,8 +325,17 @@ mod tests {
 
     #[test]
     fn identity_error_display() {
-        assert_eq!(IdentityError::InvalidFormat.to_string(), "invalid agent ID format");
-        assert_eq!(IdentityError::DuplicateId.to_string(), "agent ID already exists");
-        assert_eq!(IdentityError::InvalidNamespace.to_string(), "invalid namespace");
+        assert_eq!(
+            IdentityError::InvalidFormat.to_string(),
+            "invalid agent ID format"
+        );
+        assert_eq!(
+            IdentityError::DuplicateId.to_string(),
+            "agent ID already exists"
+        );
+        assert_eq!(
+            IdentityError::InvalidNamespace.to_string(),
+            "invalid namespace"
+        );
     }
 }

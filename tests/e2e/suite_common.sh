@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# agentOS E2E — Portable Unix Command Suite (runs inside guest via SSH)
+# FractalOS E2E — Portable Unix Command Suite (runs inside guest via SSH)
 #
 # This script runs INSIDE the guest VM over SSH.  It must work on any UNIX
 # variant (FreeBSD, Linux) without OS-specific assumptions.  Every command
@@ -159,8 +159,8 @@ fi
 
 # ── Test 9: read/write to a temp file (block I/O sanity) ──────────────────────
 
-TMPFILE="/tmp/agentos_e2e_rw_test.$$"
-WROTE="agentos_e2e_block_test"
+TMPFILE="/tmp/fractalos_e2e_rw_test.$$"
+WROTE="fractalos_e2e_block_test"
 gssh "printf '%s' '${WROTE}' > ${TMPFILE}" 2>/dev/null
 OUT="$(gssh cat "${TMPFILE}" 2>/dev/null)"
 gssh rm -f "${TMPFILE}" 2>/dev/null

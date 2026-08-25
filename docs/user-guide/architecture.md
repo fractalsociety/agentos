@@ -1,4 +1,4 @@
-# agentOS Architecture
+# FractalOS Architecture
 
 ## System Layers
 
@@ -51,7 +51,7 @@
 └────────────────────────────┬────────────────────────────────────────────┘
                              │ seL4 system calls only
 ┌────────────────────────────▼────────────────────────────────────────────┐
-│  Ring 1 — agentOS Root Task / Init                                      │
+│  Ring 1 — FractalOS Root Task / Init                                      │
 │                                                                         │
 │   init_agent.c     controller.c     vibe_engine init                   │
 │   Distributes initial capabilities. No policy enforcement.              │
@@ -67,9 +67,9 @@
 
 ## Primary API Surfaces
 
-agentOS is API-first. Every Protection Domain exposes one IPC contract, and
+FractalOS is API-first. Every Protection Domain exposes one IPC contract, and
 host-side tools reach the running QEMU instance through the CC-PD Unix socket
-at `build/cc_pd.sock`. `agentctl` and `../agentos_gui` are reference external
+at `build/cc_pd.sock`. `agentctl` and `../fractalos_gui` are reference external
 consumers of that API; no UI code belongs in this repository.
 
 The main runtime surfaces are:
@@ -130,18 +130,18 @@ API-first rule):
 
 | Service         | Contract                              | Status   |
 |-----------------|---------------------------------------|----------|
-| CC-PD           | `kernel/agentos-root-task/include/contracts/cc_contract.h` | ✓ |
-| guest lifecycle | `kernel/agentos-root-task/include/contracts/guest_contract.h` | ✓ |
-| VMM             | `kernel/agentos-root-task/include/contracts/vmm_contract.h` | ✓ |
-| vibeOS          | `kernel/agentos-root-task/include/contracts/vibeos_contract.h` | ✓ |
-| vibe-engine     | `kernel/agentos-root-task/include/contracts/vibe_engine_contract.h` | ✓ |
-| event-bus       | `kernel/agentos-root-task/include/contracts/eventbus_contract.h` | ✓ |
-| cap-broker      | `kernel/agentos-root-task/include/contracts/cap_broker_contract.h` | ✓ |
-| agentfs         | `kernel/agentos-root-task/include/contracts/agentfs_contract.h` | ✓ |
-| serial          | `kernel/agentos-root-task/include/contracts/serial_contract.h` | ✓ |
-| net             | `kernel/agentos-root-task/include/contracts/net_contract.h` | ✓ |
-| block           | `kernel/agentos-root-task/include/contracts/block_contract.h` | ✓ |
-| nameserver      | `kernel/agentos-root-task/include/contracts/nameserver_contract.h` | ✓ |
+| CC-PD           | `kernel/fractalos-root-task/include/contracts/cc_contract.h` | ✓ |
+| guest lifecycle | `kernel/fractalos-root-task/include/contracts/guest_contract.h` | ✓ |
+| VMM             | `kernel/fractalos-root-task/include/contracts/vmm_contract.h` | ✓ |
+| vibeOS          | `kernel/fractalos-root-task/include/contracts/vibeos_contract.h` | ✓ |
+| vibe-engine     | `kernel/fractalos-root-task/include/contracts/vibe_engine_contract.h` | ✓ |
+| event-bus       | `kernel/fractalos-root-task/include/contracts/eventbus_contract.h` | ✓ |
+| cap-broker      | `kernel/fractalos-root-task/include/contracts/cap_broker_contract.h` | ✓ |
+| agentfs         | `kernel/fractalos-root-task/include/contracts/agentfs_contract.h` | ✓ |
+| serial          | `kernel/fractalos-root-task/include/contracts/serial_contract.h` | ✓ |
+| net             | `kernel/fractalos-root-task/include/contracts/net_contract.h` | ✓ |
+| block           | `kernel/fractalos-root-task/include/contracts/block_contract.h` | ✓ |
+| nameserver      | `kernel/fractalos-root-task/include/contracts/nameserver_contract.h` | ✓ |
 
 ## Key Invariants
 
@@ -152,6 +152,6 @@ API-first rule):
 - **No UI code** in this repository. GUI clients live outside the repo and
   consume CC-PD or IPC contracts.
 - **Every API must have a contract** under
-  `kernel/agentos-root-task/include/contracts/` before anything may call it.
+  `kernel/fractalos-root-task/include/contracts/` before anything may call it.
 - **Generic device rule:** serial, net, block, USB, timer, entropy each have exactly
   one canonical PD in `services/`. Custom implementations require an approved defect.

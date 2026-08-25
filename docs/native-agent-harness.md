@@ -1,6 +1,6 @@
 # Native agent harness architecture
 
-AgentOS separates a model from the harness that turns model responses into
+FractalOS separates a model from the harness that turns model responses into
 actions. The official Codex CLI Linux guest is a compatibility worker and
 behavioral reference, not the operating system's authority boundary.
 
@@ -11,7 +11,7 @@ task -> native harness -> model/tool/memory/exec capabilities -> services
 ```
 
 Fractal may choose the task, harness, model, and requested capability set. The
-AgentOS launcher decides which capabilities are actually minted and installed.
+FractalOS launcher decides which capabilities are actually minted and installed.
 Task data, model output, mesh membership, and Headscale identity cannot create
 authority.
 
@@ -30,17 +30,17 @@ authority.
 
 ## Migration
 
-1. V0: AgentOS-managed Linux guest running the official Codex CLI as a reference.
+1. V0: FractalOS-managed Linux guest running the official Codex CLI as a reference.
 2. V1: native coordinator assigning capability-scoped work to that guest.
-3. V2: native Codex-style planner/tool/patch/verify harness using AgentOS services.
+3. V2: native Codex-style planner/tool/patch/verify harness using FractalOS services.
 4. V3: Fractal scheduling multiple specialized harnesses and models over the
-   AgentOS capability graph.
+   FractalOS capability graph.
 
 The V0 task stays valuable as an interoperability and performance test. V2 is
 the default runtime target.
 
 V0 is now boot-proven for the pinned official AArch64 `codex-cli 0.149.1`.
-`cargo xtask qemu-test --guest-os codex --timeout-secs 300` builds AgentOS,
+`cargo xtask qemu-test --guest-os codex --timeout-secs 300` builds FractalOS,
 boots the CLI in a credential-free 768 MiB compatibility guest, runs the
 binary's version preflight, and records boot time plus host QEMU RSS. The
 larger allocation is isolated to this compatibility VM: it does not change the
@@ -82,8 +82,8 @@ private image/stack charge, maps 96 KiB rather than 192 KiB of shared client
 arenas, and reports only ModelCap plus ToolCap.
 
 This is the contract/topology foundation, not dynamic graph instantiation yet.
-Warm workers keyed by graph fingerprint belong to `agentos-gz0.8`; validated
-AOT component artifacts that omit unused modules belong to `agentos-gz0.7`.
+Warm workers keyed by graph fingerprint belong to `fos-gz0.8`; validated
+AOT component artifacts that omit unused modules belong to `fos-gz0.7`.
 
 The native C bootstrap harness now builds as its own protection domain, boots
 under seL4 on QEMU AArch64, and completes a Codex-style planner/final action,
@@ -138,7 +138,7 @@ The native harness exposes this as
 compiler exit becomes a model observation so the agent can edit and retry;
 `final` remains denied until a later profile run exits zero.
 
-The second deployed profile, `AGENTOS_REPO_TEST`, is repository-scoped without
+The second deployed profile, `FRACTALOS_REPO_TEST`, is repository-scoped without
 granting the worker a shell or host filesystem path. AgentFS exports up to 64
 badge-owned overlay files within one 24 KiB bundle. ExecSvc requires the
 profile-specific badge right, rejects cross-worker arena access, and forwards
@@ -160,7 +160,7 @@ AgentFS overlay, invoked the capability-scoped managed repository suite, saw
 `repository tests: ok`, and only then returned `final`. It is not yet a
 general-purpose Codex replacement: repository change sets are capped at 24 KiB
 and native networking is not yet available to transport services. The built-in
-`agentos-smoke-coder` remains only the deterministic hermetic-test model.
+`fractalos-smoke-coder` remains only the deterministic hermetic-test model.
 
 Runtime authority is now enforced by actual CSpace operations rather than by a
 capability bitmap alone. Root gives the controller a private authority CNode
@@ -192,8 +192,8 @@ array and an explicit environment map, never a shell command. The default VM
 gate starts a hermetic real MCP stdio server; a deployment can select another:
 
 ```sh
-export AGENTOS_MCP_SERVER_COMMAND_JSON='["npx","-y","@example/mcp-server"]'
-export AGENTOS_MCP_SERVER_ENV_JSON='{"SERVICE_TOKEN":"..."}'
+export FRACTALOS_MCP_SERVER_COMMAND_JSON='["npx","-y","@example/mcp-server"]'
+export FRACTALOS_MCP_SERVER_ENV_JSON='{"SERVICE_TOKEN":"..."}'
 cargo xtask run-tests --board qemu_virt_aarch64 --timeout-secs 180
 ```
 
@@ -218,14 +218,14 @@ offset validation, and per-worker object capabilities.
 
 ## Reproducible QEMU measurement
 
-The supported one-command operator path builds AgentOS, validates the existing
+The supported one-command operator path builds FractalOS, validates the existing
 official Codex login, boots the seL4 image and its bounded transport proxies,
 waits for the truthful boot marker, and submits one task through
 `agentctl -> CC-PD -> Controller -> native harness`:
 
 ```sh
 tools/run_native_agent.py --prompt \
-  'Create src/live.c containing exactly int agentos_live(void){return 42;} then compile src/live.c with the fixed c11_compile profile. Only return final after the compile succeeds.'
+  'Create src/live.c containing exactly int fractalos_live(void){return 42;} then compile src/live.c with the fixed c11_compile profile. Only return final after the compile succeeds.'
 ```
 
 Use `--prompt-file` for a longer task. `--required-caps` is a requirement
@@ -234,7 +234,7 @@ from CapBroker when `RUN` arrives. Supplying `NetworkCap` in either the mask or
 prompt cannot manufacture a missing endpoint. The result contains the task
 state, final response, model/tool/memory/exec counters, token counts,
 verification status, private and shared worker memory, budget limits, and the
-shared-component bitmap. `AGENTOS_NATIVE_RUN` separately reports total elapsed
+shared-component bitmap. `FRACTALOS_NATIVE_RUN` separately reports total elapsed
 time and whole-QEMU RSS/CPU so emulator overhead is not confused with private
 worker memory.
 
@@ -248,12 +248,12 @@ NetworkCap and was rejected before any model, tool, memory, or exec operation
 occurred.
 
 For a live OpenAI-compatible model, keep the API credential on the host and
-run the bounded bridge. `AGENTOS_MODEL_NAME` is required because the native
+run the bounded bridge. `FRACTALOS_MODEL_NAME` is required because the native
 registry's `fast` route is a logical route name, not an upstream model name.
 
 ```sh
 export OPENAI_API_KEY='...'
-export AGENTOS_MODEL_NAME='<upstream-model-id>'
+export FRACTALOS_MODEL_NAME='<upstream-model-id>'
 python3 tools/model_bridge.py
 ```
 
@@ -277,14 +277,14 @@ eight ModelCap requests through ModelSvc and NetServer to a dedicated
 console and maps ModelSvc's service-private transport arena; the worker has no
 transport cap, NetCap, credential, or host socket. The host proxy forwarded the
 bounded JSON frames to one already-authenticated official Codex process. Codex
-returned `memory_write(src/live.c, "int agentos_answer(void) { ... }")`, then
+returned `memory_write(src/live.c, "int fractalos_answer(void) { ... }")`, then
 `test(src/live.c, c11_compile)`. ExecSvc validated the worker partition and
 profile, the distinct execution transport invoked the real host compiler, and
 Codex received `compile: ok` before returning `final`. Codex then independently
 invoked capability-scoped `repo.search` to locate the tracked definition of
-`agentos_repo_answer`, invoked separately authorized `repo.read` to inspect the
+`fractalos_repo_answer`, invoked separately authorized `repo.read` to inspect the
 discovered file, wrote the repair through AgentFS, selected
-`agentos_repo_tests`, received the successful managed-suite observation, and
+`fractalos_repo_tests`, received the successful managed-suite observation, and
 returned a second gated final answer. The repository index is one bounded,
 administrator-owned snapshot of Git `HEAD` in the persistent host execution
 proxy; it is shared by every worker and excludes files larger than 1 MiB, with
@@ -311,12 +311,12 @@ client, compiler process, credentials, or host sockets in every worker.
 In another terminal, enable the opt-in live target assertion:
 
 ```sh
-AGENTOS_LIVE_MODEL_TEST=1 cargo xtask run-tests \
+FRACTALOS_LIVE_MODEL_TEST=1 cargo xtask run-tests \
   --board qemu_virt_aarch64 --timeout-secs 300
 ```
 
 The bridge binds to loopback by default, accepts only the chat-completions
-path, bounds request/response sizes, converts AgentOS's integer temperature
+path, bounds request/response sizes, converts FractalOS's integer temperature
 encoding, rewrites the logical model route, and injects the bearer credential.
 The key never enters the guest or the worker CSpace. A non-HTTPS upstream is
 rejected unless explicitly allowed for a trusted local model server.

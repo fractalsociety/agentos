@@ -7,12 +7,12 @@ import pathlib
 import subprocess
 import tempfile
 
-CONFIG = os.environ.get("AGENTOS_HEADSCALE_CONFIG", "/usr/local/etc/headscale/config.yaml")
-HEADSCALE = os.environ.get("AGENTOS_HEADSCALE_BIN", "/usr/local/sbin/headscale")
+CONFIG = os.environ.get("FRACTALOS_HEADSCALE_CONFIG", "/usr/local/etc/headscale/config.yaml")
+HEADSCALE = os.environ.get("FRACTALOS_HEADSCALE_BIN", "/usr/local/sbin/headscale")
 MAP = pathlib.Path(os.environ.get(
-    "AGENTOS_NETCAP_MAP", "/usr/local/etc/headscale/netcap-map.json"))
+    "FRACTALOS_NETCAP_MAP", "/usr/local/etc/headscale/netcap-map.json"))
 OUTPUT = pathlib.Path(os.environ.get(
-    "AGENTOS_NETCAP_STATE", "/var/db/headscale/netcap-state.json"))
+    "FRACTALOS_NETCAP_STATE", "/var/db/headscale/netcap-state.json"))
 
 
 def main():
