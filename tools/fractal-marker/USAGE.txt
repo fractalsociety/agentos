@@ -1,0 +1,60 @@
+Fractal persistent boot marker (Linux host)
+
+Build and test:
+  make test-fractal-marker-host
+  build/fractal-marker/fractal-marker
+
+The helper uses OpenSSL libcrypto. The tests use a public RFC 8032 test key;
+the normal binary embeds the separate Fractal plan-verification public key.
+Private keys are never stored in this repository or the target image.
+
+Prepare a fresh attempt without touching physical media:
+  build/fractal-marker/fractal-marker prepare ROOT_TASK_ELF KEY_PEM NEW_RUN_DIR
+
+The selected target must enable FRACTAL_PERSISTENT_MARKER=1 and support
+the signed native-alive exchange described
+in platform/include/platform/fractal_exchange.h. The x2APIC/Samsung image
+used in the local lab is separate from the default agentOS composition.
+This helper does not build, install, select or reboot that image.
+
+Physical arming (requires device access):
+  build/fractal-marker/fractal-marker arm RUN_DIR
+
+This is deliberately machine-specific: Samsung 144d:a80d at 81:00.0,
+namespace /dev/nvme0n1, and the exact Fractal p8 GUID, bounds and capacity in
+fractal_partition.h. Both GPT copies must validate. The partition must be
+unmounted and opened exclusively. The last 4 KiB of the partition is left
+untouched, preserving any filesystem backup boot sector. The preceding 36
+reserved exchange blocks must be blank. The helper saves and flushes a backup, writes only the
+4 KiB signed plan, flushes it, and checks the entire reserved area again.
+Normal arm refuses occupied media. An explicit retry of an unconsumed plan:
+  build/fractal-marker/fractal-marker retry PREVIOUS_RUN_DIR NEW_RUN_DIR
+requires the exact authenticated previous plan on disk, a fresh new run ID,
+and every other exchange block still zero. It saves the previous area in the
+new run directory, replaces only the plan, flushes and checks all bytes.
+It refuses any native event, partial result or unknown bytes; it has no erase
+command. A failed arm can leave a partial plan, and must be inspected before
+any retry. Never treat host arming as native execution evidence.
+
+Read the result after returning to Linux:
+  build/fractal-marker/fractal-marker inspect RUN_DIR
+  build/fractal-marker/fractal-marker collect RUN_DIR
+
+Both open the physical namespace read-only. Exit 0 means the current saved
+plan, native event, witness, result and final commit all agree; exit 2 means
+no verified completion. Exit 1 means a host validation or I/O error.
+Collect additionally saves the raw exchange bytes and a JSON receipt named
+for the current Linux boot ID in RUN_DIR. A successful collection creates
+complete.json. Existing receipt files are never overwritten.
+
+A matching completion establishes native execution through the NVMe result
+write. This is later than the early root-task reset checkpoint: a failure
+before storage becomes available leaves no marker. Checksums and the signed
+plan bind the result to an attempt; they are not remote attestation, and the
+image hash in the plan is a host claim, not a measurement made by seL4.
+
+For disposable regular sparse disk images only, use arm-image,
+inspect-image or collect-image with IMAGE RUN_DIR. The test fixture helper
+can create a sparse GPT image with:
+  build/fractal-marker/test-marker fixture NEW_IMAGE
+Image modes reject block devices and still enforce the exact GPT geometry.

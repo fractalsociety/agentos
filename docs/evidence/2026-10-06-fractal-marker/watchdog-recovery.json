@@ -1,0 +1,64 @@
+{
+  "schema": "fractal.watchdog-recovery-qualification.v1",
+  "source_base": "55541a92",
+  "source_scope": "existing local Fractal bring-up checkout plus recovery changes; not pushed",
+  "physical_observation": {
+    "linux_boot_id": "9f579e5e-e8ef-432a-8e62-75f5d0502fa4",
+    "operator_report": "manual restart required; no error text",
+    "previous_marker_status": "no-matching-native-event",
+    "hardware_watchdog": "iTCO_wdt version 6, TCOBASE 0x8e00; inactive in Linux",
+    "physical_hang_exact_location_known": false
+  },
+  "reproduction": {
+    "medium": "disposable QEMU NVMe image; Samsung PCI identity fixture",
+    "iommu_device": "intel-iommu,intremap=off,caching-mode=on",
+    "previous_image": "persistent-marker/vm-final/esp.img",
+    "result": "NVMe DMA fault, requester 0x8100, reason 0x2; Identify Controller fails at step 15; root parks without reset",
+    "exit_status": 124,
+    "serial_log": "fractal-lab/watchdog-recovery/baseline/serial.log",
+    "serial_sha256": "7fe305ae5ffebbe261e0ec1a726fbdd51c3457ff6b1074e8bef36118d2b78276"
+  },
+  "fix": {
+    "behavior": "Root maps a private 2 MiB IOVA window with 4 KiB frames before NVMe startup; metadata v2 carries the device-visible base",
+    "root_task_sha256": "d29aa4f8bf290d47b297619d8ea5402792d687b1bf96f5f9f86529d60c67bc7e",
+    "iommu_run_id": "7856a53f-30ce-4204-b939-7a713cb070f1",
+    "iommu_result": "fresh signed-plan marker committed, independently read back, and CF9 reset requested",
+    "iommu_serial_sha256": "a025d5952451941a5d931d713c8abad39f743c6e02f5123efb0e8649522d7c83",
+    "no_iommu_result": "same signed-plan marker and reset proof passed using physical DMA",
+    "no_iommu_serial_sha256": "209264af195b115a02712e9d4df74faf21ed931a83facfdd121b938a166e7469",
+    "disk_guards": "both GPT copies and nonzero partition-end guard unchanged in both successful runs",
+    "negative_tests": "invalid signature and corrupt GPT rejected with VT-d enabled; exchange area unchanged; no success reset"
+  },
+  "watchdog": {
+    "component": "tools/fractal-boot-watchdog",
+    "timeout_seconds": 120,
+    "timer": "Intel HM870 TCO v6; exact SMBus identity and enabled I/O base required",
+    "efi_sha256": "ffd7130c6cd4629bb93b2ba196450a4a4379e1e1ee79771fabafaafe19b7cd0a",
+    "host_test": "PASS: timeouts, register preservation, reset enable, halt, status clearing, unsupported identities and hardware refusal",
+    "firmware_test": "PASS: production loader refuses unsupported stock q35 without launching experimental OS",
+    "staged": "build/fractal-boot-watchdog/stage",
+    "installed": false,
+    "physical_expiry_tested": false
+  },
+  "marker_reader": {
+    "fix": "Use O_DIRECT for physical namespace and partition I/O with aligned bounce buffers; no cached fallback",
+    "test": "GPT validation, bounded signed-plan write and complete readback through O_DIRECT regular-file fixture; misaligned I/O rejected"
+  },
+  "validation": {
+    "host": "make test-host CC=clang SEL4_SDK_VERSION=2.3.0: PASS",
+    "host_log_sha256": "e3ec563ae721202ddba1cd687765c99e32685170072e3f6a5b491f743074df77",
+    "gate": "make gate SEL4_SDK_VERSION=2.3.0: PASS",
+    "gate_log": "fractal-lab/watchdog-recovery/gate-default.log",
+    "initial_gate_invocation": "CC=clang propagated the host compiler into the ARM cross-build; rerun without that override passed"
+  },
+  "limits": {
+    "physical_boot_fix_verified": false,
+    "physical_watchdog_return_verified": false,
+    "new_bootnext_set": false,
+    "reboot_requested": false,
+    "sudo": "password required; no live installation performed",
+    "mac": "command not found; task filing and closure unavailable",
+    "push_preflight": "git push --dry-run failed: could not read Username for https://github.com; terminal prompts disabled",
+    "git_push_succeeded": false
+  }
+}

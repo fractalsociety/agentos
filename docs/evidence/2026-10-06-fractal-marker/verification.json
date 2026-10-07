@@ -1,0 +1,56 @@
+{
+  "schema": "fractal.boot-marker-qualification.v1",
+  "source_base": "55541a92",
+  "source_scope": "local Fractal bring-up checkout; full native composition is separate from this host-helper change",
+  "host_tests": "make test-fractal-marker-host",
+  "rebased_host_tests": {
+    "upstream_base": "6991227b981b9dc46b40922a40c3b1e16bdc8c12",
+    "command": "make test-host CC=clang SEL4_SDK_VERSION=2.3.0 SEL4_SDK=/home/whyfly/.cache/agentos/microkit-sdk-2.3.0",
+    "exit_status": 0,
+    "local_log": "fractal-lab/persistent-marker/rebased-test-host-clang.log",
+    "gcc_limit": "Upstream tests/test_cap_lease.c:55 fails -Werror=unused-but-set-variable for extra_ids with the installed GCC; unchanged by this feature"
+  },
+  "full_gate": {
+    "command": "make gate SEL4_SDK_VERSION=2.3.0",
+    "exit_status": 0,
+    "local_log": "fractal-lab/persistent-marker/gate-final.log",
+    "sha256": "c0f4fcfe2723760d2e358e6b63e503cc79dfef20c4c261239175d2c0a60280fd"
+  },
+  "native_vm": {
+    "command": "make -C fractal-lab/persistent-marker test-vm RUN=fractal-lab/persistent-marker/vm-final",
+    "controller": "QEMU generic NVMe with a test-only Samsung PCI identity; not a Samsung controller model",
+    "qemu_sha256": "317ffc8ed8ca7984515c964a3f5560108adb2a1436f336a4eb4d4d44bf335c80",
+    "kernel_sha256": "349ae94c9e7c3cc35c26681c5259cc13a5eb455ec447a47c8dfd1fef5c174a6c",
+    "root_task_sha256": "94b2461c6dc002cd17e91d434513e2f7689a74363dbc46c73626b00c6a266db4",
+    "run_id": "5130e0c7-4f02-4d3c-9d37-546cbb142c9e",
+    "fresh_completion_verified_after_vm_exit": true,
+    "reset_after_commit": true,
+    "both_gpt_copies_unchanged": true,
+    "nonzero_partition_end_guard_unchanged": true,
+    "serial_log_sha256": "74c1b0883f29114a37448f6fbccf57c2d38a755fe7d5a5762bcb5cca1a6c6cc1",
+    "result_json_sha256": "5411841309d92e22017dd1705b824b00be76d45499bd171dab2d6e52bc62b538"
+  },
+  "native_negative_tests": {
+    "invalid_signature": "rejected after native boot, no exchange writes or reset",
+    "corrupt_primary_and_backup_gpt": "rejected at native step 0x1a, no exchange writes or reset",
+    "single_corrupt_gpt_fixture_limitation": "OVMF repaired a damaged primary table from the valid backup; final rejection test corrupts both copies"
+  },
+  "physical_media_preflight": {
+    "initial_terminal_exchange_area": "refused before write because the last partition sector contains an NTFS backup boot sector",
+    "new_layout": "36 exchange blocks precede a preserved 4 KiB terminal guard block",
+    "physical_boot_entry_installed": "000B Fractal Persistent Marker",
+    "signed_plan_flushed_and_read_back": true,
+    "return_collector_enabled": true,
+    "bootnext_set": false,
+    "reboot_requested": false,
+    "physical_native_marker_boot_verified": false
+  },
+  "sanitizer_limit": {
+    "full_sanitizer_run_clean": false,
+    "observed": "UBSan reported existing left shifts of negative signed values in libs/pd-support/monocypher.c at lines 231 and 619-668",
+    "library_modified_by_this_change": false,
+    "local_log": "fractal-lab/persistent-marker/sanitize.log"
+  },
+  "mac_ledger_available": false,
+  "mac_error": "mac: command not found"
+}

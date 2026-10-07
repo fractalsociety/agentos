@@ -1,0 +1,30 @@
+Fractal pre-OS watchdog
+
+make build-fractal-boot-watchdog
+make test-fractal-boot-watchdog-host
+make -C tools/fractal-boot-watchdog test-firmware-refusal
+make -C tools/fractal-boot-watchdog stage KERNEL=/path/to/sel4_32.elf ROOT_ELF=/path/to/root_task.elf
+
+The EFI companion accepts only Intel 800-series SMBus 8086:7f23 at
+80:1f.4 with firmware-enabled TCO I/O decode. It validates the base, sets
+120 seconds (200 0.6-second ticks), clears timeout status and NO_REBOOT,
+reloads, then clears HALT. Register readback must agree before Limine runs.
+An already running or inaccessible watchdog is refused. The private
+watchdog port is not granted to a seL4 PD. No seL4 kernel changes are needed.
+
+After StartImage succeeds the hardware countdown runs independently of
+UEFI boot services and seL4 scheduling. This is a fixed test-boot deadline,
+not a production heartbeat service. Limine menu time consumes the deadline.
+If StartImage returns, stop the timer; if stopping fails, request cold reset
+and wait for hardware recovery rather than boot another OS with a live timer.
+
+Stage files under EFI/FractalWatchdog. BOOTX64.EFI is the companion;
+LIMINE.EFI is the unmodified Limine loader. Use a one-shot firmware selection
+with the normal OS first in BootOrder to avoid a reboot loop. Build and stage
+targets do not install, arm hardware on Linux, change BootNext, or reboot.
+Physical firmware can affect watchdog behavior; a physical expiry-and-return
+test is still required. Host register-model tests do not establish that.
+
+Register behavior checked against Linux's Intel drivers:
+https://github.com/torvalds/linux/blob/master/drivers/watchdog/iTCO_wdt.c
+https://github.com/torvalds/linux/blob/master/drivers/i2c/busses/i2c-i801.c

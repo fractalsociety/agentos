@@ -1,0 +1,28 @@
+# Native seL4 services and test agent. No guest VMM or execution runner.
+[[pd]]
+name = "net_pd"
+priority = 215
+
+[[pd]]
+name = "net_virt"
+priority = 205
+
+[[pd]]
+name = "virtio_blk"
+priority = 253
+
+[[pd]]
+name = "blk_virt"
+priority = 252
+
+[[pd]]
+name = "fractal_native_probe"
+priority = 251
+
+[[pd]]
+name = "serial_pd"
+priority = 180
+
+[[pd]]
+name = "serial_virt"
+priority = 203

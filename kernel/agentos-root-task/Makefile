@@ -47,6 +47,16 @@ CFLAGS := -nostdlib -ffreestanding -g -O2 -Wall -Wextra -Werror -Wno-unused-func
            -D__thread= \
            -MMD -MP
 
+ifeq ($(FRACTAL_PERSISTENT_MARKER),1)
+  ifneq ($(FRACTAL_PHYSICAL_WRITE_CANDIDATE),1)
+    $(error FRACTAL_PERSISTENT_MARKER requires the isolated physical write candidate)
+  endif
+  ifneq ($(FRACTAL_SIGNED_PLAN),1)
+    $(error FRACTAL_PERSISTENT_MARKER requires signed native-alive plans)
+  endif
+  CFLAGS += -DAGENTOS_FRACTAL_PERSISTENT_MARKER=1
+endif
+
 # wasm3-specific flags: suppress warnings from vendored code, include bare-metal shim
 CFLAGS_WASM3 := $(CFLAGS) -Iwasm3 -include $(CURDIR)/include/m3_bare_metal.h \
                 -Wno-sign-compare -Wno-unused-parameter -Wno-missing-field-initializers \
@@ -241,6 +251,205 @@ ifeq ($(AGENTOS_BOARD),x86_64_generic_vtx)
         CFLAGS_ROOT_TASK += -DAOS_X86_FIRMWARE_ROM_VA=0x100000000ull
       endif
     endif
+  endif
+  ifeq ($(FRACTAL_NATIVE_PROBE),1)
+    ifneq ($(X86_FIRMWARE_RESET),1)
+      $(error FRACTAL_NATIVE_PROBE requires X86_FIRMWARE_RESET=1)
+    endif
+    ifneq ($(X86_SECONDARY_BLOCK),1)
+      $(error FRACTAL_NATIVE_PROBE requires X86_SECONDARY_BLOCK=1)
+    endif
+    ifeq ($(X86_DUAL_GUEST),1)
+      $(error FRACTAL_NATIVE_PROBE reserves secondary media for the native client)
+    endif
+    ifeq ($(X86_CC_PCI),1)
+      $(error FRACTAL_NATIVE_PROBE is qualified only with the firmware composition)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_NATIVE_PROBE=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NATIVE_PROBE=1
+  endif
+  ifeq ($(FRACTAL_EXCHANGE_CYCLE),1)
+    ifneq ($(FRACTAL_NATIVE_PROBE),1)
+      $(error FRACTAL_EXCHANGE_CYCLE requires FRACTAL_NATIVE_PROBE=1)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_EXCHANGE_CYCLE=1
+    FRACTAL_NATIVE_CRYPTO_OBJS := $(BUILD_DIR)/sha256_mini.o
+  endif
+  ifeq ($(FRACTAL_NATIVE_ONLY),1)
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+    ifneq ($(FRACTAL_EXCHANGE_CYCLE),1)
+      $(error FRACTAL_NATIVE_ONLY requires FRACTAL_EXCHANGE_CYCLE=1)
+    endif
+    endif
+    ifneq ($(filter 1,$(X86_DUAL_GUEST) $(X86_MANAGED_START) $(X86_USERSPACE_PROOF) $(X86_CC_PCI) $(X86_LINUX_LOGIN)),)
+      $(error FRACTAL_NATIVE_ONLY cannot include guest lifecycle features)
+    endif
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NATIVE_ONLY=1
+    ROOT_TASK_OBJS := $(filter-out $(BUILD_DIR)/x86_firmware.o,$(ROOT_TASK_OBJS))
+  endif
+  ifeq ($(FRACTAL_GPT_QUALIFY),1)
+    ifneq ($(FRACTAL_NATIVE_ONLY),1)
+      $(error FRACTAL_GPT_QUALIFY requires FRACTAL_NATIVE_ONLY=1)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_GPT_QUALIFY=1
+    FRACTAL_NATIVE_GPT_OBJS := $(BUILD_DIR)/fractal_gpt.pd.o
+  endif
+  ifeq ($(FRACTAL_NATIVE_ISOLATION_TEST),1)
+    ifneq ($(FRACTAL_GPT_QUALIFY),1)
+      $(error FRACTAL_NATIVE_ISOLATION_TEST requires FRACTAL_GPT_QUALIFY=1)
+    endif
+    ifneq ($(FRACTAL_NATIVE_PROBE),1)
+      $(error FRACTAL_NATIVE_ISOLATION_TEST requires FRACTAL_NATIVE_PROBE=1)
+    endif
+    ifeq ($(FRACTAL_NVME_PROBE),1)
+      $(error FRACTAL_NATIVE_ISOLATION_TEST is for the virtualized block client only)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_NATIVE_ISOLATION_TEST=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NATIVE_ISOLATION_TEST=1
+  endif
+  ifeq ($(FRACTAL_NVME_PROBE),1)
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+    ifneq ($(FRACTAL_GPT_QUALIFY),1)
+      $(error FRACTAL_NVME_PROBE requires FRACTAL_GPT_QUALIFY=1)
+    endif
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_NVME_PROBE=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_PROBE=1
+    FRACTAL_NVME_TARGET ?= qemu-slot9
+    ifeq ($(FRACTAL_NVME_TARGET),qemu-slot9)
+      CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_TARGET=0
+    else ifeq ($(FRACTAL_NVME_TARGET),qemu-bus81)
+      CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_TARGET=1
+    else ifeq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_TARGET=2
+      ifneq ($(FRACTAL_NVME_ONLY),1)
+        $(error Samsung NVMe profile requires the one-PD offline composition)
+      endif
+      ifneq ($(filter 1,$(FRACTAL_NATIVE_PROBE) $(FRACTAL_EXCHANGE_CYCLE)),)
+        $(error Samsung NVMe profile cannot include the virtio exchange client)
+      endif
+      ifneq ($(FRACTAL_PHYSICAL_WRITE_CANDIDATE),1)
+        ifeq ($(FRACTAL_NVME_WRITE_PROBE),1)
+          $(error Samsung NVMe profile is read-only without the explicit physical write candidate)
+        endif
+        ifeq ($(FRACTAL_NVME_EXCHANGE),1)
+          $(error Samsung NVMe profile cannot enable the exchange writer without the explicit physical write candidate)
+        endif
+      endif
+    else
+      $(error unknown FRACTAL_NVME_TARGET=$(FRACTAL_NVME_TARGET))
+    endif
+  endif
+  ifeq ($(FRACTAL_NVME_WRITE_PROBE),1)
+    ifneq ($(FRACTAL_NVME_PROBE),1)
+      $(error FRACTAL_NVME_WRITE_PROBE requires FRACTAL_NVME_PROBE=1)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_NVME_WRITE_PROBE=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_WRITE_PROBE=1
+  endif
+  ifeq ($(FRACTAL_NVME_EXCHANGE),1)
+    ifneq ($(FRACTAL_NVME_WRITE_PROBE),1)
+      $(error FRACTAL_NVME_EXCHANGE requires FRACTAL_NVME_WRITE_PROBE=1)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_NVME_EXCHANGE=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_EXCHANGE=1
+    FRACTAL_NVME_EXCHANGE_OBJS := $(BUILD_DIR)/fractal_exchange_cycle.pd.o $(BUILD_DIR)/sha256_mini.o
+  endif
+  ifeq ($(FRACTAL_SIGNED_PLAN),1)
+    ifneq ($(FRACTAL_NVME_EXCHANGE),1)
+      $(error FRACTAL_SIGNED_PLAN requires FRACTAL_NVME_EXCHANGE=1)
+    endif
+    ifeq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      ifneq ($(FRACTAL_PHYSICAL_WRITE_CANDIDATE),1)
+        $(error physical Samsung signed-plan exchange requires the isolated write candidate)
+      endif
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_SIGNED_PLAN=1
+    FRACTAL_NVME_EXCHANGE_OBJS += $(BUILD_DIR)/fractal_monocypher.pd.o
+  endif
+  ifeq ($(FRACTAL_NVME_RETURN_REBOOT),1)
+    ifneq ($(FRACTAL_NVME_EXCHANGE),1)
+      $(error FRACTAL_NVME_RETURN_REBOOT requires FRACTAL_NVME_EXCHANGE=1)
+    endif
+    ifeq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      ifneq ($(FRACTAL_PHYSICAL_WRITE_CANDIDATE),1)
+        $(error FRACTAL_NVME_RETURN_REBOOT requires the isolated physical write candidate)
+      endif
+    endif
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_RETURN_REBOOT=1
+  endif
+  ifeq ($(FRACTAL_PHYSICAL_WRITE_CANDIDATE),1)
+    ifneq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      $(error physical write candidate requires the Samsung controller target)
+    endif
+    ifneq ($(FRACTAL_NATIVE_ONLY),1)
+      $(error physical write candidate requires native-only mode)
+    endif
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+      $(error physical write candidate requires the one-PD offline composition)
+    endif
+    ifneq ($(FRACTAL_NVME_WRITE_PROBE),1)
+      $(error physical write candidate requires GPT-bounded namespace writes)
+    endif
+    ifneq ($(FRACTAL_NVME_EXCHANGE),1)
+      $(error physical write candidate requires the exchange writer)
+    endif
+    ifneq ($(FRACTAL_SIGNED_PLAN),1)
+      $(error physical write candidate requires Ed25519-signed plans)
+    endif
+    ifneq ($(FRACTAL_NVME_RETURN_REBOOT),1)
+      $(error physical write candidate requires result-committed return reboot)
+    endif
+    ifneq ($(filter 1,$(FRACTAL_NVME_PANIC_RETURN_REBOOT) $(FRACTAL_NVME_READONLY_RETURN_REBOOT)),)
+      $(error physical write candidate cannot combine with other reset modes)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_PHYSICAL_WRITE_CANDIDATE=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_PHYSICAL_WRITE_CANDIDATE=1
+  endif
+  ifeq ($(FRACTAL_NVME_PANIC_RETURN_REBOOT),1)
+    ifneq ($(FRACTAL_NVME_EXCHANGE),1)
+      $(error FRACTAL_NVME_PANIC_RETURN_REBOOT requires the exchange)
+    endif
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+      $(error FRACTAL_NVME_PANIC_RETURN_REBOOT requires the one-PD image)
+    endif
+    ifeq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      $(error FRACTAL_NVME_PANIC_RETURN_REBOOT is QEMU-only)
+    endif
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_PANIC_RETURN_REBOOT=1
+  endif
+  ifeq ($(FRACTAL_NVME_READONLY_RETURN_REBOOT),1)
+    ifneq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      $(error FRACTAL_NVME_READONLY_RETURN_REBOOT requires the Samsung target)
+    endif
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+      $(error FRACTAL_NVME_READONLY_RETURN_REBOOT requires the one-PD image)
+    endif
+    ifneq ($(filter 1,$(FRACTAL_NVME_WRITE_PROBE) $(FRACTAL_NVME_EXCHANGE)),)
+      $(error FRACTAL_NVME_READONLY_RETURN_REBOOT forbids namespace writes)
+    endif
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_READONLY_RETURN_REBOOT=1
+  endif
+  ifeq ($(FRACTAL_BOOT_PROBE_RESET),1)
+    ifneq ($(FRACTAL_NVME_TARGET),samsung-bus81)
+      $(error FRACTAL_BOOT_PROBE_RESET requires the Samsung target)
+    endif
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+      $(error FRACTAL_BOOT_PROBE_RESET requires the one-PD image)
+    endif
+    ifneq ($(filter 1,$(FRACTAL_NVME_WRITE_PROBE) $(FRACTAL_NVME_EXCHANGE) $(FRACTAL_NVME_READONLY_RETURN_REBOOT)),)
+      $(error FRACTAL_BOOT_PROBE_RESET requires a read-only image without another reset path)
+    endif
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_BOOT_PROBE_RESET=1
+  endif
+  ifeq ($(FRACTAL_NVME_ONLY),1)
+    ifneq ($(FRACTAL_NATIVE_ONLY),1)
+      $(error FRACTAL_NVME_ONLY requires FRACTAL_NATIVE_ONLY=1)
+    endif
+    ifneq ($(FRACTAL_NVME_PROBE),1)
+      $(error FRACTAL_NVME_ONLY requires FRACTAL_NVME_PROBE=1)
+    endif
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NVME_ONLY=1
   endif
 endif
 
@@ -884,9 +1093,21 @@ ifeq ($(ARCH),aarch64)
   endif
 else ifeq ($(ARCH),x86_64)
   # Include linux_vmm stub so the image can reference it
+  ifneq ($(FRACTAL_NATIVE_ONLY),1)
   IMAGES += guest_vmm_primary.elf
+  endif
   ifeq ($(X86_FIRMWARE_RESET),1)
+    ifneq ($(FRACTAL_NATIVE_ONLY),1)
     IMAGES += x86_runner.elf x86_runner_ap.elf
+    endif
+    ifeq ($(FRACTAL_NATIVE_PROBE),1)
+    ifneq ($(FRACTAL_NVME_ONLY),1)
+      IMAGES += fractal_native_probe.elf
+    endif
+    endif
+    ifeq ($(FRACTAL_NVME_PROBE),1)
+      IMAGES += fractal_nvme_probe.elf
+    endif
     ifeq ($(X86_DUAL_GUEST),1)
       IMAGES += guest_vmm_secondary.elf x86_secondary_runner.elf x86_secondary_runner_ap.elf
     endif
@@ -1299,6 +1520,31 @@ $(BUILD_DIR)/net_virt.elf: $(NET_VIRT_OBJS)
 $(BUILD_DIR)/blk_virt.elf: $(BLK_VIRT_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
+$(BUILD_DIR)/fractal_native_probe.o: $(REPO_ROOT_MK)/platform/blk-virt/fractal_native_probe.c $(GUEST_CONFIG_STAMP)
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/fractal_gpt.pd.o: $(REPO_ROOT_MK)/platform/storage/fractal_gpt.c $(REPO_ROOT_MK)/platform/include/platform/fractal_gpt.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+$(BUILD_DIR)/fractal_native_probe.elf: $(BUILD_DIR)/fractal_native_probe.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o $(FRACTAL_NATIVE_CRYPTO_OBJS) $(FRACTAL_NATIVE_GPT_OBJS)
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
+$(BUILD_DIR)/fractal_nvme_probe.o: $(REPO_ROOT_MK)/platform/storage/fractal_nvme_probe.c $(REPO_ROOT_MK)/platform/include/platform/fractal_nvme.h $(REPO_ROOT_MK)/platform/include/platform/fractal_partition.h $(REPO_ROOT_MK)/platform/include/platform/fractal_gpt.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/fractal_exchange_cycle.pd.o: $(REPO_ROOT_MK)/platform/storage/fractal_exchange_cycle.c $(REPO_ROOT_MK)/platform/include/platform/fractal_exchange_cycle.h $(REPO_ROOT_MK)/platform/include/platform/fractal_exchange.h $(REPO_ROOT_MK)/platform/include/platform/fractal_plan_public_key.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/fractal_monocypher.pd.o: $(REPO_ROOT_MK)/libs/pd-support/monocypher.c $(REPO_ROOT_MK)/kernel/agentos-root-task/include/monocypher.h
+	@mkdir -p $(BUILD_DIR)
+	$(CC) -c $(CFLAGS) $< -o $@
+
+$(BUILD_DIR)/fractal_nvme_probe.elf: $(BUILD_DIR)/fractal_nvme_probe.o $(BUILD_DIR)/fractal_gpt.pd.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o $(FRACTAL_NVME_EXCHANGE_OBJS)
+	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+
 $(BUILD_DIR)/serial_virt.elf: $(SERIAL_VIRT_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
@@ -1593,6 +1839,18 @@ SYSTEM_TOML := $(if $(_BOARD_TOML_NONEMPTY),$(_BOARD_TOML_NONEMPTY),$(SYSTEM_TOM
 ifeq ($(AGENTOS_BOARD),x86_64_generic_vtx)
 ifeq ($(X86_FIRMWARE_RESET),1)
 SYSTEM_TOML := $(REPO_ROOT_MK)/boards/qemu-x86_64-vtx/firmware.toml
+ifeq ($(FRACTAL_NATIVE_PROBE),1)
+SYSTEM_TOML := $(REPO_ROOT_MK)/boards/qemu-x86_64-vtx/fractal-native.toml
+ifeq ($(FRACTAL_NATIVE_ONLY),1)
+SYSTEM_TOML := $(REPO_ROOT_MK)/boards/qemu-x86_64-vtx/fractal-native-only.toml
+ifeq ($(FRACTAL_NVME_PROBE),1)
+SYSTEM_TOML := $(REPO_ROOT_MK)/boards/qemu-x86_64-vtx/fractal-native-nvme.toml
+endif
+endif
+endif
+ifeq ($(FRACTAL_NVME_ONLY),1)
+SYSTEM_TOML := $(REPO_ROOT_MK)/boards/qemu-x86_64-vtx/fractal-nvme-only.toml
+endif
 ifeq ($(X86_CC_PCI),1)
 SYSTEM_TOML := $(REPO_ROOT_MK)/boards/qemu-x86_64-vtx/cc.toml
 else ifeq ($(X86_MANAGED_START),1)

@@ -1,0 +1,4 @@
+# Offline seL4 image: one native NVMe plan/result domain, no virtio services.
+[[pd]]
+name = "fractal_nvme_probe"
+priority = 254

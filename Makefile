@@ -1086,6 +1086,43 @@ test-x86-smp-host:
 test-host: test-x86-runner-host
 test-host: test-x86-runner-ownership-host
 test-host: test-blk-pci-media-host
+test-host: test-fractal-gpt-host
+ifeq ($(shell uname -s),Linux)
+test-host: test-fractal-marker-host
+endif
+.PHONY: test-fractal-marker-host
+test-fractal-marker-host:
+	$(MAKE) -C tools/fractal-marker test
+
+.PHONY: build-fractal-boot-watchdog test-fractal-boot-watchdog-host
+build-fractal-boot-watchdog:
+	$(MAKE) -C tools/fractal-boot-watchdog all
+test-fractal-boot-watchdog-host:
+	$(MAKE) -C tools/fractal-boot-watchdog test
+test-host: test-fractal-boot-watchdog-host
+test-host: test-fractal-nvme-target-host
+test-host: test-fractal-block-policy-host
+.PHONY: test-fractal-block-policy-host
+test-fractal-block-policy-host:
+	@mkdir -p $(BUILD_TMP_DIR)
+	$(CC) -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+		-Iplatform/include tests/platform/test_fractal_block_policy.c \
+		-o $(BUILD_TMP_DIR)/test-fractal-block-policy
+	$(BUILD_TMP_DIR)/test-fractal-block-policy
+.PHONY: test-fractal-nvme-target-host
+test-fractal-nvme-target-host:
+	@mkdir -p $(BUILD_TMP_DIR)
+	$(CC) -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+		-Iplatform/include tests/platform/test_fractal_nvme_target.c \
+		-o $(BUILD_TMP_DIR)/test-fractal-nvme-target
+	$(BUILD_TMP_DIR)/test-fractal-nvme-target
+.PHONY: test-fractal-gpt-host
+test-fractal-gpt-host:
+	@mkdir -p $(BUILD_TMP_DIR)
+	$(CC) -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined -g \
+		-Iplatform/include tests/platform/test_fractal_gpt.c \
+		platform/storage/fractal_gpt.c -o $(BUILD_TMP_DIR)/test-fractal-gpt
+	$(BUILD_TMP_DIR)/test-fractal-gpt
 .PHONY: test-blk-pci-media-host
 test-blk-pci-media-host:
 	@mkdir -p $(BUILD_TMP_DIR)

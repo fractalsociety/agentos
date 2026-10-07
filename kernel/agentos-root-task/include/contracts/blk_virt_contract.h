@@ -5,9 +5,9 @@
  *
  * blk_virt is the only block mux (docs/TCB.md, I/O invariant 2).  It owns no
  * device frame and no IRQ.  Requests and responses move through the
- * sDDF-shaped guest queues in the shared block region
+ * sDDF-shaped client queues in the shared block region
  * (platform/include/platform/blk_layout.h; blk_virt maps the whole region,
- * each guest VMM maps only its client page); this contract carries only control
+ * each guest VMM or opt-in native client maps only its page); this contract carries only control
  * (attach) and notifications (kicks).  There is no per-request IPC between a
  * VMM and blk_virt, and no VMM holds the virtio_blk driver endpoint or the
  * driver's DMA window.
@@ -20,8 +20,8 @@
  *     blk_storage_info_t at AOS_BLK_STORAGE_INFO_OFF) from the host media,
  *     or from its RAM disk when the driver reports no media.
  *   - KICK is a seL4_Signal on a send-only capability to blk_virt's bound
- *     notification, badged with the client's bit (0 or 1).
- *   - RESP_READY is a seL4_Signal to the owning VMM's bound notification,
+ *     notification, badged with the client's bit (0 or 1; native probe 2).
+ *   - RESP_READY is a seL4_Signal to the owning client's bound notification,
  *     badged BLK_VIRT_VMM_WAKE_BADGE. Signals remain pending until received;
  *     the receiver scans queues after waking. This also works before the
  *     guest starts, when no guest exit can retry a dropped endpoint event.
@@ -57,7 +57,11 @@
 #define BLK_VIRT_VMM_WAKE_BADGE (UINT64_C(1) << 60)
 static inline int blk_virt_service_notification(uint64_t badge)
 {
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+    return badge != 0 && (badge & ~UINT64_C(7)) == 0;
+#else
     return badge != 0 && (badge & ~UINT64_C(3)) == 0;
+#endif
 }
 
 /* ── Opcodes / labels ─────────────────────────────────────────────────── */
@@ -91,6 +95,9 @@ static inline int blk_virt_service_notification(uint64_t badge)
 /* ── VMM slots (blk_virt_attach_req_t.vmm_slot) ───────────────────────── */
 #define BLK_VIRT_VMM_SLOT_PRIMARY       0u
 #define BLK_VIRT_VMM_SLOT_SECONDARY     1u
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+#define BLK_VIRT_NATIVE_SLOT            2u
+#endif
 
 /* ── Status codes (blk_virt_attach_reply_t.status) ────────────────────── */
 #define BLK_VIRT_OK                     0u

@@ -2,9 +2,9 @@
  * blk_virt PD — block virtualizer (docs/TCB.md target: `blk_virt`).
  *
  * The only block mux.  Owns no device frame and no IRQ.  Sits between the
- * guest-facing sDDF queues in the shared block region (AOS_BLK_SHMEM_VA, one
- * AOS_BLK_CLIENT_STRIDE per guest VMM slot, produced/consumed by the VMM's
- * emulated virtio-blk) and virtio_blk, the host block driver PD.
+ * sDDF queues in the shared block region (AOS_BLK_SHMEM_VA, one
+ * AOS_BLK_CLIENT_STRIDE per client, produced/consumed by a guest VMM or the
+ * opt-in native block probe) and virtio_blk, the host block driver PD.
  *
  * Contract: include/contracts/blk_virt_contract.h.
  *
@@ -39,6 +39,9 @@
 #include <platform/blk_host_layout.h>
 #include <platform/blk_virt_pump.h>
 #include <platform/blk_rebind.h>
+#ifdef AGENTOS_FRACTAL_GPT_QUALIFY
+#include <platform/fractal_block_policy.h>
+#endif
 #include "contracts/queue_rebind_caps.h"
 #include "boot_info.h"
 
@@ -50,6 +53,11 @@ _Static_assert(AOS_BLK_SHMEM_VA != AGENTOS_BLK_SHARED_VA,
                "guest block queues and the driver DMA window are distinct frames");
 _Static_assert(AOS_BLK_TRANSFER_SIZE % AOS_HOST_BLK_SECTOR_SIZE == 0u,
                "sDDF transfer unit must be whole host sectors");
+#ifdef AGENTOS_FRACTAL_GPT_QUALIFY
+_Static_assert(AOS_BLK_TRANSFER_SIZE == 4096u &&
+               AOS_HOST_BLK_SECTOR_SIZE == 512u,
+               "Fractal native block policy assumes eight sectors per block");
+#endif
 
 /* Root-provisioned log ring on ARM; the common debug fallback elsewhere. */
 uintptr_t log_drain_rings_vaddr;
@@ -249,6 +257,24 @@ static aos_blk_resp_status_t host_blk_backend(
         return AOS_BLK_RESP_ERR_INVALID_PARAM;
     }
 
+#ifdef AGENTOS_FRACTAL_GPT_QUALIFY
+    /* The native client can inspect GPT metadata, but cannot reach another
+     * partition even if its own request validation is bypassed. */
+    if (c->client_id == BLK_VIRT_NATIVE_SLOT) {
+        if (!client->info ||
+            client->info->capacity !=
+                FRACTAL_DISK_SECTORS / FRACTAL_BLOCK_SECTORS ||
+            ((req->code == AOS_BLK_REQ_READ ||
+              req->code == AOS_BLK_REQ_WRITE) &&
+             !fractal_native_block_allowed(req->block_number, req->count,
+                                            client->info->capacity,
+                                            req->code == AOS_BLK_REQ_WRITE))) {
+            bv_log("native block request outside Fractal authority");
+            return AOS_BLK_RESP_ERR_INVALID_PARAM;
+        }
+    }
+#endif
+
     switch (req->code) {
     case AOS_BLK_REQ_READ:
         rc = host_blk_transfer(c->media_id, AOS_HOST_BLK_OP_READ, sector,
@@ -297,6 +323,10 @@ static void bv_notify_vmm(const bv_client_t *c)
 
 static seL4_CPtr vmm_notify_for_slot(uint32_t vmm_slot)
 {
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+    if (vmm_slot == BLK_VIRT_NATIVE_SLOT)
+        return (seL4_CPtr)PD_CNODE_SLOT_BLK_NATIVE_NOTIFY;
+#endif
 #if defined(AGENTOS_GUEST_PRIMARY) || defined(AGENTOS_X86_FIRMWARE_RESET)
     if (vmm_slot == BLK_VIRT_VMM_SLOT_PRIMARY) {
         return (seL4_CPtr)PD_CNODE_SLOT_BLK_PRIMARY_NOTIFY;
@@ -505,6 +535,10 @@ static void handle_detach(uint64_t badge, const sel4_msg_t *req, sel4_msg_t *rep
 static uint32_t rebind_queue(uint64_t badge, const blk_virt_rebind_req_t *req)
 {
     /* Validate client authority before indexing or touching retired mappings. */
+    /* Native probe queues are fixed for one boot; reconstruction is guest-only. */
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+    if (req->client == BLK_VIRT_NATIVE_SLOT) return BLK_VIRT_ERR_BAD_CLIENT;
+#endif
     if (!virt_media_authorized(badge, req->client, req->client, req->client))
         return BLK_VIRT_ERR_BAD_CLIENT;
     bv_client_t *c = &g_clients[req->client];

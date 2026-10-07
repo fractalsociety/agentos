@@ -236,6 +236,8 @@ typedef struct {
 #define SVC_ID_X86_AP_RUNNER 37u /* Second private VMM execution context */
 #define SVC_ID_X86_SECONDARY_RUNNER 38u /* Secondary guest bootstrap executor */
 #define SVC_ID_X86_SECONDARY_AP_RUNNER 39u /* Secondary guest AP executor */
+#define SVC_ID_FRACTAL_NATIVE_PROBE 40u /* isolated native block proof */
+#define SVC_ID_FRACTAL_NVME_PROBE 41u /* isolated QEMU NVMe read proof */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
@@ -303,6 +305,14 @@ _Static_assert(PD_CNODE_SLOT_CC_IRQ_WAIT > PD_CNODE_SLOT_DISPLAY_PEER_NOTIFY &&
 #define PD_CNODE_SLOT_NET_SECONDARY_NOTIFY 44u
 #define PD_CNODE_SLOT_INPUT_VIRT_EP 45u
 #define PD_CNODE_SLOT_FB_REBIND_EP 46u
+#define PD_CNODE_SLOT_BLK_NATIVE_NOTIFY 47u
+#define PD_CNODE_SLOT_BLK_NATIVE_WAIT 48u
+#define PD_CNODE_SLOT_FRACTAL_REPORT 49u
+#define FRACTAL_NATIVE_REPORT_BADGE UINT64_C(0xfac7a100)
+#define FRACTAL_NATIVE_REPORT_LABEL 0xf12u
+#define PD_CNODE_SLOT_FRACTAL_NVME_REPORT 50u
+#define FRACTAL_NVME_REPORT_BADGE UINT64_C(0xfac7a101)
+#define FRACTAL_NVME_REPORT_LABEL 0xf13u
 _Static_assert(PD_CNODE_SLOT_FB_REBIND_EP>PD_CNODE_SLOT_INPUT_VIRT_EP &&
     PD_CNODE_SLOT_FB_REBIND_EP<PD_IRQHANDLER_SLOT_BASE,"framebuffer rebind endpoint slot");
 _Static_assert(PD_CNODE_SLOT_INPUT_VIRT_EP > PD_CNODE_SLOT_NET_SECONDARY_NOTIFY &&

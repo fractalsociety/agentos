@@ -1,0 +1,33 @@
+{
+  "schema": "fractal.physical-watchdog-attempt.v1",
+  "run_id": "e9b07e51-dfa6-4edc-bc83-dc498a98573c",
+  "root_task_sha256": "d29aa4f8bf290d47b297619d8ea5402792d687b1bf96f5f9f86529d60c67bc7e",
+  "watchdog_efi_sha256": "ffd7130c6cd4629bb93b2ba196450a4a4379e1e1ee79771fabafaafe19b7cd0a",
+  "linux_boot_id_before": "9f579e5e-e8ef-432a-8e62-75f5d0502fa4",
+  "run_directory": "/home/whyfly/Projects/fractal-lab/watchdog-recovery/physical-run",
+  "installer": "/home/whyfly/Projects/fractal-lab/watchdog-recovery/Makefile",
+  "entry": "000C",
+  "default_return": "0004",
+  "timeout_seconds": 120,
+  "status": "installed-armed-reboot-scheduled",
+  "installed_hashes_verified": true,
+  "fresh_plan_flushed_and_read_back": true,
+  "return_collector_enabled": true,
+  "normal_boot_files_and_boot_order_preserved": true,
+  "reboot_requested": true,
+  "reboot_timer": "fractal-watchdog-reboot-e9b07e51.timer",
+  "native_image_changed_since_previous_vm_gate": false,
+  "host_change": "Explicit retry authenticates the exact previous unconsumed plan, requires every other exchange block zero, saves the previous bytes, writes only a fresh signed plan, flushes and verifies readback",
+  "host_checks": {
+    "make_test_host": "PASS with CC=clang SEL4_SDK_VERSION=2.3.0",
+    "retry_cli": "PASS: arm old plan, retry with new plan, inspect returns no-matching-native-event; no fabricated native success",
+    "negative_retry": "PASS: wrong previous plan, reused run ID and a nonzero byte in each non-plan exchange block are refused"
+  },
+  "return_collection": {
+    "service": "fractal-watchdog-return.service",
+    "helper": "/usr/local/libexec/fractal-marker-watchdog",
+    "receipt": "return-<new-linux-boot-id>.json",
+    "success_receipt": "complete.json",
+    "interpretation": "A fresh matching native completion proves the NVMe result cycle. Return without a matching marker does not prove where boot stopped or that hardware watchdog expiry caused the reset."
+  }
+}

@@ -28,6 +28,23 @@ Those receipts do not establish target peer-input mapping isolation.
 
 ## Privilege
 
+The Fractal native NVMe bring-up now provisions a device-private VT-d
+address space when BootInfo reports IOMMU page tables. Root retains its
+IOSpace and paging capabilities, maps only the driver's 2 MiB DMA window
+using 4 KiB frames, and supplies a version-2 device-visible base to the PD.
+The existing no-IOMMU composition retains contiguous physical DMA. The
+previous image failed Identify Controller with a DMA translation fault when
+tested with QEMU Intel VT-d; the corrected image commits and verifies its
+signed marker and requests reset with VT-d enabled. This reproduces a
+physical-boot blocker, but does not prove the exact physical hang location.
+
+`tools/fractal-boot-watchdog` is an optional pre-OS EFI companion for this
+PC's Intel HM870 TCO v6 timer. It arms a fixed 120-second recovery deadline
+before starting Limine, and refuses the experimental boot if the supported
+timer cannot be armed. It adds no PD, device mapping, or IRQ grant to seL4;
+the museum watchdog stays unchanged. Host tests cover register behavior;
+physical watchdog expiry and return to the normal OS remain unqualified.
+
 VM manager now binds the guest ID returned by a successful coordinator CREATE
 reply to that dedicated slot and endpoint. Later lifecycle, input and console
 requests use that binding, rather than assuming guest ID zero. A malformed
@@ -67,6 +84,124 @@ the existing per-media DMA and queue areas stay separate. An opt-in
 the existing block-driver authority, not VMM hardware access. Host layout and
 firmware compile checks do not establish native two-disk or concurrent guest
 acceptance.
+
+The opt-in `FRACTAL_NATIVE_PROBE=1` x86 composition assigns the secondary
+virtio disk exclusively to a native seL4 client. Root maps a third private
+block queue frame into that client and `blk_virt` only, and mints a distinct
+badge for client 2 / slot 2 / media 1. `blk_virt` remains the sole holder of
+the block-driver endpoint and DMA window. The client writes, flushes, and
+reads back a witness, then flushes a result block on disposable QEMU media;
+the receipt is in the external Fractal lab. This qualifies that bounded
+native queue path, not physical NVMe access, filesystem durability, or a
+cross-reboot AgentOS result bundle.
+
+With `FRACTAL_EXCHANGE_CYCLE=1`, the same client reads a SHA-256-bound
+`native-alive` plan from the final four blocks of that disposable disk,
+checks its exact canonical JSON, and writes, flushes, and reads back a witness. It
+then writes and flushes a result block containing a checksummed final JSON
+record, followed by a completion block bound to the full result-block hash.
+The external Fractal lab verifies the on-disk bytes and materializes result
+files on the host. This proves one bounded QEMU plan/result cycle only: the
+native client has no FAT32 implementation, physical NVMe access, reboot
+control, or general agent-task interpreter. The embedded firmware VMM remains
+separately unqualified.
+
+`FRACTAL_NATIVE_ONLY=1` selects a seven-PD x86 composition: network driver
+and virtualizer, block driver and virtualizer, the native test client, and
+serial driver and virtualizer. Its PD bundle has no guest VMM or execution
+runner, and root does not embed the guest OVMF ROM or wait for VMX proof. The
+same raw exchange cycle passes via UEFI → Limine → seL4 in QEMU. This removes
+guest firmware qualification from the native test path, but it does not add a
+physical NVMe driver, native filesystem, or return reboot path.
+
+The portable `fractal_gpt` parser is a write-admission boundary for the shared
+NVMe namespace. Host tests cover primary-header and entry-array CRCs, exact
+GUID and extent, overlaps, and request bounds. With `FRACTAL_GPT_QUALIFY=1`,
+the native client reads the primary GPT from its selected QEMU medium and
+refuses exchange writes unless the controller capacity and Fractal partition
+identity/extent match this PC's recorded values. A valid sparse QEMU fixture
+passed; corrupting both GPT entry arrays produced rejection before any native
+exchange write. This does not grant or test physical NVMe authority; the
+current driver remains virtio-blk.
+
+In that GPT-qualified virtualized composition, `blk_virt` independently
+restricts native client 2 to the exact Fractal partition and the primary and
+backup GPT edge blocks. GPT edges are read-only; all other partition reads
+and writes are denied before reaching the block driver. The policy also
+rejects a media capacity that differs from this PC's recorded namespace.
+The opt-in native isolation test sends four forbidden requests and requires
+four `ERR_INVALID_PARAM` replies before the normal plan/result cycle. Its
+booted QEMU proof is `fractal-lab/evidence/uefi-ZmQeteGD/` (root report
+`0x1a00`, then completion `2`). This guards the virtualized native queue,
+not the separate one-PD physical Samsung bring-up image, and it does not
+protect against a compromised `blk_virt` or driver PD.
+
+`FRACTAL_NVME_PROBE=1` adds an eighth native PD for QEMU's NVMe function at
+00:09.0. Root discovers the controller with PCI decoding and bus mastering
+disabled, grants only that PD four BAR0 pages and one private 2 MiB DMA frame,
+then enables the controller. The PD polls Identify Controller, Identify
+Namespace 1, creates an I/O queue pair, reads the protective MBR and both
+GPT copies, and validates the exact Fractal partition with the shared parser.
+The backup header must agree on disk identity, usable range and entry CRC;
+its own entry array must also pass CRC and partition checks. The
+default lab opens the NVMe fixture read-only. With
+`FRACTAL_NVME_WRITE_PROBE=1`, the same PD issues one 4 KiB write only after
+GPT validation and a per-command range check, flushes namespace 1, reads the
+witness back, and compares every byte. The external lab checks that GPT edge
+sectors are unchanged and that the witness has exactly the expected bytes. A
+corrupt-GPT test confirms no witness write. The existing virtio-blk path still
+performs its independent plan/result exchange. With
+`FRACTAL_NVME_EXCHANGE=1`, the NVMe PD uses a transport-neutral exchange
+engine to read a hashed plan and write, flush and read back witness, result,
+and completion blocks through the NVMe I/O queue. Every exchange callback
+checks the exact GPT partition range. The external lab inspects the NVMe
+blocks separately; corrupt GPT and corrupt plan tests prove rejection before
+any exchange write. This qualifies the QEMU native NVMe exchange path only.
+The PD still has no proven physical-controller operation, filesystem, reboot
+path, or signature key for the PRD's physical result bundle.
+
+`FRACTAL_NVME_ONLY=1` selects an offline one-PD image with the NVMe
+domain and no virtio block, network, serial, VMM, or runner PDs. Root skips
+virtio PCI discovery, their DMA frames, and unrelated legacy device-cap
+requests. A QEMU boot uses an IDE boot image only for UEFI/Limine loading;
+after seL4 starts, the native result cycle uses only the separate NVMe
+namespace. Positive and corrupt-GPT/plan tests prove the one-PD composition
+and fail-closed exchange behavior in QEMU. The explicit PCI selector supports
+QEMU `00:09.0`, QEMU `81:00.0` behind a PCIe bridge, and the Samsung PM9C1a
+at `81:00.0` with exact vendor/device identity. The Samsung profile rejects
+write/exchange build flags and has been built but not booted on the physical
+PC. A QEMU bus-81 run proves the bus selector, and a Samsung-profile run
+against QEMU's different ID refuses startup before any PD begins. Neither
+test proves that the physical controller works under seL4. A lab-only,
+SHA-256-pinned copy of QEMU changes its NVMe PCI identity to Samsung's ID;
+the exact staged read-only root image then starts its domain, identifies the
+namespace and validates both GPT copies without any exchange write. That is
+an identity and generic-NVMe path test, not Samsung-controller emulation.
+An independent Samsung read-only build can opt into a CF9 return reset after
+the GPT report step 2. It cannot enable namespace writes. The staged EFI
+image passed an end-to-end QEMU identity-shim run, and a disposable OVMF
+`BootNext` run selected the default return sentinel after that reset. A wrong
+PCI identity did not start its domain or reset. Physical reset and any
+persistent result remain unqualified. The external lab stages two separately
+hashed read-only EFI paths from these builds: A retains the diagnostic
+non-reset image, and B has the post-GPT CF9 reset. Both paths booted in
+disposable OVMF with only a test PCI-ID change to QEMU. Neither slot is a
+physical known-good image. The guarded A/B installer has only passed
+unprivileged stage verification; the live ESP and UEFI boot variables remain
+unchanged. A host-side physical-cycle controller checks the installed slot,
+ESP file hashes, Windows/Omarchy entries and BootOrder before it can arm a
+one-shot BootNext. Its return report deliberately cannot assert native GPT
+qualification from firmware state alone; the physical arm path is unrun.
+
+`FRACTAL_NVME_RETURN_REBOOT=1` is an opt-in QEMU-only root-task path. Once
+the native NVMe domain reports a committed, flushed exchange, root issues a
+reset through QEMU's CF9 port. A QEMU run with `-no-reboot` exits on that
+reset after host verification of the result. A rejected plan does not issue
+the reset. A separate disposable OVMF test uses `BootNext` for the Fractal
+entry and a default return sentinel: after the result reset, firmware starts
+the sentinel and consumes `BootNext`. This proves the VM one-shot selection,
+not an Omarchy return boot, a crash watchdog, or the physical chipset reset
+path.
 
 `make gate-x86_64-smp` now requires two online Linux CPUs and overlapping
 CPU-affined x87/SSE workers in both managed lifecycle generations. The
@@ -1379,6 +1514,50 @@ operator reads and writes to both guest pages and the CC frontend must fault,
 as must a write to the boot snapshot. Root checks the fault identity, address
 and access direction. Each image first rejects three unauthorized attach
 requests and successfully attaches the operator's own channel.
+
+The optional one-PD Fractal QEMU NVMe exchange appends and flushes a
+hash-linked plan-admission event before either canonical `native-alive` or
+`native-panic` work. A successful run commits its witness/result/completion
+after the event; the Omarchy verifier requires the matching event and rejects
+tampering. For `native-panic`, the PD also flushes a checksum-bound crash
+record in a separate 16-slot ring inside the exact GPT-authorized partition
+before deliberately trapping; root then observes the seL4 fault. The
+independent Omarchy verifier rejects corrupt records,
+broken event chains and any success-output block. Two native QEMU boots
+preserved the first records while appending the second. The event can still
+be recovered if the crash record is damaged. This is deliberate pre-fault
+persistence only, not a general agent decision log. There is no general
+fault writer, protected result signer, physical write
+qualification, or physical automatic crash return boot.
+An opt-in one-PD QEMU image arms root after that exact crash-record report;
+on the PD's seL4 user-exception fault, root requests CF9 reset. A disposable
+OVMF `BootNext` test observed the default return sentinel after reset and
+recovered the crash record from the stopped VM disk. This does not cover
+faults before the record, an independent watchdog, or physical reboot.
+
+The opt-in `FRACTAL_SIGNED_PLAN=1` QEMU NVMe profile accepts only v2 plan
+blocks. It verifies an Ed25519 signature over the plan's run ID, claimed
+image hash, JSON hash, and length before accepting either native test. The
+public key is embedded in the NVMe PD; its private key remains in the Omarchy
+user's local data directory, outside the image and source tree. The host
+inspector verifies the same signature. A booted signed run committed its
+result, while modified-signature and unsigned-plan boots were rejected with
+no result write. This authenticates plan admission by that Omarchy key; it
+does not sign the result, measure the actual booted image, or provide a
+physical hardware security root.
+
+A separate `FRACTAL_PHYSICAL_WRITE_CANDIDATE=1` Samsung-target build now
+requires the one-PD native composition, exact GPT-bounded namespace writes,
+the exchange protocol, signed plans, and reset only after a committed result.
+Its NVMe read function additionally admits only GPT edge sectors and the
+Fractal partition; this is a software fence inside the owning PD, not a
+separate capability boundary.
+Its files are staged outside the ESP and are not accepted by the read-only
+A/B installer. The exact staged EFI path passed with a Samsung-ID QEMU shim
+and disposable media; the unmodified QEMU controller was rejected before
+the PD started. This candidate has not booted on the Samsung PM9C1a. It must
+not be installed or used to qualify physical writes before the read-only
+physical boot and return path is observed.
 
 `make gate` is the OS-claim gate: host suite, aarch64 and x86_64 boot with
 `GUEST_OS=none`, and `gate-guest-io` (`make test-guest-net`,

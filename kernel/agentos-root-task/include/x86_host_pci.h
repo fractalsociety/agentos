@@ -7,7 +7,14 @@ typedef enum {
     AOS_X86_HOST_NET,
     AOS_X86_HOST_CONSOLE,
     AOS_X86_HOST_SECONDARY_BLOCK,
+    AOS_X86_HOST_NVME,
 } aos_x86_host_device_t;
+
+typedef struct {
+    uint64_t bar0;
+    uint64_t bar_bytes;
+} aos_x86_nvme_layout_t;
+unsigned aos_x86_nvme_discover(aos_x86_nvme_layout_t *layout);
 
 /* Boot-only discovery of the board's assigned 00:05.0 modern virtio block
  * 00:06.0 network, 00:07.0 console or 00:08.0 secondary block function.

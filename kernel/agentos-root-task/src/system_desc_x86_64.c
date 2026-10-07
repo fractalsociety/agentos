@@ -6,16 +6,40 @@
  * EPT-backed HLT-exit proof. The firmware composition starts the COM2 serial
  * driver and serial_virt, plus block and network drivers and virtualizers.
  * Host register/DMA mappings belong to drivers; the VMM maps its queue pages.
+ * The Fractal native-only build keeps seven native service/client PDs, or
+ * eight with the isolated NVMe probe. The separate offline NVMe composition
+ * has one PD. Neither starts guest execution runners.
  */
 
 #include "system_desc.h"
 #include "contracts/guest_ram_caps.h"
 #include "contracts/x86_vtx_proof.h"
 
-#if defined(AGENTOS_X86_VTX)
+#if defined(AGENTOS_FRACTAL_NVME_ONLY)
+const system_desc_t system_desc_x86_64 = {
+    .pd_count = 1u,
+    .pds = {{
+        .name = "fractal_nvme_probe",
+        .elf_path = "fractal_nvme_probe.elf",
+        .stack_size = 0x4000u,
+        .cnode_size_bits = 10u,
+        .priority = 254u,
+        .self_svc_id = SVC_ID_FRACTAL_NVME_PROBE,
+    }},
+};
+#elif defined(AGENTOS_X86_VTX)
 const system_desc_t system_desc_x86_64 = {
 #ifdef AGENTOS_X86_FIRMWARE_RESET
     .pd_count = 9u
+#ifdef AGENTOS_FRACTAL_NATIVE_ONLY
+        - 3u
+#endif
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+        + 1u
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+        + 1u
+#endif
 #ifdef AGENTOS_X86_DUAL_GUEST
         + 3u
 #endif
@@ -56,7 +80,11 @@ const system_desc_t system_desc_x86_64 = {
             .elf_path = "virtio_blk.elf",
             .stack_size = 0x4000u,
             .cnode_size_bits = 10u,
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+            .priority = 253u,
+#else
             .priority = 215u,
+#endif
             .self_svc_id = SVC_ID_VIRTIO_BLK,
         },
         {
@@ -64,11 +92,37 @@ const system_desc_t system_desc_x86_64 = {
             .elf_path = "blk_virt.elf",
             .stack_size = 0x8000u,
             .cnode_size_bits = 10u,
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+            .priority = 252u,
+#else
             .priority = 210u,
+#endif
             .self_svc_id = SVC_ID_BLK_VIRT,
             .init_ep_count = 1u,
             .init_eps = {{ SVC_ID_VIRTIO_BLK, PD_CNODE_SLOT_VIRTIO_BLK_EP }},
         },
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+        {
+            .name = "fractal_native_probe",
+            .elf_path = "fractal_native_probe.elf",
+            .stack_size = 0x4000u,
+            .cnode_size_bits = 10u,
+            .priority = 251u,
+            .self_svc_id = SVC_ID_FRACTAL_NATIVE_PROBE,
+            .init_ep_count = 1u,
+            .init_eps = {{ SVC_ID_BLK_VIRT, PD_CNODE_SLOT_BLK_VIRT_EP }},
+        },
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+        {
+            .name = "fractal_nvme_probe",
+            .elf_path = "fractal_nvme_probe.elf",
+            .stack_size = 0x4000u,
+            .cnode_size_bits = 10u,
+            .priority = 254u,
+            .self_svc_id = SVC_ID_FRACTAL_NVME_PROBE,
+        },
+#endif
 #ifndef AGENTOS_X86_CC_PCI
         {
             .name = "serial_pd",
@@ -89,6 +143,7 @@ const system_desc_t system_desc_x86_64 = {
             .priority = 203u,
             .self_svc_id = SVC_ID_SERIAL_VIRT,
         },
+#ifndef AGENTOS_FRACTAL_NATIVE_ONLY
         {
             .name = "x86_runner",
             .elf_path = "x86_runner.elf",
@@ -106,6 +161,8 @@ const system_desc_t system_desc_x86_64 = {
             .self_svc_id = SVC_ID_X86_AP_RUNNER,
         },
 #endif
+#endif
+#ifndef AGENTOS_FRACTAL_NATIVE_ONLY
         {
             .name = "guest_vmm_primary",
             .elf_path = "guest_vmm_primary.elf",
@@ -139,6 +196,7 @@ const system_desc_t system_desc_x86_64 = {
             .device_frame_count = 0u,
             .mr_count = 0u,
         },
+#endif
 #ifdef AGENTOS_X86_USERSPACE_PROOF
         {
             .name = "x86_lifecycle_probe",

@@ -54,6 +54,11 @@
 #include "contracts/cc_contract.h" /* cc_pd VirtIO startup ABI                    */
 #include <platform/blk_host_layout.h> /* host block MMIO/shared DMA layout       */
 #include "x86_host_pci.h"
+#include <platform/fractal_nvme.h>
+#include <platform/fractal_nvme_target.h>
+#ifdef AGENTOS_FRACTAL_NVME_PANIC_RETURN_REBOOT
+#include <platform/fractal_exchange.h>
+#endif
 #include <platform/blk_layout.h>      /* shared sDDF block region (VMMs + blk_virt) */
 #include <platform/serial_virt_layout.h>
 #include "contracts/queue_rebind_caps.h"
@@ -849,6 +854,67 @@ static seL4_CPtr g_blk_shared_frame_cap = seL4_CapNull;
 #endif
 static seL4_CPtr g_x86_blk_frames[X86_HOST_BLOCK_COUNT][AOS_VIRTIO_PCI_REGIONS];
 static seL4_CPtr g_x86_net_frames[AOS_VIRTIO_PCI_REGIONS];
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+static seL4_CPtr g_x86_nvme_frames[FRACTAL_NVME_MMIO_PAGES];
+static seL4_CPtr g_x86_nvme_dma_frame = seL4_CapNull;
+static seL4_CPtr g_x86_nvme_dma_pages[FRACTAL_NVME_DMA_PAGES];
+static bool g_x86_nvme_iommu;
+static seL4_CPtr g_fractal_nvme_report_endpoint = seL4_CapNull;
+
+/* Root provisions only this controller's private DMA window. IO-space and
+ * page-table capabilities remain in root; the PD cannot broaden DMA access.
+ * Large frames cannot be mapped with seL4_X86_Page_MapIO, so use 4 KiB
+ * frames behind a contiguous device address when VT-d is present. */
+static bool x86_fractal_nvme_dma(const seL4_BootInfo *bi, uint64_t *device_base)
+{
+    if (!bi->numIOPTLevels) {
+        if (ut_alloc_cap(seL4_ARCH_LargePageObject, 0u,
+                         &g_x86_nvme_dma_frame) != seL4_NoError) return false;
+        seL4_ARCH_Page_GetAddress_t address = seL4_ARCH_Page_GetAddress(g_x86_nvme_dma_frame);
+        if (address.error != seL4_NoError) return false;
+        *device_base = address.paddr;
+        return true;
+    }
+#ifdef CONFIG_IOMMU
+    if (bi->numIOPTLevels < 2u || bi->numIOPTLevels > 6u) return false;
+    uint32_t selector, identity;
+    if (!fractal_nvme_target_config(AGENTOS_FRACTAL_NVME_TARGET,
+                                     &selector, &identity)) return false;
+    seL4_CPtr iospace = ut_alloc_slot();
+    seL4_Word cap_data = (1u << 16) | ((selector >> 8) & 0xffffu);
+    if (!iospace || seL4_CNode_Mint(seL4_CapInitThreadCNode, iospace, 64u,
+            seL4_CapInitThreadCNode, seL4_CapIOSpace, 64u, seL4_AllRights,
+            cap_data) != seL4_NoError) return false;
+    for (unsigned level = 0; level < bi->numIOPTLevels; ++level) {
+        seL4_CPtr pt;
+        if (ut_alloc_cap(seL4_X86_IOPageTableObject, seL4_IOPageTableBits, &pt) != seL4_NoError ||
+            seL4_X86_IOPageTable_Map(pt, iospace, FRACTAL_NVME_DMA_IOVA) != seL4_NoError)
+            return false;
+    }
+    for (unsigned p = 0; p < FRACTAL_NVME_DMA_PAGES; ++p) {
+        if (ut_alloc_cap(seL4_ARM_SmallPageObject, 0u,
+                         &g_x86_nvme_dma_pages[p]) != seL4_NoError) return false;
+        seL4_CPtr io_copy = ut_alloc_slot();
+        if (!io_copy || seL4_CNode_Copy(seL4_CapInitThreadCNode, io_copy, 64u,
+                seL4_CapInitThreadCNode, g_x86_nvme_dma_pages[p], 64u,
+                seL4_AllRights) != seL4_NoError ||
+            seL4_X86_Page_MapIO(io_copy, iospace, seL4_AllRights,
+                               FRACTAL_NVME_DMA_IOVA + p * 4096u) != seL4_NoError)
+            return false;
+    }
+    g_x86_nvme_dma_frame = g_x86_nvme_dma_pages[0];
+    g_x86_nvme_iommu = true;
+    *device_base = FRACTAL_NVME_DMA_IOVA;
+    dbg_puts("[rt] NVMe private IOMMU DMA window mapped\n");
+    return true;
+#else
+    return false;
+#endif
+}
+#ifdef AGENTOS_FRACTAL_NVME_PANIC_RETURN_REBOOT
+static bool g_fractal_panic_return_armed;
+#endif
+#endif
 #ifdef AGENTOS_X86_CC_PCI
 static seL4_CPtr g_x86_cc_frames[AOS_VIRTIO_PCI_REGIONS];
 static cc_virtio_pci_startup_t g_x86_cc_startup;
@@ -930,6 +996,9 @@ static seL4_CPtr g_serial_virt_frames[AOS_SERIAL_FRAMES];
 static seL4_CPtr g_pd_notifications[SYSTEM_MAX_PDS];
 #if defined(__x86_64__) && defined(AGENTOS_X86_VTX)
 static seL4_CPtr g_x86_vtx_proof_endpoint = seL4_CapNull;
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+static seL4_CPtr g_fractal_native_report_endpoint = seL4_CapNull;
+#endif
 #ifdef AGENTOS_X86_FIRMWARE_RESET
 #include <platform/x86_runner_ownership.h>
 static aos_x86_runner_owner_t g_x86_runner_owners[] = {
@@ -1053,6 +1122,25 @@ static void x86_com1_putc(char c)
     }
     x86_com1_out(X86_COM1_PORT, (uint8_t)c);
 }
+
+#if defined(AGENTOS_FRACTAL_NVME_RETURN_REBOOT) || \
+    defined(AGENTOS_FRACTAL_NVME_PANIC_RETURN_REBOOT) || \
+    defined(AGENTOS_FRACTAL_NVME_READONLY_RETURN_REBOOT) || \
+    defined(AGENTOS_FRACTAL_BOOT_PROBE_RESET)
+static void x86_fractal_request_reset(const char *reason)
+{
+    seL4_CPtr reset_port = ut_alloc_slot();
+    if (!reset_port || seL4_X86_IOPortControl_Issue(
+            seL4_CapIOPortControl, 0xcf9u, 0xcf9u,
+            seL4_CapInitThreadCNode, reset_port, 64u) != seL4_NoError) {
+        dbg_puts("[rt] Fractal return reset port unavailable\n");
+        return;
+    }
+    dbg_puts(reason);
+    if (seL4_X86_IOPort_Out8(reset_port, 0xcf9u, 0x06u) != seL4_NoError)
+        dbg_puts("[rt] Fractal return reset command failed\n");
+}
+#endif
 
 static seL4_Word platform_debug_init(void)
 {
@@ -1765,7 +1853,7 @@ static seL4_Error setup_vmm_guest_vcpu(const pd_desc_t *pd,
 }
 #endif
 
-#if defined(__x86_64__) && defined(AGENTOS_X86_VTX)
+#if defined(__x86_64__) && defined(AGENTOS_X86_VTX) && !defined(AGENTOS_FRACTAL_NATIVE_ONLY)
 /*
  * Provision the deliberately small VMX/EPT qualification guest.  On x86 a
  * SysVMEnter call runs the VCPU bound to the calling VMM TCB, unlike the
@@ -2170,6 +2258,14 @@ void root_task_main(const seL4_BootInfo *bi)
     dbg_hex(g_cap_base + (seL4_Word)SYSTEM_MAX_PDS * SLOTS_PER_PD + EP_POOL_SIZE);
     dbg_puts("\n");
 
+#ifdef AGENTOS_FRACTAL_BOOT_PROBE_RESET
+    /* Read-only physical checkpoint: prove that UEFI, seL4, and the root task
+     * ran before any PCI discovery or NVMe MMIO is touched.  The isolated
+     * diagnostic image intentionally does no further work if CF9 fails. */
+    x86_fractal_request_reset("[rt] Fractal root-task checkpoint reset\n");
+    for (;;) seL4_Yield();
+#endif
+
     /* ── Step 2: Initialise capability accounting ─────────────────────────── */
     cap_acct_init(bi);
     dbg_puts("[rt] cap_acct_init ok\n");
@@ -2219,6 +2315,7 @@ void root_task_main(const seL4_BootInfo *bi)
         dbg_puts("\n");
     }
 
+#ifndef AGENTOS_FRACTAL_NVME_ONLY
     {
         seL4_Error gic_err = ut_alloc_device_cap(GIC_VCPU_IF_PA,
                                                  &g_gic_vcpu_frame_cap);
@@ -2238,6 +2335,7 @@ void root_task_main(const seL4_BootInfo *bi)
         dbg_hex((seL4_Word)g_virtio_mmio_frame_cap);
         dbg_puts("\n");
     }
+#endif
 
 #if defined(__aarch64__)
     {
@@ -2290,6 +2388,7 @@ void root_task_main(const seL4_BootInfo *bi)
     }
 #endif
 
+#ifndef AGENTOS_FRACTAL_NVME_ONLY
     {
         seL4_Error v31_err =
             ut_alloc_device_cap(AGENTOS_HOST_SECONDARY_BLK_PAGE_PA,
@@ -2300,6 +2399,7 @@ void root_task_main(const seL4_BootInfo *bi)
         dbg_hex((seL4_Word)g_host_secondary_blk_mmio_frame_cap);
         dbg_puts("\n");
     }
+#endif
 
     /* Temporary: dump device untypeds to diagnose UART1 frame allocation */
     {
@@ -2327,6 +2427,23 @@ void root_task_main(const seL4_BootInfo *bi)
 
     const system_desc_t *sys = SYSTEM_DESC;
 #if defined(__x86_64__) && defined(AGENTOS_X86_FIRMWARE_RESET)
+#ifdef AGENTOS_FRACTAL_NVME_ONLY
+    aos_x86_nvme_layout_t nvme_layout;
+    unsigned nvme_stage = aos_x86_nvme_discover(&nvme_layout);
+    if (nvme_stage || nvme_layout.bar_bytes < FRACTAL_NVME_MMIO_PAGES * 4096u) {
+        dbg_puts("[rt] NVMe-only PCI discovery failed stage=");
+        dbg_hex(nvme_stage);
+        dbg_puts("\n");
+        return;
+    }
+    for (unsigned p = 0; p < FRACTAL_NVME_MMIO_PAGES; ++p) {
+        if (ut_alloc_device_cap(nvme_layout.bar0 + p * 4096u,
+                                &g_x86_nvme_frames[p]) != seL4_NoError) {
+            dbg_puts("[rt] NVMe-only device frame grant failed\n");
+            return;
+        }
+    }
+#else
     aos_virtio_pci_layout_t host_net_layout;
     unsigned host_net_stage = aos_x86_host_pci_discover(AOS_X86_HOST_NET, &host_net_layout);
     if (host_net_stage) {
@@ -2414,6 +2531,24 @@ void root_task_main(const seL4_BootInfo *bi)
 #endif
     };
     const unsigned devices = sizeof(layouts) / sizeof(layouts[0]);
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+    aos_x86_nvme_layout_t nvme_layout;
+    unsigned nvme_stage = aos_x86_nvme_discover(&nvme_layout);
+    if (nvme_stage || nvme_layout.bar_bytes < FRACTAL_NVME_MMIO_PAGES * 4096u) {
+        dbg_puts("[rt] NVMe PCI discovery failed stage=");
+        dbg_hex(nvme_stage);
+        dbg_puts("\n");
+        return;
+    }
+    for (unsigned p = 0; p < FRACTAL_NVME_MMIO_PAGES; ++p)
+        for (unsigned d = 0; d < devices; ++d)
+            for (unsigned r = 0; r < AOS_VIRTIO_PCI_REGIONS; ++r)
+                if (((nvme_layout.bar0 + p * 4096u) >> 12) ==
+                    (layouts[d]->region[r].paddr >> 12)) {
+                    dbg_puts("[rt] NVMe BAR overlaps virtio MMIO\n");
+                    return;
+                }
+#endif
     for (unsigned d = 0; d < devices; d++)
         for (unsigned e = d + 1; e < devices; e++)
             for (unsigned a = 0; a < AOS_VIRTIO_PCI_REGIONS; a++)
@@ -2423,7 +2558,11 @@ void root_task_main(const seL4_BootInfo *bi)
                         dbg_puts("[rt] PCI device classes share a page; refusing startup\n");
                         return;
                     }
-    for (unsigned allocation = 0; allocation < devices * AOS_VIRTIO_PCI_REGIONS; allocation++) {
+    for (unsigned allocation = 0; allocation < devices * AOS_VIRTIO_PCI_REGIONS
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+         + FRACTAL_NVME_MMIO_PAGES
+#endif
+         ; allocation++) {
         unsigned next = AOS_VIRTIO_PCI_REGIONS, owner = 0;
         uint64_t page = UINT64_MAX;
         for (unsigned d = 0; d < devices; d++) {
@@ -2436,6 +2575,23 @@ void root_task_main(const seL4_BootInfo *bi)
                 }
             }
         }
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+        unsigned nvme_next = FRACTAL_NVME_MMIO_PAGES;
+        for (unsigned p = 0; p < FRACTAL_NVME_MMIO_PAGES; ++p) {
+            uint64_t candidate = nvme_layout.bar0 + p * 4096u;
+            if (!g_x86_nvme_frames[p] && candidate < page) {
+                page = candidate;
+                nvme_next = p;
+            }
+        }
+        if (nvme_next != FRACTAL_NVME_MMIO_PAGES) {
+            if (ut_alloc_device_cap(page, &g_x86_nvme_frames[nvme_next]) != seL4_NoError) {
+                dbg_puts("[rt] NVMe device frame grant failed\n");
+                return;
+            }
+            continue;
+        }
+#endif
         if (next == AOS_VIRTIO_PCI_REGIONS) break;
         if (ut_alloc_device_cap(page, &frames[owner][next]) != seL4_NoError) {
             dbg_puts("[rt] PCI device frame grant failed; refusing startup\n");
@@ -2455,6 +2611,24 @@ void root_task_main(const seL4_BootInfo *bi)
         dbg_puts("[rt] network DMA allocation failed; refusing startup\n");
         return;
     }
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+    uint64_t nvme_device_base;
+    if (!x86_fractal_nvme_dma(bi, &nvme_device_base)) {
+        dbg_puts("[rt] NVMe DMA allocation failed\n");
+        return;
+    }
+    if (pd_vspace_map_device_frame(seL4_CapInitThreadVSpace,
+            g_x86_nvme_dma_frame, RT_BLK_SCRATCH_VA) != seL4_NoError) {
+        dbg_puts("[rt] NVMe DMA address/map failed\n");
+        return;
+    }
+    *(fractal_nvme_meta_t *)RT_BLK_SCRATCH_VA = (fractal_nvme_meta_t){
+        .magic = FRACTAL_NVME_META_MAGIC, .version = g_x86_nvme_iommu ? 2u : 1u,
+        .dma_paddr = nvme_device_base, .dma_bytes = FRACTAL_NVME_DMA_BYTES};
+    AGENTOS_MEMORY_FENCE();
+    if (seL4_ARCH_Page_Unmap(g_x86_nvme_dma_frame) != seL4_NoError) return;
+#endif
 #endif
     static aos_inspect_view_t inspect_view;
     seL4_CPtr inspect_cc_vspace = seL4_CapNull;
@@ -2481,6 +2655,7 @@ void root_task_main(const seL4_BootInfo *bi)
      * capabilities to VMM notifications even when those VMMs spawn later. */
     uint32_t serial_virt_index = SYSTEM_MAX_PDS;
     uint32_t blk_virt_index = SYSTEM_MAX_PDS;
+    uint32_t native_block_index = SYSTEM_MAX_PDS;
     uint32_t net_virt_index = SYSTEM_MAX_PDS;
     uint32_t native_net_index = SYSTEM_MAX_PDS;
     uint32_t log_drain_index = SYSTEM_MAX_PDS;
@@ -2498,6 +2673,7 @@ void root_task_main(const seL4_BootInfo *bi)
         const pd_desc_t *pd = &sys->pds[i];
         if (pd->self_svc_id == SVC_ID_SERIAL_VIRT) serial_virt_index = i;
         if (pd->self_svc_id == SVC_ID_BLK_VIRT) blk_virt_index = i;
+        if (pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE) native_block_index = i;
         if (pd->self_svc_id == SVC_ID_NET_VIRT) net_virt_index = i;
         if (pd->self_svc_id == SVC_ID_NATIVE_RUST_PROBE) native_net_index = i;
         if (pd->self_svc_id == SVC_ID_LOG_DRAIN) log_drain_index = i;
@@ -2525,6 +2701,7 @@ void root_task_main(const seL4_BootInfo *bi)
             pd->self_svc_id == SVC_ID_NET_VIRT ||
             pd->self_svc_id == SVC_ID_NATIVE_RUST_PROBE ||
             pd->self_svc_id == SVC_ID_BLK_VIRT ||
+            pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE ||
             pd->self_svc_id == SVC_ID_SERIAL_VIRT) {
             seL4_Error err = ut_alloc(seL4_NotificationObject,
                 seL4_NotificationBits, seL4_CapInitThreadCNode,
@@ -2536,6 +2713,23 @@ void root_task_main(const seL4_BootInfo *bi)
             g_pd_notifications[i] = (seL4_CPtr)PD_SLOT_NTFN(i);
         }
     }
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+#ifndef AGENTOS_FRACTAL_NVME_ONLY
+    if (native_block_index == SYSTEM_MAX_PDS ||
+        ut_alloc_cap(seL4_EndpointObject, 0u,
+                     &g_fractal_native_report_endpoint) != seL4_NoError) {
+        dbg_puts("[rt] native block report endpoint allocation failed\n");
+        return;
+    }
+#endif
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+    if (ut_alloc_cap(seL4_EndpointObject, 0u,
+                     &g_fractal_nvme_report_endpoint) != seL4_NoError) {
+        dbg_puts("[rt] NVMe report endpoint allocation failed\n");
+        return;
+    }
+#endif
 #ifdef AGENTOS_GUEST_INPUT
     if (input_service==SYSTEM_MAX_PDS || input_clients[AOS_INPUT_CLIENTS]==SYSTEM_MAX_PDS ||
         (input_clients[0]==SYSTEM_MAX_PDS && input_clients[1]==SYSTEM_MAX_PDS)) return;
@@ -2602,7 +2796,7 @@ void root_task_main(const seL4_BootInfo *bi)
         for (uint32_t f = 0; f < AOS_BLK_SHMEM_FRAMES; f++) {
             const uint32_t first = AOS_BLK_CLIENT_BASE / AOS_BLK_SHMEM_FRAME_SIZE;
             if (allocate_guest_queue_frame(AOS_GUEST_QUEUE_BLOCK,
-                             f >= first ? f - first : 2u,
+                             f >= first ? f - first : AOS_BLK_MAX_CLIENTS,
                              &g_blk_virt_frame_caps[f]) != seL4_NoError) {
                 dbg_puts("[rt] block queue allocation failed; refusing partial boot\n");
                 return;
@@ -3154,17 +3348,20 @@ void root_task_main(const seL4_BootInfo *bi)
 
         if (blk_virt_index != SYSTEM_MAX_PDS) {
             seL4_Error signal_err = seL4_NoError;
-            if (pd_is_guest_vmm(pd)) {
+            if (pd_is_guest_vmm(pd) || i == native_block_index) {
                 signal_err = seL4_CNode_Mint(pd_cnode,
                     PD_CNODE_SLOT_BLK_VIRT_NOTIFY, pd->cnode_size_bits,
                     seL4_CapInitThreadCNode, g_pd_notifications[blk_virt_index],
                     64u, seL4_CapRights_new(0, 0, 0, 1),
-                    1u << (pd_is_secondary_guest_vmm(pd) ? 1u : 0u));
+                    1u << (i == native_block_index ? 2u :
+                           (pd_is_secondary_guest_vmm(pd) ? 1u : 0u)));
             } else if (pd->self_svc_id == SVC_ID_BLK_VIRT) {
                 for (uint32_t v = 0; v < sys->pd_count && signal_err == seL4_NoError; v++) {
-                    if (!pd_is_guest_vmm(&sys->pds[v])) continue;
-                    seL4_Word slot = pd_is_secondary_guest_vmm(&sys->pds[v]) ?
-                        PD_CNODE_SLOT_BLK_SECONDARY_NOTIFY : PD_CNODE_SLOT_BLK_PRIMARY_NOTIFY;
+                    if (!pd_is_guest_vmm(&sys->pds[v]) && v != native_block_index) continue;
+                    seL4_Word slot = v == native_block_index ?
+                        PD_CNODE_SLOT_BLK_NATIVE_NOTIFY :
+                        (pd_is_secondary_guest_vmm(&sys->pds[v]) ?
+                         PD_CNODE_SLOT_BLK_SECONDARY_NOTIFY : PD_CNODE_SLOT_BLK_PRIMARY_NOTIFY);
                     signal_err = seL4_CNode_Mint(pd_cnode, slot, pd->cnode_size_bits,
                         seL4_CapInitThreadCNode, g_pd_notifications[v], 64u,
                         seL4_CapRights_new(0, 0, 0, 1), BLK_VIRT_VMM_WAKE_BADGE);
@@ -3172,6 +3369,14 @@ void root_task_main(const seL4_BootInfo *bi)
             }
             if (signal_err != seL4_NoError) {
                 dbg_puts("[rt] block signal grant failed; refusing PD start\n");
+                continue;
+            }
+            if (i == native_block_index &&
+                seL4_CNode_Copy(pd_cnode, PD_CNODE_SLOT_BLK_NATIVE_WAIT,
+                    pd->cnode_size_bits, seL4_CapInitThreadCNode,
+                    g_pd_notifications[i], 64u,
+                    seL4_CapRights_new(0, 0, 1, 0)) != seL4_NoError) {
+                dbg_puts("[rt] native block wait grant failed; refusing PD start\n");
                 continue;
             }
         }
@@ -3202,6 +3407,9 @@ void root_task_main(const seL4_BootInfo *bi)
             } else if (pd->self_svc_id == SVC_ID_NATIVE_RUST_PROBE &&
                        ep_spec->service_id == SVC_ID_NET_VIRT) {
                 badge = VIRT_NET_BADGE_NATIVE;
+            } else if (i == native_block_index &&
+                       ep_spec->service_id == SVC_ID_BLK_VIRT) {
+                badge = VIRT_BLOCK_BADGE_NATIVE;
             } else if (pd_is_serial_frontend(pd) &&
                        ep_spec->service_id == SVC_ID_SERIAL_VIRT) {
                 badge = SERIAL_VIRT_FRONTEND_BADGE;
@@ -3209,9 +3417,20 @@ void root_task_main(const seL4_BootInfo *bi)
                        ep_spec->service_id == SVC_ID_SERIAL_VIRT) {
                 badge = SERIAL_VIRT_OPERATOR_BADGE;
             }
-            ep_mint_badge(service_ep, badge,
-                           pd_cnode, ep_spec->cnode_slot,
-                           pd->cnode_size_bits);
+            if (i == native_block_index &&
+                ep_spec->service_id == SVC_ID_BLK_VIRT) {
+                if (seL4_CNode_Mint(pd_cnode, ep_spec->cnode_slot,
+                    pd->cnode_size_bits, seL4_CapInitThreadCNode,
+                    service_ep, 64u,
+                    seL4_CapRights_new(1u, 0u, 0u, 1u), badge) != seL4_NoError) {
+                    dbg_puts("[rt] native block send cap grant failed\n");
+                    return;
+                }
+            } else {
+                ep_mint_badge(service_ep, badge,
+                               pd_cnode, ep_spec->cnode_slot,
+                               pd->cnode_size_bits);
+            }
         }
 
         if (pd->self_svc_id == SVC_ID_SERIAL_VIRT ||
@@ -3401,12 +3620,15 @@ void root_task_main(const seL4_BootInfo *bi)
         /* blk_virt maps all block pages; each VMM maps only its own client.
          * No device DMA window, private disk page or peer page enters a VMM. */
         if (blk_virt_index != SYSTEM_MAX_PDS &&
-            (pd->self_svc_id == SVC_ID_BLK_VIRT || pd_is_guest_vmm(pd))) {
+            (pd->self_svc_id == SVC_ID_BLK_VIRT || pd_is_guest_vmm(pd) ||
+             i == native_block_index)) {
             seL4_Error blk_err = seL4_NoError;
             for (uint32_t f = 0; f < AOS_BLK_SHMEM_FRAMES && blk_err == seL4_NoError; f++) {
                 if (pd_is_guest_vmm(pd) &&
                     f != AOS_BLK_CLIENT_BASE / AOS_BLK_SHMEM_FRAME_SIZE +
                         (pd_is_secondary_guest_vmm(pd) ? 1u : 0u)) continue;
+                if (i == native_block_index &&
+                    f != AOS_BLK_CLIENT_BASE / AOS_BLK_SHMEM_FRAME_SIZE + 2u) continue;
                 seL4_Word copy = ut_alloc_slot();
                 blk_err = seL4_NotEnoughMemory;
                 if (copy != seL4_CapNull) {
@@ -3577,6 +3799,32 @@ void root_task_main(const seL4_BootInfo *bi)
             }
             dbg_puts("[rt] x86 host block driver resources mapped\n");
         }
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+        if (pd->self_svc_id == SVC_ID_FRACTAL_NVME_PROBE) {
+            seL4_Error err = seL4_NoError;
+            for (unsigned p = 0; p < FRACTAL_NVME_MMIO_PAGES && !err; ++p) {
+                seL4_CPtr copy = ut_alloc_slot();
+                err = copy ? seL4_CNode_Copy(seL4_CapInitThreadCNode, copy, 64u,
+                    seL4_CapInitThreadCNode, g_x86_nvme_frames[p], 64u,
+                    seL4_AllRights) : seL4_NotEnoughMemory;
+                if (!err) err = pd_vspace_map_uncached_device_frame(vspace, copy,
+                    FRACTAL_NVME_MMIO_VA + p * 4096u);
+            }
+            for (unsigned p = 0; !err && p < (g_x86_nvme_iommu ? FRACTAL_NVME_DMA_PAGES : 1u); ++p) {
+                seL4_CPtr copy = ut_alloc_slot();
+                err = copy ? seL4_CNode_Copy(seL4_CapInitThreadCNode, copy, 64u,
+                    seL4_CapInitThreadCNode, g_x86_nvme_iommu ? g_x86_nvme_dma_pages[p] : g_x86_nvme_dma_frame, 64u,
+                    seL4_AllRights) : seL4_NotEnoughMemory;
+                if (!err) err = pd_vspace_map_device_frame(vspace, copy,
+                    FRACTAL_NVME_DMA_VA + p * 4096u);
+            }
+            if (err || !aos_x86_host_pci_enable(AOS_X86_HOST_NVME)) {
+                dbg_puts("[rt] NVMe mapping/enable failed; refusing probe start\n");
+                continue;
+            }
+            dbg_puts("[rt] x86 NVMe probe resources mapped\n");
+        }
+#endif
 #endif
 
         /* VMMs map their own queue page, the NIC driver maps its transfer
@@ -4022,6 +4270,30 @@ void root_task_main(const seL4_BootInfo *bi)
         }
 #endif
 #if defined(__x86_64__) && defined(AGENTOS_X86_VTX)
+        if (pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE) {
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+            if (seL4_CNode_Mint(pd_cnode, PD_CNODE_SLOT_FRACTAL_REPORT,
+                pd->cnode_size_bits, seL4_CapInitThreadCNode,
+                g_fractal_native_report_endpoint, 64u,
+                seL4_CapRights_new(0u, 0u, 0u, 1u),
+                FRACTAL_NATIVE_REPORT_BADGE) != seL4_NoError) {
+                dbg_puts("[rt] native block report cap grant failed\n");
+                return;
+            }
+#endif
+        }
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+        if (pd->self_svc_id == SVC_ID_FRACTAL_NVME_PROBE &&
+            seL4_CNode_Mint(pd_cnode, PD_CNODE_SLOT_FRACTAL_NVME_REPORT,
+                pd->cnode_size_bits, seL4_CapInitThreadCNode,
+                g_fractal_nvme_report_endpoint, 64u,
+                seL4_CapRights_new(0u, 0u, 0u, 1u),
+                FRACTAL_NVME_REPORT_BADGE) != seL4_NoError) {
+            dbg_puts("[rt] NVMe report cap grant failed\n");
+            return;
+        }
+#endif
+#ifndef AGENTOS_FRACTAL_NATIVE_ONLY
         if (pd_is_guest_vmm(pd)) {
             seL4_Error vm_err = setup_x86_vtx_proof(pd, i, pd_cnode,
                                                      tr.tcb_cap, vspace);
@@ -4091,6 +4363,7 @@ void root_task_main(const seL4_BootInfo *bi)
             }
 #endif
         }
+#endif
 #ifdef AGENTOS_X86_USERSPACE_PROOF
         if (pd->self_svc_id == SVC_ID_X86_LIFECYCLE_PROBE) {
             /* The client can report failure without perturbing successful
@@ -4197,7 +4470,7 @@ void root_task_main(const seL4_BootInfo *bi)
                 (uint64_t)g_guest_ram_reservations[i].frame_count << seL4_ARCH_LargePageBits;
 #elif defined(__x86_64__)
         inspect_view.arch = AOS_INSPECT_ARCH_X86_64;
-#ifdef AGENTOS_X86_FIRMWARE_RESET
+#if defined(AGENTOS_X86_FIRMWARE_RESET) && !defined(AGENTOS_FRACTAL_NATIVE_ONLY)
         inspect_view.guest_ram_bytes = AOS_X86_FIRMWARE_RAM;
 #endif
 #elif defined(__riscv)
@@ -4247,7 +4520,82 @@ void root_task_main(const seL4_BootInfo *bi)
 
     dbg_puts("[rt] boot complete — yielding to PDs\n");
 
-#if defined(__x86_64__) && defined(AGENTOS_X86_VTX)
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+#ifndef AGENTOS_FRACTAL_NVME_ONLY
+#ifdef AGENTOS_FRACTAL_NATIVE_ISOLATION_TEST
+    const unsigned native_reports = 3u;
+#else
+    const unsigned native_reports = 2u;
+#endif
+    for (unsigned report = 0; report < native_reports; ++report) {
+        seL4_Word badge = 0u;
+        seL4_MessageInfo_t tag = seL4_Wait(g_fractal_native_report_endpoint, &badge);
+        if (badge != FRACTAL_NATIVE_REPORT_BADGE ||
+            seL4_MessageInfo_get_label(tag) != FRACTAL_NATIVE_REPORT_LABEL ||
+            seL4_MessageInfo_get_length(tag) != 1u) {
+            dbg_puts("[rt] native block report malformed\n");
+            return;
+        }
+        dbg_puts("[rt] native block report step=");
+        dbg_hex(seL4_GetMR(0));
+        dbg_puts("\n");
+    }
+#endif
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_PROBE
+    {
+        seL4_Word badge = 0u;
+        seL4_MessageInfo_t tag = seL4_Wait(g_fractal_nvme_report_endpoint, &badge);
+        if (badge != FRACTAL_NVME_REPORT_BADGE ||
+            seL4_MessageInfo_get_label(tag) != FRACTAL_NVME_REPORT_LABEL ||
+            seL4_MessageInfo_get_length(tag) != 5u) {
+            dbg_puts("[rt] NVMe report malformed\n");
+            return;
+        }
+        dbg_puts("[rt] native NVMe report step=");
+        dbg_hex(seL4_GetMR(0));
+        dbg_puts(" sectors=");
+        dbg_hex(seL4_GetMR(1));
+        dbg_puts(" completion=");
+        dbg_hex(seL4_GetMR(2));
+        dbg_puts(" dw2=");
+        dbg_hex(seL4_GetMR(3));
+        dbg_puts(" cmd=");
+        dbg_hex(seL4_GetMR(4));
+        dbg_puts("\n");
+        if (seL4_GetMR(0) == 2u && seL4_GetMR(1) == UINT64_C(2000409264))
+            dbg_puts("[rt] x86 native NVMe GPT verified\n");
+#ifdef AGENTOS_FRACTAL_NVME_READONLY_RETURN_REBOOT
+        if (seL4_GetMR(0) == 2u && seL4_GetMR(1) == UINT64_C(2000409264)) {
+            x86_fractal_request_reset(
+                "[rt] Fractal read-only return reset requested after GPT proof\n");
+            return;
+        }
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_WRITE_PROBE
+        if (seL4_GetMR(0) == 3u && seL4_GetMR(1) == UINT64_C(2000409264))
+            dbg_puts("[rt] x86 native NVMe bounded witness verified\n");
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_EXCHANGE
+        if (seL4_GetMR(0) == 4u && seL4_GetMR(1) == UINT64_C(2000409264))
+            dbg_puts("[rt] x86 native NVMe plan/result exchange verified\n");
+#ifdef AGENTOS_FRACTAL_NVME_PANIC_RETURN_REBOOT
+        if (seL4_GetMR(0) == FRACTAL_XFER_PANIC_STEP &&
+            seL4_GetMR(1) == UINT64_C(2000409264))
+            g_fractal_panic_return_armed = true;
+#endif
+#ifdef AGENTOS_FRACTAL_NVME_RETURN_REBOOT
+        if (seL4_GetMR(0) == 4u && seL4_GetMR(1) == UINT64_C(2000409264)) {
+            x86_fractal_request_reset(
+                "[rt] Fractal return reset requested after committed result\n");
+            return;
+        }
+#endif
+#endif
+    }
+#endif
+
+#if defined(__x86_64__) && defined(AGENTOS_X86_VTX) && !defined(AGENTOS_FRACTAL_NATIVE_ONLY)
     /*
      * The VMM uses its private report endpoint for the exact exit observed
      * after VM entry. Never receive on its lifecycle service endpoint.
@@ -4463,6 +4811,14 @@ void root_task_main(const seL4_BootInfo *bi)
             dbg_puts(" MR11=");
             dbg_hex(seL4_GetMR(11));
             dbg_puts("\n");
+#ifdef AGENTOS_FRACTAL_NVME_PANIC_RETURN_REBOOT
+            if (g_fractal_panic_return_armed && badge == 0u &&
+                label == seL4_Fault_UserException) {
+                x86_fractal_request_reset(
+                    "[rt] QEMU return reset requested after native panic\n");
+                g_fractal_panic_return_armed = false;
+            }
+#endif
         }
     }
 

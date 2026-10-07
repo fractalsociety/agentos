@@ -1,8 +1,16 @@
 #include "x86_host_pci.h"
 #include "ut_alloc.h"
+#include <platform/fractal_nvme_target.h>
+
+#ifndef AGENTOS_FRACTAL_NVME_TARGET
+#define AGENTOS_FRACTAL_NVME_TARGET FRACTAL_NVME_TARGET_QEMU_SLOT9
+#endif
 
 #if defined(__x86_64__) && defined(AGENTOS_X86_FIRMWARE_RESET)
 #define SELECT(off) (select | (off))
+static bool read32(seL4_CPtr cap, uint32_t select, unsigned offset, uint32_t *value);
+static bool write32(seL4_CPtr cap, uint32_t select, unsigned offset, uint32_t value);
+static bool command(seL4_CPtr cap, uint32_t select, uint16_t value);
 static bool device_config(aos_x86_host_device_t device, uint32_t *select,
                           uint32_t *expected)
 {
@@ -23,9 +31,63 @@ static bool device_config(aos_x86_host_device_t device, uint32_t *select,
         *select = UINT32_C(0x80004000); /* 00:08.0 */
         *expected = UINT32_C(0x10421af4);
         return true;
+    case AOS_X86_HOST_NVME:
+        return fractal_nvme_target_config(AGENTOS_FRACTAL_NVME_TARGET,
+                                          select, expected);
     default:
         return false;
     }
+}
+
+unsigned aos_x86_nvme_discover(aos_x86_nvme_layout_t *layout)
+{
+    if (!layout) return 1u;
+    *layout = (aos_x86_nvme_layout_t){0};
+    uint32_t select, expected;
+    if (!device_config(AOS_X86_HOST_NVME, &select, &expected)) return 1u;
+    seL4_CPtr cap = ut_alloc_slot();
+    if (!cap || seL4_X86_IOPortControl_Issue(seL4_CapIOPortControl,
+            0xcf8u, 0xcffu, seL4_CapInitThreadCNode, cap, 64u) != seL4_NoError) return 2u;
+    uint32_t identity = 0, class_rev = 0, original_cmd = 0;
+    uint32_t low = 0, high = 0, mask_low = 0, mask_high = 0;
+    unsigned status = 3u;
+    bool disabled = false, bars_restored = true;
+    if (!read32(cap, select, 0u, &identity) || identity != expected ||
+        !read32(cap, select, 8u, &class_rev) || (class_rev >> 8) != 0x010802u ||
+        !read32(cap, select, 4u, &original_cmd) ||
+        !read32(cap, select, 0x10u, &low) ||
+        !read32(cap, select, 0x14u, &high) || (low & 15u) != 4u) goto out;
+    status = 4u;
+    disabled = true;
+    if (!command(cap, select, (uint16_t)original_cmd & ~7u)) goto out;
+    if (!write32(cap, select, 0x10u, UINT32_MAX) ||
+        !write32(cap, select, 0x14u, UINT32_MAX) ||
+        !read32(cap, select, 0x10u, &mask_low) ||
+        !read32(cap, select, 0x14u, &mask_high)) goto restore;
+    {
+        uint64_t base = ((uint64_t)high << 32) | (low & ~UINT32_C(15));
+        uint64_t mask = ((uint64_t)mask_high << 32) | (mask_low & ~UINT32_C(15));
+        uint64_t size = ~mask + 1u;
+        if (!base || (base & 4095u) || size < 0x4000u || size > 0x100000u ||
+            (size & (size - 1u))) goto restore;
+        *layout = (aos_x86_nvme_layout_t){.bar0 = base, .bar_bytes = size};
+        status = 0u;
+    }
+restore:
+    bars_restored = write32(cap, select, 0x10u, low) &&
+                    write32(cap, select, 0x14u, high);
+out:
+    if (disabled) {
+        uint32_t verify_low = 0, verify_high = 0;
+        bars_restored = bars_restored &&
+            read32(cap, select, 0x10u, &verify_low) && verify_low == low &&
+            read32(cap, select, 0x14u, &verify_high) && verify_high == high;
+        if (!bars_restored || !command(cap, select, (uint16_t)original_cmd)) status = 5u;
+    }
+    if (seL4_CNode_Delete(seL4_CapInitThreadCNode, cap, 64u) != seL4_NoError)
+        status = 6u;
+    if (status) *layout = (aos_x86_nvme_layout_t){0};
+    return status;
 }
 static bool read32(seL4_CPtr cap, uint32_t select, unsigned offset, uint32_t *value)
 {

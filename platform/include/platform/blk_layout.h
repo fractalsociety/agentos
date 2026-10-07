@@ -2,7 +2,7 @@
  * agentOS blk_virt queue ABI
  *
  * Binary-compatible with sDDF blk_req_t / blk_resp_t / blk_storage_info_t
- * (transfer 4096, queue capacity 16). This header must not include seL4 or
+ * (transfer 4096, queue capacity 128). This header must not include seL4 or
  * sddf headers so host tests can compile it.
  *
  * Guest IPA 0x0A020000 is the emulated virtio-mmio blk device (faults to the
@@ -22,8 +22,12 @@
 #define AOS_BLK_SECTOR_SIZE          512u
 #define AOS_BLK_QUEUE_CAPACITY       128u
 #define AOS_BLK_QUEUE_BYTES          0x2000u
-/* One client stride per guest VMM slot (primary, secondary). */
+/* The opt-in Fractal probe owns a third, separately mapped client stride. */
+#ifdef AGENTOS_FRACTAL_NATIVE_PROBE
+#define AOS_BLK_MAX_CLIENTS          3u
+#else
 #define AOS_BLK_MAX_CLIENTS          2u
+#endif
 #define AOS_BLK_DISK_BLOCKS          64u    /* 256 KB RAM disk */
 #define AOS_BLK_DISK_BYTES           (AOS_BLK_DISK_BLOCKS * AOS_BLK_TRANSFER_SIZE)
 #define AOS_BLK_GUEST_MAX_SEGMENT_SIZE 0x100000u /* FreeBSD 64-bit MAXPHYS */
@@ -34,9 +38,10 @@
 
 /*
  * Shared sDDF block region: root-task-provisioned large pages mapped at the
- * same VA into blk_virt (the block virtualizer PD). Each guest VMM maps only
- * its own client page; the RAM disk and other clients are absent from its
- * VSpace. Nothing else maps it. 0x28000000 sits above the secondary VMM image
+ * same VA into blk_virt (the block virtualizer PD). Each client maps only
+ * its own page; the RAM disk and peer pages are absent from its VSpace.
+ * The opt-in native probe is a third client. 0x28000000 sits above the
+ * secondary VMM image
  * reservation (0x20000000-0x22000000), the block-service DMA window
  * (0x22000000), net_pd's private DMA window (0x24000000) and the shared net
  * frame (0x26000000); see net_host_layout.h for the same rule.

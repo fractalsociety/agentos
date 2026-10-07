@@ -1484,8 +1484,9 @@ _Noreturn void aos_x86_firmware_run(seL4_CPtr ep, aos_x86_vmenter_entry_t entry)
                  (UINT64_C(65536) << 32) | (uint32_t)reason);
         }
 #endif
-        /* Non-instruction exits do not define an instruction length. */
-        if (reason == 52u || reason == 7u) len=0;
+        /* Timer, interrupt-window, and EPT exits do not define an instruction
+         * length. For EPT MMIO, decode the instruction below instead. */
+        if (reason == 52u || reason == 7u || reason == 48u) len=0;
         if (len > 15u) {
             stop(ep, AOS_X86_VTX_PROOF_FAIL, reason, rip, len);
         }
