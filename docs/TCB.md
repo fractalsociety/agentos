@@ -130,6 +130,26 @@ variant. Those initial caps are not exposed to the model. Native faults
 go to the test report endpoint so the launcher fails instead of waiting
 indefinitely for a result from a faulted client.
 
+`BOOT_DISPLAY=1` adds two PDs to the native Clef or read-only NVMe-only
+composition. `boot_display` is the sole owner of the firmware framebuffer
+mapping supplied by unchanged seL4 extra BootInfo. It owns two private RAM
+scanout staging banks and consumes the existing bounded display queue.
+It receives no GPU registers, DMA authority or IRQ. The external Rust
+`boot_screen` client owns only its ordinary pixel buffer and that queue;
+it reads the native probe's progress page through a read-only mapping.
+Neither the renderer nor the model receives physical framebuffer access.
+Both display PDs receive fixed 1 ms / 10 ms scheduling contexts so queue
+progress does not wait for the default one-second refill period.
+The root validates 32-bit direct-color framebuffer bounds, maps only its
+reported pages into the driver, provisions the shared RAM, then follows
+the existing startup/report path. No runtime display policy is added to root.
+The renderer source belongs to the separate `fractal-boot-screen` repository.
+The framebuffer contract uses grayscale because seL4's framebuffer BootInfo
+does not preserve the firmware's RGB channel masks. The fixed Clef test
+reports completed bytes/layers; the physical NVMe diagnostic reports storage
+readiness and explicitly leaves Clef unavailable. Physical display operation
+and physical Clef model loading require separate hardware qualification.
+
 The portable `fractal_gpt` parser is a write-admission boundary for the shared
 NVMe namespace. Host tests cover primary-header and entry-array CRCs, exact
 GUID and extent, overlaps, and request bounds. With `FRACTAL_GPT_QUALIFY=1`,

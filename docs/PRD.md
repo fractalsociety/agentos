@@ -512,6 +512,12 @@ Each request identifies its task, resource, requested budget, state generation a
 
 Record the model and policy versions, input state identity, scores, proposed and applied allocations, rejection reasons, measured usage and verified outcome. These records let the Fractal machine improve allocation policy while keeping capability enforcement independent of the evolving model.
 
+## 11.6 Native Boot Progress
+
+Show a loading screen on the physical PC's firmware framebuffer during native seL4 startup. Report actual startup stages, model bytes loaded, inference initialization and readiness. Stage progress must come from native services; do not use a fixed 180-second countdown. Essential services retain their deterministic boot budgets while Clef initializes. Model failure must leave Clef unavailable and must not be presented as successful startup.
+
+Keep the Rust renderer in an external UI repository. Inside agentOS, provide bounded progress and display-queue contracts and a dedicated framebuffer driver. The renderer receives no device or scheduling authority. This boot-status screen is a narrow exception to deferring a full graphical shell. See [the native display implementation](BOOT_DISPLAY.md) for its UEFI/QEMU proof and the separate physical-PC acceptance boundary.
+
 ---
 
 # 12. System Two - Expensive Reasoning Plane

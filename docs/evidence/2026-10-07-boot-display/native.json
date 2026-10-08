@@ -1,0 +1,33 @@
+{
+  "boot_display_sha256": "c2fc7a10a82beec25c60be04947e22a501ee08a8d1f2967a1bdc93b0b49a33bb",
+  "boot_renderer_sha256": "4df8ef52ef4f8c85ae6f4986549772d3ac3da9b39ffbee189b755b0511570be3",
+  "boot_status": {
+    "block_service_ready": true,
+    "clef_ready": true,
+    "completed": 1,
+    "elapsed_seconds": 182.277109885,
+    "error": null,
+    "phase": "ready",
+    "run_id": "80403-1791422824942737636",
+    "scope": "native seL4/QEMU fixed-choice test; physical PC and general allocator service unqualified",
+    "sequence": 146,
+    "source": "native",
+    "stage_elapsed_seconds": 0.042638129,
+    "state": "ready",
+    "total": 1,
+    "unit": "steps",
+    "version": 1
+  },
+  "elapsed_seconds": 180.127466017,
+  "engine": "Rust no_std, SSE2",
+  "execution": "native seL4 EL0 PD on x86_64 QEMU/KVM; no guest",
+  "firmware_display": true,
+  "inference_pd_sha256": "eebb5b18a896936414491907d6a414ca8288e79ce6ef9b4f892a04e98e74279a",
+  "kernel_sha256": "589101e96c9f6c582664a24d03b81a98af725cffe3b194bff0a410e618c255c5",
+  "model_sha256": "fd3e90605e8103307dca37cb5a8cdb036267e2fe3cb2d908d80a8ceb9ec0638c",
+  "root_task_sha256": "efc38b62fabe2901aa51c7f609041f5eafed25131a51a0a43e64d0bd8d0cc905",
+  "scope": "fixed resource-choice prompt, full backbone and decision head; advisory only",
+  "serial_log": "serial.txt",
+  "status": "PASS",
+  "serial_excerpt": "Native progress, result and display records; CRLF normalized"
+}

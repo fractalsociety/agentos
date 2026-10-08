@@ -288,6 +288,20 @@ ifeq ($(AGENTOS_BOARD),x86_64_generic_vtx)
     CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NATIVE_ONLY=1
     ROOT_TASK_OBJS := $(filter-out $(BUILD_DIR)/x86_firmware.o,$(ROOT_TASK_OBJS))
   endif
+  ifeq ($(BOOT_DISPLAY),1)
+    ifneq ($(FRACTAL_NATIVE_ONLY),1)
+      $(error BOOT_DISPLAY requires FRACTAL_NATIVE_ONLY=1)
+    endif
+    ifneq ($(filter 1,$(FRACTAL_CLEF_TEST) $(FRACTAL_NVME_ONLY)),1)
+      $(error BOOT_DISPLAY requires either the Clef test or the NVMe-only composition)
+    endif
+    ifneq ($(filter 1,$(FRACTAL_NVME_WRITE_PROBE) $(FRACTAL_NVME_EXCHANGE)),)
+      $(error BOOT_DISPLAY NVMe composition is read-only)
+    endif
+    CFLAGS += -DAGENTOS_BOOT_DISPLAY=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_BOOT_DISPLAY=1
+    ROOT_TASK_OBJS += $(BUILD_DIR)/rt_boot_display_boot.o $(BUILD_DIR)/boot_fb.o
+  endif
   ifeq ($(FRACTAL_CLEF_TEST),1)
     ifneq ($(FRACTAL_NATIVE_ONLY),1)
       $(error FRACTAL_CLEF_TEST requires the guest-free native-only composition)
@@ -1106,6 +1120,9 @@ ifeq ($(ARCH),aarch64)
   endif
 else ifeq ($(ARCH),x86_64)
   # Include linux_vmm stub so the image can reference it
+  ifeq ($(BOOT_DISPLAY),1)
+    IMAGES += boot_display.elf boot_screen.elf
+  endif
   ifneq ($(FRACTAL_NATIVE_ONLY),1)
   IMAGES += guest_vmm_primary.elf
   endif
@@ -1366,6 +1383,22 @@ $(BUILD_DIR)/ramfb_mmio.o: $(REPO_ROOT)/platform/display/ramfb_mmio.c
 	$(CC) $(CFLAGS) -c $< -o $@
 $(BUILD_DIR)/ramfb_pd.o: $(REPO_ROOT)/platform/display/ramfb_pd.c $(GUEST_CONFIG_STAMP)
 	$(CC) $(CFLAGS) -c $< -o $@
+
+BOOT_SCREEN_SOURCE ?= $(abspath $(REPO_ROOT_MK)/../fractal-boot-screen)
+$(BUILD_DIR)/boot_fb.o: $(REPO_ROOT_MK)/platform/display/boot_fb.c $(REPO_ROOT_MK)/platform/include/platform/boot_display.h
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/boot_fb_pd.o: $(REPO_ROOT_MK)/platform/display/boot_fb_pd.c $(REPO_ROOT_MK)/platform/include/platform/boot_display.h $(GUEST_CONFIG_STAMP)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/boot_client_pd.o: $(REPO_ROOT_MK)/platform/display/boot_client_pd.c $(REPO_ROOT_MK)/platform/include/platform/boot_display.h $(GUEST_CONFIG_STAMP)
+	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD_DIR)/libfractal_boot_screen.a: $(BOOT_SCREEN_SOURCE)/Cargo.toml $(wildcard $(BOOT_SCREEN_SOURCE)/src/*.rs)
+	cd $(BOOT_SCREEN_SOURCE) && RUSTC_BOOTSTRAP=1 RUSTC="$(CLEF_RUST_SYSROOT)/bin/rustc" cargo build --release --no-default-features \
+		-Zbuild-std=core -Zjson-target-spec --target $(REPO_ROOT_MK)/tools/rust-targets/x86_64-agentos-clef.json --target-dir $(BUILD_DIR)/rust-screen
+	cp $(BUILD_DIR)/rust-screen/x86_64-agentos-clef/release/libfractal_boot_screen.a $@
+$(BUILD_DIR)/boot_display.elf: $(BUILD_DIR)/boot_fb_pd.o $(BUILD_DIR)/boot_fb.o $(BUILD_DIR)/display_service.o $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o
+	$(LD) $(LDFLAGS) --gc-sections $^ $(LIBS) -o $@
+$(BUILD_DIR)/boot_screen.elf: $(BUILD_DIR)/boot_client_pd.o $(BUILD_DIR)/display_service.o $(BUILD_DIR)/libfractal_boot_screen.a $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o
+	$(LD) $(LDFLAGS) --gc-sections $^ $(LIBS) -o $@
 $(BUILD_DIR)/display_ramfb.elf: $(BUILD_DIR)/ramfb_pd.o $(BUILD_DIR)/ramfb.o $(BUILD_DIR)/ramfb_mmio.o $(BUILD_DIR)/display_service.o $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/rust_pd_memory.o
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 $(BUILD_DIR)/input_service.o: $(REPO_ROOT)/platform/input-virt/service.c
@@ -1533,7 +1566,7 @@ $(BUILD_DIR)/net_virt.elf: $(NET_VIRT_OBJS)
 $(BUILD_DIR)/blk_virt.elf: $(BLK_VIRT_OBJS)
 	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
 
-$(BUILD_DIR)/fractal_native_probe.o: $(REPO_ROOT_MK)/platform/blk-virt/fractal_native_probe.c $(GUEST_CONFIG_STAMP)
+$(BUILD_DIR)/fractal_native_probe.o: $(REPO_ROOT_MK)/platform/blk-virt/fractal_native_probe.c $(REPO_ROOT_MK)/platform/include/platform/clef.h $(REPO_ROOT_MK)/platform/include/platform/clef_boot.h $(REPO_ROOT_MK)/tests/fixtures/clef-resource-choice.h $(GUEST_CONFIG_STAMP)
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
 
@@ -1884,6 +1917,13 @@ endif
 endif
 
 # Kernel ELF: pulled directly from the Microkit SDK release package
+ifeq ($(BOOT_DISPLAY),1)
+_BOOT_DISPLAY_BASE_TOML := $(SYSTEM_TOML)
+SYSTEM_TOML := $(abspath $(BUILD_DIR)/native-boot-display.toml)
+$(SYSTEM_TOML): $(_BOOT_DISPLAY_BASE_TOML) $(GUEST_CONFIG_STAMP) Makefile
+	@mkdir -p $(BUILD_DIR)
+	{ cat $<; printf '\n[[pd]]\nname = "boot_display"\npriority = 250\n\n[[pd]]\nname = "boot_screen"\npriority = 249\n'; } > $@
+endif
 ifeq ($(X86_DUAL_GUEST),1)
 _X86_SINGLE_SYSTEM_TOML := $(SYSTEM_TOML)
 SYSTEM_TOML := $(abspath $(BUILD_DIR)/x86-dual.toml)

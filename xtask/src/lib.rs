@@ -1,6 +1,7 @@
 // Public library surface — shared types and command implementations.
 // The binary entry point (src/main.rs) re-uses everything from here.
 
+mod clef_boot;
 pub mod cmd_ci_matrix;
 pub mod cmd_clef;
 pub mod cmd_extract_freebsd_file;

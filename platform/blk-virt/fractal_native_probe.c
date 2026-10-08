@@ -11,6 +11,11 @@
 #include <platform/blk_virt_pump.h>
 #ifdef AGENTOS_FRACTAL_CLEF_TEST
 #include <platform/clef.h>
+#include <platform/clef_boot.h>
+#include <string.h>
+#ifdef AGENTOS_BOOT_DISPLAY
+#include <platform/boot_display.h>
+#endif
 #include <tests/fixtures/clef-resource-choice.h>
 #endif
 #ifdef AGENTOS_FRACTAL_EXCHANGE_CYCLE
@@ -274,8 +279,22 @@ static bool transact(aos_blk_virt_client_t *q, aos_blk_req_code_t code,
 }
 
 #ifdef AGENTOS_FRACTAL_CLEF_TEST
+static void clef_boot(const char *stage, uint64_t done, uint64_t total)
+{
+#ifdef AGENTOS_BOOT_DISPLAY
+    static const char *stages[]={"starting","block_ready","loading","backbone",
+        "routing","joint","checking","ready","failed"};
+    for (unsigned i=0;i<9;++i)
+        if (!strcmp(stage,stages[i])) aos_boot_progress_publish(i+1u,done,total);
+#endif
+    char line[128];
+    snprintf(line, sizeof(line), CLEF_BOOT_PREFIX " v=%u stage=%s done=%llu total=%llu",
+             CLEF_BOOT_VERSION, stage, (unsigned long long)done, (unsigned long long)total);
+    agentos_log_info("clef_native", line);
+}
 void clef_native_panic(void)
 {
+    clef_boot("failed", 0u, 1u);
     agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: Rust panic or arena exhausted");
     for (;;) seL4_Yield();
 }
@@ -285,10 +304,14 @@ static void clef_report(void *unused, const char *stage, unsigned layer)
     char line[96];
     snprintf(line, sizeof(line), "CLEF %s %u", stage, layer);
     agentos_log_info("clef_native", line);
+    if (strcmp(stage, "backbone") == 0) clef_boot(stage, layer + 1u, 32u);
+    else if (strcmp(stage, "routing") == 0) clef_boot(stage, layer + 1u, 2u);
+    else if (strcmp(stage, "joint") == 0) clef_boot(stage, layer + 1u, 4u);
 }
 static uint32_t run_clef(aos_blk_virt_client_t *q)
 {
     agentos_log_info("clef_native", "CLEF_NATIVE_BEGIN: Rust no_std x86_64");
+    clef_boot("block_ready", 1u, 1u);
     const uint64_t blocks = (CLEF_MODEL_BYTES + 4095u) / 4096u;
     if (!q->info->read_only || q->info->capacity < blocks) {
         agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: expected read-only model media");
@@ -296,6 +319,7 @@ static uint32_t run_clef(aos_blk_virt_client_t *q)
     }
     uint8_t *model = (uint8_t *)CLEF_MODEL_VA;
     agentos_log_info("clef_native", "CLEF loading verified model through private block queue");
+    clef_boot("loading", 0u, CLEF_MODEL_BYTES);
     for (uint64_t block = 0; block < blocks;) {
         uint16_t count = blocks - block < 256u ? (uint16_t)(blocks - block) : 256u;
         aos_blk_resp_t response;
@@ -306,8 +330,13 @@ static uint32_t run_clef(aos_blk_virt_client_t *q)
         }
         for (unsigned j = 0; j < (unsigned)count * 4096; ++j) model[block * 4096 + j] = q->data[j];
         block += count;
-        if ((block & 65535u) == 0u) clef_report(0, "loaded MiB", (unsigned)(block / 256));
+        if ((block & 16383u) == 0u || block == blocks) {
+            uint64_t loaded = block * 4096u;
+            clef_boot("loading", loaded < CLEF_MODEL_BYTES ? loaded : CLEF_MODEL_BYTES,
+                      CLEF_MODEL_BYTES);
+        }
     }
+    clef_boot("backbone", 0u, 32u);
     clef_result result = {0};
     uint32_t error = clef_rust_run(model, CLEF_MODEL_BYTES, &clef_resource_input,
         (uint8_t *)CLEF_ARENA_VA, CLEF_ARENA_BYTES, &result, clef_report, 0);
@@ -316,6 +345,7 @@ static uint32_t run_clef(aos_blk_virt_client_t *q)
         agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: inference");
         return 0x2002u;
     }
+    clef_boot("checking", 0u, 1u);
     bool match = result.choice == 0u;
     for (unsigned i = 0; i < 2; ++i) {
         float diff = result.probabilities[i] - clef_reference_probabilities[i];
@@ -326,6 +356,7 @@ static uint32_t run_clef(aos_blk_virt_client_t *q)
             (unsigned)(clef_reference_probabilities[i] * 1000000));
         agentos_log_info("clef_native", line);
     }
+    if (match) clef_boot("ready", 1u, 1u);
     agentos_log_info("clef_native", match ?
         "CLEF_NATIVE_PASS: full backbone and joint head; oversized allocation deferred" :
         "CLEF_NATIVE_FAIL: reference probability mismatch");
@@ -430,9 +461,15 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     (void)ns_ep;
     report_step(1u);
     agentos_log_boot("fractal_native_probe");
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+    clef_boot("starting", 0u, 1u);
+#endif
     uint32_t result = run_probe();
 #ifdef AGENTOS_FRACTAL_CLEF_TEST
-    if (result != 2u) agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: native test returned an error");
+    if (result != 2u) {
+        clef_boot("failed", 0u, 1u);
+        agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: native test returned an error");
+    }
     report_step(result);
 #else
     if (result == 2u) {

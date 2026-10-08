@@ -1,0 +1,189 @@
+Got framebuffer info in multiboot2. Current video mode is at physical address=80000000 pitch=4096 resolution=1024x768@32 type=1
+║           [rt] native block report step=0x0000000000000001
+[clef_native] CLEF_BOOT v=1 stage=starting done=0 total=1
+[clef_native] CLEF_NATIVE_BEGIN: Rust no_std x86_64
+[clef_native] CLEF_BOOT v=1 stage=block_ready done=1 total=1
+[clef_native] CLEF loading verified model through private block queue
+[clef_native] CLEF_BOOT v=1 stage=loading done=0 total=6486448288
+[boot_display] BOOT_DISPLAY_PRESENT
+[clef_native] CLEF_BOOT v=1 stage=loading done=67108864 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=134217728 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=201326592 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=268435456 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=335544320 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=402653184 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=469762048 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=536870912 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=603979776 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=671088640 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=738197504 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=805306368 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=872415232 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=939524096 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1006632960 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1073741824 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1140850688 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1207959552 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1275068416 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1342177280 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1409286144 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1476395008 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1543503872 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1610612736 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1677721600 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1744830464 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1811939328 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1879048192 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=1946157056 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2013265920 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2080374784 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2147483648 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2214592512 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2281701376 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2348810240 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2415919104 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2483027968 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2550136832 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2617245696 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2684354560 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2751463424 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2818572288 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2885681152 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=2952790016 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3019898880 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3087007744 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3154116608 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3221225472 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3288334336 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3355443200 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3422552064 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3489660928 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3556769792 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3623878656 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3690987520 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3758096384 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3825205248 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3892314112 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=3959422976 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4026531840 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4093640704 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4160749568 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4227858432 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4294967296 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4362076160 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4429185024 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4496293888 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4563402752 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4630511616 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4697620480 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4764729344 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4831838208 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4898947072 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=4966055936 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5033164800 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5100273664 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5167382528 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5234491392 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5301600256 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5368709120 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5435817984 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5502926848 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5570035712 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5637144576 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5704253440 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5771362304 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5838471168 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5905580032 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=5972688896 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6039797760 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6106906624 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6174015488 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6241124352 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6308233216 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6375342080 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6442450944 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=loading done=6486448288 total=6486448288
+[clef_native] CLEF_BOOT v=1 stage=backbone done=0 total=32
+[clef_native] CLEF backbone 0
+[clef_native] CLEF_BOOT v=1 stage=backbone done=1 total=32
+[clef_native] CLEF backbone 1
+[clef_native] CLEF_BOOT v=1 stage=backbone done=2 total=32
+[clef_native] CLEF backbone 2
+[clef_native] CLEF_BOOT v=1 stage=backbone done=3 total=32
+[clef_native] CLEF backbone 3
+[clef_native] CLEF_BOOT v=1 stage=backbone done=4 total=32
+[clef_native] CLEF backbone 4
+[clef_native] CLEF_BOOT v=1 stage=backbone done=5 total=32
+[clef_native] CLEF backbone 5
+[clef_native] CLEF_BOOT v=1 stage=backbone done=6 total=32
+[clef_native] CLEF backbone 6
+[clef_native] CLEF_BOOT v=1 stage=backbone done=7 total=32
+[clef_native] CLEF backbone 7
+[clef_native] CLEF_BOOT v=1 stage=backbone done=8 total=32
+[clef_native] CLEF backbone 8
+[clef_native] CLEF_BOOT v=1 stage=backbone done=9 total=32
+[clef_native] CLEF backbone 9
+[clef_native] CLEF_BOOT v=1 stage=backbone done=10 total=32
+[clef_native] CLEF backbone 10
+[clef_native] CLEF_BOOT v=1 stage=backbone done=11 total=32
+[clef_native] CLEF backbone 11
+[clef_native] CLEF_BOOT v=1 stage=backbone done=12 total=32
+[clef_native] CLEF backbone 12
+[clef_native] CLEF_BOOT v=1 stage=backbone done=13 total=32
+[clef_native] CLEF backbone 13
+[clef_native] CLEF_BOOT v=1 stage=backbone done=14 total=32
+[clef_native] CLEF backbone 14
+[clef_native] CLEF_BOOT v=1 stage=backbone done=15 total=32
+[clef_native] CLEF backbone 15
+[clef_native] CLEF_BOOT v=1 stage=backbone done=16 total=32
+[clef_native] CLEF backbone 16
+[clef_native] CLEF_BOOT v=1 stage=backbone done=17 total=32
+[clef_native] CLEF backbone 17
+[clef_native] CLEF_BOOT v=1 stage=backbone done=18 total=32
+[clef_native] CLEF backbone 18
+[clef_native] CLEF_BOOT v=1 stage=backbone done=19 total=32
+[clef_native] CLEF backbone 19
+[clef_native] CLEF_BOOT v=1 stage=backbone done=20 total=32
+[clef_native] CLEF backbone 20
+[clef_native] CLEF_BOOT v=1 stage=backbone done=21 total=32
+[clef_native] CLEF backbone 21
+[clef_native] CLEF_BOOT v=1 stage=backbone done=22 total=32
+[clef_native] CLEF backbone 22
+[clef_native] CLEF_BOOT v=1 stage=backbone done=23 total=32
+[clef_native] CLEF backbone 23
+[clef_native] CLEF_BOOT v=1 stage=backbone done=24 total=32
+[clef_native] CLEF backbone 24
+[clef_native] CLEF_BOOT v=1 stage=backbone done=25 total=32
+[clef_native] CLEF backbone 25
+[clef_native] CLEF_BOOT v=1 stage=backbone done=26 total=32
+[clef_native] CLEF backbone 26
+[clef_native] CLEF_BOOT v=1 stage=backbone done=27 total=32
+[clef_native] CLEF backbone 27
+[clef_native] CLEF_BOOT v=1 stage=backbone done=28 total=32
+[clef_native] CLEF backbone 28
+[clef_native] CLEF_BOOT v=1 stage=backbone done=29 total=32
+[clef_native] CLEF backbone 29
+[clef_native] CLEF_BOOT v=1 stage=backbone done=30 total=32
+[clef_native] CLEF backbone 30
+[clef_native] CLEF_BOOT v=1 stage=backbone done=31 total=32
+[clef_native] CLEF backbone 31
+[clef_native] CLEF_BOOT v=1 stage=backbone done=32 total=32
+[clef_native] CLEF routing 0
+[clef_native] CLEF_BOOT v=1 stage=routing done=1 total=2
+[clef_native] CLEF routing 1
+[clef_native] CLEF_BOOT v=1 stage=routing done=2 total=2
+[clef_native] CLEF joint 0
+[clef_native] CLEF_BOOT v=1 stage=joint done=1 total=4
+[clef_native] CLEF joint 1
+[clef_native] CLEF_BOOT v=1 stage=joint done=2 total=4
+[clef_native] CLEF joint 2
+[clef_native] CLEF_BOOT v=1 stage=joint done=3 total=4
+[clef_native] CLEF joint 3
+[clef_native] CLEF_BOOT v=1 stage=joint done=4 total=4
+[clef_native] CLEF_BOOT v=1 stage=checking done=0 total=1
+[clef_native] CLEF option=0 probability_ppm=904456 reference_ppm=908079
+[clef_native] CLEF option=1 probability_ppm=95543 reference_ppm=91920
+[clef_native] CLEF_BOOT v=1 stage=ready done=1 total=1
+[clef_native] CLEF_NATIVE_PASS: full backbone and joint head; oversized allocation deferred
+[rt] native block report step=0x0000000000000002
+[boot_screen] BOOT_SCREEN_READY_PRESENTED

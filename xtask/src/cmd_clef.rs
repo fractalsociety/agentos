@@ -1,3 +1,4 @@
+use crate::clef_boot::Monitor;
 use anyhow::{ensure, Context, Result};
 use clap::Args;
 use reqwest::blocking::Client;
@@ -12,7 +13,7 @@ const SIZE: u64 = 6_486_448_288;
 
 #[derive(Args)]
 pub struct ClefArgs {
-    #[arg(value_parser = ["fetch", "fixture", "native", "toolchain"])]
+    #[arg(value_parser = ["fetch", "fixture", "native", "toolchain", "stage"])]
     pub action: String,
     #[arg(long, default_value = "http://127.0.0.1:18081")]
     pub oracle: String,
@@ -20,6 +21,15 @@ pub struct ClefArgs {
     pub build_dir: PathBuf,
     #[arg(long, default_value_t = 3600)]
     pub timeout_secs: u64,
+    /// Boot through UEFI/Limine and require the native framebuffer screen.
+    #[arg(long)]
+    pub firmware_display: bool,
+    /// Existing UEFI-compatible kernel artifact; never patched by this tool.
+    #[arg(long, requires = "firmware_display")]
+    pub firmware_kernel: Option<PathBuf>,
+    /// Negative display test: writable disposable model media must be refused.
+    #[arg(long, requires = "firmware_display")]
+    pub expect_model_failure: bool,
 }
 fn cache() -> Result<PathBuf> {
     Ok(std::env::var_os("XDG_CACHE_HOME")
@@ -246,8 +256,163 @@ fn fixture(a: &ClefArgs) -> Result<()> {
     );
     Ok(())
 }
+fn stage_firmware(build: &std::path::Path, kernel: &std::path::Path) -> Result<()> {
+    let esp = build.join("boot-esp.img");
+    fs::File::create(&esp)?.set_len(64 * 1024 * 1024)?;
+    use std::io::Write;
+    let mut partition = Command::new("sfdisk")
+        .arg(&esp)
+        .stdin(std::process::Stdio::piped())
+        .spawn()?;
+    partition
+        .stdin
+        .take()
+        .context("partition stdin")?
+        .write_all(b"label: dos\nstart=2048, type=ef, bootable\n")?;
+    ensure!(
+        partition.wait()?.success(),
+        "partition disposable boot image"
+    );
+    let fat = format!("{}@@1048576", esp.display());
+    ensure!(
+        Command::new("mkfs.vfat")
+            .args(["-F", "32", "--offset", "2048"])
+            .arg(&esp)
+            .status()?
+            .success(),
+        "format disposable boot image"
+    );
+    ensure!(
+        Command::new("mmd")
+            .arg("-i")
+            .arg(&fat)
+            .args(["::/EFI", "::/EFI/BOOT"])
+            .status()?
+            .success(),
+        "create boot directories"
+    );
+    let config = build.join("limine.conf");
+    fs::write(&config,"timeout: 0\n/Fractal native boot\n    protocol: multiboot2\n    resolution: 1024x768x32\n    path: boot():/sel4.elf\n    module_path: boot():/root_task.elf\n")?;
+    for (source, dest) in [
+        (
+            std::path::Path::new("/usr/share/limine/BOOTX64.EFI"),
+            "::/EFI/BOOT/BOOTX64.EFI",
+        ),
+        (kernel, "::/sel4.elf"),
+        (
+            std::path::Path::new("/usr/share/limine/limine-bios.sys"),
+            "::/limine-bios.sys",
+        ),
+        (build.join("root_task.elf").as_path(), "::/root_task.elf"),
+        (config.as_path(), "::/limine.conf"),
+    ] {
+        ensure!(
+            Command::new("mcopy")
+                .arg("-i")
+                .arg(&fat)
+                .arg(source)
+                .arg(dest)
+                .status()?
+                .success(),
+            "stage boot file {dest}"
+        );
+    }
+    fs::copy("/usr/share/edk2/x64/OVMF_VARS.4m.fd", build.join("vars.fd"))?;
+    ensure!(
+        Command::new("limine")
+            .arg("bios-install")
+            .arg(&esp)
+            .status()?
+            .success(),
+        "install disposable boot sector"
+    );
+    Ok(())
+}
+fn capture_screen(build: &std::path::Path, name: &str) -> Result<()> {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+    let mut socket = UnixStream::connect(build.join("display.qmp"))?;
+    socket.set_read_timeout(Some(Duration::from_secs(10)))?;
+    socket.set_write_timeout(Some(Duration::from_secs(10)))?;
+    fn receive(s: &mut UnixStream) -> Result<Value> {
+        let mut bytes = Vec::new();
+        loop {
+            ensure!(bytes.len() < 65536, "oversized QMP reply");
+            let mut b = [0];
+            s.read_exact(&mut b)?;
+            if b[0] == b'\n' {
+                return Ok(serde_json::from_slice(&bytes)?);
+            }
+            bytes.push(b[0]);
+        }
+    }
+    ensure!(
+        receive(&mut socket)?.get("QMP").is_some(),
+        "missing QMP greeting"
+    );
+    for (id, mut request) in [
+        json!({"execute":"qmp_capabilities"}),
+        json!({"execute":"screendump","arguments":{"filename":build.join(name)}}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        request["id"] = json!(id);
+        writeln!(socket, "{request}")?;
+        let mut completed = false;
+        for _ in 0..32 {
+            let reply = receive(&mut socket)?;
+            if reply.get("event").is_some() {
+                continue;
+            }
+            ensure!(
+                reply["id"] == id && reply.get("return").is_some(),
+                "QMP failed: {reply}"
+            );
+            completed = true;
+            break;
+        }
+        ensure!(completed, "QMP event limit");
+    }
+    validate_screen_ppm(&fs::read(build.join(name))?, name == "ready.ppm")?;
+    Ok(())
+}
+fn validate_screen_ppm(bytes: &[u8], ready: bool) -> Result<()> {
+    let mut parts = bytes.splitn(4, |b| *b == b'\n');
+    ensure!(parts.next() == Some(b"P6".as_slice()), "screen is not P6");
+    let dimensions = std::str::from_utf8(parts.next().context("missing screen dimensions")?)?;
+    let dims: Vec<usize> = dimensions
+        .split_ascii_whitespace()
+        .map(str::parse)
+        .collect::<std::result::Result<_, _>>()?;
+    ensure!(
+        dims.len() == 2 && (640..=4096).contains(&dims[0]) && (320..=2160).contains(&dims[1]),
+        "screen bounds"
+    );
+    ensure!(
+        parts.next() == Some(b"255".as_slice()),
+        "screen channel depth"
+    );
+    let data = parts.next().context("missing screen pixels")?;
+    let (width, height) = (dims[0], dims[1]);
+    ensure!(data.len() == width * height * 3, "screen byte count");
+    let pixel = |x: usize, y: usize| {
+        let at = (((height - 320) / 2 + y) * width + (width - 640) / 2 + x) * 3;
+        &data[at..at + 3]
+    };
+    ensure!(
+        pixel(298, 18) == [190; 3] && pixel(305, 25) == [190; 3] && pixel(312, 32) == [190; 3],
+        "native emblem not visible"
+    );
+    if ready {
+        ensure!(
+            pixel(64, 190) == [230; 3] && pixel(575, 190) == [230; 3],
+            "ready progress bar incomplete"
+        );
+    }
+    Ok(())
+}
 fn native(a: &ClefArgs) -> Result<()> {
-    let model = fetch()?;
     let build = fs::canonicalize(&a.build_dir)?;
     let run_lock = build.join("native.lock");
     let _lock_file = fs::OpenOptions::new()
@@ -262,16 +427,34 @@ fn native(a: &ClefArgs) -> Result<()> {
         }
     }
     let _lock = Lock(run_lock);
+    let mut monitor = Monitor::new(&build)?;
+    let receipt = build.join("receipt.json");
+    if receipt.exists() {
+        fs::remove_file(receipt)?;
+    }
+    let result = native_inner(a, &build, &mut monitor);
+    if let Err(error) = &result {
+        monitor.fail(&format!("{error:#}"))?;
+    }
+    result
+}
+fn native_inner(a: &ClefArgs, build: &std::path::Path, monitor: &mut Monitor) -> Result<()> {
+    monitor.phase("verifying_model")?;
+    let model = fetch()?;
     let sdk = std::env::var_os("SEL4_SDK")
         .map(PathBuf::from)
         .unwrap_or(cache()?.parent().unwrap().join("microkit-sdk-2.3.0"));
-    let kernel = sdk.join("board/x86_64_generic_vtx/debug/elf/sel4_32.elf");
+    let kernel = a
+        .firmware_kernel
+        .clone()
+        .unwrap_or_else(|| sdk.join("board/x86_64_generic_vtx/debug/elf/sel4_32.elf"));
     ensure!(
         kernel.is_file(),
         "missing debug kernel {}",
         kernel.display()
     );
     let scratch = build.join("primary.img");
+    monitor.phase("staging_media")?;
     fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -302,7 +485,8 @@ fn native(a: &ClefArgs) -> Result<()> {
     );
     let kernel_sha = format!("{:x}", Sha256::digest(fs::read(&kernel)?));
     let log = fs::File::create(build.join("qemu.log"))?;
-    let mut child = Command::new("qemu-system-x86_64")
+    let mut command = Command::new("qemu-system-x86_64");
+    command
         .args([
             "-machine",
             "q35",
@@ -324,10 +508,6 @@ fn native(a: &ClefArgs) -> Result<()> {
         .arg(format!("file:{}", serial.display()))
         .arg("-serial")
         .arg(format!("file:{}", build.join("com2.log").display()))
-        .arg("-kernel")
-        .arg(kernel)
-        .arg("-initrd")
-        .arg(build.join("root_task.elf"))
         .arg("-drive")
         .arg(format!(
             "if=none,id=primary,format=raw,file={}",
@@ -345,7 +525,8 @@ fn native(a: &ClefArgs) -> Result<()> {
         ])
         .arg("-drive")
         .arg(format!(
-            "if=none,id=clef,format=raw,readonly=on,file={}",
+            "if=none,id=clef,format=raw,readonly={},file={}",
+            if a.expect_model_failure { "off" } else { "on" },
             media.display()
         ))
         .args([
@@ -353,10 +534,42 @@ fn native(a: &ClefArgs) -> Result<()> {
             "virtio-blk-pci,drive=clef,addr=0x8,disable-legacy=on",
         ])
         .stdout(log.try_clone()?)
-        .stderr(log)
-        .spawn()?;
+        .stderr(log);
+    if a.firmware_display {
+        stage_firmware(build, &kernel)?;
+        command
+            .arg("-drive")
+            .arg(format!(
+                "if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd"
+            ))
+            .arg("-drive")
+            .arg(format!(
+                "if=pflash,format=raw,file={}",
+                build.join("vars.fd").display()
+            ));
+        command
+            .arg("-drive")
+            .arg(format!(
+                "if=ide,format=raw,file={}",
+                build.join("boot-esp.img").display()
+            ))
+            .arg("-qmp")
+            .arg(format!(
+                "unix:{},server=on,wait=off",
+                build.join("display.qmp").display()
+            ));
+    } else {
+        command
+            .arg("-kernel")
+            .arg(&kernel)
+            .arg("-initrd")
+            .arg(build.join("root_task.elf"));
+    }
+    monitor.phase("booting")?;
+    let mut child = command.spawn()?;
     let start = std::time::Instant::now();
     let mut printed = 0;
+    let mut captured_loading = false;
     let result = (|| -> Result<()> {
         loop {
             // PD debug output can interleave individual UTF-8 bytes during
@@ -364,16 +577,52 @@ fn native(a: &ClefArgs) -> Result<()> {
             // banner never hides the later ASCII inference result.
             let bytes = fs::read(&serial).unwrap_or_default();
             let output = String::from_utf8_lossy(&bytes);
+            let progress = monitor.ingest(&bytes);
+            if a.expect_model_failure && output.contains("CLEF_NATIVE_FAIL") {
+                ensure!(
+                    output.contains("CLEF_NATIVE_FAIL: expected read-only model media"),
+                    "unexpected native failure"
+                );
+                ensure!(
+                    !output.contains("CLEF_NATIVE_PASS") && !output.contains("CLEF backbone"),
+                    "failed media reached inference"
+                );
+                if output.contains("BOOT_SCREEN_FAILURE_PRESENTED") {
+                    capture_screen(build, "failure.ppm")?;
+                    monitor.fail("expected refusal of writable model media")?;
+                    return Ok(());
+                }
+            } else {
+                progress?;
+            }
             if bytes.len() > printed {
                 print!("{}", String::from_utf8_lossy(&bytes[printed..]));
                 printed = bytes.len();
             }
             ensure!(
-                !output.contains("CLEF_NATIVE_FAIL"),
+                a.expect_model_failure || !output.contains("CLEF_NATIVE_FAIL"),
                 "native Clef test failed"
             );
-            if output.contains("CLEF_NATIVE_PASS") {
+            ensure!(
+                !output.contains("BOOT_DISPLAY_FAIL"),
+                "native boot display failed"
+            );
+            if a.firmware_display
+                && !captured_loading
+                && output.contains("BOOT_DISPLAY_PRESENT")
+                && output.contains("stage=backbone done=0")
+            {
+                capture_screen(build, "loading.ppm")?;
+                captured_loading = true;
+            }
+            if !a.expect_model_failure
+                && output.contains("CLEF_NATIVE_PASS")
+                && (!a.firmware_display || output.contains("BOOT_SCREEN_READY_PRESENTED"))
+            {
                 validate_native_log(&output)?;
+                if a.firmware_display {
+                    capture_screen(build, "ready.ppm")?;
+                }
                 return Ok(());
             }
             ensure!(
@@ -390,18 +639,26 @@ fn native(a: &ClefArgs) -> Result<()> {
     let _ = child.kill();
     let _ = child.wait();
     result?;
+    if !a.expect_model_failure {
+        monitor.ready()?;
+    }
     fs::write(
         receipt,
-        serde_json::to_string_pretty(&json!({"status":"PASS",
+        serde_json::to_string_pretty(
+            &json!({"status": if a.expect_model_failure { "EXPECTED_FAILURE" } else { "PASS" },
         "execution":"native seL4 EL0 PD on x86_64 QEMU/KVM; no guest","model_sha256":SHA,
         "engine":"Rust no_std, SSE2","root_task_sha256":root_sha,"inference_pd_sha256":pd_sha,"kernel_sha256":kernel_sha,
         "elapsed_seconds":start.elapsed().as_secs_f64(),"serial_log":serial,
-        "scope":"fixed resource-choice prompt, full backbone and decision head; advisory only"}))?
-            + "\n",
+        "firmware_display":a.firmware_display,"boot_status":monitor.summary(),
+        "boot_display_sha256": if a.firmware_display { Some(format!("{:x}",Sha256::digest(fs::read(build.join("boot_display.elf"))?))) } else { None },
+        "boot_renderer_sha256": if a.firmware_display { Some(format!("{:x}",Sha256::digest(fs::read(build.join("boot_screen.elf"))?))) } else { None },
+        "scope":"fixed resource-choice prompt, full backbone and decision head; advisory only"}),
+        )? + "\n",
     )?;
     Ok(())
 }
 fn validate_native_log(log: &str) -> Result<()> {
+    crate::clef_boot::validate(log)?;
     ensure!(
         log.contains("CLEF_NATIVE_BEGIN: Rust no_std x86_64"),
         "missing Rust native start"
@@ -427,9 +684,17 @@ fn validate_native_log(log: &str) -> Result<()> {
 mod tests {
     use super::*;
     #[test]
+    fn blank_or_truncated_capture_is_not_a_display_proof() {
+        assert!(validate_screen_ppm(b"P6\n1024 768\n255\n", true).is_err());
+        let mut image = b"P6\n640 320\n255\n".to_vec();
+        image.resize(image.len() + 640 * 320 * 3, 0);
+        assert!(validate_screen_ppm(&image, true).is_err());
+    }
+    #[test]
     fn rejects_marker_without_inference() {
         assert!(validate_native_log("CLEF_NATIVE_PASS").is_err());
         let mut log = String::from("CLEF_NATIVE_BEGIN: Rust no_std x86_64\n");
+        log += &crate::clef_boot::tests::valid_trace();
         for (stage, n) in [("backbone", 32), ("routing", 2), ("joint", 4)] {
             for i in 0..n {
                 log += &format!("[clef_native] CLEF {stage} {i}\r\n");
@@ -451,6 +716,12 @@ pub fn run(a: &ClefArgs) -> Result<()> {
         "fixture" => fixture(a),
         "native" => native(a),
         "toolchain" => toolchain(),
+        "stage" => stage_firmware(
+            &fs::canonicalize(&a.build_dir)?,
+            a.firmware_kernel
+                .as_deref()
+                .context("stage requires --firmware-kernel")?,
+        ),
         _ => unreachable!(),
     }
 }

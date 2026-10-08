@@ -6,6 +6,9 @@
 #include <platform/fractal_nvme.h>
 #include <platform/fractal_gpt.h>
 #include <platform/fractal_partition.h>
+#ifdef AGENTOS_BOOT_DISPLAY
+#include <platform/boot_display.h>
+#endif
 #ifdef AGENTOS_FRACTAL_NVME_EXCHANGE
 #include <platform/fractal_exchange_cycle.h>
 #include <platform/fractal_exchange.h>
@@ -301,8 +304,15 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
 {
     (void)ns_ep;
     agentos_log_boot("fractal_nvme_probe");
+#ifdef AGENTOS_BOOT_DISPLAY
+    aos_boot_progress_publish(AOS_BOOT_STORAGE,0u,1u);
+#endif
     uint64_t sectors = 0u;
     uint32_t result = qualify(&sectors);
+#ifdef AGENTOS_BOOT_DISPLAY
+    aos_boot_progress_publish(result==2u ? AOS_BOOT_STORAGE_READY : AOS_BOOT_FAILED,
+                              result==2u ? 1u : 0u,1u);
+#endif
     seL4_SetMR(0, result);
     seL4_SetMR(1, sectors);
     seL4_SetMR(2, last_completion);

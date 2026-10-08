@@ -1,0 +1,13 @@
+{
+  "status": "BUILT_NOT_BOOTED_ON_PHYSICAL_PC",
+  "target": "Samsung NVMe 81:00.0 read-only diagnostic plus firmware framebuffer",
+  "pd_count": 3,
+  "namespace_writes": false,
+  "clef_model_started": false,
+  "live_esp_modified": false,
+  "bootnext_modified": false,
+  "root_task_sha256": "c61e2b4bfe94b5efb80139ea3e7662e513f809a8fdd72f0e46d995e9a5241fd3",
+  "boot_display_sha256": "d7db4bf2f61836c8e95272e7be16f56f8d59346794a457dd7a19773f9fd07add",
+  "boot_renderer_sha256": "534d778d5a7637c55dc52e4d872986da97828cc16d5b822f7908ee46216fe8ee",
+  "boot_image_sha256": "e041007360b8c6617265bc0746b1c629c610d41fc3f6879d9011f0a93f943f58"
+}

@@ -14,11 +14,24 @@
 #include "system_desc.h"
 #include "contracts/guest_ram_caps.h"
 #include "contracts/x86_vtx_proof.h"
+#ifdef AGENTOS_BOOT_DISPLAY
+#define BOOT_DISPLAY_PDS \
+    {.name="boot_display",.elf_path="boot_display.elf",.stack_size=0x8000u, \
+     .cnode_size_bits=10u,.priority=250u,.self_svc_id=SVC_ID_BOOT_DISPLAY}, \
+    {.name="boot_screen",.elf_path="boot_screen.elf",.stack_size=0x8000u, \
+     .cnode_size_bits=10u,.priority=249u,.self_svc_id=SVC_ID_BOOT_SCREEN},
+#else
+#define BOOT_DISPLAY_PDS
+#endif
 
 #if defined(AGENTOS_FRACTAL_NVME_ONLY)
 const system_desc_t system_desc_x86_64 = {
-    .pd_count = 1u,
-    .pds = {{
+    .pd_count = 1u
+#ifdef AGENTOS_BOOT_DISPLAY
+        +2u
+#endif
+        ,
+    .pds = {BOOT_DISPLAY_PDS {
         .name = "fractal_nvme_probe",
         .elf_path = "fractal_nvme_probe.elf",
         .stack_size = 0x4000u,
@@ -31,6 +44,9 @@ const system_desc_t system_desc_x86_64 = {
 const system_desc_t system_desc_x86_64 = {
 #ifdef AGENTOS_X86_FIRMWARE_RESET
     .pd_count = 9u
+#ifdef AGENTOS_BOOT_DISPLAY
+        +2u
+#endif
 #ifdef AGENTOS_FRACTAL_NATIVE_ONLY
         - 3u
 #endif
@@ -54,6 +70,7 @@ const system_desc_t system_desc_x86_64 = {
     .pd_count = 1u,
 #endif
     .pds = {
+        BOOT_DISPLAY_PDS
 #ifdef AGENTOS_X86_FIRMWARE_RESET
         {
             .name = "net_pd",

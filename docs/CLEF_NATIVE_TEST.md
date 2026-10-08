@@ -41,6 +41,12 @@ the model has no authority to increase them.
 Loading through the existing secondary block driver takes several minutes.
 The launcher imposes a one-hour overall timeout and kills QEMU afterward.
 
+An optional [native boot display](BOOT_DISPLAY.md) shows measured loading
+and inference progress on the firmware framebuffer. Its renderer lives in
+a separate Rust repository. The UEFI screen test uses the lab's existing
+firmware-compatible kernel and matching headers; its receipt is separate
+from the stock-kernel result above.
+
 Model weights stay in `~/.cache/agentos/clef-flash/`. The experiment stages
 an aligned disposable copy under `build/clef-native/model.img`, attached
 read-only. It uses no physical disk. Root maps three private memory regions

@@ -47,6 +47,10 @@
 #include "pd_tcb.h"          /* pd_tcb_create, pd_tcb_set_regs, pd_tcb_start      */
 #include "ep_alloc.h"        /* ep_alloc_init, ep_alloc_for_service, ep_mint_badge */
 #include "cap_accounting.h"  /* cap_acct_init, cap_acct_record                    */
+#ifdef AGENTOS_BOOT_DISPLAY
+extern int boot_display_allocate(const seL4_BootInfo *);
+extern int boot_display_grant(uint32_t, seL4_CPtr);
+#endif
 #include "cap_audit.h"       /* handle_cap_audit, handle_cap_audit_guest,
                                 cap_tree_verify_all_pds                            */
 #include "system_desc.h"     /* system_desc_t, pd_desc_t, SVC_ID_*, PD_IRQHANDLER_SLOT_BASE */
@@ -2842,6 +2846,12 @@ void root_task_main(const seL4_BootInfo *bi)
 #endif
 
     /* ── Step 4: Load and start each PD ───────────────────────────────────── */
+#ifdef AGENTOS_BOOT_DISPLAY
+    if (boot_display_allocate(bi)) {
+        dbg_puts("BOOT_DISPLAY_FAIL: missing/unsupported firmware framebuffer or memory\n");
+        return;
+    }
+#endif
     dbg_puts("[rt] starting ");
     dbg_hex((seL4_Word)sys->pd_count);
     dbg_puts(" PDs\n");
@@ -3021,7 +3031,9 @@ void root_task_main(const seL4_BootInfo *bi)
 #ifdef CONFIG_KERNEL_MCS
         {
             const bool frame_service=pd->self_svc_id==SVC_ID_FRAMEBUFFER_QUEUE ||
-                                     pd->self_svc_id==SVC_ID_DISPLAY_RAMFB;
+                                     pd->self_svc_id==SVC_ID_DISPLAY_RAMFB ||
+                                     pd->self_svc_id==SVC_ID_BOOT_DISPLAY ||
+                                     pd->self_svc_id==SVC_ID_BOOT_SCREEN;
             const bool cc_service=pd->self_svc_id==SVC_ID_CC_PD;
             const bool execution_runner=pd->self_svc_id==SVC_ID_X86_RUNNER ||
                                         pd->self_svc_id==SVC_ID_X86_AP_RUNNER ||
@@ -3104,7 +3116,9 @@ void root_task_main(const seL4_BootInfo *bi)
              */
             seL4_CPtr pd_fault_ep = g_fault_ep;
 #ifdef AGENTOS_FRACTAL_CLEF_TEST
-            if (pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE)
+            if (pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE ||
+                pd->self_svc_id == SVC_ID_BOOT_DISPLAY ||
+                pd->self_svc_id == SVC_ID_BOOT_SCREEN)
                 pd_fault_ep = g_fractal_native_report_endpoint;
 #endif
 #ifdef ROOT_FAULT_PROBE
@@ -3142,6 +3156,12 @@ void root_task_main(const seL4_BootInfo *bi)
 #endif /* CONFIG_KERNEL_MCS */
 
         dbg_puts("[rt] pd SC bound, starting\n");
+#ifdef AGENTOS_BOOT_DISPLAY
+        if (boot_display_grant(pd->self_svc_id,vspace)) {
+            dbg_puts("BOOT_DISPLAY_FAIL: isolated framebuffer/queue grant\n");
+            return;
+        }
+#endif
 
 #if defined(__x86_64__) && defined(AGENTOS_X86_FIRMWARE_RESET)
         if (pd->self_svc_id == SVC_ID_SERIAL &&

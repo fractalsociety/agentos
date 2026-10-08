@@ -1,0 +1,11 @@
+Got framebuffer info in multiboot2. Current video mode is at physical address=80000000 pitch=4096 resolution=1024x768@32 type=1
+║           a[rt] native block report step=0x0000000000000001
+[clef_native] CLEF_BOOT v=1 stage=starting done=0 total=1
+[clef_native] CLEF_NATIVE_BEGIN: Rust no_std x86_64
+[clef_native] CLEF_BOOT v=1 stage=block_ready done=1 total=1
+[clef_native] CLEF_NATIVE_FAIL: expected read-only model media
+[clef_native] CLEF_BOOT v=1 stage=failed done=0 total=1
+[clef_native] CLEF_NATIVE_FAIL: native test returned an error
+[rt] native block report step=0x0000000000002000
+[boot_display] BOOT_DISPLAY_PRESENT
+[boot_screen] BOOT_SCREEN_FAILURE_PRESENTED

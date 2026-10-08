@@ -238,6 +238,8 @@ typedef struct {
 #define SVC_ID_X86_SECONDARY_AP_RUNNER 39u /* Secondary guest AP executor */
 #define SVC_ID_FRACTAL_NATIVE_PROBE 40u /* isolated native block proof */
 #define SVC_ID_FRACTAL_NVME_PROBE 41u /* isolated QEMU NVMe read proof */
+#define SVC_ID_BOOT_DISPLAY 42u /* firmware framebuffer driver, opt-in */
+#define SVC_ID_BOOT_SCREEN 43u /* external renderer, ordinary RAM/queues only */
 
 /* Standard per-PD CNode slot assignments for well-known capabilities.
  * These are the slots at which each PD finds its initial endpoint caps. */
