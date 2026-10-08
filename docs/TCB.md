@@ -114,6 +114,22 @@ same raw exchange cycle passes via UEFI → Limine → seL4 in QEMU. This remove
 guest firmware qualification from the native test path, but it does not add a
 physical NVMe driver, native filesystem, or return reboot path.
 
+`FRACTAL_CLEF_TEST=1` is an opt-in variant of that guest-free QEMU
+composition. The existing native client loads a pinned Clef-Flash GGUF from
+read-only secondary media through its private block queue. Its Rust `no_std`
+engine evaluates the full backbone and decision head in user mode. Root
+provisions 8 GiB of private RAM, including a fixed 1 GiB inference arena,
+and refuses startup if any region cannot be mapped. The client receives no
+device frame, IRQ, DMA window, scheduler-control capability or allocation
+authority. It reports an advisory choice for a fixed resource fixture; it
+does not enforce resource budgets. See [the experiment](CLEF_NATIVE_TEST.md)
+for its input bounds, numerical oracle and qualification limits.
+Root assigns a fixed 5 ms / 10 ms scheduling context to the inference
+client and 1 ms / 10 ms each to its block driver and virtualizer in this
+variant. Those initial caps are not exposed to the model. Native faults
+go to the test report endpoint so the launcher fails instead of waiting
+indefinitely for a result from a faulted client.
+
 The portable `fractal_gpt` parser is a write-admission boundary for the shared
 NVMe namespace. Host tests cover primary-header and entry-array CRCs, exact
 GUID and extent, overlaps, and request bounds. With `FRACTAL_GPT_QUALIFY=1`,

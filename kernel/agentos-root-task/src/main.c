@@ -3057,6 +3057,19 @@ void root_task_main(const seL4_BootInfo *bi)
                 sc_budget = CC_SC_BUDGET_US;
                 sc_period = CC_SC_PERIOD_US;
             }
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+            /* Fixed boot-time budgets for this CPU-bound experiment. The
+             * model has no scheduling-control capability and cannot raise
+             * its 50% ceiling. Storage gets 10% each; other PDs retain room. */
+            if (pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE) {
+                sc_budget = 5000u;
+                sc_period = 10000u;
+            } else if (pd->self_svc_id == SVC_ID_VIRTIO_BLK ||
+                       pd->self_svc_id == SVC_ID_BLK_VIRT) {
+                sc_budget = 1000u;
+                sc_period = 10000u;
+            }
+#endif
 #if defined(__x86_64__) && defined(AGENTOS_X86_FIRMWARE_RESET)
             /* Polling device drivers must not wait the default one-second
              * refill after Yield. Bound each to 1 ms per 10 ms period. */
@@ -3090,6 +3103,10 @@ void root_task_main(const seL4_BootInfo *bi)
              * MRs  = [mcp, priority]
              */
             seL4_CPtr pd_fault_ep = g_fault_ep;
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+            if (pd->self_svc_id == SVC_ID_FRACTAL_NATIVE_PROBE)
+                pd_fault_ep = g_fractal_native_report_endpoint;
+#endif
 #ifdef ROOT_FAULT_PROBE
             if ((ROOT_PROBE_NATIVE == 4 && pd->self_svc_id == SVC_ID_FRAMEBUFFER_TEST0 + ROOT_PROBE_CLIENT) ||
                 (ROOT_PROBE_NATIVE == 3 && pd->self_svc_id == SVC_ID_OPERATOR_SESSION) ||
@@ -3556,6 +3573,12 @@ void root_task_main(const seL4_BootInfo *bi)
                  * authority. Root provisioning is an all-or-stop boundary. */
                 if (pd_is_guest_vmm(pd) && name_eq(mr->name, "guest_ram"))
                     return;
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+                if (name_eq(pd->name, "fractal_native_probe")) {
+                    dbg_puts("CLEF_NATIVE_FAIL: private memory provisioning\n");
+                    return;
+                }
+#endif
             }
         }
 
@@ -4533,6 +4556,15 @@ void root_task_main(const seL4_BootInfo *bi)
         if (badge != FRACTAL_NATIVE_REPORT_BADGE ||
             seL4_MessageInfo_get_label(tag) != FRACTAL_NATIVE_REPORT_LABEL ||
             seL4_MessageInfo_get_length(tag) != 1u) {
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+            dbg_puts("CLEF_NATIVE_FAIL: native fault/report label=");
+            dbg_hex(seL4_MessageInfo_get_label(tag));
+            for (unsigned mr = 0; mr < seL4_MessageInfo_get_length(tag); ++mr) {
+                dbg_puts(" mr=");
+                dbg_hex(seL4_GetMR(mr));
+            }
+            dbg_puts("\n");
+#endif
             dbg_puts("[rt] native block report malformed\n");
             return;
         }

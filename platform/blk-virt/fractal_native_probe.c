@@ -9,6 +9,10 @@
 #include <contracts/blk_virt_contract.h>
 #include <platform/blk_layout.h>
 #include <platform/blk_virt_pump.h>
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+#include <platform/clef.h>
+#include <tests/fixtures/clef-resource-choice.h>
+#endif
 #ifdef AGENTOS_FRACTAL_EXCHANGE_CYCLE
 #include <platform/fractal_exchange.h>
 #include "sha256_mini.h"
@@ -223,15 +227,15 @@ static uint32_t run_exchange(aos_blk_virt_client_t *queue)
 }
 #endif
 
-static bool transact_response(aos_blk_virt_client_t *q,
+static bool transact_response_count(aos_blk_virt_client_t *q,
                               aos_blk_req_code_t code, uint64_t block,
-                              uint32_t id, aos_blk_resp_t *response_out)
+                              uint32_t id, uint16_t count, aos_blk_resp_t *response_out)
 {
     if (q->req->head != q->req->tail || q->resp->head != q->resp->tail)
         return false;
     aos_blk_req_t request = {
         .code = code, .io_or_offset = 0u, .block_number = block,
-        .count = code == AOS_BLK_REQ_FLUSH ? 0u : 1u, .id = id,
+        .count = count, .id = id,
     };
     q->req->buffers[q->req->tail % q->capacity] = request;
     __atomic_thread_fence(__ATOMIC_RELEASE);
@@ -252,6 +256,14 @@ static bool transact_response(aos_blk_virt_client_t *q,
     return true;
 }
 
+static bool transact_response(aos_blk_virt_client_t *q,
+                              aos_blk_req_code_t code, uint64_t block,
+                              uint32_t id, aos_blk_resp_t *response_out)
+{
+    return transact_response_count(q, code, block, id,
+        code == AOS_BLK_REQ_FLUSH ? 0u : 1u, response_out);
+}
+
 static bool transact(aos_blk_virt_client_t *q, aos_blk_req_code_t code,
                      uint64_t block, uint32_t id)
 {
@@ -260,6 +272,66 @@ static bool transact(aos_blk_virt_client_t *q, aos_blk_req_code_t code,
            response.status == AOS_BLK_RESP_OK &&
            response.success_count == (code == AOS_BLK_REQ_FLUSH ? 0u : 1u);
 }
+
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+void clef_native_panic(void)
+{
+    agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: Rust panic or arena exhausted");
+    for (;;) seL4_Yield();
+}
+static void clef_report(void *unused, const char *stage, unsigned layer)
+{
+    (void)unused;
+    char line[96];
+    snprintf(line, sizeof(line), "CLEF %s %u", stage, layer);
+    agentos_log_info("clef_native", line);
+}
+static uint32_t run_clef(aos_blk_virt_client_t *q)
+{
+    agentos_log_info("clef_native", "CLEF_NATIVE_BEGIN: Rust no_std x86_64");
+    const uint64_t blocks = (CLEF_MODEL_BYTES + 4095u) / 4096u;
+    if (!q->info->read_only || q->info->capacity < blocks) {
+        agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: expected read-only model media");
+        return 0x2000u;
+    }
+    uint8_t *model = (uint8_t *)CLEF_MODEL_VA;
+    agentos_log_info("clef_native", "CLEF loading verified model through private block queue");
+    for (uint64_t block = 0; block < blocks;) {
+        uint16_t count = blocks - block < 256u ? (uint16_t)(blocks - block) : 256u;
+        aos_blk_resp_t response;
+        if (!transact_response_count(q, AOS_BLK_REQ_READ, block, (uint32_t)block, count, &response) ||
+            response.status != AOS_BLK_RESP_OK || response.success_count != count) {
+            agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: model block read");
+            return 0x2001u;
+        }
+        for (unsigned j = 0; j < (unsigned)count * 4096; ++j) model[block * 4096 + j] = q->data[j];
+        block += count;
+        if ((block & 65535u) == 0u) clef_report(0, "loaded MiB", (unsigned)(block / 256));
+    }
+    clef_result result = {0};
+    uint32_t error = clef_rust_run(model, CLEF_MODEL_BYTES, &clef_resource_input,
+        (uint8_t *)CLEF_ARENA_VA, CLEF_ARENA_BYTES, &result, clef_report, 0);
+    if (error) {
+        clef_report(0, "Rust error", error);
+        agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: inference");
+        return 0x2002u;
+    }
+    bool match = result.choice == 0u;
+    for (unsigned i = 0; i < 2; ++i) {
+        float diff = result.probabilities[i] - clef_reference_probabilities[i];
+        if (diff < -0.02f || diff > 0.02f) match = false;
+        char line[128];
+        snprintf(line, sizeof(line), "CLEF option=%u probability_ppm=%u reference_ppm=%u", i,
+            (unsigned)(result.probabilities[i] * 1000000),
+            (unsigned)(clef_reference_probabilities[i] * 1000000));
+        agentos_log_info("clef_native", line);
+    }
+    agentos_log_info("clef_native", match ?
+        "CLEF_NATIVE_PASS: full backbone and joint head; oversized allocation deferred" :
+        "CLEF_NATIVE_FAIL: reference probability mismatch");
+    return match ? 2u : 0x2003u;
+}
+#endif
 
 #ifdef AGENTOS_FRACTAL_NATIVE_ISOLATION_TEST
 static bool denied(aos_blk_virt_client_t *queue, aos_blk_req_code_t code,
@@ -299,7 +371,9 @@ static uint32_t run_probe(void)
     if (get32(reply.data + 8u) != BLK_VIRT_HW_VIRTIO_BLK)
         return 0x1500u | get32(reply.data + 8u);
     if (!queue.info->ready) return 0x1600u;
+#ifndef AGENTOS_FRACTAL_CLEF_TEST
     if (queue.info->read_only) return 0x1700u;
+#endif
     if (queue.info->capacity < 2u || queue.info->capacity > UINT32_MAX)
         return 0x1800u;
 
@@ -314,7 +388,9 @@ static uint32_t run_probe(void)
     report_step(0x1a00u);
 #endif
 
-#ifdef AGENTOS_FRACTAL_EXCHANGE_CYCLE
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+    return run_clef(&queue);
+#elif defined(AGENTOS_FRACTAL_EXCHANGE_CYCLE)
     return run_exchange(&queue);
 #else
 
@@ -355,6 +431,10 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
     report_step(1u);
     agentos_log_boot("fractal_native_probe");
     uint32_t result = run_probe();
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+    if (result != 2u) agentos_log_info("clef_native", "CLEF_NATIVE_FAIL: native test returned an error");
+    report_step(result);
+#else
     if (result == 2u) {
         report_step(result);
         agentos_log_info("fractal_native_probe", "native block write/flush/readback persisted");
@@ -362,6 +442,7 @@ void pd_main(seL4_CPtr my_ep, seL4_CPtr ns_ep)
         report_step(result);
         agentos_log_info("fractal_native_probe", "native block persistence proof failed");
     }
+#endif
     for (;;) {
         seL4_Word badge = 0u;
         (void)seL4_Wait(my_ep, &badge);

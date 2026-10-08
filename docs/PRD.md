@@ -472,7 +472,7 @@ Fractal state / resource telemetry / repository index
         -> capability-authorized native services
 ```
 
-Implement or port the required inference behavior in C/Rust/Assembly, with bounded inputs and working memory. Native acceptance requires local execution without Python, Transformers, a Linux process, or a hosted inference service. Hosted Clef-Flash may supply comparison results during development; it does not satisfy the native execution requirement.
+Implement the new inference core in Rust (`no_std`), with bounded inputs and working memory. Keep C/Assembly at the existing platform and FFI boundaries where required. Native acceptance requires local execution without Python, Transformers, a Linux process, or a hosted inference service. Hosted Clef-Flash may supply comparison results during development; it does not satisfy the native execution requirement.
 
 Initial inference target:
 

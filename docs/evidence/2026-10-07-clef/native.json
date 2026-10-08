@@ -1,0 +1,13 @@
+{
+  "elapsed_seconds": 182.116876108,
+  "engine": "Rust no_std, SSE2",
+  "execution": "native seL4 EL0 PD on x86_64 QEMU/KVM; no guest",
+  "inference_pd_sha256": "0570b1ff7a5bc70952f4e8337b83372be85dc3b53e0f518a6b66a53a6e7c4bad",
+  "kernel_sha256": "36ae7554818337320d55b0fe1d6d34430058fc4f3dcaed89cd4168b8fd5421e5",
+  "model_sha256": "fd3e90605e8103307dca37cb5a8cdb036267e2fe3cb2d908d80a8ceb9ec0638c",
+  "root_task_sha256": "924a131677d1b756397d2214500bb75f5a2a408f8b5d5235966bd9dd26d987b5",
+  "scope": "fixed resource-choice prompt, full backbone and decision head; advisory only",
+  "serial_log": "serial.txt",
+  "serial_log_note": "Native inference and root-report lines retained from the raw serial log; CRLF normalized.",
+  "status": "PASS"
+}

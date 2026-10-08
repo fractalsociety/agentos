@@ -105,7 +105,17 @@ const system_desc_t system_desc_x86_64 = {
         {
             .name = "fractal_native_probe",
             .elf_path = "fractal_native_probe.elf",
+#ifdef AGENTOS_FRACTAL_CLEF_TEST
+            .stack_size = 0x20000u,
+            .mr_count = 3u,
+            .memory_regions = {
+                {.vaddr=UINT64_C(0x200000000), .size=0xc0000000u, .writable=1u, .name="clef_model_0"},
+                {.vaddr=UINT64_C(0x2c0000000), .size=0xc0000000u, .writable=1u, .name="clef_model_1"},
+                {.vaddr=UINT64_C(0x380000000), .size=0x80000000u, .writable=1u, .name="clef_work"},
+            },
+#else
             .stack_size = 0x4000u,
+#endif
             .cnode_size_bits = 10u,
             .priority = 251u,
             .self_svc_id = SVC_ID_FRACTAL_NATIVE_PROBE,

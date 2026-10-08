@@ -44,6 +44,9 @@ The binding description of the trust boundary, with a strict split between
 what boots today and the target shape, is [`docs/TCB.md`](docs/TCB.md). The
 project rules are [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).
 
+The [native Clef-Flash experiment](docs/CLEF_NATIVE_TEST.md) runs the full
+decision model in a Rust `no_std` seL4 client, with a fixed resource-choice test.
+
 The [Fractal Native AgentOS PRD](docs/PRD.md) describes this fork's experimental
 Fractal machine requirements, including native Clef-Flash decisions and resource
 allocation directly above seL4. It specifies target behavior; current platform

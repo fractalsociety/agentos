@@ -17,6 +17,7 @@ REPO_ROOT_MK  := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/../..)
 SEL4_SDK_VERSION ?= $(strip $(shell cat "$(REPO_ROOT_MK)/tools/sdk/default-version"))
 SEL4_SDK      ?= $(HOME)/.cache/agentos/microkit-sdk-$(SEL4_SDK_VERSION)
 SEL4_PROFILE  ?= release
+CLEF_RUST_SYSROOT ?= $(HOME)/.cache/agentos/clef-flash/rust-sysroot
 SEL4_INC_DIR  := $(SEL4_SDK)/board/$(AGENTOS_BOARD)/$(SEL4_PROFILE)/include
 
 # Linker script: agentOS-owned replacement for microkit.ld
@@ -286,6 +287,18 @@ ifeq ($(AGENTOS_BOARD),x86_64_generic_vtx)
     endif
     CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_NATIVE_ONLY=1
     ROOT_TASK_OBJS := $(filter-out $(BUILD_DIR)/x86_firmware.o,$(ROOT_TASK_OBJS))
+  endif
+  ifeq ($(FRACTAL_CLEF_TEST),1)
+    ifneq ($(FRACTAL_NATIVE_ONLY),1)
+      $(error FRACTAL_CLEF_TEST requires the guest-free native-only composition)
+    endif
+    ifneq ($(filter 1,$(FRACTAL_GPT_QUALIFY) $(FRACTAL_NVME_PROBE) $(FRACTAL_PHYSICAL_WRITE_CANDIDATE)),)
+      $(error Clef test is restricted to disposable QEMU block media)
+    endif
+    CFLAGS += -DAGENTOS_FRACTAL_CLEF_TEST=1
+    CFLAGS_ROOT_TASK += -DAGENTOS_FRACTAL_CLEF_TEST=1
+    CLEF_OBJS := $(BUILD_DIR)/libagentos_clef.a
+    CLEF_LDFLAGS := --gc-sections
   endif
   ifeq ($(FRACTAL_GPT_QUALIFY),1)
     ifneq ($(FRACTAL_NATIVE_ONLY),1)
@@ -1527,8 +1540,14 @@ $(BUILD_DIR)/fractal_native_probe.o: $(REPO_ROOT_MK)/platform/blk-virt/fractal_n
 $(BUILD_DIR)/fractal_gpt.pd.o: $(REPO_ROOT_MK)/platform/storage/fractal_gpt.c $(REPO_ROOT_MK)/platform/include/platform/fractal_gpt.h
 	@mkdir -p $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) $< -o $@
-$(BUILD_DIR)/fractal_native_probe.elf: $(BUILD_DIR)/fractal_native_probe.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o $(FRACTAL_NATIVE_CRYPTO_OBJS) $(FRACTAL_NATIVE_GPT_OBJS)
-	$(LD) $(LDFLAGS) $^ $(LIBS) -o $@
+$(BUILD_DIR)/libagentos_clef.a: $(wildcard $(REPO_ROOT_MK)/platform/clef/src/*.rs) $(REPO_ROOT_MK)/platform/clef/Cargo.toml $(REPO_ROOT_MK)/tools/rust-targets/x86_64-agentos-clef.json $(REPO_ROOT_MK)/kernel/agentos-root-task/Makefile
+	@mkdir -p $(BUILD_DIR)
+	cd $(REPO_ROOT_MK) && RUSTC_BOOTSTRAP=1 RUSTC="$(CLEF_RUST_SYSROOT)/bin/rustc" cargo build -p agentos-clef --release --no-default-features \
+		-Zbuild-std=core,alloc -Zjson-target-spec --target tools/rust-targets/x86_64-agentos-clef.json --target-dir $(BUILD_DIR)/rust
+	cp $(BUILD_DIR)/rust/x86_64-agentos-clef/release/libagentos_clef.a $@
+
+$(BUILD_DIR)/fractal_native_probe.elf: $(BUILD_DIR)/fractal_native_probe.o $(BUILD_DIR)/sel4_crt.o $(BUILD_DIR)/pd_entry.o $(BUILD_DIR)/m3_bare_metal.o $(BUILD_DIR)/log.o $(FRACTAL_NATIVE_CRYPTO_OBJS) $(FRACTAL_NATIVE_GPT_OBJS) $(CLEF_OBJS)
+	$(LD) $(LDFLAGS) $(CLEF_LDFLAGS) $^ $(LIBS) -o $@
 
 $(BUILD_DIR)/fractal_nvme_probe.o: $(REPO_ROOT_MK)/platform/storage/fractal_nvme_probe.c $(REPO_ROOT_MK)/platform/include/platform/fractal_nvme.h $(REPO_ROOT_MK)/platform/include/platform/fractal_partition.h $(REPO_ROOT_MK)/platform/include/platform/fractal_gpt.h
 	@mkdir -p $(BUILD_DIR)

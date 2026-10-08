@@ -1,0 +1,70 @@
+[rt] boot complete — yielding to PDs
+[clef_native] CLEF_NATIVE_BEGIN: Rust no_std x86_64
+[clef_native] CLEF loading verified model through private block queue
+[clef_native] CLEF loaded MiB 256
+[clef_native] CLEF loaded MiB 512
+[clef_native] CLEF loaded MiB 768
+[clef_native] CLEF loaded MiB 1024
+[clef_native] CLEF loaded MiB 1280
+[clef_native] CLEF loaded MiB 1536
+[clef_native] CLEF loaded MiB 1792
+[clef_native] CLEF loaded MiB 2048
+[clef_native] CLEF loaded MiB 2304
+[clef_native] CLEF loaded MiB 2560
+[clef_native] CLEF loaded MiB 2816
+[clef_native] CLEF loaded MiB 3072
+[clef_native] CLEF loaded MiB 3328
+[clef_native] CLEF loaded MiB 3584
+[clef_native] CLEF loaded MiB 3840
+[clef_native] CLEF loaded MiB 4096
+[clef_native] CLEF loaded MiB 4352
+[clef_native] CLEF loaded MiB 4608
+[clef_native] CLEF loaded MiB 4864
+[clef_native] CLEF loaded MiB 5120
+[clef_native] CLEF loaded MiB 5376
+[clef_native] CLEF loaded MiB 5632
+[clef_native] CLEF loaded MiB 5888
+[clef_native] CLEF loaded MiB 6144
+[clef_native] CLEF backbone 0
+[clef_native] CLEF backbone 1
+[clef_native] CLEF backbone 2
+[clef_native] CLEF backbone 3
+[clef_native] CLEF backbone 4
+[clef_native] CLEF backbone 5
+[clef_native] CLEF backbone 6
+[clef_native] CLEF backbone 7
+[clef_native] CLEF backbone 8
+[clef_native] CLEF backbone 9
+[clef_native] CLEF backbone 10
+[clef_native] CLEF backbone 11
+[clef_native] CLEF backbone 12
+[clef_native] CLEF backbone 13
+[clef_native] CLEF backbone 14
+[clef_native] CLEF backbone 15
+[clef_native] CLEF backbone 16
+[clef_native] CLEF backbone 17
+[clef_native] CLEF backbone 18
+[clef_native] CLEF backbone 19
+[clef_native] CLEF backbone 20
+[clef_native] CLEF backbone 21
+[clef_native] CLEF backbone 22
+[clef_native] CLEF backbone 23
+[clef_native] CLEF backbone 24
+[clef_native] CLEF backbone 25
+[clef_native] CLEF backbone 26
+[clef_native] CLEF backbone 27
+[clef_native] CLEF backbone 28
+[clef_native] CLEF backbone 29
+[clef_native] CLEF backbone 30
+[clef_native] CLEF backbone 31
+[clef_native] CLEF routing 0
+[clef_native] CLEF routing 1
+[clef_native] CLEF joint 0
+[clef_native] CLEF joint 1
+[clef_native] CLEF joint 2
+[clef_native] CLEF joint 3
+[clef_native] CLEF option=0 probability_ppm=904456 reference_ppm=908079
+[clef_native] CLEF option=1 probability_ppm=95543 reference_ppm=91920
+[clef_native] CLEF_NATIVE_PASS: full backbone and joint head; oversized allocation deferred
+[rt] native block report step=0x0000000000000002
+[rt] parking on fault_ep

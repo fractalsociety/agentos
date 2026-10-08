@@ -408,6 +408,7 @@ endif
 # =============================================================================
 # setup/demo: two-command first-run path and one-command repeatable showcase
 # =============================================================================
+include tools/clef.mk
 .PHONY: sdk-check
 include tools/sdk/candidate.mk
 
