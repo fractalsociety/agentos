@@ -44,6 +44,11 @@ The binding description of the trust boundary, with a strict split between
 what boots today and the target shape, is [`docs/TCB.md`](docs/TCB.md). The
 project rules are [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).
 
+The [Fractal Native AgentOS PRD](docs/PRD.md) describes this fork's experimental
+Fractal machine requirements, including native Clef-Flash decisions and resource
+allocation directly above seL4. It specifies target behavior; current platform
+qualification remains documented in `docs/TCB.md`.
+
 ## Today vs. target
 
 | Area | Today | Target |
