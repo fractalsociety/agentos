@@ -52,6 +52,43 @@ Fractal machine requirements, including native Clef-Flash decisions and resource
 allocation directly above seL4. It specifies target behavior; current platform
 qualification remains documented in `docs/TCB.md`.
 
+## Fractal repositories and setup
+
+The native boot screen spans two repositories:
+
+| Repository | Responsibility |
+| --- | --- |
+| [fractalsociety/agentos](https://github.com/fractalsociety/agentos) | seL4 platform, native Clef inference, progress contracts, framebuffer driver and integration tests. |
+| [fractalsociety/fractal-boot-screen](https://github.com/fractalsociety/fractal-boot-screen) | Rust `no_std` renderer: logo, text, loading progress and completion/failure screens. |
+
+The renderer is a separate checkout because human UI code lives outside
+agentOS. With `BOOT_DISPLAY=1`, the agentOS build compiles it and links it into
+the native `boot_screen` protection domain. Frames reach the device through
+the agentOS display queue and driver. The ordinary agentOS build does not
+require the renderer.
+
+Clone both into the same parent directory, using these local names:
+
+```bash
+git clone https://github.com/fractalsociety/agentos.git fractal-agentos
+git clone https://github.com/fractalsociety/fractal-boot-screen.git fractal-boot-screen
+cd fractal-agentos
+make -C ../fractal-boot-screen test
+make test-boot-display-host test-clef-boot-status GUEST_OS=none
+```
+
+Those host checks need Make, a C compiler and Rust/Cargo; they do not boot
+seL4 or download the model. Use `BOOT_SCREEN_SOURCE=/absolute/path/to/fractal-boot-screen`
+when the renderer lives elsewhere.
+
+For the full native screen test, follow [boot display setup](docs/BOOT_DISPLAY.md#build-and-test).
+It needs Linux x86_64 with KVM, the model and firmware tools, plus an existing
+UEFI-compatible seL4 build with matching generated headers. That lab build
+is not included in either repository, so cloning both alone is insufficient
+for the screen test. The guide covers prerequisites, commands, results and
+physical-PC limits. [Clef setup](docs/CLEF_NATIVE_TEST.md#reproduce) also
+documents the headless test using stock Microkit SDK 2.3.0.
+
 ## Today vs. target
 
 | Area | Today | Target |

@@ -30,21 +30,63 @@ resource-allocation service are not implemented by this display change.
 
 ## Build and test
 
-Keep the renderer checkout next to this one, or set `BOOT_SCREEN_SOURCE`
-to its absolute path. Its host checks use `make -C ../fractal-boot-screen test`.
-Repository checks use:
+### Check out both repositories
 
+```bash
+git clone https://github.com/fractalsociety/agentos.git fractal-agentos
+git clone https://github.com/fractalsociety/fractal-boot-screen.git fractal-boot-screen
+cd fractal-agentos
 ```
+
+Keep these checkouts as siblings, or pass
+`BOOT_SCREEN_SOURCE=/absolute/path/to/fractal-boot-screen` to the agentOS
+Make command. The renderer is an external source dependency, not a submodule
+or an independently bootable OS. `BOOT_DISPLAY=1` builds its Rust static
+library and links it into the agentOS `boot_screen.elf` client.
+
+With Make, a C compiler and Rust/Cargo installed, the small host checks are:
+
+```bash
+make -C ../fractal-boot-screen test
 make test-boot-display-host test-clef-boot-status GUEST_OS=none
-make clef-boot-screen-test GUEST_OS=none
-make test-host SEL4_SDK_VERSION=2.3.0
-make gate SEL4_SDK_VERSION=2.3.0
 ```
 
-The screen test uses the existing lab kernel build at
+They require neither the model download nor a seL4 kernel build.
+
+### Prepare the native screen test
+
+The tested host is Linux x86_64 with access to `/dev/kvm`. Allow at least
+16 GiB available RAM and 15 GiB disk space for the model experiment, plus
+space for toolchains and build outputs. The model alone is 6,486,448,288
+bytes; a disposable copy is also staged for QEMU. Install Make, a C compiler,
+Clang/LLVM, LLD, Rust/Cargo, curl, tar, CMake, QEMU x86_64, Limine, OVMF,
+mtools, dosfstools and sfdisk. See the [host tools guide](QUICKSTART.md#1-host-packages)
+for the general compiler tools and [Clef experiment](CLEF_NATIVE_TEST.md#reproduce)
+for model details.
+
+The current launcher expects firmware at these exact paths (the layout
+used on the Omarchy/Arch test host):
+
+```text
+/usr/share/limine/BOOTX64.EFI
+/usr/share/limine/limine-bios.sys
+/usr/share/edk2/x64/OVMF_CODE.4m.fd
+/usr/share/edk2/x64/OVMF_VARS.4m.fd
+```
+
+Other distributions may install those files elsewhere; the launcher does
+not currently discover alternate paths.
+
+The screen test also needs an existing kernel build. It defaults to
 `../fractal-lab/x2apic-diagnostic/build-xapic`. `BOOT_KERNEL_BUILD` can select
-another existing UEFI-compatible x86 MCS build with printing enabled and a
-`kernel32.elf` artifact. `clef-firmware-sdk` installs its already-generated
+another existing UEFI-compatible x86 MCS build with printing enabled,
+`kernel.elf`, `kernel32.elf` and CMake install metadata for the matching
+generated libsel4 headers. **This lab build is not included in either
+repository or fetched by these commands.** Without it, the host checks and
+the [stock-SDK headless Clef test](CLEF_NATIVE_TEST.md#reproduce) remain
+available, but the native screen test cannot run.
+
+`clef-firmware-sdk` installs the existing build's already-generated
 headers into the user cache and copies its existing kernel artifacts. It
 never configures, edits or rebuilds seL4. Kernel and generated invocation
 headers must come from the same build.
@@ -55,14 +97,42 @@ previously relocated to 16 MiB; the screen test reuses that artifact. Its
 SHA-256 is recorded in the receipt. The ordinary headless `clef-native-test`
 continues to use the stock SDK. This display work makes no kernel changes.
 
+### Run and inspect results
+
+From `fractal-agentos`, after satisfying those prerequisites:
+
+```bash
+make clef-fetch GUEST_OS=none
+make clef-boot-screen-test GUEST_OS=none \
+    BOOT_KERNEL_BUILD=/absolute/path/to/existing-compatible-kernel-build
+```
+
+On the original lab host, omit `BOOT_KERNEL_BUILD` to use its default.
+The build downloads the pinned native Rust toolchain into the user cache
+and compiles both repositories. Use the tested renderer commit linked above
+when reproducing the retained evidence.
+
 The test creates a disposable FAT image and starts UEFI/Limine in QEMU/KVM.
-It requires Limine, OVMF, mtools, dosfstools, sfdisk, CMake and the model-test
-dependencies. QMP captures `loading.ppm` and `ready.ppm` under
-`build/clef-native`; the harness checks actual framebuffer pixels as well
+QEMU runs without a desktop window; QMP captures `loading.ppm` and
+`ready.ppm` under `build/clef-native`. The harness checks actual framebuffer pixels as well
 as the native layer/probability trace and renderer completion marker.
 `CLEF_TEST_ARGS='--expect-model-failure'` exercises refusal of writable
 disposable model media and captures `failure.ppm`. The model cache remains
 unchanged. Each run replaces the prior logs and receipt in that build directory.
+
+Inspect `build/clef-native/receipt.json` for the result and artifact hashes,
+`serial.log` for native diagnostics, and `boot-status.json` plus
+`boot-events.jsonl` for progress. A passing full run ends with
+`CLEF_NATIVE_PASS`; the failure test intentionally produces an
+`EXPECTED_FAILURE` receipt.
+
+Repository regression checks use the stock SDK separately:
+
+```bash
+make sdk SEL4_SDK_VERSION=2.3.0
+make test-host SEL4_SDK_VERSION=2.3.0
+make gate SEL4_SDK_VERSION=2.3.0
+```
 
 ## Physical PC artifact
 

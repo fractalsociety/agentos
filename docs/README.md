@@ -15,6 +15,8 @@ else.
 |------|------------|
 | [`TCB.md`](TCB.md) | **Binding.** Trusted computing base: what boots today vs. the target shape, the five I/O invariants, the museum list, the proof gate. |
 | [`QUICKSTART.md`](QUICKSTART.md) | Clone to booted QEMU image, guest I/O proofs, logs, troubleshooting. |
+| [`BOOT_DISPLAY.md`](BOOT_DISPLAY.md) | Separate Rust renderer repository, joint setup, firmware prerequisites, native screen tests and physical-PC limits. |
+| [`CLEF_NATIVE_TEST.md`](CLEF_NATIVE_TEST.md) | Native Rust Clef-Flash inference setup, pinned model, numerical proof and experiment limits. |
 | [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md) | Boot flow, declaring a PD, PD skeleton, contracts, notifications, adding a virtualizer/driver/profile/native agent, testing policy. |
 | [`ROADMAP.md`](ROADMAP.md) | Release map 0.2 to 1.0, dependency order, trust-baseline corrective actions, per-release acceptance evidence. |
 | [`RELEASES.md`](RELEASES.md) | Evidence-bound release protocol: plan, prepare, check, publish, verify; branch policy; evidence matrix. |
